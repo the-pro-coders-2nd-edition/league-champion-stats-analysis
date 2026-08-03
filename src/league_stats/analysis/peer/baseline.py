@@ -13,6 +13,7 @@ from league_stats.analysis.peer.rank_scope import RankScope, build_exact_scope, 
 from league_stats.infra.cache import MatchStore
 from league_stats.core.champions import build_label
 from league_stats.core.models import RankedEntry
+from league_stats.core.progress import NULL_REPORTER, ProgressReporter
 from league_stats.infra.riot_api import RiotApiClient, RiotApiError
 from league_stats.utils import get_logger
 
@@ -123,6 +124,7 @@ def _try_live_baseline(
     role: str,
     *,
     exclude_puuid: str | None,
+    progress: ProgressReporter = NULL_REPORTER,
 ) -> PeerBaseline | None:
     """Return a peer baseline from the file cache or live snowball sampling.
 
@@ -151,6 +153,7 @@ def _try_live_baseline(
         champion,
         role,
         exclude_puuid=exclude_puuid,
+        progress=progress,
     )
     if snapshot is None:
         return None
@@ -192,6 +195,7 @@ def resolve_peer_baseline(
     role: str,
     *,
     exclude_puuid: str | None = None,
+    progress: ProgressReporter = NULL_REPORTER,
 ) -> PeerBaseline | None:
     """Resolve the best available peer baseline using the fallback ladder.
 
@@ -276,6 +280,7 @@ def resolve_peer_baseline(
             champion,
             role,
             exclude_puuid=exclude_puuid,
+            progress=progress,
         )
     except RiotApiError as exc:
         log.warning("Live peer sampling failed: %s", exc)

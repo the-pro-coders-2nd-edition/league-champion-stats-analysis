@@ -35,6 +35,10 @@ a:hover { text-decoration: underline; }
   object-fit: cover; box-shadow: 0 2px 12px rgba(0, 0, 0, .35);
 }
 
+.index-nav { margin: 0 0 20px; font-size: 14px; }
+.index-nav a { color: var(--muted); font-weight: 600; }
+.index-nav a:hover { color: var(--accent); }
+
 .index-header { margin-bottom: 28px; }
 .index-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
 .index-sub { color: var(--muted); font-size: 14px; }

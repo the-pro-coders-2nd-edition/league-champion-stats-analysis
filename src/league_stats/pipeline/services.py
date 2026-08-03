@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import typer
 
 from league_stats.core.champions import parse_riot_id
 from league_stats.core.config import AppConfig, PlayerIdentity, load_config
+from league_stats.core.progress import ProgressReporter
 from league_stats.infra.cache import HttpCache, MatchStore
 from league_stats.infra.ddragon_assets import DDragonAssets
 from league_stats.infra.riot_api import RiotApiClient
@@ -23,6 +24,7 @@ class Services:
     store: MatchStore
     client: RiotApiClient
     assets: DDragonAssets
+    progress: ProgressReporter = field(default_factory=ProgressReporter)
 
 
 @dataclass

@@ -80,8 +80,14 @@ def analyze(
             updates["filter_role"] = normalize_role(role)
         services.config = services.config.model_copy(update=updates)
     try:
-        contexts = fetch_matches(services)
-        run_all_builds(services, contexts, fetch=False, skip_peer=skip_peer)
+        result = fetch_matches(services)
+        run_all_builds(
+            services,
+            result.contexts,
+            fetch=False,
+            skip_peer=skip_peer,
+            new_match_ids=result.new_match_ids,
+        )
     finally:
         services.store.close()
         services.http_cache.close()
@@ -207,6 +213,23 @@ def _run_download_assets(*, verbose: bool, force: bool) -> None:
     assets = DDragonAssets(config)
     version = assets.ensure_downloaded(force=force)
     get_logger().info("Assets ready in %s (patch %s).", assets.assets_root, version)
+
+
+@app.command()
+def serve(
+    host: str = typer.Option(None, "--host", help="Bind address (default 127.0.0.1)."),
+    port: int = typer.Option(None, "--port", help="HTTP port (default 8000)."),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Run the web app: search UI, job queue, report serving and chat proxy."""
+    import uvicorn
+
+    from league_stats.core.config import load_web_config
+    from league_stats.web.app import create_app
+
+    setup_logging(verbose)
+    web_config = load_web_config(host=host, port=port)
+    uvicorn.run(create_app(web_config), host=web_config.host, port=web_config.port)
 
 
 @app.command()

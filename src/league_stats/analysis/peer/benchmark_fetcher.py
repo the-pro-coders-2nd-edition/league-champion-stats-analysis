@@ -23,6 +23,7 @@ from league_stats.analysis.peer.rank_scope import RankScope, build_widened_scope
 from league_stats.infra.cache import MatchStore
 from league_stats.core.config import RANKED_SOLO_QUEUE_ID
 from league_stats.core.models import RankedEntry
+from league_stats.core.progress import STAGE_PEER, NULL_REPORTER, ProgressReporter
 from league_stats.infra.riot_api import RiotApiClient, RiotApiError
 from league_stats.utils import get_logger, safe_div
 
@@ -206,6 +207,7 @@ def _collect_sample_rows(
     seed_puuids: list[str],
     seed_ranks: dict[str, tuple[str, str]],
     exclude_puuid: str | None,
+    reporter: ProgressReporter = NULL_REPORTER,
 ) -> tuple[list[dict[str, Any]], int, int]:
     """Snowball-scan recent games for matching champion + lane performances.
 
@@ -252,6 +254,16 @@ def _collect_sample_rows(
                     continue
                 downloads += 1
                 progress.update(1)
+                if downloads % 10 == 0 or len(rows) >= TARGET_PEER_GAMES:
+                    reporter.update(
+                        STAGE_PEER,
+                        current=len(rows),
+                        total=TARGET_PEER_GAMES,
+                        detail=(
+                            f"Sampling rank peers: {len(rows)}/{TARGET_PEER_GAMES} games "
+                            f"({downloads} matches scanned)"
+                        ),
+                    )
 
                 if not _match_has_build(match, champion, role):
                     continue
@@ -302,6 +314,7 @@ def fetch_benchmark_from_api(
     role: str,
     *,
     exclude_puuid: str | None = None,
+    progress: ProgressReporter = NULL_REPORTER,
 ) -> BenchmarkSnapshot | None:
     """Sample rank-scoped players and aggregate their champion + lane stats."""
     log = get_logger("benchmark_fetcher")
@@ -324,6 +337,7 @@ def fetch_benchmark_from_api(
         seed_puuids=seed_puuids,
         seed_ranks=seed_ranks,
         exclude_puuid=exclude_puuid,
+        reporter=progress,
     )
     if games < MIN_BENCHMARK_GAMES:
         log.warning(

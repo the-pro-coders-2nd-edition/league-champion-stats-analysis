@@ -107,6 +107,34 @@ uv run python main.py reports                                      # rebuild rep
 uv run python main.py clear-cache                                  # wipe the HTTP cache
 ```
 
+### Web app (server mode)
+
+Run the analyzer as a web service — anyone can request a report from the browser:
+
+```bash
+uv run python main.py serve                 # http://127.0.0.1:8000
+uv run python main.py serve --host 0.0.0.0 --port 8080
+```
+
+- Submissions are queued (`data/app.sqlite`) and processed by a background worker;
+  the status page shows live progress (queue position, download counts, ETA).
+- Reports appear in **two stages**: the base dashboard first, then the rank-peer
+  sections fill in automatically when peer sampling finishes.
+- Already-analyzed players load instantly, with a **Refresh** button that only
+  downloads new games.
+- The Gemini chatbot is proxied through the server (`POST /api/chat`) — the API
+  key is never embedded in web-served report HTML.
+- All jobs share one Riot rate limit. With a dev key keep the default
+  `worker_concurrency = 1`; raise it in `config.toml` under `[web]` once you have
+  a production key:
+
+```toml
+[web]
+host = "0.0.0.0"
+port = 8000
+worker_concurrency = 1
+```
+
 You can also put defaults into a `config.toml` next to `main.py`:
 
 ```toml

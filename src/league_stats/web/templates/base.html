@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ app_title }}{% endblock %}</title>
+{% if favicon_href %}
+<link rel="icon" type="image/png" href="{{ favicon_href }}">
+<link rel="apple-touch-icon" href="{{ favicon_href }}">
+{% endif %}
+<style>
+:root {
+  --bg: #0f1118; --panel: #171a24; --panel-2: #1e2230; --border: #2a2f40;
+  --text: #e8eaf2; --muted: #9aa0b5; --accent: #7c6cf0; --win: #3fb68b; --loss: #e05563;
+  --scrollbar-track: var(--bg);
+  --scrollbar-thumb: #353b50;
+  --scrollbar-thumb-hover: var(--accent);
+}
+html {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track); scrollbar-width: thin; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+  border: 3px solid var(--scrollbar-track);
+  min-height: 40px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+::-webkit-scrollbar-corner { background: var(--scrollbar-track); }
+body {
+  background: var(--bg); color: var(--text);
+  font: 15px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+}
+a { color: var(--accent); text-decoration: none; font-weight: 600; }
+a:hover { text-decoration: underline; }
+
+.shell { max-width: 1100px; margin: 0 auto; padding: 48px 24px 64px; }
+
+.app-brand {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 8px;
+  color: inherit; text-decoration: none; font-weight: inherit;
+}
+.app-brand:hover { text-decoration: none; }
+.app-brand-title { font-size: 28px; font-weight: 700; color: var(--accent); line-height: 1.2; }
+.app-logo {
+  width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
+  object-fit: cover; box-shadow: 0 2px 12px rgba(0, 0, 0, .35);
+}
+
+.page-nav { margin: 0 0 20px; font-size: 14px; }
+.page-nav a { color: var(--muted); font-weight: 600; }
+.page-nav a:hover { color: var(--accent); text-decoration: none; }
+
+.page-header { margin-bottom: 28px; }
+.page-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+.page-sub { color: var(--muted); font-size: 14px; max-width: 62ch; }
+.page-sub code {
+  font-size: 13px; background: var(--panel-2); padding: 2px 6px; border-radius: 4px;
+}
+
+.panel {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; margin-bottom: 20px;
+}
+.panel--form { padding: 16px 18px; }
+
+h2.section-label {
+  font-size: 14px; font-weight: 700; color: var(--muted);
+  letter-spacing: .04em; text-transform: uppercase;
+  margin: 28px 0 12px;
+}
+
+button, .btn {
+  background: var(--accent); color: #fff; border: 1px solid var(--accent);
+  border-radius: 8px; padding: 9px 16px;
+  font: 600 14px/1.2 -apple-system, "Segoe UI", Roboto, sans-serif;
+  cursor: pointer; transition: background .15s, border-color .15s, color .15s, opacity .15s;
+}
+button:hover:not(:disabled), .btn:hover:not(:disabled) { filter: brightness(1.06); }
+button:disabled, .btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-secondary {
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+}
+.btn-secondary:hover:not(:disabled) {
+  color: var(--accent); border-color: var(--accent); filter: none;
+}
+
+input, select {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px;
+}
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+input::placeholder { color: var(--muted); }
+
+.form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.form-row input.riot-input { flex: 1; min-width: 220px; }
+.form-actions {
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; margin-top: 12px;
+}
+.form-row-end { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.player-row { margin-bottom: 8px; }
+.player-row .remove-player { padding: 9px 12px; }
+.hint { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+.error { color: var(--loss); font-size: .9rem; min-height: 1.2em; margin-top: 8px; }
+.muted { color: var(--muted); font-size: .9rem; }
+
+.player-cards {
+  display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 8px;
+  scrollbar-color: var(--scrollbar-thumb) var(--panel);
+}
+.player-card {
+  flex: 0 0 auto; min-width: 200px; max-width: 280px;
+  display: block; padding: 14px 16px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 10px; color: var(--text);
+  text-decoration: none; font-weight: inherit;
+  transition: border-color .15s, background .15s;
+}
+.player-card:hover { border-color: var(--accent); background: var(--panel-2); text-decoration: none; }
+.player-card-name {
+  font-size: 14px; font-weight: 600; line-height: 1.3;
+  display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
+}
+.player-card-status {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+  flex: none; margin-top: 5px; display: none;
+}
+.player-card.is-busy .player-card-status { display: inline-block; animation: pulse 1.4s ease-in-out infinite; }
+.player-card-meta { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+.badge-group {
+  display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; padding: 2px 6px; border-radius: 4px;
+  background: rgba(124, 108, 240, 0.15); color: var(--accent); flex-shrink: 0;
+}
+
+.build-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px;
+}
+.build-card {
+  display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  color: var(--text); text-decoration: none; font-size: 13px; font-weight: inherit;
+  transition: border-color .15s, background .15s;
+}
+.build-card:hover { border-color: var(--accent); background: var(--panel-2); text-decoration: none; }
+.build-card .game-icon {
+  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+  background: var(--panel-2); border: 1px solid var(--border);
+}
+.build-card-body { flex: 1; min-width: 0; }
+.build-card strong {
+  display: block; font-size: 14px; font-weight: 600; line-height: 1.3;
+}
+.build-card-role {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 4px;
+}
+.build-card .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.build-card .meta .win { color: var(--win); }
+.build-card .meta .loss { color: var(--loss); }
+.role-icon { flex-shrink: 0; object-fit: contain; opacity: .92; }
+.role-icon--sm { width: 16px; height: 16px; }
+
+.status-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex: none; }
+.dot.ok { background: var(--win); }
+.dot.err { background: var(--loss); }
+.dot.pulse { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.progress-track {
+  height: 8px; border-radius: 4px; background: var(--panel-2);
+  border: 1px solid var(--border); overflow: hidden; margin-top: 12px;
+}
+.progress-fill { height: 100%; width: 0%; background: var(--accent); transition: width .4s; }
+
+@media (max-width: 640px) {
+  .shell { padding: 32px 16px 48px; }
+  .build-grid { grid-template-columns: 1fr; }
+  .form-row-end { margin-left: 0; width: 100%; }
+  .form-actions { flex-direction: column; align-items: stretch; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <a class="app-brand" href="/">
+    {% if logo_href %}
+    <img src="{{ logo_href }}" alt="" class="app-logo" aria-hidden="true">
+    {% endif %}
+    <span class="app-brand-title">{{ app_title }}</span>
+  </a>
+  {% block nav %}{% endblock %}
+  {% block content %}{% endblock %}
+</div>
+</body>
+</html>

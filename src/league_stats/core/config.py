@@ -114,12 +114,16 @@ class AppConfig(BaseModel):
     region: str = "europe"
     platform: str | None = None
     api_key: str
-    # TODO(security): gemini_api_key later gets embedded directly into generated
-    # static HTML (see main.py's chatbot context wiring + templates/report.html) so
-    # browser JS can call the Gemini API without a backend. That's a deliberate,
-    # temporary tradeoff — move this behind a real backend proxy before reports are
-    # ever shared publicly.
+    # NOTE(security): when chat_endpoint is unset (local CLI reports), the
+    # gemini_api_key is embedded directly into the generated static HTML so
+    # browser JS can call the Gemini API without a backend. Web-served reports
+    # set chat_endpoint instead, which routes chat through the backend proxy
+    # and keeps the key out of the HTML.
     gemini_api_key: str | None = None
+    # Web-served reports only: backend chat proxy URL and player status URL.
+    # When set, the rendered report calls these instead of embedding secrets.
+    chat_endpoint: str | None = None
+    status_endpoint: str | None = None
     match_count: int = Field(default=500, ge=1, le=2000)
     min_games: int = Field(default=20, ge=1)
     champion: str = ""
@@ -377,3 +381,44 @@ def load_paths_config(config_file: Path | None = None, **overrides: Any) -> AppC
         tagline="OFF",
         **overrides,
     )
+
+
+class WebConfig(BaseModel):
+    """Configuration for the web server and its background worker."""
+
+    host: str = "127.0.0.1"
+    port: int = Field(default=8000, ge=1, le=65535)
+    # Number of concurrent analysis jobs. Keep at 1 for a dev Riot key: all
+    # jobs share one rate limit, so parallelism only helps with a production key.
+    worker_concurrency: int = Field(default=1, ge=1, le=8)
+    worker_poll_interval_s: float = Field(default=1.0, gt=0)
+    app_db_path: Path = Path("data") / "app.sqlite"
+    output_dir: Path = Path("output")
+    gemini_api_key: str | None = None
+
+    @property
+    def reports_dir(self) -> Path:
+        """Root directory of generated player reports."""
+        return self.output_dir / "reports"
+
+
+def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebConfig:
+    """Build a :class:`WebConfig` from ``[web]`` table, environment and overrides.
+
+    Environment variables: ``ANALYZER_WEB_HOST``, ``ANALYZER_WEB_PORT``,
+    ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``.
+    """
+    _load_env_file()
+    data: dict[str, Any] = {}
+    table = _read_toml(config_file or Path("config.toml")).get("web")
+    if isinstance(table, dict):
+        data.update(table)
+    env_map = {
+        "host": os.environ.get("ANALYZER_WEB_HOST"),
+        "port": os.environ.get("ANALYZER_WEB_PORT"),
+        "worker_concurrency": os.environ.get("ANALYZER_WORKER_CONCURRENCY"),
+        "gemini_api_key": os.environ.get("GEMINI_API_KEY"),
+    }
+    data.update({k: v for k, v in env_map.items() if v})
+    data.update({k: v for k, v in overrides.items() if v is not None})
+    return WebConfig(**data)

@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}{{ app_title }}{% endblock %}
+{% block nav %}
+<p class="page-nav"><a href="/out/index.html">All players →</a></p>
+{% endblock %}
+{% block content %}
+<header class="page-header">
+  <h1 class="page-title">Analyze a player</h1>
+  <p class="page-sub">Enter one or more Riot IDs to build coaching dashboards for every champion + lane they play. Multiple IDs are pooled into one report group, like <code>--player</code> on the CLI. A first-time analysis downloads the full match history and can take ~20 minutes.</p>
+</header>
+
+<div class="panel panel--form">
+  <form id="analyze-form">
+    <div id="player-rows">
+      <div class="form-row player-row">
+        <input name="riot_id" class="riot-input" placeholder="Riot ID (e.g. Faker#KR1)" autocomplete="off">
+        <button type="button" class="btn-secondary remove-player" hidden aria-label="Remove player">Remove</button>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn-secondary" id="add-player">Add another player</button>
+      <div class="form-row-end">
+        <select name="region">
+          {% for label, value in region_choices %}
+          <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" id="analyze-submit">Analyze</button>
+      </div>
+    </div>
+    <p class="hint">Same region applies to every account in the group.</p>
+    <div class="error" id="analyze-error"></div>
+  </form>
+</div>
+
+<h2 class="section-label" id="reports-heading"{% if not groups %} hidden{% endif %}>Recent reports</h2>
+<section class="player-cards" id="recent-reports" aria-label="Recent reports"{% if not groups %} hidden{% endif %}>
+  {% for group in groups %}
+  <a class="player-card{% if group.busy %} is-busy{% endif %}"
+     href="/players/{{ group.slug }}"
+     data-slug="{{ group.slug }}"
+     data-has-report="{{ '1' if group.has_report else '0' }}"
+     {% if group.busy %}title="Analysis in progress"{% endif %}>
+    <div class="player-card-name">
+      <span class="player-card-status" aria-hidden="true"></span>
+      <span class="player-card-label">{{ group.player }}</span>
+      {% if group.is_group %}<span class="badge-group">Group</span>{% endif %}
+    </div>
+    <div class="player-card-meta">
+      {% if group.has_report %}
+      {{ group.build_count }} build{{ "s" if group.build_count != 1 }} · {{ group.total_games }} games
+      {% else %}
+      Queued for analysis…
+      {% endif %}
+    </div>
+  </a>
+  {% endfor %}
+</section>
+
+<script>
+(function () {
+  var form = document.getElementById('analyze-form');
+  var rowsEl = document.getElementById('player-rows');
+  var errorEl = document.getElementById('analyze-error');
+  var submitBtn = document.getElementById('analyze-submit');
+  var addBtn = document.getElementById('add-player');
+  var reportsEl = document.getElementById('recent-reports');
+  var reportsHeading = document.getElementById('reports-heading');
+  var MAX_PLAYERS = 8;
+  var STATE_TITLES = {
+    queued: 'Queued',
+    fetching: 'Downloading matches',
+    analyzing: 'Analyzing',
+    report_ready: 'Report ready — peer analysis pending',
+    peer_running: 'Peer analysis running'
+  };
+
+  function syncRemoveButtons() {
+    var rows = rowsEl.querySelectorAll('.player-row');
+    rows.forEach(function (row) {
+      var btn = row.querySelector('.remove-player');
+      btn.hidden = rows.length === 1;
+    });
+    addBtn.hidden = rows.length >= MAX_PLAYERS;
+  }
+
+  function addRow(value) {
+    var rows = rowsEl.querySelectorAll('.player-row');
+    if (rows.length >= MAX_PLAYERS) return;
+    var row = document.createElement('div');
+    row.className = 'form-row player-row';
+    row.innerHTML =
+      '<input name="riot_id" class="riot-input" placeholder="Riot ID (e.g. Alice#EUW)" autocomplete="off">' +
+      '<button type="button" class="btn-secondary remove-player" aria-label="Remove player">Remove</button>';
+    if (value) row.querySelector('input').value = value;
+    rowsEl.appendChild(row);
+    syncRemoveButtons();
+    row.querySelector('input').focus();
+  }
+
+  rowsEl.addEventListener('click', function (event) {
+    var btn = event.target.closest('.remove-player');
+    if (!btn) return;
+    var row = btn.closest('.player-row');
+    if (row && rowsEl.querySelectorAll('.player-row').length > 1) {
+      row.remove();
+      syncRemoveButtons();
+    }
+  });
+
+  addBtn.addEventListener('click', function () { addRow(''); });
+  syncRemoveButtons();
+
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    errorEl.textContent = '';
+    var players = Array.prototype.map.call(
+      form.querySelectorAll('.riot-input'),
+      function (input) { return input.value.trim(); }
+    ).filter(Boolean);
+    if (!players.length) {
+      errorEl.textContent = 'Provide at least one Riot ID as Name#Tag.';
+      return;
+    }
+    submitBtn.disabled = true;
+    var payload = {
+      players: players,
+      region: form.elements.region.value,
+    };
+    fetch('/api/analyses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok) {
+            var detail = data.detail;
+            if (Array.isArray(detail)) {
+              detail = detail.map(function (item) { return item.msg || JSON.stringify(item); }).join('; ');
+            }
+            throw new Error(detail || ('HTTP ' + response.status));
+          }
+          return data;
+        });
+      })
+      .then(function (data) {
+        window.location.href = '/players/' + data.player_slug;
+      })
+      .catch(function (err) {
+        errorEl.textContent = err.message || 'Something went wrong.';
+        submitBtn.disabled = false;
+      });
+  });
+
+  function ensureReportsVisible() {
+    reportsEl.hidden = false;
+    if (reportsHeading) reportsHeading.hidden = false;
+  }
+
+  function createPendingCard(item) {
+    ensureReportsVisible();
+    var card = document.createElement('a');
+    card.className = 'player-card is-busy';
+    card.href = '/players/' + item.slug;
+    card.dataset.slug = item.slug;
+    card.dataset.hasReport = item.has_report ? '1' : '0';
+    card.title = STATE_TITLES[item.state] || 'Analysis in progress';
+    card.innerHTML =
+      '<div class="player-card-name">' +
+        '<span class="player-card-status" aria-hidden="true"></span>' +
+        '<span class="player-card-label"></span>' +
+      '</div>' +
+      '<div class="player-card-meta">Queued for analysis…</div>';
+    card.querySelector('.player-card-label').textContent = item.player_label || item.slug;
+    reportsEl.insertBefore(card, reportsEl.firstChild);
+    return card;
+  }
+
+  function applyActivity(items) {
+    var busy = {};
+    items.forEach(function (item) { busy[item.slug] = item; });
+    var cards = Array.prototype.slice.call(reportsEl.querySelectorAll('.player-card'));
+    var needsReload = false;
+
+    cards.forEach(function (card) {
+      var slug = card.dataset.slug;
+      var item = busy[slug];
+      if (item) {
+        card.classList.add('is-busy');
+        card.title = STATE_TITLES[item.state] || 'Analysis in progress';
+        delete busy[slug];
+      } else {
+        var wasBusy = card.classList.contains('is-busy');
+        card.classList.remove('is-busy');
+        card.removeAttribute('title');
+        if (wasBusy && card.dataset.hasReport === '0') {
+          needsReload = true;
+        }
+      }
+    });
+
+    Object.keys(busy).forEach(function (slug) {
+      createPendingCard(busy[slug]);
+    });
+
+    if (needsReload) {
+      window.location.reload();
+    }
+  }
+
+  function pollActivity() {
+    fetch('/api/activity', { cache: 'no-store' })
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (data) { applyActivity(data.items || []); })
+      .catch(function () { /* ignore transient errors */ });
+  }
+
+  if (reportsEl) {
+    pollActivity();
+    setInterval(pollActivity, 3000);
+  }
+})();
+</script>
+{% endblock %}

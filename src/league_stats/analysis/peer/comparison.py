@@ -17,6 +17,7 @@ from league_stats.analysis.peer.metrics import extract_champion_role_rows
 from league_stats.infra.cache import MatchStore
 from league_stats.core.champions import build_label
 from league_stats.core.models import MatchRecord, MetricComparison, PeerComparisonResult, RankedEntry, Recommendation
+from league_stats.core.progress import NULL_REPORTER, ProgressReporter
 from league_stats.infra.riot_api import RiotApiClient
 from league_stats.utils import get_logger, safe_div
 
@@ -409,6 +410,7 @@ def build_peer_comparison(
     *,
     champion: str,
     role: str,
+    progress: ProgressReporter = NULL_REPORTER,
 ) -> PeerComparisonResult | None:
     """Build the full rank-peer comparison for the report.
 
@@ -441,6 +443,7 @@ def build_peer_comparison(
         champion,
         role,
         exclude_puuid=user_puuid,
+        progress=progress,
     )
     if baseline is None:
         log.warning(

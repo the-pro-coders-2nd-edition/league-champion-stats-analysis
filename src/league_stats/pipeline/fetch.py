@@ -2,26 +2,41 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from tqdm import tqdm
 
 from league_stats.core.models import MatchRecord
+from league_stats.core.progress import STAGE_FETCHING, STAGE_PARSING
 from league_stats.ingest.parser import BaseMatchFilter, ItemCatalog, MatchParser
 from league_stats.pipeline.services import PlayerContext, Services
 from league_stats.utils import get_logger
 
 
-def fetch_matches(services: Services) -> list[PlayerContext]:
+@dataclass(frozen=True)
+class FetchResult:
+    """Resolved players plus match ids newly available after this fetch."""
+
+    contexts: list[PlayerContext]
+    new_match_ids: frozenset[str]
+
+
+def fetch_matches(services: Services) -> FetchResult:
     """Resolve every tracked player and download their match histories."""
     config = services.config
     contexts: list[PlayerContext] = []
+    new_ids: set[str] = set()
     for player in config.players:
+        services.progress.update(
+            STAGE_FETCHING, detail=f"Looking up {player.label} match history"
+        )
         puuid = services.client.resolve_puuid(player.riot_id, player.tagline)
         match_ids = services.client.fetch_ranked_match_ids(puuid, config.match_count)
-        services.client.download_matches(puuid, match_ids)
+        new_ids.update(services.client.download_matches(puuid, match_ids))
         contexts.append(
             PlayerContext(riot_id=player.riot_id, tagline=player.tagline, puuid=puuid)
         )
-    return contexts
+    return FetchResult(contexts=contexts, new_match_ids=frozenset(new_ids))
 
 
 def resolve_player_contexts(services: Services) -> list[PlayerContext]:
@@ -49,7 +64,17 @@ def load_all_records(services: Services, puuids: str | list[str]) -> list[MatchR
     records: list[MatchRecord] = []
     for puuid in puuid_list:
         match_ids = list(services.store.iter_match_ids(puuid))
-        for match_id in tqdm(match_ids, desc="Parsing matches", unit="match"):
+        total = len(match_ids)
+        for index, match_id in enumerate(
+            tqdm(match_ids, desc="Parsing matches", unit="match"), start=1
+        ):
+            if index == 1 or index % 25 == 0 or index == total:
+                services.progress.update(
+                    STAGE_PARSING,
+                    current=index,
+                    total=total,
+                    detail=f"Parsing matches ({index}/{total})",
+                )
             match = services.store.load_match(match_id)
             timeline = services.store.load_timeline(match_id)
             if not match or not timeline:

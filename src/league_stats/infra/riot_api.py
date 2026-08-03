@@ -12,6 +12,7 @@ Features:
 
 from __future__ import annotations
 
+import threading
 import time
 from collections import deque
 from typing import Any, Final
@@ -22,6 +23,7 @@ from tqdm import tqdm
 from league_stats.infra.cache import HttpCache, MatchStore
 from league_stats.core.config import AppConfig, PLATFORM_TO_REGION, RANKED_FLEX_QUEUE_ID, RANKED_SOLO_QUEUE_ID
 from league_stats.core.models import RankedEntry
+from league_stats.core.progress import STAGE_FETCHING, NULL_REPORTER, ProgressReporter
 from league_stats.utils import get_logger
 
 MATCH_ID_PAGE_SIZE: Final[int] = 100
@@ -35,7 +37,7 @@ class RiotApiError(RuntimeError):
 
 
 class RateLimiter:
-    """Sliding-window rate limiter for two simultaneous windows."""
+    """Thread-safe sliding-window rate limiter for two simultaneous windows."""
 
     def __init__(self, per_second: int, per_two_minutes: int) -> None:
         """Create the limiter.
@@ -48,22 +50,43 @@ class RateLimiter:
             (1.0, per_second, deque()),
             (120.0, per_two_minutes, deque()),
         ]
+        self._lock = threading.Lock()
 
     def acquire(self) -> None:
         """Block until a request slot is available, then consume it."""
         while True:
-            now = time.monotonic()
-            wait = 0.0
-            for window, limit, stamps in self._limits:
-                while stamps and now - stamps[0] > window:
-                    stamps.popleft()
-                if len(stamps) >= limit:
-                    wait = max(wait, window - (now - stamps[0]) + 0.01)
-            if wait <= 0:
-                for _, _, stamps in self._limits:
-                    stamps.append(now)
-                return
+            with self._lock:
+                now = time.monotonic()
+                wait = 0.0
+                for window, limit, stamps in self._limits:
+                    while stamps and now - stamps[0] > window:
+                        stamps.popleft()
+                    if len(stamps) >= limit:
+                        wait = max(wait, window - (now - stamps[0]) + 0.01)
+                if wait <= 0:
+                    for _, _, stamps in self._limits:
+                        stamps.append(now)
+                    return
             time.sleep(wait)
+
+
+# Process-wide limiters keyed by their window limits. Sharing one limiter
+# across consecutive (and concurrent) jobs preserves the sliding-window
+# history that a fresh per-job limiter would lose, preventing 429 bursts
+# at job boundaries.
+_SHARED_LIMITERS: dict[tuple[int, int], RateLimiter] = {}
+_SHARED_LIMITERS_LOCK = threading.Lock()
+
+
+def shared_rate_limiter(per_second: int, per_two_minutes: int) -> RateLimiter:
+    """Return the process-wide limiter for the given window limits."""
+    key = (per_second, per_two_minutes)
+    with _SHARED_LIMITERS_LOCK:
+        limiter = _SHARED_LIMITERS.get(key)
+        if limiter is None:
+            limiter = RateLimiter(per_second, per_two_minutes)
+            _SHARED_LIMITERS[key] = limiter
+        return limiter
 
 
 class RiotApiClient:
@@ -75,6 +98,9 @@ class RiotApiClient:
         http_cache: HttpCache,
         store: MatchStore,
         session: requests.Session | None = None,
+        *,
+        limiter: RateLimiter | None = None,
+        progress: ProgressReporter | None = None,
     ) -> None:
         """Wire the client with its collaborators (dependency injection).
 
@@ -83,12 +109,17 @@ class RiotApiClient:
             http_cache: TTL cache for raw responses.
             store: Permanent match/timeline store.
             session: Optional pre-configured :class:`requests.Session`.
+            limiter: Optional shared rate limiter (defaults to a private one).
+            progress: Optional sink for bulk-download progress events.
         """
         self._config = config
         self._cache = http_cache
         self._store = store
         self._session = session or requests.Session()
-        self._limiter = RateLimiter(config.requests_per_second, config.requests_per_two_minutes)
+        self._limiter = limiter or RateLimiter(
+            config.requests_per_second, config.requests_per_two_minutes
+        )
+        self._progress = progress or NULL_REPORTER
         self._log = get_logger("riot_api")
         self._regional_base = f"https://{config.region}.api.riotgames.com"
         self._platform = config.routing_platform
@@ -397,30 +428,39 @@ class RiotApiClient:
         )
         return merged
 
-    def download_matches(self, puuid: str, match_ids: list[str]) -> None:
+    def download_matches(self, puuid: str, match_ids: list[str]) -> set[str]:
         """Download matches + timelines into the store, skipping stored ones.
 
         Args:
             puuid: The player's PUUID (recorded alongside each match).
             match_ids: Match ids to ensure are stored locally.
+
+        Returns:
+            Match ids newly available to this player: freshly downloaded or
+            newly ownership-linked from an existing cached payload.
         """
         from league_stats.analysis.peer.ingest import ingest_match
 
         cached = [mid for mid in match_ids if self._store.has_match(mid)]
         pending = [mid for mid in match_ids if mid not in cached]
+        new_ids: set[str] = set()
         if cached:
             claimed = self._store.claim_ownership(puuid, cached)
+            new_ids.update(claimed)
             self._log.info(
                 "Indexed %d cached matches for player (%d already linked)",
-                claimed,
-                len(cached) - claimed,
+                len(claimed),
+                len(cached) - len(claimed),
             )
             for match_id in cached:
                 match = self._store.load_match(match_id)
                 if match is not None:
                     ingest_match(self._store, match_id, match, self._platform)
         self._log.info("%d matches already cached, %d to download", len(cached), len(pending))
-        for match_id in tqdm(pending, desc="Downloading matches", unit="match"):
+        total = len(pending)
+        for index, match_id in enumerate(
+            tqdm(pending, desc="Downloading matches", unit="match"), start=1
+        ):
             match_url = f"{self._base}/lol/match/v5/matches/{match_id}"
             timeline_url = f"{match_url}/timeline"
             try:
@@ -432,6 +472,14 @@ class RiotApiClient:
             self._store.save_match(match_id, puuid, match)
             self._store.save_timeline(match_id, timeline)
             ingest_match(self._store, match_id, match, self._platform)
+            new_ids.add(match_id)
+            self._progress.update(
+                STAGE_FETCHING,
+                current=index,
+                total=total,
+                detail=f"Downloading matches ({index}/{total})",
+            )
+        return new_ids
 
     # ----------------------------------------------------------- Static data
 

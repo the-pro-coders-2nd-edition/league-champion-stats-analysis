@@ -13,6 +13,58 @@
 <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual';</script>
 </head>
 <body>
+{% if status_endpoint %}
+<div id="web-status-banner" hidden
+     style="position:fixed;top:0;left:0;right:0;z-index:200;padding:8px 16px;text-align:center;
+            font:600 0.85rem/1.4 system-ui,sans-serif;color:#0b1220;background:#f5c451;
+            box-shadow:0 2px 8px rgba(0,0,0,0.35);">
+  <span id="web-status-banner-text">Analysis in progress…</span>
+</div>
+<script>
+(function () {
+  var STATUS_ENDPOINT = {{ status_endpoint | tojson }};
+  var REPORT_SLUG = {{ report_slug | default("") | tojson }};
+  var PAGE_GENERATED_AT = {{ generated_at | default("") | tojson }};
+  var ACTIVE_STATES = ['queued', 'fetching', 'analyzing', 'report_ready', 'peer_running'];
+  var banner = document.getElementById('web-status-banner');
+  var bannerText = document.getElementById('web-status-banner-text');
+  var timer = null;
+
+  function poll() {
+    fetch(STATUS_ENDPOINT, { cache: 'no-store' })
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        var builds = data.builds || [];
+        for (var i = 0; i < builds.length; i++) {
+          if (builds[i].slug === REPORT_SLUG && builds[i].generated_at &&
+              PAGE_GENERATED_AT && builds[i].generated_at !== PAGE_GENERATED_AT) {
+            // This build was re-rendered (e.g. peer analysis landed): reload.
+            window.location.reload();
+            return;
+          }
+        }
+        var job = data.active_job;
+        if (job && ACTIVE_STATES.indexOf(job.state) !== -1) {
+          bannerText.textContent = job.stage_detail ||
+            (job.state === 'report_ready' ? 'Peer analysis queued…' : 'Analysis in progress…');
+          banner.hidden = false;
+        } else {
+          banner.hidden = true;
+          if (!job || job.state === 'done') {
+            clearInterval(timer);
+            timer = null;
+          }
+        }
+      })
+      .catch(function () { /* transient network error: keep polling */ });
+  }
+
+  timer = setInterval(poll, 10000);
+  poll();
+})();
+</script>
+{% endif %}
 <div class="layout">
 <nav class="report-nav">
   {{ app_brand(app_title, logo_href, variant='nav') }}
@@ -1082,6 +1134,26 @@
     return (Math.round(num * 100) / 100).toFixed(2);
   }
 
+  function isShareOrParticipationMetric(name) {
+    var key = String(name || '').toLowerCase();
+    return key.indexOf('share') !== -1 || key.indexOf('participation') !== -1;
+  }
+
+  function formatGameReviewMetricValue(metric, value) {
+    if (value === null || value === undefined) return '—';
+    if (isShareOrParticipationMetric(metric)) return pct(value);
+    return formatMetricValue(value);
+  }
+
+  function formatGameReviewMetricDelta(metric, value) {
+    if (value === null || value === undefined) return '—';
+    if (!isShareOrParticipationMetric(metric)) return formatMetricValue(value);
+    var num = Number(value);
+    if (!Number.isFinite(num)) return String(value);
+    var scaled = Math.round(num * 100);
+    return (scaled > 0 ? '+' : '') + scaled + '%';
+  }
+
   function fightManpower(row) {
     if (row.allies_present != null && row.enemies_present != null) {
       return row.allies_present + ' vs ' + row.enemies_present;
@@ -1119,22 +1191,10 @@
   function renderGameReviewComparisonTable(title, rows) {
     if (!rows || !rows.length) return '';
     var body = rows.map(function (row) {
-      return '<tr><td>' + escapeHtml(row.label) + '</td><td>' + formatMetricValue(row.game_value) + '</td><td>' +
-        formatMetricValue(row.benchmark_value) + '</td><td class="delta-' + row.verdict + '">' +
-        formatMetricValue(row.delta) + '</td><td class="delta-' +
-        row.verdict + '">' + row.verdict + '</td></tr>';
-    }).join('');
-    return '<div class="card card--wide"><div class="label">' + escapeHtml(title) +
-      '</div><div class="table-scroll"><table><thead><tr><th>Metric</th><th>This game</th><th>Benchmark</th><th>Delta</th><th>Verdict</th></tr></thead><tbody>' +
-      body + '</tbody></table></div></div>';
-  }
-
-  function renderGameReviewComparisonTable(title, rows) {
-    if (!rows || !rows.length) return '';
-    var body = rows.map(function (row) {
-      return '<tr><td>' + escapeHtml(row.label) + '</td><td>' + formatMetricValue(row.game_value) + '</td><td>' +
-        formatMetricValue(row.benchmark_value) + '</td><td class="delta-' + row.verdict + '">' +
-        formatMetricValue(row.delta) + '</td><td class="delta-' +
+      var metric = row.metric || row.label;
+      return '<tr><td>' + escapeHtml(row.label) + '</td><td>' + formatGameReviewMetricValue(metric, row.game_value) + '</td><td>' +
+        formatGameReviewMetricValue(metric, row.benchmark_value) + '</td><td class="delta-' + row.verdict + '">' +
+        formatGameReviewMetricDelta(metric, row.delta) + '</td><td class="delta-' +
         row.verdict + '">' + row.verdict + '</td></tr>';
     }).join('');
     return '<div class="card card--wide"><div class="label">' + escapeHtml(title) +
@@ -1423,7 +1483,7 @@
         var label = statLabels[key] || key;
         var hint = statHints[key] || '';
         return '<div class="card" title="' + escapeHtml(hint) + '"><div class="label">' + escapeHtml(label) +
-          '</div><div class="value">' + val + '</div></div>';
+          '</div><div class="value">' + formatGameReviewMetricValue(key, val) + '</div></div>';
       }).join('') + '</div>';
     }
     var timelinePanel = document.getElementById('game-review-panel-timeline');
@@ -2033,17 +2093,18 @@
   </div>
 </aside>
 <!--
-  TODO(security): GEMINI_API_KEY below is embedded directly in this static HTML file
-  so the chatbot can call the Gemini API from the browser. Anyone who opens this
-  report or its page source can read and reuse this key against the configured
-  Google Cloud project's free-tier quota. This is a deliberate, temporary tradeoff
-  until a real backend proxy exists — do NOT ship this pattern once reports are
-  shared publicly.
+  NOTE(security): when CHAT_ENDPOINT is set (web-served reports), chat goes
+  through the backend proxy and no API key appears in this file. When it is
+  null (local CLI reports), GEMINI_API_KEY is embedded so the chatbot can call
+  the Gemini API directly from the browser — do not share such a report
+  publicly while a real key is baked in.
 -->
 <script type="application/json" id="chatbot-stats-data">{{ chatbot_stats | tojson }}</script>
 <script>
 (function () {
-  var GEMINI_API_KEY = {{ gemini_api_key | tojson }};
+  var CHAT_ENDPOINT = {{ chat_endpoint | default(none) | tojson }};
+  var CHAT_REPORT = {{ chat_report_ref | default("") | tojson }};
+  var GEMINI_API_KEY = {{ gemini_api_key | default(none) | tojson }};
   var BUILD_LABEL = {{ build_label | tojson }};
   var PLAYER_NAME = {{ player_name | tojson }};
   var GEMINI_MODEL = 'gemini-3.5-flash';
@@ -2131,7 +2192,7 @@
   startBtn.addEventListener('click', function () {
     consentAccepted = true;
     consentSection.hidden = true;
-    if (!GEMINI_API_KEY) {
+    if (!GEMINI_API_KEY && !CHAT_ENDPOINT) {
       noKeySection.hidden = false;
       return;
     }
@@ -2237,6 +2298,30 @@
     return (parts || []).map(function (part) { return part.text || ''; }).join('');
   }
 
+  function callChatProxy() {
+    return fetch(CHAT_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ report: CHAT_REPORT, history: history }),
+    }).then(function (response) {
+      if (response.ok) { return response.json(); }
+      return response.json().catch(function () { return {}; }).then(function (errBody) {
+        var message = errBody.detail || ('HTTP ' + response.status);
+        throw new Error(message);
+      });
+    }).then(function (data) { return data.text || ''; });
+  }
+
+  function requestReply() {
+    if (CHAT_ENDPOINT) { return callChatProxy(); }
+    return callGemini(GEMINI_MODEL)
+      .catch(function () {
+        // Primary model rate-limited/overloaded/unavailable -- retry once on the fallback.
+        return callGemini(GEMINI_FALLBACK_MODEL);
+      })
+      .then(extractText);
+  }
+
   function sendMessage(text) {
     history.push({ role: 'user', parts: [{ text: text }] });
     appendMessage('user', text);
@@ -2245,13 +2330,8 @@
     sendBtn.disabled = true;
     var loadingBubble = appendMessage('loading', '');
 
-    callGemini(GEMINI_MODEL)
-      .catch(function () {
-        // Primary model rate-limited/overloaded/unavailable -- retry once on the fallback.
-        return callGemini(GEMINI_FALLBACK_MODEL);
-      })
-      .then(function (data) {
-        var text = extractText(data);
+    requestReply()
+      .then(function (text) {
         if (!text) { throw new Error('Gemini returned an empty response.'); }
         history.push({ role: 'model', parts: [{ text: text }] });
         loadingBubble.remove();

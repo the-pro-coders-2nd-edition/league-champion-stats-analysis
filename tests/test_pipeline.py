@@ -108,7 +108,7 @@ def test_full_pipeline_generates_all_artifacts(tmp_path: Path) -> None:
 
 
 def test_report_embeds_chatbot_panel_and_stats(tmp_path: Path) -> None:
-    """The rendered report embeds the chat panel, stats JSON and a security TODO."""
+    """The rendered report embeds the chat panel, stats JSON and a security note."""
     config = AppConfig(
         riot_id="Test",
         tagline="EUW",
@@ -128,8 +128,10 @@ def test_report_embeds_chatbot_panel_and_stats(tmp_path: Path) -> None:
     assert 'id="chatbot-panel"' in html
     assert 'id="chatbot-consent-checkbox"' in html
     assert 'id="chatbot-stats-data"' in html
-    assert "TODO(security)" in html
+    assert "NOTE(security)" in html
     assert "generateContent" in html
+    # CLI-rendered report (no chat_endpoint): chat calls Gemini directly.
+    assert "var CHAT_ENDPOINT = null;" in html
 
     stats_start = html.index('id="chatbot-stats-data">') + len('id="chatbot-stats-data">')
     stats_end = html.index("</script>", stats_start)

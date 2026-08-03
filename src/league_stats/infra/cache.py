@@ -110,7 +110,11 @@ class MatchStore:
             db_path: Path of the SQLite database file.
         """
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(db_path))
+        self._conn = sqlite3.connect(str(db_path), timeout=30.0)
+        # WAL lets a second connection (e.g. another worker job) read while
+        # this one writes; the busy timeout covers brief write contention.
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=30000")
         self._conn.executescript(_SCHEMA)
         self._log = get_logger("cache")
         self._migrate_legacy_schema()
@@ -235,7 +239,7 @@ class MatchStore:
         ).fetchone()
         return json.loads(row[0]) if row else None
 
-    def claim_ownership(self, puuid: str, match_ids: list[str]) -> int:
+    def claim_ownership(self, puuid: str, match_ids: list[str]) -> list[str]:
         """Index already-stored matches for a player without re-downloading.
 
         When a match was fetched for another account (e.g. rank peers), the
@@ -246,9 +250,9 @@ class MatchStore:
             match_ids: Match ids to claim when present locally.
 
         Returns:
-            Number of ownership rows inserted.
+            Match ids for which a new ownership row was inserted.
         """
-        claimed = 0
+        claimed: list[str] = []
         for match_id in match_ids:
             if not self.has_match(match_id):
                 continue
@@ -256,7 +260,8 @@ class MatchStore:
                 "INSERT OR IGNORE INTO match_players (match_id, puuid) VALUES (?, ?)",
                 (match_id, puuid),
             )
-            claimed += cursor.rowcount
+            if cursor.rowcount:
+                claimed.append(match_id)
         if claimed:
             self._conn.commit()
         return claimed

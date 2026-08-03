@@ -14,6 +14,7 @@ runs coaching analytics, and renders interactive HTML dashboards plus CSV/JSON e
 | Pipeline | `src/league_stats/pipeline/` | Orchestration, frames, bundles, view models |
 | Analysis | `src/league_stats/analysis/` | Pure stats on records/DataFrames |
 | Presentation | `src/league_stats/presentation/` | HTML, charts, exports, icons |
+| Web | `src/league_stats/web/` | FastAPI app, job queue (`jobs.py`), worker (`worker.py`), chat proxy |
 
 ## Naming glossary
 
@@ -65,10 +66,32 @@ Game Review is **orthogonal** to the game-window toggle — it follows the queue
 - Summoner spells → `output/assets/summoners/{SpellName}.png`
 - Rune style trees → `output/assets/rune_trees/{TreeName}.png` (Precision, Domination, …)
 
+## Web app (server mode)
+
+`uv run python -m league_stats.cli.app serve` starts FastAPI (`web/app.py`) with a
+DB-backed job queue (`data/app.sqlite`, `web/jobs.py`) drained by an in-process
+worker thread (`web/worker.py`).
+
+- Jobs run **two-stage**: stage A renders every build with `peer_comparison=None`
+  (state `report_ready`), stage B re-renders per build as peer data lands (`done`).
+  Peer-stage failures are soft: the base report stays served.
+- The orchestrator seams are `prepare_builds()` / `analyze_build()` /
+  `build_peer_for_pool()` in `pipeline/orchestrator.py`; `run_all_builds()` (CLI)
+  composes the same functions single-stage.
+- Progress flows through `core/progress.py` `ProgressReporter` → `Services.progress`
+  → job row; the frontend polls `GET /api/jobs/{id}` and `GET /api/players/{slug}`.
+- Generated reports stay on disk under `output/` and are served statically at `/out`.
+- All jobs share one process-wide `RateLimiter` (`shared_rate_limiter()` in
+  `infra/riot_api.py`); keep `worker_concurrency=1` on a dev Riot key.
+- Web-rendered reports set `AppConfig.chat_endpoint`/`status_endpoint`: chat goes
+  through `POST /api/chat` (key server-side), and the report page polls for
+  peer-stage completion and reloads itself.
+
 ## Security
 
-Generated reports may embed `GEMINI_API_KEY` in static HTML for client-side chat.
-Do not share reports publicly while a real key is baked in.
+CLI-generated reports (no `chat_endpoint`) may embed `GEMINI_API_KEY` in static
+HTML for client-side chat. Do not share those publicly while a real key is baked
+in. Web-served reports never embed the key — chat is proxied via `POST /api/chat`.
 
 ## Commands
 
@@ -76,6 +99,7 @@ Do not share reports publicly while a real key is baked in.
 uv sync
 uv run python main.py analyze --riot-id "Name" --tagline "EUW"
 uv run python -m league_stats.cli.app report --riot-id "Name" --tagline "EUW"
+uv run python -m league_stats.cli.app serve          # web app on 127.0.0.1:8000
 uv run pytest
 ```
 

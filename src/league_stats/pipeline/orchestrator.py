@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ from league_stats.analysis.coach.engine import VISIBLE_RECOMMENDATIONS
 from league_stats.analysis.deaths import deaths_dataframe
 from league_stats.analysis.matchups import matchup_recommendation
 from league_stats.analysis.peer import build_peer_comparison, comparisons_dataframe
-from league_stats.core.champions import champion_display_name
+from league_stats.core.champions import champion_display_name, champion_slug
 from league_stats.core.config import (
     GAME_WINDOW_OPTIONS,
     QUEUE_FILTER_OPTIONS,
@@ -23,10 +24,11 @@ from league_stats.core.config import (
     RANKED_SOLO_QUEUE_ID,
     AppConfig,
 )
+from league_stats.core.progress import STAGE_ANALYZING
 from league_stats.core.models import MatchRecord, PeerComparisonResult, ProgressionComparison, RankedEntry, GameReviewPayload, GameReviewQueueBundle
 from league_stats.infra.ddragon_assets import DDragonAssets
 from league_stats.infra.riot_api import RiotApiClient
-from league_stats.ingest.parser import discover_build_pools
+from league_stats.ingest.parser import BuildPool, discover_build_pools
 from league_stats.pipeline.bundles import (
     build_window_bundle,
     bundle_to_template_context,
@@ -38,7 +40,12 @@ from league_stats.pipeline.bundles import (
     serialize_report_views_json,
     slice_records,
 )
-from league_stats.pipeline.fetch import fetch_matches, group_records, load_all_records, resolve_player_contexts
+from league_stats.pipeline.fetch import (
+    FetchResult,
+    fetch_matches,
+    group_records,
+    load_all_records,
+)
 from league_stats.pipeline.frames import build_analysis_frames
 from league_stats.pipeline.progression import (
     build_progression_views,
@@ -65,6 +72,46 @@ from league_stats.presentation.report import (
     write_report_meta,
 )
 from league_stats.utils import get_logger
+
+
+class NoEligibleBuildsError(RuntimeError):
+    """Raised when no champion+lane build has enough qualifying games."""
+
+
+@dataclass
+class BuildBatch:
+    """Parsed records and eligible builds for one player (or pooled group)."""
+
+    pools: list[BuildPool]
+    records: list[MatchRecord]
+    manifest_builds: list[dict[str, Any]]
+    primary_puuid: str
+
+
+def should_skip_unchanged_build(
+    config: AppConfig,
+    pool: BuildPool,
+    records: list[MatchRecord],
+    new_match_ids: frozenset[str] | set[str] | None,
+) -> bool:
+    """Skip re-analysis when an existing report has no newly fetched games.
+
+    When ``new_match_ids`` is ``None`` (no fetch this run), never skip — callers
+    that regenerate from cache always re-analyse. Builds without a report are
+    always analysed.
+    """
+    if new_match_ids is None:
+        return False
+    report_html = (
+        config.output_dir
+        / "reports"
+        / config.reports_group_slug
+        / champion_slug(pool.champion, pool.role)
+        / "report.html"
+    )
+    if not report_html.is_file():
+        return False
+    return new_match_ids.isdisjoint(record.match_id for record in records)
 
 
 def write_full_exports(
@@ -278,7 +325,15 @@ def run_analysis(
         "game_review_json": serialize_report_views_json(game_review_views),
         "game_review_tooltips_json": serialize_report_views_json(game_review_tooltips()),
         "chatbot_stats": summary,
-        "gemini_api_key": config.gemini_api_key,
+        # Web-served reports proxy chat through the backend and poll for
+        # peer-analysis completion; local CLI reports embed the key directly.
+        "chat_endpoint": config.chat_endpoint,
+        "status_endpoint": config.status_endpoint,
+        "report_slug": champion_slug(config.champion, config.role),
+        "chat_report_ref": (
+            f"{config.reports_group_slug}/{champion_slug(config.champion, config.role)}"
+        ),
+        "gemini_api_key": None if config.chat_endpoint else config.gemini_api_key,
     }
     context.update(
         bundle_to_template_context(default_bundle, peer_comparison=default_peer)
@@ -317,6 +372,10 @@ def run_analysis(
             "player": config.players_label,
             "riot_id": config.riot_id,
             "tagline": config.tagline,
+            "players": [
+                {"riot_id": player.riot_id, "tagline": player.tagline}
+                for player in config.players
+            ],
             "champion": config.champion,
             "role": config.role,
             "role_display": config.role_display,
@@ -378,6 +437,7 @@ def run_with_peer(
             ranked,
             champion=config.champion,
             role=config.role,
+            progress=services.progress,
         )
     return run_analysis(
         config,
@@ -389,19 +449,16 @@ def run_with_peer(
     )
 
 
-def run_all_builds(
+def prepare_builds(
     services: Services,
     player_contexts: list[PlayerContext],
-    *,
-    fetch: bool = False,
-    skip_peer: bool = False,
-) -> Path:
-    """Discover, parse once and analyse every eligible champion+lane build."""
-    log = get_logger("pipeline")
-    if fetch:
-        fetch_matches(services)
-        player_contexts = resolve_player_contexts(services)
+) -> BuildBatch:
+    """Discover eligible builds and parse every stored record once.
 
+    Raises:
+        NoEligibleBuildsError: When no champion+lane build qualifies.
+    """
+    log = get_logger("pipeline")
     puuids = [context.puuid for context in player_contexts]
     primary_puuid = player_contexts[0].puuid
 
@@ -417,11 +474,10 @@ def run_all_builds(
         normalized = services.config.filter_role
         pools = [p for p in pools if p.role == normalized]
     if not pools:
-        log.error(
-            "No champion+lane builds with at least %d ranked games found.",
-            services.config.min_games,
+        raise NoEligibleBuildsError(
+            f"No champion+lane builds with at least {services.config.min_games} "
+            "ranked games found."
         )
-        raise typer.Exit(code=1)
 
     log.info(
         "Found %d eligible build(s) with >= %d games: %s",
@@ -445,38 +501,149 @@ def run_all_builds(
                 winrate=winrate,
             )
         )
+    return BuildBatch(
+        pools=pools,
+        records=all_records,
+        manifest_builds=manifest_builds,
+        primary_puuid=primary_puuid,
+    )
+
+
+def resolve_ranked(
+    services: Services, batch: BuildBatch, records: list[MatchRecord]
+) -> RankedEntry | None:
+    """Pick the platform host and fetch the player's solo queue rank."""
+    ensure_platform(services.client, records, services.config)
+    return services.client.fetch_solo_rank(batch.primary_puuid)
+
+
+def analyze_build(
+    services: Services,
+    batch: BuildBatch,
+    pool: BuildPool,
+    *,
+    ranked: RankedEntry | None,
+    peer_comparison: PeerComparisonResult | None,
+) -> Path | None:
+    """Run the full analysis + render for one champion+lane build.
+
+    Returns:
+        The report path, or ``None`` when too few games survived parsing.
+    """
+    log = get_logger("pipeline")
+    records = group_records(batch.records, pool.champion, pool.role)
+    if len(records) < services.config.min_games:
+        log.warning("Skipping %s: only %d games after parse", pool.build_label, len(records))
+        return None
+    build_config = services.config.model_copy(
+        update={"champion": pool.champion, "role": pool.role}
+    )
+    build_config.report_dir.mkdir(parents=True, exist_ok=True)
+    build_config.run_graphs_dir.mkdir(parents=True, exist_ok=True)
+    return run_analysis(
+        build_config,
+        records,
+        peer_comparison=peer_comparison,
+        ranked=ranked,
+        player_builds=batch.manifest_builds,
+        assets=services.assets,
+    )
+
+
+def build_peer_for_pool(
+    services: Services,
+    batch: BuildBatch,
+    pool: BuildPool,
+    ranked: RankedEntry | None,
+) -> PeerComparisonResult | None:
+    """Build the rank-peer comparison for one champion+lane build."""
+    records = group_records(batch.records, pool.champion, pool.role)
+    if len(records) < services.config.min_games:
+        return None
+    matches_df = pd.DataFrame([r.to_row() for r in records])
+    return build_peer_comparison(
+        services.client,
+        services.store,
+        matches_df,
+        records,
+        batch.primary_puuid,
+        ranked,
+        champion=pool.champion,
+        role=pool.role,
+        progress=services.progress,
+    )
+
+
+def run_all_builds(
+    services: Services,
+    player_contexts: list[PlayerContext],
+    *,
+    fetch: bool = False,
+    skip_peer: bool = False,
+    new_match_ids: frozenset[str] | set[str] | None = None,
+) -> Path:
+    """Discover, parse once and analyse every eligible champion+lane build.
+
+    When ``new_match_ids`` is provided (or ``fetch=True``), builds whose existing
+    report has no intersection with those ids skip analysis and peer work.
+    """
+    log = get_logger("pipeline")
+    fresh_ids = new_match_ids
+    if fetch:
+        result: FetchResult = fetch_matches(services)
+        player_contexts = result.contexts
+        fresh_ids = result.new_match_ids
+
+    try:
+        batch = prepare_builds(services, player_contexts)
+    except NoEligibleBuildsError as exc:
+        log.error(str(exc))
+        raise typer.Exit(code=1)
 
     player_label = services.config.players_label
     player_dir = services.config.player_reports_dir
 
     ranked: RankedEntry | None = None
+    ranked_resolved = False
     last_report: Path | None = None
-    for pool in tqdm(pools, desc="Analyzing builds", unit="build"):
-        records = group_records(all_records, pool.champion, pool.role)
+    analysed_or_kept = False
+    total = len(batch.pools)
+    for index, pool in enumerate(
+        tqdm(batch.pools, desc="Analyzing builds", unit="build"), start=1
+    ):
+        records = group_records(batch.records, pool.champion, pool.role)
         if len(records) < services.config.min_games:
             log.warning("Skipping %s: only %d games after parse", pool.build_label, len(records))
             continue
-        if ranked is None:
-            ensure_platform(services.client, records, services.config)
-            ranked = services.client.fetch_solo_rank(primary_puuid)
-        build_config = services.config.model_copy(
-            update={"champion": pool.champion, "role": pool.role}
+        if should_skip_unchanged_build(services.config, pool, records, fresh_ids):
+            log.info("Skipping %s: no new games since last report", pool.build_label)
+            analysed_or_kept = True
+            continue
+        services.progress.update(
+            STAGE_ANALYZING,
+            current=index,
+            total=total,
+            detail=f"Analyzing {pool.build_label} ({index}/{total})",
         )
-        build_config.report_dir.mkdir(parents=True, exist_ok=True)
-        build_config.run_graphs_dir.mkdir(parents=True, exist_ok=True)
-        last_report = run_with_peer(
-            build_config,
-            services,
-            primary_puuid,
-            records,
-            ranked=ranked,
-            player_builds=manifest_builds,
-            skip_peer=skip_peer,
+        if not ranked_resolved:
+            ranked = resolve_ranked(services, batch, records)
+            ranked_resolved = True
+        peer = None
+        if not skip_peer:
+            peer = build_peer_for_pool(services, batch, pool, ranked)
+        report = analyze_build(
+            services, batch, pool, ranked=ranked, peer_comparison=peer
         )
+        if report is not None:
+            last_report = report
+            analysed_or_kept = True
 
-    if last_report is None:
+    if last_report is None and not analysed_or_kept:
         log.error("No builds could be analysed.")
         raise typer.Exit(code=1)
+    if last_report is None:
+        # Every eligible build was already up to date; refresh hubs so nav stays valid.
+        last_report = player_dir / "index.html"
 
     global_index, hub_path = refresh_report_indexes(
         services.config.output_dir,
@@ -488,7 +655,7 @@ def run_all_builds(
     hub_path = hub_path or player_dir / "index.html"
     log.info(
         "Generated %d report(s) (≥%d games). Open %s (global index: %s)",
-        len(manifest_builds),
+        len(batch.manifest_builds),
         services.config.min_games,
         hub_path,
         global_index,

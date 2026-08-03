@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from dataclasses import dataclass
@@ -166,7 +167,11 @@ class ReportBuilder:
         """
         template = self._env.get_template("report.html")
         context.setdefault("generated_at", utc_now_iso())
-        output_path.write_text(template.render(**context), encoding="utf-8")
+        # Write-then-rename so a report being re-rendered (e.g. when peer
+        # analysis lands) is never served half-written.
+        tmp_path = output_path.with_suffix(".html.tmp")
+        tmp_path.write_text(template.render(**context), encoding="utf-8")
+        os.replace(tmp_path, output_path)
         self._log.info("Report written to %s", output_path)
         return output_path
 

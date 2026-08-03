@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}{{ player_label }} — {{ app_title }}{% endblock %}
+{% block nav %}
+<p class="page-nav"><a href="/">← New analysis</a></p>
+{% endblock %}
+{% block content %}
+<header class="page-header">
+  <h1 class="page-title">{{ player_label }}</h1>
+  <p class="page-sub" id="player-subtitle">Loading…</p>
+</header>
+
+<div class="panel" id="job-card" hidden>
+  <div class="status-line">
+    <span class="dot pulse" id="job-dot"></span>
+    <strong id="job-state">Queued</strong>
+    <span class="muted" id="job-eta"></span>
+  </div>
+  <div class="muted" id="job-detail" style="margin-top:6px;"></div>
+  <div class="progress-track" id="job-progress" hidden><div class="progress-fill" id="job-progress-fill"></div></div>
+  <div class="error" id="job-error"></div>
+</div>
+
+<div id="builds-section" hidden>
+  <h2 class="section-label">Reports by build</h2>
+  <div class="build-grid" id="builds-grid"></div>
+</div>
+
+<div class="panel" id="actions-card" style="margin-top:20px;" hidden>
+  <div class="status-line">
+    <button class="btn-secondary" id="refresh-btn" type="button">Refresh with latest games</button>
+    <span class="muted" id="refresh-hint"></span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var SLUG = {{ slug | tojson }};
+  var STATE_LABELS = {
+    queued: 'Queued',
+    fetching: 'Downloading matches',
+    analyzing: 'Analyzing',
+    report_ready: 'Report ready — peer analysis pending',
+    peer_running: 'Peer analysis running',
+    done: 'Complete',
+    failed: 'Failed'
+  };
+  var ACTIVE = ['queued', 'fetching', 'analyzing', 'report_ready', 'peer_running'];
+
+  var subtitle = document.getElementById('player-subtitle');
+  var jobCard = document.getElementById('job-card');
+  var jobDot = document.getElementById('job-dot');
+  var jobState = document.getElementById('job-state');
+  var jobDetail = document.getElementById('job-detail');
+  var jobEta = document.getElementById('job-eta');
+  var jobError = document.getElementById('job-error');
+  var progressTrack = document.getElementById('job-progress');
+  var progressFill = document.getElementById('job-progress-fill');
+  var buildsSection = document.getElementById('builds-section');
+  var buildsGrid = document.getElementById('builds-grid');
+  var actionsCard = document.getElementById('actions-card');
+  var refreshBtn = document.getElementById('refresh-btn');
+  var refreshHint = document.getElementById('refresh-hint');
+  var timer = null;
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function formatEta(seconds) {
+    if (seconds == null) return '';
+    var minutes = Math.max(1, Math.round(seconds / 60));
+    return '~' + minutes + ' min estimated wait';
+  }
+
+  function renderJob(job) {
+    if (!job) { jobCard.hidden = true; return; }
+    var active = ACTIVE.indexOf(job.state) !== -1;
+    jobCard.hidden = !active && job.state !== 'failed' && !job.error;
+    jobState.textContent = STATE_LABELS[job.state] || job.state;
+    jobDetail.textContent = job.stage_detail || '';
+    jobError.textContent = job.error || '';
+    jobDot.className = 'dot' + (active ? ' pulse' : job.state === 'failed' ? ' err' : ' ok');
+    if (job.state === 'queued' && job.queue_position != null) {
+      jobDetail.textContent = job.queue_position === 0
+        ? 'Next in line.'
+        : job.queue_position + ' job(s) ahead of you.';
+      jobEta.textContent = formatEta(job.eta_s);
+    } else {
+      jobEta.textContent = '';
+    }
+    if (job.stage_current != null && job.stage_total) {
+      progressTrack.hidden = false;
+      progressFill.style.width = Math.min(100, 100 * job.stage_current / job.stage_total) + '%';
+    } else {
+      progressTrack.hidden = true;
+    }
+    return active;
+  }
+
+  function renderBuilds(builds) {
+    buildsSection.hidden = builds.length === 0;
+    buildsGrid.innerHTML = '';
+    builds.forEach(function (build) {
+      var tile = document.createElement('a');
+      tile.className = 'build-card';
+      tile.href = build.href;
+      var winrate = build.winrate != null ? Math.round(build.winrate * 100) : null;
+      var winClass = winrate == null ? '' : (winrate >= 50 ? 'win' : 'loss');
+      var champion = build.champion || build.build_label || 'Build';
+      var roleLabel = build.role_display || build.role || '';
+      var iconHtml = build.champion_icon
+        ? '<img src="' + escapeHtml(build.champion_icon) + '" alt="" class="game-icon">'
+        : '';
+      var roleIconHtml = build.role_icon
+        ? '<img src="' + escapeHtml(build.role_icon) + '" alt="" title="' + escapeHtml(roleLabel) + '" class="role-icon role-icon--sm">'
+        : '';
+      tile.innerHTML =
+        iconHtml +
+        '<div class="build-card-body">' +
+          '<strong>' + escapeHtml(champion) +
+            (roleLabel
+              ? '<span class="build-card-role">' + roleIconHtml + ' ' + escapeHtml(roleLabel) + '</span>'
+              : '') +
+          '</strong>' +
+          '<div class="meta">' +
+            escapeHtml(String(build.games || 0)) + 'g' +
+            (winrate != null
+              ? ' · <span class="' + winClass + '">' + winrate + '%</span>'
+              : '') +
+          '</div>' +
+        '</div>';
+      buildsGrid.appendChild(tile);
+    });
+  }
+
+  function poll() {
+    fetch('/api/players/' + SLUG, { cache: 'no-store' })
+      .then(function (response) {
+        if (!response.ok) { throw new Error('HTTP ' + response.status); }
+        return response.json();
+      })
+      .then(function (data) {
+        var job = data.active_job;
+        var active = renderJob(job);
+        renderBuilds(data.builds || []);
+        actionsCard.hidden = !(data.has_report && !active);
+        if (data.has_report) {
+          subtitle.textContent = active
+            ? 'Reports below update as the analysis progresses.'
+            : data.peer_failed
+              ? 'Reports ready (peer analysis failed — refresh to retry).'
+              : 'Pick a champion + lane build below.';
+        } else {
+          subtitle.textContent = active
+            ? 'Your report is being prepared — this page updates automatically.'
+            : (job && job.state === 'failed')
+              ? 'Analysis failed.'
+              : 'No reports yet.';
+        }
+        if (!active && timer) {
+          clearInterval(timer);
+          timer = setInterval(poll, 30000);
+        }
+      })
+      .catch(function () { subtitle.textContent = 'Could not reach the server — retrying…'; });
+  }
+
+  refreshBtn.addEventListener('click', function () {
+    refreshBtn.disabled = true;
+    refreshHint.textContent = '';
+    fetch('/api/players/' + SLUG + '/refresh', { method: 'POST' })
+      .then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok) { throw new Error(data.detail || ('HTTP ' + response.status)); }
+          return data;
+        });
+      })
+      .then(function () {
+        if (timer) clearInterval(timer);
+        timer = setInterval(poll, 3000);
+        poll();
+        refreshBtn.disabled = false;
+      })
+      .catch(function (err) {
+        refreshHint.textContent = err.message || 'Refresh failed.';
+        refreshBtn.disabled = false;
+      });
+  });
+
+  timer = setInterval(poll, 3000);
+  poll();
+})();
+</script>
+{% endblock %}

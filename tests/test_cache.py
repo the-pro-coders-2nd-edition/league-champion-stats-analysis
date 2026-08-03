@@ -41,9 +41,11 @@ def test_claim_ownership_links_cached_matches(tmp_path: Path) -> None:
     store.save_match("EUW1_shared", "puuid-peer", payload)
     store.save_timeline("EUW1_shared", {"info": {"frames": []}})
     assert list(store.iter_match_ids("puuid-me")) == []
-    assert store.claim_ownership("puuid-me", ["EUW1_shared", "EUW1_missing"]) == 1
+    assert store.claim_ownership("puuid-me", ["EUW1_shared", "EUW1_missing"]) == [
+        "EUW1_shared"
+    ]
     assert list(store.iter_match_ids("puuid-me")) == ["EUW1_shared"]
-    assert store.claim_ownership("puuid-me", ["EUW1_shared"]) == 0
+    assert store.claim_ownership("puuid-me", ["EUW1_shared"]) == []
     store.close()
 
 
