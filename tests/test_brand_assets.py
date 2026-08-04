@@ -56,6 +56,9 @@ nav h1 { font-size: 18px; padding: 0 20px 16px; color: var(--accent); }
 <body>
 <nav>
   <h1>Champion Stats Analyzer</h1>
+  <div class="nav-back">
+    <a href="../../../index.html">← All players</a>
+  </div>
 </nav>
 </body>
 </html>
@@ -70,3 +73,5 @@ nav h1 { font-size: 18px; padding: 0 20px 16px; color: var(--accent); }
     assert 'rel="icon"' in text
     assert "app-brand--nav" in text
     assert "<h1>Champion Stats Analyzer</h1>" not in text
+    assert 'href="../../../index.html"' not in text
+    assert '<a href="/">← New analysis</a>' in text

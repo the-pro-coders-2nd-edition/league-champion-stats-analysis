@@ -12,8 +12,24 @@ from league_stats.core.config import WebConfig
 from league_stats.ingest.parser import BuildPool
 from league_stats.pipeline.fetch import FetchResult
 from league_stats.pipeline.orchestrator import BuildBatch, NoEligibleBuildsError
+from league_stats.pipeline.services import PlayerContext
 from league_stats.web import jobs, worker
 from league_stats.web.jobs import JobStore
+
+
+def _fake_context(
+    *,
+    riot_id: str = "Test",
+    tagline: str = "EUW",
+    puuid: str = "puuid",
+    profile_icon_id: int | None = 42,
+) -> PlayerContext:
+    return PlayerContext(
+        riot_id=riot_id,
+        tagline=tagline,
+        puuid=puuid,
+        profile_icon_id=profile_icon_id,
+    )
 
 
 @pytest.fixture()
@@ -66,9 +82,11 @@ def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, **overrides: Any) -> list[s
     calls: list[str] = []
 
     defaults: dict[str, Any] = {
-        "_build_job_services": lambda job, cfg, reporter: _fake_services(),
+        "_build_job_services": lambda job, cfg, reporter, **kwargs: _fake_services(),
         "fetch_matches": lambda services: calls.append("fetch")
-        or FetchResult(contexts=["ctx"], new_match_ids=frozenset()),
+        or FetchResult(contexts=[_fake_context()], new_match_ids=frozenset()),
+        "resolve_player_contexts": lambda services: calls.append("resolve")
+        or [_fake_context()],
         "prepare_builds": lambda services, contexts: calls.append("prepare") or _fake_batch(),
         "group_records": lambda records, champion, role: ["record"],
         "resolve_ranked": lambda services, batch, records: calls.append("ranked") or None,
@@ -87,6 +105,19 @@ def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, **overrides: Any) -> list[s
     for name, fn in defaults.items():
         monkeypatch.setattr(worker, name, fn)
     return calls
+
+
+def _claimed_regenerate_job(store: JobStore) -> dict[str, Any]:
+    store.enqueue(
+        kind=jobs.JOB_KIND_REGENERATE,
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        player_slug="test_euw",
+    )
+    job = store.claim_next()
+    assert job is not None
+    return job
 
 
 def test_execute_job_two_stage_happy_path(
@@ -131,6 +162,36 @@ def test_execute_job_skips_unchanged_builds(
     player = store.get_player("test_euw")
     assert player["base_completed_at"] is not None
     assert player["peer_completed_at"] is not None
+
+
+def test_execute_regenerate_uses_cache_and_forces_reanalysis(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regenerate skips Riot download and re-analyses even with no new games."""
+    job = _claimed_regenerate_job(store)
+    seen_new_ids: list[Any] = []
+
+    def track_skip(config: Any, pool: Any, records: Any, new_ids: Any) -> bool:
+        seen_new_ids.append(new_ids)
+        return False
+
+    calls = _patch_pipeline(monkeypatch, should_skip_unchanged_build=track_skip)
+
+    worker.execute_job(job, store, web_config)
+
+    final = store.get(int(job["id"]))
+    assert final["state"] == jobs.DONE
+    assert final["error"] == ""
+    assert calls == [
+        "resolve",
+        "prepare",
+        "ranked",
+        "analyze(peer=False)",
+        "peer",
+        "analyze(peer=True)",
+    ]
+    assert "fetch" not in calls
+    assert seen_new_ids == [None, None]
 
 
 def test_execute_job_peer_failure_is_soft(
@@ -199,14 +260,32 @@ def test_execute_job_passes_group_players_to_config(
     assert job is not None
     captured: dict[str, Any] = {}
 
-    def capture_services(claimed: dict[str, Any], cfg: WebConfig, reporter: Any) -> Any:
+    def capture_services(
+        claimed: dict[str, Any], cfg: WebConfig, reporter: Any, **kwargs: Any
+    ) -> Any:
         captured["players"] = claimed.get("players")
         return _fake_services()
 
-    _patch_pipeline(monkeypatch, _build_job_services=capture_services)
+    group_contexts = [
+        _fake_context(riot_id="Alice", tagline="EUW", puuid="alice", profile_icon_id=1),
+        _fake_context(riot_id="Bob", tagline="EUW", puuid="bob", profile_icon_id=2),
+    ]
+    _patch_pipeline(
+        monkeypatch,
+        _build_job_services=capture_services,
+        fetch_matches=lambda services: FetchResult(
+            contexts=group_contexts, new_match_ids=frozenset()
+        ),
+    )
     worker.execute_job(job, store, web_config)
     assert captured["players"] == players
     assert store.get(int(job["id"]))["state"] == jobs.DONE
+    saved = store.get_player("alice_euw__bob_euw")
+    assert saved is not None
+    assert saved["players"] == [
+        {"riot_id": "Alice", "tagline": "EUW", "profile_icon_id": 1},
+        {"riot_id": "Bob", "tagline": "EUW", "profile_icon_id": 2},
+    ]
 
 
 def test_execute_job_no_builds_marks_failed(
@@ -224,3 +303,26 @@ def test_execute_job_no_builds_marks_failed(
     final = store.get(int(job["id"]))
     assert final["state"] == jobs.FAILED
     assert "20 ranked games" in final["error"]
+
+
+def test_tracked_players_recovers_group_from_registry(store: JobStore) -> None:
+    """Incomplete job players_json must not collapse a group slug to a solo path."""
+    players = [
+        {"riot_id": "Alice", "tagline": "EUW"},
+        {"riot_id": "Bob", "tagline": "EUW"},
+    ]
+    store.upsert_player(
+        slug="alice_euw__bob_euw",
+        riot_id="Alice",
+        tagline="EUW",
+        region="euw1",
+        players=players,
+    )
+    job = {
+        "player_slug": "alice_euw__bob_euw",
+        "riot_id": "Alice",
+        "tagline": "EUW",
+        # Only the primary — the bug that wrote solo reports under a group job.
+        "players_json": '[{"riot_id":"Alice","tagline":"EUW"}]',
+    }
+    assert worker._tracked_players_for_job(job, store) == players

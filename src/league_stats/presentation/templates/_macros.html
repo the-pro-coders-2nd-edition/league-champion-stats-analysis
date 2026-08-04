@@ -17,46 +17,14 @@
 </span>
 {%- endmacro %}
 
-{% macro build_card(build, variant='nav') -%}
-<a class="build-card{% if variant == 'catalog' %} build-card--catalog{% endif %}{% if build.selected %} is-default{% endif %}"
-   href="{{ build.href }}"
-   {%- if variant == 'catalog' %}
-   data-champion="{{ build.champion }}"
-   data-player="{{ build.player }}"
-   data-role="{{ build.role }}"
-   data-games="{{ build.games }}"
-   data-winrate="{{ build.winrate }}"
-   data-updated="{{ build.updated_ts }}"
-   {%- endif %}>
+{% macro build_card(build) -%}
+<a class="build-card{% if build.selected %} is-default{% endif %}" href="{{ build.href }}">
   {%- if build.champion_icon -%}
   <img src="{{ build.champion_icon }}" alt="" class="game-icon">
   {%- endif -%}
   <div class="build-card-body">
-    {%- if variant == 'catalog' -%}
-    <strong>
-      {{ build.champion }}
-      <span class="build-card-role">
-        {%- if build.role_icon -%}
-        <img src="{{ build.role_icon }}" alt="{{ build.role_display }}" title="{{ build.role_display }}" class="role-icon role-icon--sm">
-        {%- endif -%}
-        {{ build.role_display }}
-      </span>
-    </strong>
-    {%- else -%}
     <strong>{{ build_heading(build.champion, build.role_icon, build.role_display) }}</strong>
-    {%- endif -%}
-    {%- if variant == 'catalog' -%}
-    <div class="build-card-player">{{ build.player }}{% if build.is_group %} <span class="badge-group">Group</span>{% endif %}</div>
-    {%- endif -%}
-    <div class="meta">
-      {{ build.games }}g ·
-      {%- if variant == 'catalog' -%}
-      <span class="{{ 'win' if build.winrate >= 0.5 else 'loss' }}">{{ '%.0f' % (build.winrate * 100) }}%</span>
-      {%- else -%}
-      {{ '%.0f' % (build.winrate * 100) }}%
-      {%- endif -%}
-      {%- if variant == 'catalog' %} · {{ generated_at_time(build.generated_at) }}{%- endif -%}
-    </div>
+    <div class="meta">{{ build.games }}g · {{ '%.0f' % (build.winrate * 100) }}%</div>
   </div>
 </a>
 {%- endmacro %}

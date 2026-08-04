@@ -65,6 +65,33 @@ def test_landing_page_lists_reports(client: TestClient) -> None:
     assert "Test#EUW" in response.text
 
 
+def test_landing_page_shows_profile_icons(client: TestClient) -> None:
+    icon_dir = client.web_config.output_dir / "assets" / "profile_icons"
+    icon_dir.mkdir(parents=True, exist_ok=True)
+    (icon_dir / "456.png").write_bytes(b"png")
+    (icon_dir / "789.png").write_bytes(b"png")
+    _write_report(
+        client.web_config.output_dir,
+        "alice_euw__bob_euw",
+        "viktor_middle",
+        player="Alice#EUW, Bob#EUW",
+        riot_id="Alice",
+        tagline="EUW",
+        players=[
+            {"riot_id": "Alice", "tagline": "EUW", "profile_icon_id": 456},
+            {"riot_id": "Bob", "tagline": "EUW", "profile_icon_id": 789},
+        ],
+    )
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "Alice#EUW" in response.text
+    assert "Bob#EUW" in response.text
+    assert "player-card-member" in response.text
+    assert 'src="/out/assets/profile_icons/456.png"' in response.text
+    assert 'src="/out/assets/profile_icons/789.png"' in response.text
+    assert "Alice#EUW, Bob#EUW" not in response.text
+
+
 def test_landing_shows_busy_dot_for_active_jobs(client: TestClient) -> None:
     _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
     client.post("/api/analyses", json={"riot_id": "Test#EUW", "region": "euw1"})
@@ -161,11 +188,24 @@ def test_refresh_recovers_identity_from_disk(client: TestClient) -> None:
     assert client.post("/api/players/nobody/refresh").status_code == 404
 
 
+def test_regenerate_queues_from_disk(client: TestClient) -> None:
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    response = client.post("/api/players/test_euw/regenerate")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job"]["kind"] == jobs.JOB_KIND_REGENERATE
+    assert body["job"]["state"] == jobs.QUEUED
+
+    assert client.post("/api/players/nobody/regenerate").status_code == 404
+
+
 def test_player_page_renders(client: TestClient) -> None:
     _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
     response = client.get("/players/test_euw")
     assert response.status_code == 200
     assert "test_euw" in response.text
+    assert "Refresh with latest games" in response.text
+    assert "Regenerate with same games" in response.text
 
 
 def test_chat_proxy(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -243,6 +283,50 @@ def test_refresh_recovers_group_from_disk(client: TestClient) -> None:
         {"riot_id": "Alice", "tagline": "EUW"},
         {"riot_id": "Bob", "tagline": "EUW"},
     ]
+
+
+def test_regenerate_recovers_group_from_player_label(client: TestClient) -> None:
+    """Legacy CLI group metas only stored a comma-separated player label."""
+    _write_report(
+        client.web_config.output_dir,
+        "alice_euw__bob_euw",
+        "viktor_middle",
+        player="Alice#EUW, Bob#EUW",
+        riot_id="Alice",
+        tagline="EUW",
+    )
+    # Stale registry row from an earlier buggy recovery (primary only).
+    client.job_store.upsert_player(
+        slug="alice_euw__bob_euw",
+        riot_id="Alice",
+        tagline="EUW",
+        region="euw1",
+        players=[{"riot_id": "Alice", "tagline": "EUW"}],
+    )
+    response = client.post("/api/players/alice_euw__bob_euw/regenerate")
+    assert response.status_code == 200
+    job = client.job_store.get(int(response.json()["job"]["id"]))
+    assert job is not None
+    assert job["players"] == [
+        {"riot_id": "Alice", "tagline": "EUW"},
+        {"riot_id": "Bob", "tagline": "EUW"},
+    ]
+    saved = client.job_store.get_player("alice_euw__bob_euw")
+    assert saved is not None
+    assert saved["players"] == job["players"]
+
+    status = client.get("/api/players/alice_euw__bob_euw").json()
+    assert status["player_label"] == "Alice#EUW, Bob#EUW"
+    assert [player["label"] for player in status["players"]] == [
+        "Alice#EUW",
+        "Bob#EUW",
+    ]
+
+    page = client.get("/players/alice_euw__bob_euw")
+    assert page.status_code == 200
+    assert "player-member" in page.text
+    assert "Alice#EUW" in page.text
+    assert "Bob#EUW" in page.text
 
 
 def test_landing_page_mentions_group_reports(client: TestClient) -> None:

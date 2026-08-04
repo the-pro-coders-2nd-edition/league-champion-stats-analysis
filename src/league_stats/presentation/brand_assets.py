@@ -108,6 +108,12 @@ def refresh_saved_report_branding(output_dir: Path) -> int:
 
         text = text.replace(f"<h1>{APP_TITLE}</h1>", brand_markup, 1)
 
+        # Old global index page is gone; send nav-back to the web home page.
+        text = text.replace(
+            '<a href="../../../index.html">← All players</a>',
+            '<a href="/">← New analysis</a>',
+        )
+
         if text != original:
             report_html.write_text(text, encoding="utf-8")
             updated += 1

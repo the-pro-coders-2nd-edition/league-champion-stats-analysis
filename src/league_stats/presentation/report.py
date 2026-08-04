@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
-import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,52 +33,9 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def parse_generated_at_ts(raw: str | None) -> int:
-    """Return UTC epoch milliseconds for sorting; ``0`` when unparseable."""
-    if not raw:
-        return 0
-    legacy = re.match(r"^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})\s+UTC$", raw)
-    if legacy:
-        dt = datetime(
-            int(legacy.group(1)),
-            int(legacy.group(2)),
-            int(legacy.group(3)),
-            int(legacy.group(4)),
-            int(legacy.group(5)),
-            tzinfo=timezone.utc,
-        )
-        return int(dt.timestamp() * 1000)
-    date_only = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", raw)
-    if date_only:
-        dt = datetime(
-            int(date_only.group(1)),
-            int(date_only.group(2)),
-            int(date_only.group(3)),
-            tzinfo=timezone.utc,
-        )
-        return int(dt.timestamp() * 1000)
-    try:
-        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return int(dt.timestamp() * 1000)
-    except ValueError:
-        return 0
-
-
 def is_group_player_label(player: str) -> bool:
     """True when the label represents a pooled multi-account run."""
     return "," in player
-
-
-def enrich_index_report(report: dict[str, Any]) -> dict[str, Any]:
-    """Add index-page fields to one report metadata dict."""
-    player = str(report.get("player", ""))
-    generated_at = str(report.get("generated_at", ""))
-    report["is_group"] = is_group_player_label(player)
-    report["updated_ts"] = parse_generated_at_ts(generated_at)
-    report["default_href"] = str(report.get("href", ""))
-    return report
 
 
 @dataclass(frozen=True)
@@ -173,41 +128,6 @@ class ReportBuilder:
         tmp_path.write_text(template.render(**context), encoding="utf-8")
         os.replace(tmp_path, output_path)
         self._log.info("Report written to %s", output_path)
-        return output_path
-
-    def render_index(self, output_dir: Path, reports: list[dict[str, Any]]) -> Path:
-        """Render the report switcher index page.
-
-        Args:
-            output_dir: Root output directory (``index.html`` is written here).
-            reports: Metadata dicts for each saved report (newest first).
-
-        Returns:
-            Path of ``index.html``.
-        """
-        template = self._env.get_template("index.html")
-        output_path = output_dir / "index.html"
-        enriched = [enrich_index_report(dict(report)) for report in reports]
-        players = group_reports_by_player(enriched)
-        flat_reports = sorted(
-            enriched,
-            key=lambda entry: (entry.get("games", 0), entry.get("updated_ts", 0)),
-            reverse=True,
-        )
-        context = {
-            **brand_context(from_dir=output_dir, output_dir=output_dir),
-            "players": players,
-            "reports": flat_reports,
-            "report_count": len(enriched),
-            "generated_at": utc_now_iso(),
-        }
-        output_path.write_text(template.render(**context), encoding="utf-8")
-        self._log.info(
-            "Report index written to %s (%d reports, %d players)",
-            output_path,
-            len(reports),
-            len(players),
-        )
         return output_path
 
     def render_player_hub(self, player_dir: Path, manifest: dict[str, Any]) -> Path:
@@ -420,10 +340,10 @@ def refresh_report_indexes(
     player_dir: Path | None = None,
     player_label: str | None = None,
     assets: "DDragonAssets | None" = None,
-) -> tuple[Path, Path | None]:
-    """Rebuild global and optional player report index pages.
+) -> Path | None:
+    """Refresh saved-report branding and optionally rebuild a player hub.
 
-    Call after each report is written so indexes stay current during batch runs.
+    Call after each report is written so hubs stay current during batch runs.
 
     Args:
         output_dir: Root output directory.
@@ -432,15 +352,14 @@ def refresh_report_indexes(
         player_label: Optional player display label for the hub.
 
     Returns:
-        Tuple of global index path and optional player hub path.
+        Optional player hub path.
     """
-    global_index = refresh_report_index(output_dir, template_dir, assets=assets)
-    player_hub = None
-    if player_dir is not None:
-        player_hub = refresh_player_hub(
-            player_dir, template_dir, player_label=player_label, assets=assets
-        )
-    return global_index, player_hub
+    refresh_saved_report_branding(output_dir)
+    if player_dir is None:
+        return None
+    return refresh_player_hub(
+        player_dir, template_dir, player_label=player_label, assets=assets
+    )
 
 
 def discover_reports(output_dir: Path) -> list[dict[str, Any]]:
@@ -471,98 +390,6 @@ def discover_reports(output_dir: Path) -> list[dict[str, Any]]:
 
     entries.sort(key=lambda entry: entry.get("generated_at", ""), reverse=True)
     return entries
-
-
-def group_reports_by_player(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Group flat report metadata into per-player summary cards for the global index.
-
-    Args:
-        reports: Metadata dicts from :func:`discover_reports` (enriched for index).
-
-    Returns:
-        Player groups sorted by most recent update. Each group contains ``player``,
-        ``default_href``, ``build_count``, ``total_games``, ``last_updated``, and
-        ``reports`` (builds sorted by games).
-    """
-    by_player: dict[str, list[dict[str, Any]]] = {}
-
-    for report in reports:
-        player = str(report.get("player", ""))
-        by_player.setdefault(player, []).append(report)
-
-    groups: list[dict[str, Any]] = []
-    for player, builds in by_player.items():
-        builds.sort(
-            key=lambda entry: (entry.get("games", 0), entry.get("updated_ts", 0)),
-            reverse=True,
-        )
-        total_games = sum(int(entry.get("games", 0)) for entry in builds)
-        last_updated_ts = max(int(entry.get("updated_ts", 0)) for entry in builds)
-        last_updated = max(
-            (str(entry.get("generated_at", "")) for entry in builds),
-            key=lambda value: parse_generated_at_ts(value),
-            default="",
-        )
-        groups.append(
-            {
-                "player": player,
-                "is_group": is_group_player_label(player),
-                "default_href": str(builds[0].get("href", "")),
-                "build_count": len(builds),
-                "total_games": total_games,
-                "last_updated": last_updated,
-                "last_updated_ts": last_updated_ts,
-                "reports": builds,
-            }
-        )
-    groups.sort(key=lambda group: group.get("last_updated_ts", 0), reverse=True)
-    return groups
-
-
-def copy_index_static(template_dir: Path, output_dir: Path) -> Path:
-    """Copy shared index stylesheet into the output assets tree."""
-    src = template_dir / "static" / "index.css"
-    dest_dir = output_dir / "assets" / "static"
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / "index.css"
-    shutil.copy2(src, dest)
-    return dest
-
-
-def refresh_report_index(
-    output_dir: Path,
-    template_dir: Path,
-    *,
-    assets: "DDragonAssets | None" = None,
-) -> Path:
-    """Rebuild ``output/index.html`` from on-disk report metadata.
-
-    Args:
-        output_dir: Root output directory.
-        template_dir: Directory containing ``index.html``.
-        assets: Optional icon catalog for champion images.
-
-    Returns:
-        Path of the rendered index page.
-    """
-    reports = discover_reports(output_dir)
-    if assets is not None:
-        for report in reports:
-            riot_id = str(report.get("champion", ""))
-            report["champion_icon"] = assets.champion_href(
-                riot_id,
-                from_dir=output_dir,
-            )
-            report["champion"] = champion_display_name(riot_id)
-            report["role_icon"] = assets.role_href(
-                str(report.get("role", "")),
-                from_dir=output_dir,
-            )
-    builder = ReportBuilder(template_dir)
-    copy_index_static(template_dir, output_dir)
-    index_path = builder.render_index(output_dir, reports)
-    refresh_saved_report_branding(output_dir)
-    return index_path
 
 
 def score_badge(recommendation: Recommendation) -> str:

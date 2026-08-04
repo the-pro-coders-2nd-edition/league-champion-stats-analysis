@@ -10,14 +10,16 @@ served and the job still completes.
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from typing import Any
 
+from league_stats.core.champions import players_group_slug
 from league_stats.core.config import PlayerIdentity, WebConfig, load_config
 from league_stats.core.models import RankedEntry
 from league_stats.infra.cache import HttpCache, MatchStore
 from league_stats.infra.ddragon_assets import DDragonAssets
 from league_stats.infra.riot_api import RiotApiClient, RiotApiError, shared_rate_limiter
-from league_stats.pipeline.fetch import fetch_matches, group_records
+from league_stats.pipeline.fetch import fetch_matches, group_records, resolve_player_contexts
 from league_stats.pipeline.orchestrator import (
     BuildBatch,
     NoEligibleBuildsError,
@@ -27,19 +29,63 @@ from league_stats.pipeline.orchestrator import (
     resolve_ranked,
     should_skip_unchanged_build,
 )
-from league_stats.pipeline.services import Services
+from league_stats.pipeline.services import PlayerContext, Services
+from league_stats.presentation.report import discover_player_builds
 from league_stats.web import jobs as job_states
-from league_stats.web.jobs import JobStore, decode_players
+from league_stats.web.jobs import JOB_KIND_REGENERATE, JobStore, decode_players
 from league_stats.web.progress import JobProgressReporter
 from league_stats.utils import get_logger
 
 CHAT_ENDPOINT = "/api/chat"
 
 
-def _build_job_services(
-    job: dict[str, Any], web_config: WebConfig, reporter: JobProgressReporter
-) -> Services:
-    """Wire pipeline services for one job (shared rate limiter, DB reporter)."""
+def _slug_for_players(players: list[dict[str, Any]]) -> str:
+    """Filesystem group slug for a player list."""
+    return players_group_slug(
+        [(str(p["riot_id"]), str(p["tagline"])) for p in players]
+    )
+
+
+def _players_from_reports(output_dir: Path, job_slug: str) -> list[dict[str, Any]]:
+    """Recover pooled identities from on-disk report metadata when the DB drifted."""
+    builds = discover_player_builds(output_dir / "reports" / job_slug)
+    for build in builds:
+        raw = build.get("players")
+        if not isinstance(raw, list) or not raw:
+            continue
+        players: list[dict[str, Any]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("riot_id", "")).strip()
+            tag = str(item.get("tagline", "")).strip()
+            if not name or not tag:
+                continue
+            entry: dict[str, Any] = {"riot_id": name, "tagline": tag}
+            raw_icon = item.get("profile_icon_id")
+            if raw_icon is not None:
+                try:
+                    entry["profile_icon_id"] = int(raw_icon)
+                except (TypeError, ValueError):
+                    pass
+            players.append(entry)
+        if players and _slug_for_players(players) == job_slug:
+            return players
+    return []
+
+
+def _tracked_players_for_job(
+    job: dict[str, Any],
+    store: JobStore | None = None,
+    *,
+    output_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Resolve identities for a job, recovering from the registry/disk if needed.
+
+    Report output paths are derived from the player list. If ``players_json`` is
+    incomplete relative to ``player_slug``, prefer the registry row (or on-disk
+    group metadata) so solo and pooled group directories stay aligned with the job.
+    """
     tracked = decode_players(
         job.get("players_json"),
         riot_id=str(job.get("riot_id", "")),
@@ -47,9 +93,41 @@ def _build_job_services(
     )
     if not tracked and job.get("players"):
         tracked = list(job["players"])
+    job_slug = str(job.get("player_slug", ""))
+    if tracked and job_slug and _slug_for_players(tracked) == job_slug:
+        return tracked
+    if store is not None and job_slug:
+        row = store.get_player(job_slug)
+        registered = list(row.get("players") or []) if row else []
+        if registered and _slug_for_players(registered) == job_slug:
+            return registered
+    if output_dir is not None and job_slug:
+        from_disk = _players_from_reports(output_dir, job_slug)
+        if from_disk:
+            return from_disk
+    return tracked or [
+        {
+            "riot_id": str(job.get("riot_id", "")),
+            "tagline": str(job.get("tagline", "")),
+        }
+    ]
+
+
+def _build_job_services(
+    job: dict[str, Any],
+    web_config: WebConfig,
+    reporter: JobProgressReporter,
+    *,
+    job_store: JobStore | None = None,
+) -> Services:
+    """Wire pipeline services for one job (shared rate limiter, DB reporter)."""
+    tracked = _tracked_players_for_job(
+        job, job_store, output_dir=web_config.output_dir
+    )
     players = [
         PlayerIdentity(riot_id=entry["riot_id"], tagline=entry["tagline"])
         for entry in tracked
+        if entry.get("riot_id") and entry.get("tagline")
     ] or None
     config = load_config(
         riot_id=job["riot_id"],
@@ -57,9 +135,19 @@ def _build_job_services(
         region=job["region"],
         output_dir=web_config.output_dir,
         chat_endpoint=CHAT_ENDPOINT if web_config.gemini_api_key else None,
-        status_endpoint=f"/api/players/{job['player_slug']}",
         players=players,
     )
+    # Poll URL must match the report directory slug. Mismatched polls compare
+    # timestamps across solo vs group folders and infinite-reload the page.
+    report_slug = config.reports_group_slug
+    job_slug = str(job["player_slug"])
+    if report_slug != job_slug:
+        get_logger("worker").warning(
+            "Job slug %r != reports_group_slug %r; binding status_endpoint to report path",
+            job_slug,
+            report_slug,
+        )
+    config.status_endpoint = f"/api/players/{report_slug}"
     config.ensure_directories()
     http_cache = HttpCache(config.http_cache_dir)
     store = MatchStore(config.db_path)
@@ -191,20 +279,44 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
     log.info("Job %d started: %s (%s)", job_id, slug, job["kind"])
 
     try:
-        services = _build_job_services(job, web_config, reporter)
+        services = _build_job_services(
+            job, web_config, reporter, job_store=store
+        )
     except Exception as exc:
         store.set_state(job_id, job_states.FAILED, error=str(exc))
         log.exception("Job %d failed during setup", job_id)
         return
 
     try:
-        store.set_state(job_id, job_states.FETCHING, detail="Looking up match history…")
-        fetch_result = fetch_matches(services)
+        contexts: list[PlayerContext]
+        new_match_ids: frozenset[str] | None
+        if job["kind"] == JOB_KIND_REGENERATE:
+            # Re-analyse from the local match store; do not download newer games.
+            store.set_state(
+                job_id, job_states.FETCHING, detail="Loading cached matches…"
+            )
+            contexts = resolve_player_contexts(services)
+            new_match_ids = None
+        else:
+            store.set_state(
+                job_id, job_states.FETCHING, detail="Looking up match history…"
+            )
+            fetch_result = fetch_matches(services)
+            contexts = fetch_result.contexts
+            new_match_ids = fetch_result.new_match_ids
+
+        store.upsert_player(
+            slug=slug,
+            riot_id=str(job["riot_id"]),
+            tagline=str(job["tagline"]),
+            region=str(job["region"]),
+            players=[context.as_player_dict() for context in contexts],
+        )
 
         store.set_state(job_id, job_states.ANALYZING, detail="Discovering builds…")
-        batch = prepare_builds(services, fetch_result.contexts)
+        batch = prepare_builds(services, contexts)
         ranked, available_any = _run_stage_a(
-            services, store, job, batch, fetch_result.new_match_ids
+            services, store, job, batch, new_match_ids
         )
         if not available_any:
             raise NoEligibleBuildsError("No builds could be analysed.")
@@ -220,7 +332,7 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
         try:
             store.set_state(job_id, job_states.PEER_RUNNING, detail="Peer analysis starting…")
             _run_stage_b(
-                services, store, job, batch, ranked, fetch_result.new_match_ids
+                services, store, job, batch, ranked, new_match_ids
             )
         except Exception as exc:
             peer_error = f"Peer analysis failed: {exc}"

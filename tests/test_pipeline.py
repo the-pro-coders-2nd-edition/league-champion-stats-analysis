@@ -90,7 +90,8 @@ def test_full_pipeline_generates_all_artifacts(tmp_path: Path) -> None:
     assert "Form tracker" in html
     assert 'id="progression-views-data"' in html
     assert "Rank peer comparison" in html
-    assert "All players" in html
+    assert "← New analysis" in html
+    assert 'href="/"' in html
 
     expected = [
         "summary.json", "matches.csv", "deaths.csv", "timeline.csv", "matchups.csv",
@@ -102,9 +103,8 @@ def test_full_pipeline_generates_all_artifacts(tmp_path: Path) -> None:
         assert (config.report_dir / name).exists(), f"missing export: {name}"
     assert (config.run_graphs_dir / "death_heatmap.png").exists()
 
-    index_path = config.output_dir / "index.html"
-    assert index_path.exists()
-    assert "All players" in html or "Test#EUW" in html
+    assert not (config.output_dir / "index.html").exists()
+    assert (config.player_reports_dir / "index.html").exists()
 
 
 def test_report_embeds_chatbot_panel_and_stats(tmp_path: Path) -> None:
@@ -140,3 +140,30 @@ def test_report_embeds_chatbot_panel_and_stats(tmp_path: Path) -> None:
     assert embedded_stats["games"] == 15
 
     assert "var GEMINI_API_KEY = null;" in html
+
+
+def test_web_stage_a_report_shows_peer_pending_placeholder(tmp_path: Path) -> None:
+    """Web base reports keep a Peers section while peer comparison is still running."""
+    config = AppConfig(
+        riot_id="Test",
+        tagline="EUW",
+        region="europe",
+        api_key="RGAPI-test",
+        output_dir=tmp_path / "output",
+        graphs_dir=tmp_path / "graphs",
+        cache_dir=tmp_path / "cache",
+        template_dir=Path(__file__).resolve().parent.parent
+        / "src/league_stats/presentation/templates",
+        status_endpoint="/api/players/test_euw",
+        chat_endpoint="/api/chat",
+    )
+    config.ensure_directories()
+
+    report_path = run_analysis(config, _make_records(), peer_comparison=None)
+    html = report_path.read_text(encoding="utf-8")
+
+    assert 'id="rank-peers"' in html
+    assert 'data-peer-pending="1"' in html
+    assert 'id="rank-peers-pending"' in html
+    assert "Advanced stats" in html
+    assert 'href="#rank-peers"' in html

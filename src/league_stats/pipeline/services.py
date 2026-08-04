@@ -34,10 +34,21 @@ class PlayerContext:
     riot_id: str
     tagline: str
     puuid: str
+    profile_icon_id: int | None = None
 
     @property
     def label(self) -> str:
         return f"{self.riot_id}#{self.tagline}"
+
+    def as_player_dict(self) -> dict[str, str | int]:
+        """Identity dict suitable for job/meta persistence (optional icon)."""
+        payload: dict[str, str | int] = {
+            "riot_id": self.riot_id,
+            "tagline": self.tagline,
+        }
+        if self.profile_icon_id is not None:
+            payload["profile_icon_id"] = self.profile_icon_id
+        return payload
 
 
 def parse_players_cli(

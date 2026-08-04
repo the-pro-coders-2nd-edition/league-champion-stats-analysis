@@ -30,6 +30,7 @@ TERMINAL_STATES: tuple[str, ...] = (DONE, FAILED)
 
 JOB_KIND_ANALYZE = "analyze"
 JOB_KIND_REFRESH = "refresh"
+JOB_KIND_REGENERATE = "regenerate"
 
 # Used for ETA display until enough completed jobs exist to average.
 DEFAULT_JOB_DURATION_S = 20 * 60
@@ -69,15 +70,27 @@ CREATE TABLE IF NOT EXISTS players (
 """
 
 
-def encode_players(players: list[dict[str, str]]) -> str:
+def encode_players(players: list[dict[str, Any]]) -> str:
     """Serialize tracked players for SQLite storage."""
-    return json.dumps(
-        [{"riot_id": p["riot_id"], "tagline": p["tagline"]} for p in players],
-        separators=(",", ":"),
-    )
+    payload: list[dict[str, Any]] = []
+    for player in players:
+        entry: dict[str, Any] = {
+            "riot_id": player["riot_id"],
+            "tagline": player["tagline"],
+        }
+        raw_icon = player.get("profile_icon_id")
+        if raw_icon is not None:
+            try:
+                entry["profile_icon_id"] = int(raw_icon)
+            except (TypeError, ValueError):
+                pass
+        payload.append(entry)
+    return json.dumps(payload, separators=(",", ":"))
 
 
-def decode_players(raw: str | None, *, riot_id: str = "", tagline: str = "") -> list[dict[str, str]]:
+def decode_players(
+    raw: str | None, *, riot_id: str = "", tagline: str = ""
+) -> list[dict[str, Any]]:
     """Deserialize tracked players, falling back to the primary identity."""
     if raw:
         try:
@@ -85,14 +98,22 @@ def decode_players(raw: str | None, *, riot_id: str = "", tagline: str = "") -> 
         except json.JSONDecodeError:
             parsed = None
         if isinstance(parsed, list) and parsed:
-            players: list[dict[str, str]] = []
+            players: list[dict[str, Any]] = []
             for item in parsed:
                 if not isinstance(item, dict):
                     continue
                 name = str(item.get("riot_id", "")).strip()
                 tag = str(item.get("tagline", "")).strip()
-                if name and tag:
-                    players.append({"riot_id": name, "tagline": tag})
+                if not name or not tag:
+                    continue
+                entry: dict[str, Any] = {"riot_id": name, "tagline": tag}
+                raw_icon = item.get("profile_icon_id")
+                if raw_icon is not None:
+                    try:
+                        entry["profile_icon_id"] = int(raw_icon)
+                    except (TypeError, ValueError):
+                        pass
+                players.append(entry)
             if players:
                 return players
     if riot_id and tagline:
@@ -100,7 +121,7 @@ def decode_players(raw: str | None, *, riot_id: str = "", tagline: str = "") -> 
     return []
 
 
-def players_label(players: list[dict[str, str]]) -> str:
+def players_label(players: list[dict[str, Any]]) -> str:
     """Comma-separated display label for tracked players."""
     return ", ".join(f"{p['riot_id']}#{p['tagline']}" for p in players)
 
@@ -140,7 +161,7 @@ class JobStore:
         tagline: str,
         region: str,
         player_slug: str,
-        players: list[dict[str, str]] | None = None,
+        players: list[dict[str, Any]] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         """Queue a job, deduplicating against an existing active job.
 
@@ -363,7 +384,7 @@ class JobStore:
         riot_id: str,
         tagline: str,
         region: str,
-        players: list[dict[str, str]] | None = None,
+        players: list[dict[str, Any]] | None = None,
     ) -> None:
         """Register (or update the identity of) a player or group."""
         tracked = players or [{"riot_id": riot_id, "tagline": tagline}]

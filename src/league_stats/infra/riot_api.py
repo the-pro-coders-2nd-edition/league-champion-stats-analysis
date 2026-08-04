@@ -239,6 +239,32 @@ class RiotApiClient:
         self._log.info("Resolved %s#%s -> %s...", riot_id, tagline, puuid[:12])
         return puuid
 
+    def fetch_profile_icon_id(self, puuid: str) -> int | None:
+        """Fetch the player's current profile icon id via summoner-v4.
+
+        Summoner-v4 is platform-routed (same as league-v4). Failures are soft:
+        missing icons should not block analysis.
+
+        Args:
+            puuid: The player's PUUID.
+
+        Returns:
+            The ``profileIconId``, or ``None`` when unavailable.
+        """
+        url = f"{self.platform_base}/lol/summoner/v4/summoners/by-puuid/{puuid}"
+        try:
+            payload = self._get(url, ttl_s=15 * 60)
+        except RiotApiError as exc:
+            self._log.warning("Could not fetch profile icon for %s: %s", puuid[:12], exc)
+            return None
+        raw = payload.get("profileIconId")
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
     def fetch_solo_rank(self, puuid: str) -> RankedEntry | None:
         """Fetch the player's ranked solo queue entry via league-v4.
 

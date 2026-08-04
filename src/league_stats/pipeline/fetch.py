@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from tqdm import tqdm
 
+from league_stats.core.config import PlayerIdentity
 from league_stats.core.models import MatchRecord
 from league_stats.core.progress import STAGE_FETCHING, STAGE_PARSING
 from league_stats.ingest.parser import BaseMatchFilter, ItemCatalog, MatchParser
@@ -21,6 +22,20 @@ class FetchResult:
     new_match_ids: frozenset[str]
 
 
+def _resolve_player_context(services: Services, player: PlayerIdentity) -> PlayerContext:
+    """Resolve PUUID and cache the current profile icon when available."""
+    puuid = services.client.resolve_puuid(player.riot_id, player.tagline)
+    icon_id = services.client.fetch_profile_icon_id(puuid)
+    if icon_id is not None:
+        services.assets.ensure_profile_icon(icon_id)
+    return PlayerContext(
+        riot_id=player.riot_id,
+        tagline=player.tagline,
+        puuid=puuid,
+        profile_icon_id=icon_id,
+    )
+
+
 def fetch_matches(services: Services) -> FetchResult:
     """Resolve every tracked player and download their match histories."""
     config = services.config
@@ -30,24 +45,19 @@ def fetch_matches(services: Services) -> FetchResult:
         services.progress.update(
             STAGE_FETCHING, detail=f"Looking up {player.label} match history"
         )
-        puuid = services.client.resolve_puuid(player.riot_id, player.tagline)
-        match_ids = services.client.fetch_ranked_match_ids(puuid, config.match_count)
-        new_ids.update(services.client.download_matches(puuid, match_ids))
-        contexts.append(
-            PlayerContext(riot_id=player.riot_id, tagline=player.tagline, puuid=puuid)
+        context = _resolve_player_context(services, player)
+        match_ids = services.client.fetch_ranked_match_ids(
+            context.puuid, config.match_count
         )
+        new_ids.update(services.client.download_matches(context.puuid, match_ids))
+        contexts.append(context)
     return FetchResult(contexts=contexts, new_match_ids=frozenset(new_ids))
 
 
 def resolve_player_contexts(services: Services) -> list[PlayerContext]:
     """Resolve PUUIDs for every configured player without downloading."""
     return [
-        PlayerContext(
-            riot_id=player.riot_id,
-            tagline=player.tagline,
-            puuid=services.client.resolve_puuid(player.riot_id, player.tagline),
-        )
-        for player in services.config.players
+        _resolve_player_context(services, player) for player in services.config.players
     ]
 
 

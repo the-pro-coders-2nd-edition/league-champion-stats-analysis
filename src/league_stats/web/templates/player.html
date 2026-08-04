@@ -1,21 +1,42 @@
 {% extends "base.html" %}
 {% block title %}{{ player_label }} — {{ app_title }}{% endblock %}
 {% block nav %}
-<p class="page-nav"><a href="/">← New analysis</a></p>
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="/">Home</a>
+  <span class="breadcrumb-sep" aria-hidden="true">/</span>
+  <span class="breadcrumb-current" id="breadcrumb-current">{{ player_label }}</span>
+</nav>
 {% endblock %}
 {% block content %}
 <header class="page-header">
-  <h1 class="page-title">{{ player_label }}</h1>
+  <h1 class="page-title" id="player-title"{% if players %} hidden{% endif %}>{{ player_label }}</h1>
+  <div class="player-members" id="player-members"{% if not players %} hidden{% endif %}>
+    {% for member in players or [] %}
+    <div class="player-member">
+      {% if member.profile_icon %}
+      <img class="player-member-icon" src="{{ member.profile_icon }}" alt="" width="32" height="32">
+      {% endif %}
+      <span class="player-member-label">{{ member.label }}</span>
+    </div>
+    {% endfor %}
+  </div>
   <p class="page-sub" id="player-subtitle">Loading…</p>
 </header>
 
-<div class="panel" id="job-card" hidden>
+<div class="panel panel--elevated panel--job" id="job-card" hidden>
   <div class="status-line">
     <span class="dot pulse" id="job-dot"></span>
     <strong id="job-state">Queued</strong>
     <span class="muted" id="job-eta"></span>
   </div>
-  <div class="muted" id="job-detail" style="margin-top:6px;"></div>
+  <div class="muted job-detail" id="job-detail"></div>
+  <ol class="job-stages" id="job-stages" aria-label="Analysis progress">
+    <li class="job-stage" data-stage="queued">Queued</li>
+    <li class="job-stage" data-stage="fetching">Download matches</li>
+    <li class="job-stage" data-stage="analyzing">Analyze builds</li>
+    <li class="job-stage" data-stage="report_ready">Base report</li>
+    <li class="job-stage" data-stage="peer_running">Peer comparison</li>
+  </ol>
   <div class="progress-track" id="job-progress" hidden><div class="progress-fill" id="job-progress-fill"></div></div>
   <div class="error" id="job-error"></div>
 </div>
@@ -25,9 +46,10 @@
   <div class="build-grid" id="builds-grid"></div>
 </div>
 
-<div class="panel" id="actions-card" style="margin-top:20px;" hidden>
-  <div class="status-line">
-    <button class="btn-secondary" id="refresh-btn" type="button">Refresh with latest games</button>
+<div class="panel" id="actions-card" style="margin-top:24px;" hidden>
+  <div class="actions-row">
+    <button class="btn-primary" id="refresh-btn" type="button">Refresh with latest games</button>
+    <button class="btn-ghost" id="regenerate-btn" type="button">Regenerate with same games</button>
     <span class="muted" id="refresh-hint"></span>
   </div>
 </div>
@@ -45,7 +67,11 @@
     failed: 'Failed'
   };
   var ACTIVE = ['queued', 'fetching', 'analyzing', 'report_ready', 'peer_running'];
+  var STAGE_ORDER = ['queued', 'fetching', 'analyzing', 'report_ready', 'peer_running'];
 
+  var title = document.getElementById('player-title');
+  var members = document.getElementById('player-members');
+  var breadcrumb = document.getElementById('breadcrumb-current');
   var subtitle = document.getElementById('player-subtitle');
   var jobCard = document.getElementById('job-card');
   var jobDot = document.getElementById('job-dot');
@@ -53,12 +79,14 @@
   var jobDetail = document.getElementById('job-detail');
   var jobEta = document.getElementById('job-eta');
   var jobError = document.getElementById('job-error');
+  var jobStages = document.getElementById('job-stages');
   var progressTrack = document.getElementById('job-progress');
   var progressFill = document.getElementById('job-progress-fill');
   var buildsSection = document.getElementById('builds-section');
   var buildsGrid = document.getElementById('builds-grid');
   var actionsCard = document.getElementById('actions-card');
   var refreshBtn = document.getElementById('refresh-btn');
+  var regenerateBtn = document.getElementById('regenerate-btn');
   var refreshHint = document.getElementById('refresh-hint');
   var timer = null;
 
@@ -76,6 +104,32 @@
     return '~' + minutes + ' min estimated wait';
   }
 
+  function formatUpdated(value) {
+    if (!value) return '';
+    var date = new Date(value);
+    if (isNaN(date.getTime())) {
+      return String(value).slice(0, 16).replace('T', ' ');
+    }
+    try {
+      return date.toLocaleString(undefined, {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+      });
+    } catch (err) {
+      return date.toISOString().slice(0, 16).replace('T', ' ');
+    }
+  }
+
+  function renderStages(state) {
+    var idx = STAGE_ORDER.indexOf(state);
+    var nodes = jobStages.querySelectorAll('.job-stage');
+    nodes.forEach(function (node, i) {
+      node.classList.remove('is-active', 'is-done');
+      if (idx < 0) return;
+      if (i < idx) node.classList.add('is-done');
+      else if (i === idx) node.classList.add('is-active');
+    });
+  }
+
   function renderJob(job) {
     if (!job) { jobCard.hidden = true; return; }
     var active = ACTIVE.indexOf(job.state) !== -1;
@@ -84,6 +138,13 @@
     jobDetail.textContent = job.stage_detail || '';
     jobError.textContent = job.error || '';
     jobDot.className = 'dot' + (active ? ' pulse' : job.state === 'failed' ? ' err' : ' ok');
+    renderStages(active ? job.state : (job.state === 'done' ? 'peer_running' : ''));
+    if (job.state === 'done') {
+      jobStages.querySelectorAll('.job-stage').forEach(function (node) {
+        node.classList.remove('is-active');
+        node.classList.add('is-done');
+      });
+    }
     if (job.state === 'queued' && job.queue_position != null) {
       jobDetail.textContent = job.queue_position === 0
         ? 'Next in line.'
@@ -101,8 +162,47 @@
     return active;
   }
 
-  function renderBuilds(builds) {
-    buildsSection.hidden = builds.length === 0;
+  function renderMembers(list, label) {
+    var items = list || [];
+    if (breadcrumb && label) breadcrumb.textContent = label;
+    if (items.length) {
+      title.hidden = true;
+      members.hidden = false;
+      members.innerHTML = items.map(function (member) {
+        var icon = member.profile_icon
+          ? '<img class="player-member-icon" src="' + escapeHtml(member.profile_icon) +
+            '" alt="" width="32" height="32">'
+          : '';
+        return '<div class="player-member">' + icon +
+          '<span class="player-member-label">' + escapeHtml(member.label || '') +
+          '</span></div>';
+      }).join('');
+      if (breadcrumb) {
+        breadcrumb.textContent = items.map(function (m) { return m.label || ''; }).filter(Boolean).join(', ') || label;
+      }
+      return;
+    }
+    title.hidden = false;
+    if (label) title.textContent = label;
+    members.hidden = true;
+    members.innerHTML = '';
+  }
+
+  function renderSkeletonBuilds() {
+    buildsSection.hidden = false;
+    buildsGrid.innerHTML =
+      '<div class="build-card build-card--skeleton" aria-hidden="true"></div>' +
+      '<div class="build-card build-card--skeleton" aria-hidden="true"></div>' +
+      '<div class="build-card build-card--skeleton" aria-hidden="true"></div>';
+  }
+
+  function renderBuilds(builds, peerPending) {
+    if (!builds.length) {
+      buildsGrid.innerHTML = '';
+      buildsSection.hidden = true;
+      return;
+    }
+    buildsSection.hidden = false;
     buildsGrid.innerHTML = '';
     builds.forEach(function (build) {
       var tile = document.createElement('a');
@@ -118,6 +218,7 @@
       var roleIconHtml = build.role_icon
         ? '<img src="' + escapeHtml(build.role_icon) + '" alt="" title="' + escapeHtml(roleLabel) + '" class="role-icon role-icon--sm">'
         : '';
+      var updated = formatUpdated(build.generated_at);
       tile.innerHTML =
         iconHtml +
         '<div class="build-card-body">' +
@@ -127,11 +228,13 @@
               : '') +
           '</strong>' +
           '<div class="meta">' +
-            escapeHtml(String(build.games || 0)) + 'g' +
+            escapeHtml(String(build.games || 0)) + ' games' +
             (winrate != null
-              ? ' · <span class="' + winClass + '">' + winrate + '%</span>'
+              ? ' · <span class="' + winClass + '">' + winrate + '% WR</span>'
               : '') +
           '</div>' +
+          (updated ? '<div class="build-card-updated">Updated ' + escapeHtml(updated) + '</div>' : '') +
+          (peerPending ? '<span class="build-card-badge">Base ready · peers pending</span>' : '') +
         '</div>';
       buildsGrid.appendChild(tile);
     });
@@ -146,11 +249,22 @@
       .then(function (data) {
         var job = data.active_job;
         var active = renderJob(job);
-        renderBuilds(data.builds || []);
+        renderMembers(data.players || [], data.player_label || '');
+        var builds = data.builds || [];
+        var peerPending = active && (
+          job.state === 'report_ready' || job.state === 'peer_running'
+        ) && builds.length > 0;
+        if (!builds.length && active && job.state !== 'queued' && job.state !== 'failed') {
+          renderSkeletonBuilds();
+        } else {
+          renderBuilds(builds, peerPending);
+        }
         actionsCard.hidden = !(data.has_report && !active);
         if (data.has_report) {
           subtitle.textContent = active
-            ? 'Reports below update as the analysis progresses.'
+            ? (peerPending
+              ? 'Base reports are ready — peer comparison still running.'
+              : 'Reports below update as the analysis progresses.')
             : data.peer_failed
               ? 'Reports ready (peer analysis failed — refresh to retry).'
               : 'Pick a champion + lane build below.';
@@ -169,10 +283,11 @@
       .catch(function () { subtitle.textContent = 'Could not reach the server — retrying…'; });
   }
 
-  refreshBtn.addEventListener('click', function () {
+  function startJob(path, failLabel) {
     refreshBtn.disabled = true;
+    regenerateBtn.disabled = true;
     refreshHint.textContent = '';
-    fetch('/api/players/' + SLUG + '/refresh', { method: 'POST' })
+    fetch('/api/players/' + SLUG + path, { method: 'POST' })
       .then(function (response) {
         return response.json().then(function (data) {
           if (!response.ok) { throw new Error(data.detail || ('HTTP ' + response.status)); }
@@ -184,11 +299,20 @@
         timer = setInterval(poll, 3000);
         poll();
         refreshBtn.disabled = false;
+        regenerateBtn.disabled = false;
       })
       .catch(function (err) {
-        refreshHint.textContent = err.message || 'Refresh failed.';
+        refreshHint.textContent = err.message || failLabel;
         refreshBtn.disabled = false;
+        regenerateBtn.disabled = false;
       });
+  }
+
+  refreshBtn.addEventListener('click', function () {
+    startJob('/refresh', 'Refresh failed.');
+  });
+  regenerateBtn.addEventListener('click', function () {
+    startJob('/regenerate', 'Regenerate failed.');
   });
 
   timer = setInterval(poll, 3000);

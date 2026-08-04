@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +78,34 @@ class NoEligibleBuildsError(RuntimeError):
     """Raised when no champion+lane build has enough qualifying games."""
 
 
+def _meta_players(
+    config: AppConfig, profile_players: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
+    """Build the ``players`` list for report meta, preserving profile icon ids."""
+    if profile_players:
+        shaped: list[dict[str, Any]] = []
+        for player in profile_players:
+            entry: dict[str, Any] = {
+                "riot_id": str(player.get("riot_id", "")),
+                "tagline": str(player.get("tagline", "")),
+            }
+            if not entry["riot_id"] or not entry["tagline"]:
+                continue
+            raw_icon = player.get("profile_icon_id")
+            if raw_icon is not None:
+                try:
+                    entry["profile_icon_id"] = int(raw_icon)
+                except (TypeError, ValueError):
+                    pass
+            shaped.append(entry)
+        if shaped:
+            return shaped
+    return [
+        {"riot_id": player.riot_id, "tagline": player.tagline}
+        for player in config.players
+    ]
+
+
 @dataclass
 class BuildBatch:
     """Parsed records and eligible builds for one player (or pooled group)."""
@@ -86,6 +114,7 @@ class BuildBatch:
     records: list[MatchRecord]
     manifest_builds: list[dict[str, Any]]
     primary_puuid: str
+    profile_players: list[dict[str, Any]] = field(default_factory=list)
 
 
 def should_skip_unchanged_build(
@@ -190,6 +219,7 @@ def run_analysis(
     ranked: RankedEntry | None = None,
     player_builds: list[dict[str, Any]] | None = None,
     assets: DDragonAssets | None = None,
+    profile_players: list[dict[str, Any]] | None = None,
 ) -> Path:
     """Run every analysis, write exports and render the report."""
     log = get_logger("pipeline")
@@ -304,6 +334,25 @@ def run_analysis(
         for queue_key, bundle in game_review.queues.items()
     }
 
+    meta_players = _meta_players(config, profile_players)
+    report_players: list[dict[str, Any]] = []
+    for player in meta_players:
+        icon_href = None
+        raw_icon = player.get("profile_icon_id")
+        if raw_icon is not None:
+            try:
+                icon_href = asset_catalog.profile_icon_href(
+                    int(raw_icon), from_dir=run_dir
+                )
+            except (TypeError, ValueError):
+                icon_href = None
+        report_players.append(
+            {
+                "label": f"{player['riot_id']}#{player['tagline']}",
+                "profile_icon": icon_href,
+            }
+        )
+
     context: dict[str, Any] = {
         **brand_context(from_dir=run_dir, output_dir=config.output_dir),
         "build_label": config.build_label,
@@ -312,6 +361,7 @@ def run_analysis(
         "role_icon_href": asset_catalog.role_href(config.role, from_dir=run_dir),
         "role_display": config.role_display,
         "player_name": config.players_label,
+        "report_players": report_players,
         "recommendation_visible_count": VISIBLE_RECOMMENDATIONS,
         "queue_filter_default": default_queue,
         "queue_filter_options": queue_filter_options(solo_count, flex_count),
@@ -366,16 +416,22 @@ def run_analysis(
     builder = ReportBuilder(config.template_dir)
     report_path = builder.render(run_dir / "report.html", context)
     generated_at = context.get("generated_at", "")
+    primary_icon = next(
+        (
+            int(player["profile_icon_id"])
+            for player in meta_players
+            if player.get("profile_icon_id") is not None
+        ),
+        None,
+    )
     write_report_meta(
         run_dir,
         {
             "player": config.players_label,
             "riot_id": config.riot_id,
             "tagline": config.tagline,
-            "players": [
-                {"riot_id": player.riot_id, "tagline": player.tagline}
-                for player in config.players
-            ],
+            "players": meta_players,
+            "profile_icon_id": primary_icon,
             "champion": config.champion,
             "role": config.role,
             "role_display": config.role_display,
@@ -386,7 +442,7 @@ def run_analysis(
         },
     )
     player_label = config.players_label
-    global_index, player_hub = refresh_report_indexes(
+    player_hub = refresh_report_indexes(
         config.output_dir,
         config.template_dir,
         player_dir=config.player_reports_dir,
@@ -394,9 +450,9 @@ def run_analysis(
         assets=asset_catalog,
     )
     if player_hub is not None:
-        log.info("Done. Open %s (player hub: %s, index: %s)", report_path, player_hub, global_index)
+        log.info("Done. Open %s (player hub: %s)", report_path, player_hub)
     else:
-        log.info("Done. Open %s (index: %s)", report_path, global_index)
+        log.info("Done. Open %s", report_path)
     return report_path
 
 
@@ -506,6 +562,7 @@ def prepare_builds(
         records=all_records,
         manifest_builds=manifest_builds,
         primary_puuid=primary_puuid,
+        profile_players=[context.as_player_dict() for context in player_contexts],
     )
 
 
@@ -547,6 +604,7 @@ def analyze_build(
         ranked=ranked,
         player_builds=batch.manifest_builds,
         assets=services.assets,
+        profile_players=batch.profile_players,
     )
 
 
@@ -645,7 +703,7 @@ def run_all_builds(
         # Every eligible build was already up to date; refresh hubs so nav stays valid.
         last_report = player_dir / "index.html"
 
-    global_index, hub_path = refresh_report_indexes(
+    hub_path = refresh_report_indexes(
         services.config.output_dir,
         services.config.template_dir,
         player_dir=player_dir,
@@ -654,10 +712,9 @@ def run_all_builds(
     )
     hub_path = hub_path or player_dir / "index.html"
     log.info(
-        "Generated %d report(s) (≥%d games). Open %s (global index: %s)",
+        "Generated %d report(s) (≥%d games). Open %s",
         len(batch.manifest_builds),
         services.config.min_games,
         hub_path,
-        global_index,
     )
     return hub_path

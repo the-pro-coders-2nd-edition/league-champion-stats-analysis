@@ -40,6 +40,11 @@ PLOTLY_TEMPLATE = "plotly_dark"
 ACCENT = "#7c6cf0"
 WIN_COLOR = "#3fb68b"
 LOSS_COLOR = "#e05563"
+TEXT_COLOR = "#e8eaf2"
+MUTED_COLOR = "#9aa0b5"
+GRID_COLOR = "#2a2f40"
+FONT_FAMILY = 'Manrope, -apple-system, "Segoe UI", sans-serif'
+COLORWAY = [ACCENT, WIN_COLOR, "#4db8c4", "#e0b155", "#b48cff", "#6eb5ff"]
 
 
 def _div(fig: go.Figure) -> str:
@@ -49,7 +54,26 @@ def _div(fig: go.Figure) -> str:
     fig.update_layout(
         template=PLOTLY_TEMPLATE,
         paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family=FONT_FAMILY, color=TEXT_COLOR, size=13),
+        title_font=dict(family=FONT_FAMILY, color=TEXT_COLOR, size=15),
+        colorway=COLORWAY,
+        legend=dict(font=dict(family=FONT_FAMILY, color=MUTED_COLOR, size=12)),
         margin=dict(t=48, b=40, l=left, r=24),
+    )
+    fig.update_xaxes(
+        gridcolor=GRID_COLOR,
+        zerolinecolor=GRID_COLOR,
+        linecolor=GRID_COLOR,
+        tickfont=dict(family=FONT_FAMILY, color=MUTED_COLOR, size=11),
+        title_font=dict(family=FONT_FAMILY, color=MUTED_COLOR, size=12),
+    )
+    fig.update_yaxes(
+        gridcolor=GRID_COLOR,
+        zerolinecolor=GRID_COLOR,
+        linecolor=GRID_COLOR,
+        tickfont=dict(family=FONT_FAMILY, color=MUTED_COLOR, size=11),
+        title_font=dict(family=FONT_FAMILY, color=MUTED_COLOR, size=12),
     )
     return fig.to_html(full_html=False, include_plotlyjs=False, default_height=420)
 
@@ -111,7 +135,7 @@ def _horizontal_icon_bar(
                 text=labels[index],
                 showarrow=False,
                 xanchor="right",
-                font=dict(size=11, color="#9aa0b5"),
+                font=dict(family=FONT_FAMILY, size=11, color=MUTED_COLOR),
             )
             continue
         fig.add_layout_image(

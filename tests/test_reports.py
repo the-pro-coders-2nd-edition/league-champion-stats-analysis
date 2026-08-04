@@ -11,12 +11,7 @@ from league_stats.core.champions import player_slug
 from league_stats.core.config import AppConfig
 from league_stats.cli.app import run_analysis
 from league_stats.core.models import MatchRecord, PeerComparisonResult, RankedEntry
-from league_stats.presentation.report import (
-    discover_reports,
-    enrich_index_report,
-    group_reports_by_player,
-    refresh_report_indexes,
-)
+from league_stats.presentation.report import discover_reports, refresh_report_indexes
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 from league_stats.ingest.parser import ItemCatalog, MatchParser
 
@@ -123,8 +118,8 @@ def test_player_slug_sanitizes_special_characters() -> None:
     assert player_slug("Hide on Bush", "KR1") == "hide_on_bush_kr1"
 
 
-def test_refresh_index_lists_all_reports(tmp_path: Path) -> None:
-    """The index page links to every saved report."""
+def test_discover_reports_lists_all_builds(tmp_path: Path) -> None:
+    """Saved builds remain discoverable after analysis."""
     ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75)
     records = _make_records()
     peer = _peer(records)
@@ -132,50 +127,19 @@ def test_refresh_index_lists_all_reports(tmp_path: Path) -> None:
     run_analysis(_config(tmp_path, champion="Viktor"), records, peer_comparison=peer, ranked=ranked)
     run_analysis(_config(tmp_path, champion="Ahri"), records, peer_comparison=peer, ranked=ranked)
 
-    index_path = refresh_report_indexes(tmp_path / "output", _config(tmp_path).template_dir)[0]
-    html = index_path.read_text(encoding="utf-8")
-    assert "Viktor mid" in html or "Viktor" in html
-    assert "Ahri" in html
-    assert "reports/" in html
-    assert "player-card" in html
-    assert "build-grid--catalog" in html
-    assert 'id="build-catalog"' in html
+    config = _config(tmp_path)
+    hub = refresh_report_indexes(
+        config.output_dir,
+        config.template_dir,
+        player_dir=config.player_reports_dir,
+        player_label="Test#EUW",
+    )
+    assert hub is not None
+    assert hub.exists()
+    assert not (config.output_dir / "index.html").exists()
 
-
-def test_group_reports_by_player(tmp_path: Path) -> None:
-    """Reports are grouped by player with default build links and games-based order."""
-    reports = [
-        {
-            "player": "Beta#EUW",
-            "champion": "Ahri",
-            "role": "MIDDLE",
-            "games": 30,
-            "winrate": 0.55,
-            "generated_at": "2026-01-02",
-            "href": "reports/beta_euw/ahri_middle/report.html",
-        },
-        {
-            "player": "Alpha#EUW",
-            "champion": "Viktor",
-            "role": "MIDDLE",
-            "games": 50,
-            "winrate": 0.6,
-            "generated_at": "2026-01-01",
-            "href": "reports/alpha_euw/viktor_middle/report.html",
-        },
-        {
-            "player": "Beta#EUW",
-            "champion": "Viktor",
-            "role": "TOP",
-            "games": 10,
-            "winrate": 0.4,
-            "generated_at": "2026-01-03",
-            "href": "reports/beta_euw/viktor_top/report.html",
-        },
-    ]
-    enriched = [enrich_index_report(dict(report)) for report in reports]
-    groups = group_reports_by_player(enriched)
-    assert [group["player"] for group in groups] == ["Beta#EUW", "Alpha#EUW"]
-    assert groups[0]["default_href"] == "reports/beta_euw/ahri_middle/report.html"
-    assert groups[0]["build_count"] == 2
-    assert [build["champion"] for build in groups[0]["reports"]] == ["Ahri", "Viktor"]
+    reports = discover_reports(config.output_dir)
+    champions = {report["champion"] for report in reports}
+    assert "Viktor" in champions
+    assert "Ahri" in champions
+    assert all("reports/" in report["href"] for report in reports)

@@ -47,6 +47,33 @@ def test_champion_and_keystone_hrefs(tmp_path: Path) -> None:
     assert assets.champion_href("Missing", from_dir=report_dir) is None
 
 
+def test_ensure_profile_icon_downloads_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = _config(tmp_path)
+    assets = DDragonAssets(config)
+    assets._version = "14.1.1"
+    calls: list[tuple[str, Path]] = []
+
+    def fake_download(url: str, destination: Path) -> None:
+        calls.append((url, destination))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"png")
+
+    monkeypatch.setattr(assets, "_download_binary", fake_download)
+    path = assets.ensure_profile_icon(1234)
+    assert path is not None
+    assert path.name == "1234.png"
+    assert calls[0][0].endswith("/img/profileicon/1234.png")
+
+    # Second call should reuse the cached file.
+    assert assets.ensure_profile_icon(1234) == path
+    assert len(calls) == 1
+    report_dir = config.output_dir / "reports" / "player" / "viktor_middle"
+    report_dir.mkdir(parents=True)
+    assert assets.profile_icon_href(1234, from_dir=report_dir) == (
+        "../../../assets/profile_icons/1234.png"
+    )
+
+
 def test_summoner_and_rune_tree_hrefs(tmp_path: Path) -> None:
     config = _config(tmp_path)
     assets = DDragonAssets(config)

@@ -88,6 +88,7 @@ class DDragonAssets:
         self._rune_trees_dir = self._assets_root / "rune_trees"
         self._summoners_dir = self._assets_root / "summoners"
         self._items_dir = self._assets_root / "items"
+        self._profile_icons_dir = self._assets_root / "profile_icons"
         self._roles_dir = self._assets_root / "roles"
         self._ui_dir = self._assets_root / "ui"
         self._objectives_dir = self._assets_root / "objectives"
@@ -106,7 +107,7 @@ class DDragonAssets:
 
     @property
     def assets_root(self) -> Path:
-        """Root directory containing ``champions/``, ``runes/``, ``rune_trees/``, ``summoners/``, ``items/`` and ``roles/``."""
+        """Root directory containing cached Data Dragon / Community Dragon icons."""
         return self._assets_root
 
     def _roles_cached(self) -> bool:
@@ -126,6 +127,7 @@ class DDragonAssets:
         self._rune_trees_dir.mkdir(parents=True, exist_ok=True)
         self._summoners_dir.mkdir(parents=True, exist_ok=True)
         self._items_dir.mkdir(parents=True, exist_ok=True)
+        self._profile_icons_dir.mkdir(parents=True, exist_ok=True)
         self._roles_dir.mkdir(parents=True, exist_ok=True)
         self._ui_dir.mkdir(parents=True, exist_ok=True)
         self._objectives_dir.mkdir(parents=True, exist_ok=True)
@@ -263,6 +265,40 @@ class DDragonAssets:
         """Return the on-disk item icon path when it exists."""
         path = self._items_dir / f"{item_id}.png"
         return path if path.is_file() else None
+
+    def profile_icon_path(self, icon_id: int) -> Path | None:
+        """Return the on-disk profile icon path when it exists."""
+        path = self._profile_icons_dir / f"{int(icon_id)}.png"
+        return path if path.is_file() else None
+
+    def ensure_profile_icon(self, icon_id: int) -> Path | None:
+        """Download one profile icon into the local cache when missing.
+
+        Profile icons are fetched lazily (only the ids we need), unlike the
+        bulk champion/item catalogs.
+
+        Returns:
+            The on-disk path when available, else ``None``.
+        """
+        normalized = int(icon_id)
+        self._profile_icons_dir.mkdir(parents=True, exist_ok=True)
+        destination = self._profile_icons_dir / f"{normalized}.png"
+        if destination.is_file():
+            return destination
+        version = self._resolve_asset_version()
+        if not version:
+            self._log.warning("Cannot download profile icon %s: no DDragon version", normalized)
+            return None
+        url = f"{DDRAGON_BASE}/cdn/{version}/img/profileicon/{normalized}.png"
+        self._download_binary(url, destination)
+        return destination if destination.is_file() else None
+
+    def profile_icon_href(self, icon_id: int, *, from_dir: Path) -> str | None:
+        """Relative URL from an HTML directory to a profile icon."""
+        path = self.profile_icon_path(icon_id)
+        if path is None:
+            return None
+        return _relative_href(from_dir, path)
 
     def role_icon_path(self, role: str) -> Path | None:
         """Return the on-disk lane icon path when it exists."""

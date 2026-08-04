@@ -234,7 +234,7 @@ def serve(
 
 @app.command()
 def reports(verbose: bool = typer.Option(False, "--verbose", "-v")) -> None:
-    """Rebuild the report index from saved reports (no analysis)."""
+    """Rebuild player hubs from saved reports (no analysis)."""
     from league_stats.core.config import load_paths_config
 
     setup_logging(verbose)
@@ -242,14 +242,14 @@ def reports(verbose: bool = typer.Option(False, "--verbose", "-v")) -> None:
     config.output_dir.mkdir(parents=True, exist_ok=True)
     assets = DDragonAssets(config)
     assets.ensure_downloaded()
-    index_path = refresh_report_indexes(
-        config.output_dir,
-        config.template_dir,
-        assets=assets,
-    )[0]
-    refresh_all_player_hubs(config.output_dir, config.template_dir, assets=assets)
+    refresh_report_indexes(config.output_dir, config.template_dir, assets=assets)
+    hubs = refresh_all_player_hubs(config.output_dir, config.template_dir, assets=assets)
     count = len(discover_reports(config.output_dir))
-    get_logger().info("Index refreshed with %d report(s). Open %s", count, index_path)
+    get_logger().info(
+        "Hubs refreshed with %d report(s) across %d player(s).",
+        count,
+        len(hubs),
+    )
 
 
 if __name__ == "__main__":

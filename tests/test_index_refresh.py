@@ -1,10 +1,8 @@
-"""Tests that report indexes refresh as builds are written."""
+"""Tests that report hubs refresh as builds are written."""
 
 from __future__ import annotations
 
 from pathlib import Path
-
-import pytest
 
 from league_stats.core.config import AppConfig
 from league_stats.cli.app import run_analysis
@@ -45,27 +43,22 @@ def _records(n: int = 15) -> list[MatchRecord]:
     ]
 
 
-def test_run_analysis_refreshes_global_index(tmp_path: Path) -> None:
-    """Each completed report appears on the global index immediately."""
+def test_run_analysis_discovers_reports(tmp_path: Path) -> None:
+    """Each completed report is discoverable immediately."""
     viktor_config = _config(tmp_path, champion="Viktor", role="MIDDLE")
     run_analysis(viktor_config, _records())
 
-    global_index = viktor_config.output_dir / "index.html"
-    assert global_index.exists()
-    html = global_index.read_text(encoding="utf-8")
-    assert "All players" in html
-    assert "build-grid--catalog" in html
-    assert "Viktor" in html
-    assert (viktor_config.output_dir / "assets" / "static" / "index.css").exists()
+    assert not (viktor_config.output_dir / "index.html").exists()
     assert len(discover_reports(viktor_config.output_dir)) == 1
 
     ahri_config = _config(tmp_path, champion="Ahri", role="MIDDLE")
     run_analysis(ahri_config, _records())
 
-    html = global_index.read_text(encoding="utf-8")
-    assert "Viktor" in html
-    assert "Ahri" in html
-    assert len(discover_reports(viktor_config.output_dir)) == 2
+    reports = discover_reports(viktor_config.output_dir)
+    assert len(reports) == 2
+    champions = {report["champion"] for report in reports}
+    assert "Viktor" in champions
+    assert "Ahri" in champions
 
 
 def test_run_analysis_refreshes_player_hub(tmp_path: Path) -> None:
@@ -85,20 +78,18 @@ def test_run_analysis_refreshes_player_hub(tmp_path: Path) -> None:
     assert "Ahri" in champions
 
 
-def test_refresh_report_indexes_rebuilds_from_disk(tmp_path: Path) -> None:
-    """Manual refresh picks up reports already on disk."""
+def test_refresh_report_indexes_rebuilds_hub_from_disk(tmp_path: Path) -> None:
+    """Manual refresh rebuilds the player hub from reports already on disk."""
     config = _config(tmp_path, champion="Zac", role="JUNGLE")
     run_analysis(config, _records())
 
-    global_index, hub = refresh_report_indexes(
+    hub = refresh_report_indexes(
         config.output_dir,
         config.template_dir,
         player_dir=config.player_reports_dir,
         player_label="Test#EUW",
     )
-    assert global_index.exists()
     assert hub is not None
     assert hub.exists()
-    index_html = global_index.read_text(encoding="utf-8")
-    assert "All players" in index_html
-    assert "player-card" in index_html
+    assert "Redirecting" in hub.read_text(encoding="utf-8")
+    assert not (config.output_dir / "index.html").exists()

@@ -135,6 +135,20 @@ def test_player_registry_marks(store: JobStore) -> None:
     assert player["peer_failed"] == 0
 
 
+def test_encode_players_preserves_profile_icon_id() -> None:
+    encoded = jobs.encode_players(
+        [
+            {"riot_id": "Alice", "tagline": "EUW", "profile_icon_id": 7},
+            {"riot_id": "Bob", "tagline": "EUW"},
+        ]
+    )
+    decoded = jobs.decode_players(encoded)
+    assert decoded == [
+        {"riot_id": "Alice", "tagline": "EUW", "profile_icon_id": 7},
+        {"riot_id": "Bob", "tagline": "EUW"},
+    ]
+
+
 def test_player_registry_stores_group(store: JobStore) -> None:
     players = [
         {"riot_id": "Alice", "tagline": "EUW"},

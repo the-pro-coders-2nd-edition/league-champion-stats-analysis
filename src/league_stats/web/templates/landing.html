@@ -1,31 +1,25 @@
 {% extends "base.html" %}
 {% block title %}{{ app_title }}{% endblock %}
-{% block nav %}
-<p class="page-nav"><a href="/out/index.html">All players →</a></p>
-{% endblock %}
 {% block content %}
-<header class="page-header">
-  <h1 class="page-title">Analyze a player</h1>
-  <p class="page-sub">Enter one or more Riot IDs to build coaching dashboards for every champion + lane they play. Multiple IDs are pooled into one report group, like <code>--player</code> on the CLI. A first-time analysis downloads the full match history and can take ~20 minutes.</p>
-</header>
+<p class="home-lead">Coaching reports from your ranked games.</p>
 
-<div class="panel panel--form">
+<div class="panel panel--form panel--elevated">
   <form id="analyze-form">
     <div id="player-rows">
       <div class="form-row player-row">
         <input name="riot_id" class="riot-input" placeholder="Riot ID (e.g. Faker#KR1)" autocomplete="off">
-        <button type="button" class="btn-secondary remove-player" hidden aria-label="Remove player">Remove</button>
+        <button type="button" class="btn-text remove-player" hidden aria-label="Remove player">Remove</button>
       </div>
     </div>
     <div class="form-actions">
-      <button type="button" class="btn-secondary" id="add-player">Add another player</button>
+      <button type="button" class="btn-text" id="add-player">+ Add another player</button>
       <div class="form-row-end">
-        <select name="region">
+        <select name="region" aria-label="Region">
           {% for label, value in region_choices %}
           <option value="{{ value }}">{{ label }}</option>
           {% endfor %}
         </select>
-        <button type="submit" id="analyze-submit">Analyze</button>
+        <button type="submit" class="btn-primary" id="analyze-submit">Analyze</button>
       </div>
     </div>
     <p class="hint">Same region applies to every account in the group.</p>
@@ -33,17 +27,31 @@
   </form>
 </div>
 
-<h2 class="section-label" id="reports-heading"{% if not groups %} hidden{% endif %}>Recent reports</h2>
+<h2 class="section-label" id="reports-heading">Recent reports</h2>
+<p class="reports-empty" id="reports-empty"{% if groups %} hidden{% endif %}>
+  <strong>No reports yet</strong>
+  Enter a Riot ID above to generate your first coaching report.
+</p>
 <section class="player-cards" id="recent-reports" aria-label="Recent reports"{% if not groups %} hidden{% endif %}>
   {% for group in groups %}
   <a class="player-card{% if group.busy %} is-busy{% endif %}"
      href="/players/{{ group.slug }}"
      data-slug="{{ group.slug }}"
      data-has-report="{{ '1' if group.has_report else '0' }}"
+     data-job-state="{{ group.job_state or '' }}"
      {% if group.busy %}title="Analysis in progress"{% endif %}>
     <div class="player-card-name">
       <span class="player-card-status" aria-hidden="true"></span>
-      <span class="player-card-label">{{ group.player }}</span>
+      <div class="player-card-members">
+        {% for member in group.players %}
+        <div class="player-card-member">
+          {% if member.profile_icon %}
+          <img class="player-card-icon" src="{{ member.profile_icon }}" alt="" width="24" height="24">
+          {% endif %}
+          <span class="player-card-label">{{ member.label }}</span>
+        </div>
+        {% endfor %}
+      </div>
       {% if group.is_group %}<span class="badge-group">Group</span>{% endif %}
     </div>
     <div class="player-card-meta">
@@ -53,6 +61,17 @@
       Queued for analysis…
       {% endif %}
     </div>
+    {% if group.busy %}
+    <div class="player-card-stage">
+      {% if group.job_state == 'queued' %}Queued
+      {% elif group.job_state == 'fetching' %}Downloading matches
+      {% elif group.job_state == 'analyzing' %}Analyzing
+      {% elif group.job_state == 'report_ready' %}Report ready — peers pending
+      {% elif group.job_state == 'peer_running' %}Peer analysis running
+      {% else %}Analysis in progress
+      {% endif %}
+    </div>
+    {% endif %}
   </a>
   {% endfor %}
 </section>
@@ -65,13 +84,14 @@
   var submitBtn = document.getElementById('analyze-submit');
   var addBtn = document.getElementById('add-player');
   var reportsEl = document.getElementById('recent-reports');
+  var reportsEmpty = document.getElementById('reports-empty');
   var reportsHeading = document.getElementById('reports-heading');
   var MAX_PLAYERS = 8;
   var STATE_TITLES = {
     queued: 'Queued',
     fetching: 'Downloading matches',
     analyzing: 'Analyzing',
-    report_ready: 'Report ready — peer analysis pending',
+    report_ready: 'Report ready — peers pending',
     peer_running: 'Peer analysis running'
   };
 
@@ -91,7 +111,7 @@
     row.className = 'form-row player-row';
     row.innerHTML =
       '<input name="riot_id" class="riot-input" placeholder="Riot ID (e.g. Alice#EUW)" autocomplete="off">' +
-      '<button type="button" class="btn-secondary remove-player" aria-label="Remove player">Remove</button>';
+      '<button type="button" class="btn-text remove-player" aria-label="Remove player">Remove</button>';
     if (value) row.querySelector('input').value = value;
     rowsEl.appendChild(row);
     syncRemoveButtons();
@@ -155,7 +175,34 @@
 
   function ensureReportsVisible() {
     reportsEl.hidden = false;
+    if (reportsEmpty) reportsEmpty.hidden = true;
     if (reportsHeading) reportsHeading.hidden = false;
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function membersHtml(item) {
+    var players = item.players && item.players.length
+      ? item.players
+      : [{ label: item.player_label || item.slug, profile_icon: null }];
+    return players.map(function (member) {
+      var icon = member.profile_icon
+        ? '<img class="player-card-icon" src="' + escapeHtml(member.profile_icon) +
+          '" alt="" width="24" height="24">'
+        : '';
+      return '<div class="player-card-member">' + icon +
+        '<span class="player-card-label">' + escapeHtml(member.label || '') + '</span></div>';
+    }).join('');
+  }
+
+  function stageLabel(state) {
+    return STATE_TITLES[state] || 'Analysis in progress';
   }
 
   function createPendingCard(item) {
@@ -165,14 +212,15 @@
     card.href = '/players/' + item.slug;
     card.dataset.slug = item.slug;
     card.dataset.hasReport = item.has_report ? '1' : '0';
-    card.title = STATE_TITLES[item.state] || 'Analysis in progress';
+    card.dataset.jobState = item.state || '';
+    card.title = stageLabel(item.state);
     card.innerHTML =
       '<div class="player-card-name">' +
         '<span class="player-card-status" aria-hidden="true"></span>' +
-        '<span class="player-card-label"></span>' +
+        '<div class="player-card-members">' + membersHtml(item) + '</div>' +
       '</div>' +
-      '<div class="player-card-meta">Queued for analysis…</div>';
-    card.querySelector('.player-card-label').textContent = item.player_label || item.slug;
+      '<div class="player-card-meta">Queued for analysis…</div>' +
+      '<div class="player-card-stage">' + escapeHtml(stageLabel(item.state)) + '</div>';
     reportsEl.insertBefore(card, reportsEl.firstChild);
     return card;
   }
@@ -188,12 +236,23 @@
       var item = busy[slug];
       if (item) {
         card.classList.add('is-busy');
-        card.title = STATE_TITLES[item.state] || 'Analysis in progress';
+        card.dataset.jobState = item.state || '';
+        card.title = stageLabel(item.state);
+        var stage = card.querySelector('.player-card-stage');
+        if (!stage) {
+          stage = document.createElement('div');
+          stage.className = 'player-card-stage';
+          card.appendChild(stage);
+        }
+        stage.textContent = stageLabel(item.state);
         delete busy[slug];
       } else {
         var wasBusy = card.classList.contains('is-busy');
         card.classList.remove('is-busy');
         card.removeAttribute('title');
+        card.dataset.jobState = '';
+        var stageEl = card.querySelector('.player-card-stage');
+        if (stageEl) stageEl.remove();
         if (wasBusy && card.dataset.hasReport === '0') {
           needsReload = true;
         }

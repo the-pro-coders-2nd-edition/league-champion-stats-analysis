@@ -33,12 +33,14 @@ from league_stats.presentation.brand_assets import (
     FAVICON_FILENAME,
     LOGO_FILENAME,
     ensure_brand_assets,
+    refresh_saved_report_branding,
 )
 from league_stats.presentation.report import discover_player_builds, is_group_player_label
 from league_stats.utils import setup_logging
 from league_stats.web.chat import ChatError, gemini_reply, load_report_summary, validate_history
 from league_stats.web.jobs import (
     JOB_KIND_ANALYZE,
+    JOB_KIND_REGENERATE,
     JOB_KIND_REFRESH,
     JobStore,
     decode_players,
@@ -125,39 +127,152 @@ def _resolve_players(body: AnalysisRequest) -> list[dict[str, str]]:
     return entries
 
 
-def _player_label_from_row(player: dict[str, Any] | None, slug: str) -> str:
-    """Display label for a player/group registry row."""
-    if player is None:
-        return slug
-    tracked = player.get("players") or decode_players(
-        player.get("players_json"),
-        riot_id=str(player.get("riot_id", "")),
-        tagline=str(player.get("tagline", "")),
+def _parse_players_label(label: str) -> list[dict[str, str]]:
+    """Parse a comma-separated ``Name#Tag, Name2#Tag2`` group label."""
+    entries: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for part in str(label or "").split(","):
+        text = part.strip()
+        if "#" not in text:
+            continue
+        name, tag = text.rsplit("#", 1)
+        name, tag = name.strip(), tag.strip().lstrip("#")
+        if not name or not tag:
+            continue
+        key = (name.casefold(), tag.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append({"riot_id": name, "tagline": tag})
+    return entries
+
+
+def _slug_for_players(players: list[dict[str, Any]]) -> str:
+    """Filesystem group slug for a tracked-player list."""
+    return players_group_slug(
+        [(str(player["riot_id"]), str(player["tagline"])) for player in players]
     )
-    if tracked:
-        return players_label(tracked)
-    return f"{player['riot_id']}#{player['tagline']}"
 
 
-def _players_from_meta(meta: dict[str, Any]) -> list[dict[str, str]]:
-    """Recover tracked players from on-disk report metadata."""
+def _merge_player_icons(
+    primary: list[dict[str, Any]], *sources: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Copy ``profile_icon_id`` onto ``primary`` from any matching source entry."""
+    icons: dict[tuple[str, str], int] = {}
+    for source in sources:
+        for player in source:
+            raw = player.get("profile_icon_id")
+            if raw is None:
+                continue
+            try:
+                icon_id = int(raw)
+            except (TypeError, ValueError):
+                continue
+            key = (
+                str(player.get("riot_id", "")).casefold(),
+                str(player.get("tagline", "")).casefold(),
+            )
+            icons[key] = icon_id
+    merged: list[dict[str, Any]] = []
+    for player in primary:
+        entry: dict[str, Any] = {
+            "riot_id": str(player["riot_id"]),
+            "tagline": str(player["tagline"]),
+        }
+        raw = player.get("profile_icon_id")
+        if raw is not None:
+            try:
+                entry["profile_icon_id"] = int(raw)
+            except (TypeError, ValueError):
+                pass
+        elif (
+            icon := icons.get(
+                (entry["riot_id"].casefold(), entry["tagline"].casefold())
+            )
+        ) is not None:
+            entry["profile_icon_id"] = icon
+        merged.append(entry)
+    return merged
+
+
+def _players_from_meta(meta: dict[str, Any]) -> list[dict[str, Any]]:
+    """Recover tracked players from on-disk report metadata.
+
+    Prefers the structured ``players`` list. Older CLI group reports only stored
+    a comma-separated ``player`` label plus the primary ``riot_id``/``tagline``;
+    parse the label so refresh/regenerate keep every account in the group.
+    """
     raw_players = meta.get("players")
     if isinstance(raw_players, list) and raw_players:
-        recovered: list[dict[str, str]] = []
+        recovered: list[dict[str, Any]] = []
         for item in raw_players:
             if not isinstance(item, dict):
                 continue
             name = str(item.get("riot_id", "")).strip()
             tag = str(item.get("tagline", "")).strip()
-            if name and tag:
-                recovered.append({"riot_id": name, "tagline": tag})
+            if not name or not tag:
+                continue
+            entry: dict[str, Any] = {"riot_id": name, "tagline": tag}
+            raw_icon = item.get("profile_icon_id")
+            if raw_icon is not None:
+                try:
+                    entry["profile_icon_id"] = int(raw_icon)
+                except (TypeError, ValueError):
+                    pass
+            recovered.append(entry)
         if recovered:
             return recovered
+
+    from_label = _parse_players_label(str(meta.get("player", "")))
+    if len(from_label) > 1:
+        return from_label
+
     riot_id = str(meta.get("riot_id", "")).strip()
     tagline = str(meta.get("tagline", "")).strip()
     if riot_id and tagline:
         return [{"riot_id": riot_id, "tagline": tagline}]
+    if from_label:
+        return from_label
     return []
+
+
+def _resolve_tracked_players(
+    slug: str,
+    *,
+    store_players: list[dict[str, Any]] | None = None,
+    meta: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Pick the best tracked-player list for a report slug.
+
+    Prefers candidates whose ``players_group_slug`` matches ``slug`` (so a stale
+    single-player registry row cannot override a multi-player on-disk group).
+    """
+    candidates: list[list[dict[str, Any]]] = []
+    if meta is not None:
+        from_meta = _players_from_meta(meta)
+        if from_meta:
+            candidates.append(from_meta)
+    if store_players:
+        candidates.append(list(store_players))
+
+    if not candidates:
+        return []
+
+    matching = [
+        candidate
+        for candidate in candidates
+        if _slug_for_players(candidate) == slug
+    ]
+    pool = matching or candidates
+    best = max(pool, key=len)
+    return _merge_player_icons(best, *candidates)
+
+
+def _player_label_from_tracked(tracked: list[dict[str, Any]], slug: str) -> str:
+    """Display label for resolved tracked players."""
+    if tracked:
+        return players_label(tracked)
+    return slug
 
 
 def _job_public(store: JobStore, job: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -191,6 +306,68 @@ def _web_asset_href(output_dir: Path, *parts: str) -> str | None:
     if not path.is_file():
         return None
     return "/out/" + "/".join(parts)
+
+
+def _shaped_players(
+    output_dir: Path, tracked: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """API/template shape for group members (label + optional profile icon)."""
+    shaped: list[dict[str, Any]] = []
+    for player in tracked:
+        riot_id = str(player["riot_id"])
+        tagline = str(player["tagline"])
+        icon_href = None
+        raw_icon = player.get("profile_icon_id")
+        if raw_icon is not None:
+            try:
+                icon_href = _web_asset_href(
+                    output_dir, "assets", "profile_icons", f"{int(raw_icon)}.png"
+                )
+            except (TypeError, ValueError):
+                icon_href = None
+        shaped.append(
+            {
+                "riot_id": riot_id,
+                "tagline": tagline,
+                "label": f"{riot_id}#{tagline}",
+                "profile_icon": icon_href,
+            }
+        )
+    return shaped
+
+
+def _profile_icon_hrefs(
+    output_dir: Path,
+    players: list[dict[str, Any]] | None = None,
+    *,
+    primary_icon_id: int | None = None,
+) -> list[str]:
+    """Resolve cached profile-icon URLs for home-page cards."""
+    hrefs: list[str] = []
+    seen: set[int] = set()
+    for player in players or []:
+        raw = player.get("profile_icon_id")
+        if raw is None:
+            continue
+        try:
+            icon_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if icon_id in seen:
+            continue
+        href = _web_asset_href(
+            output_dir, "assets", "profile_icons", f"{icon_id}.png"
+        )
+        if href:
+            hrefs.append(href)
+            seen.add(icon_id)
+    if not hrefs and primary_icon_id is not None:
+        href = _web_asset_href(
+            output_dir, "assets", "profile_icons", f"{int(primary_icon_id)}.png"
+        )
+        if href:
+            hrefs.append(href)
+    return hrefs
 
 
 def _brand_page_context(output_dir: Path) -> dict[str, Any]:
@@ -243,6 +420,7 @@ def _report_groups(
     active (queued/running) job, and players with an active job but no report
     yet are included so queued first-time analyses appear on the home page.
     """
+    output_dir = reports_dir.parent
     groups: list[dict[str, Any]] = []
     seen: set[str] = set()
     if reports_dir.is_dir():
@@ -252,13 +430,43 @@ def _report_groups(
             builds = discover_player_builds(player_dir)
             if not builds:
                 continue
-            player = str(builds[0].get("player", player_dir.name))
+            meta = builds[0]
+            store_players = None
+            if store is not None:
+                row = store.get_player(player_dir.name)
+                if row and row.get("players"):
+                    store_players = list(row["players"])
+            tracked = _resolve_tracked_players(
+                player_dir.name, store_players=store_players, meta=meta
+            )
+            label = _player_label_from_tracked(
+                tracked, str(meta.get("player", player_dir.name))
+            )
+            primary_icon = meta.get("profile_icon_id")
+            try:
+                primary_icon_id = int(primary_icon) if primary_icon is not None else None
+            except (TypeError, ValueError):
+                primary_icon_id = None
+            shaped = _shaped_players(output_dir, tracked)
+            if not shaped and label:
+                shaped = [{"label": label, "profile_icon": None}]
+            elif not shaped and primary_icon_id is not None:
+                icons = _profile_icon_hrefs(
+                    output_dir, None, primary_icon_id=primary_icon_id
+                )
+                shaped = [
+                    {
+                        "label": str(meta.get("player", player_dir.name)),
+                        "profile_icon": icons[0] if icons else None,
+                    }
+                ]
             seen.add(player_dir.name)
             groups.append(
                 {
                     "slug": player_dir.name,
-                    "player": player,
-                    "is_group": is_group_player_label(player),
+                    "player": label,
+                    "players": shaped,
+                    "is_group": len(tracked) > 1 or is_group_player_label(label),
                     "build_count": len(builds),
                     "total_games": sum(int(build.get("games", 0)) for build in builds),
                     "last_updated": max(
@@ -285,16 +493,23 @@ def _report_groups(
             if slug in seen:
                 continue
             tracked = list(job.get("players") or [])
+            row = store.get_player(slug)
+            if row and row.get("players"):
+                tracked = list(row["players"])
             label = (
                 players_label(tracked)
                 if tracked
                 else f"{job['riot_id']}#{job['tagline']}"
             )
+            shaped = _shaped_players(output_dir, tracked)
+            if not shaped:
+                shaped = [{"label": label, "profile_icon": None}]
             groups.append(
                 {
                     "slug": slug,
                     "player": label,
-                    "is_group": is_group_player_label(label),
+                    "players": shaped,
+                    "is_group": len(tracked) > 1 or is_group_player_label(label),
                     "build_count": 0,
                     "total_games": 0,
                     "last_updated": "",
@@ -319,6 +534,7 @@ def create_app(
     config.output_dir.mkdir(parents=True, exist_ok=True)
     config.reports_dir.mkdir(parents=True, exist_ok=True)
     ensure_brand_assets(config.output_dir)
+    refresh_saved_report_branding(config.output_dir)
     brand = _brand_page_context(config.output_dir)
 
     store = JobStore(config.app_db_path)
@@ -361,13 +577,24 @@ def create_app(
         builds = _player_builds(config.output_dir, slug)
         if player is None and not builds:
             raise HTTPException(status_code=404, detail="Unknown player")
-        label = _player_label_from_row(player, slug)
-        if player is None and builds:
+        meta_builds = discover_player_builds(config.reports_dir / slug)
+        tracked = _resolve_tracked_players(
+            slug,
+            store_players=(player.get("players") if player else None),
+            meta=meta_builds[0] if meta_builds else None,
+        )
+        label = _player_label_from_tracked(tracked, slug)
+        if not tracked and builds:
             label = str(builds[0].get("player") or slug)
         return templates.TemplateResponse(
             request,
             "player.html",
-            {**brand, "slug": slug, "player_label": label},
+            {
+                **brand,
+                "slug": slug,
+                "player_label": label,
+                "players": _shaped_players(config.output_dir, tracked),
+            },
         )
 
     # -------------------------------------------------------------------- API
@@ -421,15 +648,22 @@ def create_app(
         for job in store.list_active_jobs():
             slug = str(job["player_slug"])
             tracked = list(job.get("players") or [])
+            row = store.get_player(slug)
+            if row and row.get("players"):
+                tracked = list(row["players"])
             label = (
                 players_label(tracked)
                 if tracked
                 else f"{job['riot_id']}#{job['tagline']}"
             )
+            shaped = _shaped_players(config.output_dir, tracked)
+            if not shaped:
+                shaped = [{"label": label, "profile_icon": None}]
             items.append(
                 {
                     "slug": slug,
                     "player_label": label,
+                    "players": shaped,
                     "state": job.get("state"),
                     "has_report": bool(_player_builds(config.output_dir, slug)),
                 }
@@ -443,12 +677,19 @@ def create_app(
         if player is None and not builds:
             raise HTTPException(status_code=404, detail="Unknown player")
         active = store.active_job_for_player(slug)
-        label = _player_label_from_row(player, slug)
-        if player is None and builds:
+        meta_builds = discover_player_builds(config.reports_dir / slug)
+        tracked = _resolve_tracked_players(
+            slug,
+            store_players=(player.get("players") if player else None),
+            meta=meta_builds[0] if meta_builds else None,
+        )
+        label = _player_label_from_tracked(tracked, slug)
+        if not tracked and builds:
             label = str(builds[0].get("player") or slug)
         return {
             "slug": slug,
             "player_label": label,
+            "players": _shaped_players(config.output_dir, tracked),
             "active_job": _job_public(store, active),
             "builds": builds,
             "has_report": bool(builds),
@@ -457,49 +698,56 @@ def create_app(
             "peer_completed_at": player["peer_completed_at"] if player else None,
         }
 
-    @app.post("/api/players/{slug}/refresh")
-    def refresh_player(slug: str) -> dict[str, Any]:
+    def _enqueue_player_job(slug: str, kind: str) -> dict[str, Any]:
+        """Queue a job for a known player, recovering identity from disk if needed."""
         player = store.get_player(slug)
-        if player is None:
-            # CLI-generated report: recover identity from on-disk metadata.
-            builds = discover_player_builds(config.reports_dir / slug)
-            if not builds:
-                raise HTTPException(status_code=404, detail="Unknown player")
-            meta = builds[0]
-            tracked = _players_from_meta(meta)
-            if not tracked:
-                raise HTTPException(
-                    status_code=409,
-                    detail="This report predates the web app; submit the player again.",
-                )
-            primary = tracked[0]
-            store.upsert_player(
-                slug=slug,
-                riot_id=primary["riot_id"],
-                tagline=primary["tagline"],
-                region="euw1",
-                players=tracked,
+        builds = discover_player_builds(config.reports_dir / slug)
+        meta = builds[0] if builds else None
+        store_players = None
+        if player is not None:
+            store_players = player.get("players") or decode_players(
+                player.get("players_json"),
+                riot_id=str(player.get("riot_id", "")),
+                tagline=str(player.get("tagline", "")),
             )
-            player = store.get_player(slug)
-        assert player is not None
-        tracked = player.get("players") or decode_players(
-            player.get("players_json"),
-            riot_id=str(player.get("riot_id", "")),
-            tagline=str(player.get("tagline", "")),
+        tracked = _resolve_tracked_players(
+            slug, store_players=store_players, meta=meta
         )
-        primary = tracked[0] if tracked else {
-            "riot_id": player["riot_id"],
-            "tagline": player["tagline"],
-        }
-        job, created = store.enqueue(
-            kind=JOB_KIND_REFRESH,
+        if not tracked:
+            if player is None and not builds:
+                raise HTTPException(status_code=404, detail="Unknown player")
+            raise HTTPException(
+                status_code=409,
+                detail="This report predates the web app; submit the player again.",
+            )
+        primary = tracked[0]
+        region = str(player["region"]) if player is not None else "euw1"
+        # Repair a stale single-player registry row for a multi-player report slug.
+        store.upsert_player(
+            slug=slug,
             riot_id=primary["riot_id"],
             tagline=primary["tagline"],
-            region=player["region"],
+            region=region,
+            players=tracked,
+        )
+        job, created = store.enqueue(
+            kind=kind,
+            riot_id=primary["riot_id"],
+            tagline=primary["tagline"],
+            region=region,
             player_slug=slug,
-            players=tracked or [primary],
+            players=tracked,
         )
         return {"job": _job_public(store, job), "created": created, "player_slug": slug}
+
+    @app.post("/api/players/{slug}/refresh")
+    def refresh_player(slug: str) -> dict[str, Any]:
+        return _enqueue_player_job(slug, JOB_KIND_REFRESH)
+
+    @app.post("/api/players/{slug}/regenerate")
+    def regenerate_player(slug: str) -> dict[str, Any]:
+        """Re-render reports from cached matches without fetching newer games."""
+        return _enqueue_player_job(slug, JOB_KIND_REGENERATE)
 
     @app.post("/api/chat")
     def chat(body: ChatRequest) -> dict[str, Any]:

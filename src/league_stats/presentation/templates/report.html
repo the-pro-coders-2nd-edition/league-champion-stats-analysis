@@ -8,16 +8,16 @@
 <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
 {% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, nav_link, tiered_cards, rec_card, metric_card, generated_at_time, format_generated_at_script %}
 {{ favicon_links(favicon_href) }}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="static/report.css">
 <link rel="stylesheet" href="static/chatbot.css">
 <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual';</script>
 </head>
 <body>
 {% if status_endpoint %}
-<div id="web-status-banner" hidden
-     style="position:fixed;top:0;left:0;right:0;z-index:200;padding:8px 16px;text-align:center;
-            font:600 0.85rem/1.4 system-ui,sans-serif;color:#0b1220;background:#f5c451;
-            box-shadow:0 2px 8px rgba(0,0,0,0.35);">
+<div id="web-status-banner" hidden>
   <span id="web-status-banner-text">Analysis in progress…</span>
 </div>
 <script>
@@ -25,10 +25,44 @@
   var STATUS_ENDPOINT = {{ status_endpoint | tojson }};
   var REPORT_SLUG = {{ report_slug | default("") | tojson }};
   var PAGE_GENERATED_AT = {{ generated_at | default("") | tojson }};
+  var REPORT_HREF = {{
+    (("/out/reports/" ~ chat_report_ref ~ "/report.html") | tojson)
+    if chat_report_ref else "null"
+  }};
   var ACTIVE_STATES = ['queued', 'fetching', 'analyzing', 'report_ready', 'peer_running'];
   var banner = document.getElementById('web-status-banner');
   var bannerText = document.getElementById('web-status-banner-text');
   var timer = null;
+
+  function syncBannerOffset() {
+    var visible = banner && !banner.hidden;
+    var height = visible ? Math.ceil(banner.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--web-banner-offset', height + 'px');
+    document.body.classList.toggle('web-status-banner-visible', visible);
+    if (typeof window.reportSyncStickyOffset === 'function') {
+      window.reportSyncStickyOffset();
+    }
+  }
+
+  function setBannerVisible(visible, text) {
+    if (text != null) bannerText.textContent = text;
+    banner.hidden = !visible;
+    // Measure after paint so wrapped status text gets the real height.
+    requestAnimationFrame(syncBannerOffset);
+  }
+
+  function sameReport(build) {
+    // Only reload when the API row is THIS on-disk report. Build slugs collide
+    // across solo vs pooled group directories; comparing generated_at alone
+    // can loop forever (reload → 304 → same PAGE_GENERATED_AT → reload).
+    if (!build || build.slug !== REPORT_SLUG) return false;
+    var href = build.href ? String(build.href).split('?')[0] : '';
+    if (REPORT_HREF && href) return href === REPORT_HREF;
+    if (href && window.location && window.location.pathname) {
+      return href === window.location.pathname;
+    }
+    return true;
+  }
 
   function poll() {
     fetch(STATUS_ENDPOINT, { cache: 'no-store' })
@@ -37,21 +71,37 @@
         if (!data) return;
         var builds = data.builds || [];
         for (var i = 0; i < builds.length; i++) {
-          if (builds[i].slug === REPORT_SLUG && builds[i].generated_at &&
-              PAGE_GENERATED_AT && builds[i].generated_at !== PAGE_GENERATED_AT) {
-            // This build was re-rendered (e.g. peer analysis landed): reload.
-            window.location.reload();
-            return;
-          }
+          var build = builds[i];
+          if (!sameReport(build) || !build.generated_at || !PAGE_GENERATED_AT) continue;
+          if (build.generated_at === PAGE_GENERATED_AT) continue;
+          // Belt-and-suspenders: never reload more than once for the same target.
+          var reloadKey = 'report-reload:' + (REPORT_HREF || REPORT_SLUG) + ':' + build.generated_at;
+          try {
+            if (sessionStorage.getItem(reloadKey)) continue;
+            sessionStorage.setItem(reloadKey, '1');
+          } catch (err) { /* private mode: still attempt a single reload */ }
+          window.location.reload();
+          return;
         }
         var job = data.active_job;
+        var peerPending = document.getElementById('rank-peers-pending');
         if (job && ACTIVE_STATES.indexOf(job.state) !== -1) {
-          bannerText.textContent = job.stage_detail ||
-            (job.state === 'report_ready' ? 'Peer analysis queued…' : 'Analysis in progress…');
-          banner.hidden = false;
+          setBannerVisible(true, job.stage_detail ||
+            (job.state === 'report_ready' ? 'Peer analysis queued…' : 'Analysis in progress…'));
+          if (peerPending) {
+            peerPending.textContent = job.stage_detail ||
+              (job.state === 'report_ready'
+                ? 'Peer comparison is queued and will appear here automatically.'
+                : 'Peer comparison is still running — this section updates when it finishes.');
+            peerPending.classList.remove('is-failed');
+          }
         } else {
-          banner.hidden = true;
-          if (!job || job.state === 'done') {
+          setBannerVisible(false);
+          if (peerPending && data.peer_failed) {
+            peerPending.textContent = 'Peer comparison could not be completed for this report.';
+            peerPending.classList.add('is-failed');
+          }
+          if (!job || job.state === 'done' || job.state === 'failed') {
             clearInterval(timer);
             timer = null;
           }
@@ -60,6 +110,10 @@
       .catch(function () { /* transient network error: keep polling */ });
   }
 
+  if (window.ResizeObserver) {
+    new ResizeObserver(syncBannerOffset).observe(banner);
+  }
+  window.addEventListener('resize', syncBannerOffset);
   timer = setInterval(poll, 10000);
   poll();
 })();
@@ -69,13 +123,13 @@
 <nav class="report-nav">
   {{ app_brand(app_title, logo_href, variant='nav') }}
   <div class="nav-back">
-    <a href="../../../index.html">← All players</a>
+    <a href="/">← New analysis</a>
   </div>
   {% if player_builds %}
   <div class="nav-builds">
     <div class="build-grid">
       {% for build in player_builds %}
-      {{ build_card(build, variant='nav') }}
+      {{ build_card(build) }}
       {% endfor %}
     </div>
   </div>
@@ -112,7 +166,7 @@
     </div>
     <div class="nav-group nav-group--analysis">
       <div class="nav-group-label">Analysis</div>
-      {% if has_peer_comparison %}
+      {% if has_peer_comparison or status_endpoint %}
       {{ nav_link('#rank-peers', 'Peers', 'lucide:bar-chart-2', 'rank-peers') }}
       {% endif %}
       {{ nav_link('#graphs', 'Advanced', 'lucide:line-chart', 'graphs') }}
@@ -166,13 +220,26 @@
       {% endif %}
       <div>
         <h1 class="report-page-title">{{ build_heading(champion, role_icon_href, role_display) }}</h1>
+        {% if report_players and report_players|length > 1 %}
+        <div class="report-players">
+          {% for member in report_players %}
+          <span class="report-player-chip">
+            {% if member.profile_icon %}
+            <img src="{{ member.profile_icon }}" alt="" class="report-player-icon" width="22" height="22">
+            {% endif %}
+            <span>{{ member.label }}</span>
+          </span>
+          {% endfor %}
+        </div>
+        {% else %}
         <div class="report-player-name">{{ player_name }}</div>
+        {% endif %}
         <div class="report-hero-meta" id="overview-subtitle">{{ total_games }} {{ queue_label }} games · patches {{ patch_range }}</div>
       </div>
     </div>
     <div class="hero-score-panel">
       <div class="hero-score-label">Improvement score</div>
-      <div class="hero-score-value" id="score-value">{{ score }}<span>/100</span></div>
+      <div class="hero-score-value" id="score-value" data-score="{{ score }}">{{ score }}<span>/100</span></div>
       <details class="score-breakdown">
         <summary>Score breakdown</summary>
         <div class="score-breakdown-panel" id="score-comps">
@@ -613,6 +680,13 @@
   </table>
   </div>
 </section>
+{% elif status_endpoint %}
+<section id="rank-peers" class="report-section report-section--analysis" data-peer-pending="1">
+  {{ section_title("Rank peer comparison", "chart", "accent", category='analysis') }}
+  <div class="peer-pending" role="status" aria-live="polite">
+    <p class="sub" id="rank-peers-pending">Peer comparison is still running — this section updates when it finishes.</p>
+  </div>
+</section>
 {% endif %}
 
 <section id="graphs" class="report-section report-section--analysis">
@@ -803,7 +877,11 @@
     var scoreNode = document.getElementById('score-value');
     var compsNode = document.getElementById('score-comps');
     if (scoreNode) {
-      scoreNode.innerHTML = String(bundle.score) + '<span>/100</span>';
+      if (window.reportAnimateScore) {
+        window.reportAnimateScore(scoreNode, bundle.score);
+      } else {
+        scoreNode.innerHTML = String(bundle.score) + '<span>/100</span>';
+      }
     }
     if (!compsNode) return;
     compsNode.innerHTML = (bundle.score_components || []).map(function (comp) {
@@ -817,11 +895,15 @@
 
   function renderPeer(bundle) {
     var section = document.getElementById('rank-peers');
+    if (!section) return;
+    var isPending = section.getAttribute('data-peer-pending') === '1';
     if (!bundle.peer) {
-      if (section) section.style.display = 'none';
+      // Keep the stage-A placeholder visible; hide a real peer block when the
+      // active queue/window has no peer slice (e.g. flex).
+      section.style.display = isPending ? '' : 'none';
       return;
     }
-    if (section) section.style.display = '';
+    section.style.display = '';
     var subtitle = document.getElementById('peer-subtitle');
     if (subtitle) subtitle.textContent = bundle.peer.subtitle;
     var cards = document.getElementById('peer-highlight-cards');
@@ -1766,13 +1848,58 @@
   var stickyHeader = document.getElementById('report-sticky-header');
   if (!stickyHeader) return;
   function syncStickyOffset() {
-    var height = Math.ceil(stickyHeader.getBoundingClientRect().height) + 16;
+    var bannerOffset = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--web-banner-offset')
+    ) || 0;
+    var height = Math.ceil(stickyHeader.getBoundingClientRect().height) + 16 + bannerOffset;
     document.documentElement.style.setProperty('--report-sticky-offset', height + 'px');
   }
+  function syncStickyShadow() {
+    stickyHeader.classList.toggle('is-scrolled', window.scrollY > 8);
+  }
+  window.reportSyncStickyOffset = syncStickyOffset;
   syncStickyOffset();
+  syncStickyShadow();
   window.addEventListener('resize', syncStickyOffset);
+  window.addEventListener('scroll', syncStickyShadow, { passive: true });
   if (window.ResizeObserver) {
     new ResizeObserver(syncStickyOffset).observe(stickyHeader);
+  }
+})();
+</script>
+<script>
+(function () {
+  function animateScore(node, target) {
+    if (!node) return;
+    var end = Math.round(Number(target) || 0);
+    var start = Number(node.getAttribute('data-display'));
+    if (!isFinite(start)) start = 0;
+    node.setAttribute('data-score', String(end));
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      node.setAttribute('data-display', String(end));
+      node.innerHTML = String(end) + '<span>/100</span>';
+      return;
+    }
+    var duration = 700;
+    var t0 = null;
+    function frame(ts) {
+      if (t0 == null) t0 = ts;
+      var p = Math.min(1, (ts - t0) / duration);
+      var eased = 1 - Math.pow(1 - p, 3);
+      var value = Math.round(start + (end - start) * eased);
+      node.setAttribute('data-display', String(value));
+      node.innerHTML = String(value) + '<span>/100</span>';
+      if (p < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  window.reportAnimateScore = animateScore;
+  var scoreNode = document.getElementById('score-value');
+  if (scoreNode) {
+    var initial = scoreNode.getAttribute('data-score') || scoreNode.textContent;
+    scoreNode.setAttribute('data-display', '0');
+    scoreNode.innerHTML = '0<span>/100</span>';
+    animateScore(scoreNode, initial);
   }
 })();
 </script>
@@ -1862,6 +1989,11 @@
   try {
     savedCategory = localStorage.getItem('reportActiveCategory');
   } catch (e) {}
+  // Stage-A web reports omit peers; restoring the Analysis tab then looks like
+  // the whole report is only "Advanced stats". Prefer Performance until peers exist.
+  if (savedCategory === 'analysis' && !document.getElementById('rank-peers')) {
+    savedCategory = null;
+  }
   var initialCategory = (savedCategory && tabs.some(function (tab) {
     return tab.getAttribute('data-category') === savedCategory;
   })) ? savedCategory : 'performance';
