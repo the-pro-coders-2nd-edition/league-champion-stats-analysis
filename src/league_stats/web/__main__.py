@@ -7,13 +7,14 @@ import argparse
 import uvicorn
 
 from league_stats.core.config import load_web_config
+from league_stats.presentation.brand_assets import APP_TITLE
 from league_stats.utils import setup_logging
 from league_stats.web.app import create_app
 
 
 def main(argv: list[str] | None = None) -> None:
     """Start the FastAPI server (search UI, job queue, reports, chat proxy)."""
-    parser = argparse.ArgumentParser(description="Champion Stats Analyzer web app")
+    parser = argparse.ArgumentParser(description=f"{APP_TITLE} web app")
     parser.add_argument("--host", default=None, help="Bind address (default 127.0.0.1)")
     parser.add_argument("--port", type=int, default=None, help="HTTP port (default 8000)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Debug logging")

@@ -179,3 +179,51 @@ def test_player_registry_stores_group(store: JobStore) -> None:
 
 def test_average_duration_defaults_without_history(store: JobStore) -> None:
     assert store.average_duration_s() == jobs.DEFAULT_JOB_DURATION_S
+
+
+def test_cancel_queued_job(store: JobStore) -> None:
+    job = _enqueue(store)
+    cancelled = store.cancel(int(job["id"]))
+    assert cancelled is not None
+    assert cancelled["state"] == jobs.CANCELLED
+    assert cancelled["finished_at"] is not None
+    assert store.claim_next() is None
+    assert store.active_job_for_player("test_euw") is None
+
+
+def test_cancel_running_job_blocks_further_state_updates(store: JobStore) -> None:
+    job = _enqueue(store)
+    claimed = store.claim_next()
+    assert claimed is not None
+    job_id = int(claimed["id"])
+
+    cancelled = store.cancel(job_id)
+    assert cancelled is not None
+    assert cancelled["state"] == jobs.CANCELLED
+    assert store.is_cancelled(job_id)
+
+    assert store.set_state(job_id, jobs.ANALYZING, detail="should not apply") is False
+    assert store.get(job_id)["state"] == jobs.CANCELLED
+    store.update_progress(job_id, detail="ignored", current=1, total=2)
+    assert store.get(job_id)["stage_detail"] == "Cancelled by user"
+
+
+def test_cancel_terminal_job_returns_none(store: JobStore) -> None:
+    job = _enqueue(store)
+    store.set_state(int(job["id"]), jobs.DONE)
+    assert store.cancel(int(job["id"])) is None
+    assert store.cancel(9999) is None
+
+
+def test_cancel_allows_new_enqueue(store: JobStore) -> None:
+    first = _enqueue(store)
+    store.cancel(int(first["id"]))
+    second, created = store.enqueue(
+        kind=jobs.JOB_KIND_ANALYZE,
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        player_slug="test_euw",
+    )
+    assert created
+    assert second["id"] != first["id"]

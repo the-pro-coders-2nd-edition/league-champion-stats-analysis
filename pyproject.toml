@@ -5,7 +5,7 @@ description = "Deep coaching analysis of ranked solo queue games for any champio
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-authors = [{ name = "League Champion Stats Analysis" }]
+authors = [{ name = "League Champion Analyser" }]
 dependencies = [
     "requests>=2.32",
     "pandas>=2.2",

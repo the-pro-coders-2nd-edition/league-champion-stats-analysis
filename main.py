@@ -1,4 +1,4 @@
-"""Start the Champion Stats Analyzer web app."""
+"""Start the League Champion Analyser web app."""
 
 from league_stats.web.__main__ import main
 

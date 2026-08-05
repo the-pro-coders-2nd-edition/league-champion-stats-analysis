@@ -16,10 +16,102 @@
 <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual';</script>
 </head>
 <body>
-{% if status_endpoint %}
-<div id="web-status-banner" hidden>
-  <span id="web-status-banner-text">Analysis in progress…</span>
+<div class="layout">
+<nav class="report-nav">
+  {{ app_brand(app_title, logo_href, variant='nav') }}
+  <div class="nav-back">
+    <a href="/">← New analysis</a>
+  </div>
+  {% if player_builds %}
+  <div class="nav-builds">
+    <div class="build-grid">
+      {% for build in player_builds %}
+      {{ build_card(build) }}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  <div class="nav-sections">
+    <div class="nav-group nav-group--performance">
+      <div class="nav-group-label">Performance</div>
+      {{ nav_link('#overview', 'Overview', 'lucide:layout-dashboard', 'overview') }}
+      {{ nav_link('#coaching', 'Coaching', 'lucide:lightbulb', 'coaching') }}
+      {{ nav_link('#form-tracker', 'Form tracker', 'lucide:trending-up', 'form-tracker') }}
+    </div>
+    <div class="nav-group nav-group--games">
+      <div class="nav-group-label">Recent games</div>
+      {{ nav_link('#game-review', 'Game Review', 'lucide:layout-list', 'game-review') }}
+    </div>
+    <div class="nav-group nav-group--laning">
+      <div class="nav-group-label">{{ early_section_title | default('Laning') }}</div>
+      {{ nav_link('#lane', 'Lane', 'lucide:map', 'lane') }}
+      {{ nav_link('#economy', 'Economy', 'lucide:coins', 'economy') }}
+    </div>
+    <div class="nav-group nav-group--impact">
+      <div class="nav-group-label">Game impact</div>
+      {{ nav_link('#vision', 'Vision', 'lucide:eye', 'vision') }}
+      {{ nav_link('#deaths', 'Deaths', 'lucide:skull', 'deaths') }}
+      {{ nav_link('#positioning', 'Positioning', 'lucide:footprints', 'positioning') }}
+      {{ nav_link('#teamfights', 'Fights', 'lucide:users', 'teamfights') }}
+      {{ nav_link('#objectives', 'Objectives', 'lucide:target', 'objectives') }}
+    </div>
+    <div class="nav-group nav-group--champion">
+      <div class="nav-group-label">Champion</div>
+      {{ nav_link('#items', 'Items', 'lucide:wand-sparkles', 'items') }}
+      {{ nav_link('#runes', 'Runes', 'lucide:sparkles', 'runes') }}
+      {{ nav_link('#matchups', 'Matchups', 'lucide:swords', 'matchups') }}
+    </div>
+    <div class="nav-group nav-group--analysis">
+      <div class="nav-group-label">Analysis</div>
+      {% if has_peer_comparison or status_endpoint %}
+      {{ nav_link('#rank-peers', 'Peers', 'lucide:bar-chart-2', 'rank-peers') }}
+      {% endif %}
+      {{ nav_link('#graphs', 'Advanced', 'lucide:line-chart', 'graphs') }}
+    </div>
+  </div>
+</nav>
+<main>
+
+<div class="report-sticky-header" id="report-sticky-header">
+  {% if status_endpoint %}
+  <div id="web-status-banner" hidden>
+    <span id="web-status-banner-text">Analysis in progress…</span>
+  </div>
+  {% endif %}
+  <div class="report-filter-bar" id="report-filter-bar">
+    <div class="filter-group" id="queue-filter-bar">
+      <span class="game-window-label">Queue</span>
+      {% for option in queue_filter_options %}
+      <button
+        type="button"
+        class="queue-filter-btn game-window-btn{% if option.key == queue_filter_default %} is-active{% endif %}"
+        data-queue="{{ option.key }}"
+        {% if not option.enabled %}disabled{% endif %}
+      >{{ option.label }}</button>
+      {% endfor %}
+    </div>
+    <div class="filter-group" id="game-window-bar">
+      <span class="game-window-label">Games</span>
+      {% for option in game_window_options %}
+      <button
+        type="button"
+        class="game-window-btn{% if option.key == game_window_default %} is-active{% endif %}"
+        data-window="{{ option.key }}"
+        {% if not option.enabled %}disabled{% endif %}
+      >{{ option.label }}</button>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="report-category-tabs" id="report-category-tabs" role="tablist" aria-label="Report categories">
+    <button type="button" class="report-tab report-tab--performance is-active" data-category="performance" role="tab" aria-selected="true" aria-controls="category-performance" id="tab-performance">Performance</button>
+    <button type="button" class="report-tab report-tab--games" data-category="games" role="tab" aria-selected="false" aria-controls="category-games" id="tab-games">Game Review</button>
+    <button type="button" class="report-tab report-tab--laning" data-category="laning" role="tab" aria-selected="false" aria-controls="category-laning" id="tab-laning">{{ early_section_title | default('Laning') }}</button>
+    <button type="button" class="report-tab report-tab--impact" data-category="impact" role="tab" aria-selected="false" aria-controls="category-impact" id="tab-impact">Game impact</button>
+    <button type="button" class="report-tab report-tab--champion" data-category="champion" role="tab" aria-selected="false" aria-controls="category-champion" id="tab-champion">Champion</button>
+    <button type="button" class="report-tab report-tab--analysis" data-category="analysis" role="tab" aria-selected="false" aria-controls="category-analysis" id="tab-analysis">Analysis</button>
+  </div>
 </div>
+{% if status_endpoint %}
 <script>
 (function () {
   var STATUS_ENDPOINT = {{ status_endpoint | tojson }};
@@ -34,21 +126,13 @@
   var bannerText = document.getElementById('web-status-banner-text');
   var timer = null;
 
-  function syncBannerOffset() {
-    var visible = banner && !banner.hidden;
-    var height = visible ? Math.ceil(banner.getBoundingClientRect().height) : 0;
-    document.documentElement.style.setProperty('--web-banner-offset', height + 'px');
-    document.body.classList.toggle('web-status-banner-visible', visible);
-    if (typeof window.reportSyncStickyOffset === 'function') {
-      window.reportSyncStickyOffset();
-    }
-  }
-
   function setBannerVisible(visible, text) {
     if (text != null) bannerText.textContent = text;
     banner.hidden = !visible;
-    // Measure after paint so wrapped status text gets the real height.
-    requestAnimationFrame(syncBannerOffset);
+    if (typeof window.reportSyncStickyOffset === 'function') {
+      // Sticky header grew/shrank; refresh scroll-padding for section anchors.
+      requestAnimationFrame(window.reportSyncStickyOffset);
+    }
   }
 
   function sameReport(build) {
@@ -110,105 +194,11 @@
       .catch(function () { /* transient network error: keep polling */ });
   }
 
-  if (window.ResizeObserver) {
-    new ResizeObserver(syncBannerOffset).observe(banner);
-  }
-  window.addEventListener('resize', syncBannerOffset);
   timer = setInterval(poll, 10000);
   poll();
 })();
 </script>
 {% endif %}
-<div class="layout">
-<nav class="report-nav">
-  {{ app_brand(app_title, logo_href, variant='nav') }}
-  <div class="nav-back">
-    <a href="/">← New analysis</a>
-  </div>
-  {% if player_builds %}
-  <div class="nav-builds">
-    <div class="build-grid">
-      {% for build in player_builds %}
-      {{ build_card(build) }}
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
-  <div class="nav-sections">
-    <div class="nav-group nav-group--performance">
-      <div class="nav-group-label">Performance</div>
-      {{ nav_link('#overview', 'Overview', 'lucide:layout-dashboard', 'overview') }}
-      {{ nav_link('#coaching', 'Coaching', 'lucide:lightbulb', 'coaching') }}
-      {{ nav_link('#form-tracker', 'Form tracker', 'lucide:trending-up', 'form-tracker') }}
-    </div>
-    <div class="nav-group nav-group--games">
-      <div class="nav-group-label">Recent games</div>
-      {{ nav_link('#game-review', 'Game Review', 'lucide:layout-list', 'game-review') }}
-    </div>
-    <div class="nav-group nav-group--laning">
-      <div class="nav-group-label">{{ early_section_title | default('Laning') }}</div>
-      {{ nav_link('#lane', 'Lane', 'lucide:map', 'lane') }}
-      {{ nav_link('#economy', 'Economy', 'lucide:coins', 'economy') }}
-    </div>
-    <div class="nav-group nav-group--impact">
-      <div class="nav-group-label">Game impact</div>
-      {{ nav_link('#vision', 'Vision', 'lucide:eye', 'vision') }}
-      {{ nav_link('#deaths', 'Deaths', 'lucide:skull', 'deaths') }}
-      {{ nav_link('#positioning', 'Positioning', 'lucide:footprints', 'positioning') }}
-      {{ nav_link('#teamfights', 'Fights', 'lucide:users', 'teamfights') }}
-      {{ nav_link('#objectives', 'Objectives', 'lucide:target', 'objectives') }}
-    </div>
-    <div class="nav-group nav-group--champion">
-      <div class="nav-group-label">Champion</div>
-      {{ nav_link('#items', 'Items', 'lucide:wand-sparkles', 'items') }}
-      {{ nav_link('#runes', 'Runes', 'lucide:sparkles', 'runes') }}
-      {{ nav_link('#matchups', 'Matchups', 'lucide:swords', 'matchups') }}
-    </div>
-    <div class="nav-group nav-group--analysis">
-      <div class="nav-group-label">Analysis</div>
-      {% if has_peer_comparison or status_endpoint %}
-      {{ nav_link('#rank-peers', 'Peers', 'lucide:bar-chart-2', 'rank-peers') }}
-      {% endif %}
-      {{ nav_link('#graphs', 'Advanced', 'lucide:line-chart', 'graphs') }}
-    </div>
-  </div>
-</nav>
-<main>
-
-<div class="report-sticky-header" id="report-sticky-header">
-  <div class="report-filter-bar" id="report-filter-bar">
-    <div class="filter-group" id="queue-filter-bar">
-      <span class="game-window-label">Queue</span>
-      {% for option in queue_filter_options %}
-      <button
-        type="button"
-        class="queue-filter-btn game-window-btn{% if option.key == queue_filter_default %} is-active{% endif %}"
-        data-queue="{{ option.key }}"
-        {% if not option.enabled %}disabled{% endif %}
-      >{{ option.label }}</button>
-      {% endfor %}
-    </div>
-    <div class="filter-group" id="game-window-bar">
-      <span class="game-window-label">Games</span>
-      {% for option in game_window_options %}
-      <button
-        type="button"
-        class="game-window-btn{% if option.key == game_window_default %} is-active{% endif %}"
-        data-window="{{ option.key }}"
-        {% if not option.enabled %}disabled{% endif %}
-      >{{ option.label }}</button>
-      {% endfor %}
-    </div>
-  </div>
-  <div class="report-category-tabs" id="report-category-tabs" role="tablist" aria-label="Report categories">
-    <button type="button" class="report-tab report-tab--performance is-active" data-category="performance" role="tab" aria-selected="true" aria-controls="category-performance" id="tab-performance">Performance</button>
-    <button type="button" class="report-tab report-tab--games" data-category="games" role="tab" aria-selected="false" aria-controls="category-games" id="tab-games">Game Review</button>
-    <button type="button" class="report-tab report-tab--laning" data-category="laning" role="tab" aria-selected="false" aria-controls="category-laning" id="tab-laning">{{ early_section_title | default('Laning') }}</button>
-    <button type="button" class="report-tab report-tab--impact" data-category="impact" role="tab" aria-selected="false" aria-controls="category-impact" id="tab-impact">Game impact</button>
-    <button type="button" class="report-tab report-tab--champion" data-category="champion" role="tab" aria-selected="false" aria-controls="category-champion" id="tab-champion">Champion</button>
-    <button type="button" class="report-tab report-tab--analysis" data-category="analysis" role="tab" aria-selected="false" aria-controls="category-analysis" id="tab-analysis">Analysis</button>
-  </div>
-</div>
 
 <div class="report-category-panel is-active" id="category-performance" data-category="performance" role="tabpanel" aria-labelledby="tab-performance">
 
@@ -1725,69 +1715,72 @@
     var bundle = view.windows[windowKey];
     if (!bundle) return;
     if (mainEl) mainEl.classList.add('is-filter-loading');
-    currentQueue = queueKey;
-    currentWindow = windowKey;
-    var subtitle = document.getElementById('overview-subtitle');
-    if (subtitle) {
-      subtitle.textContent = bundle.total_games + ' ' + (bundle.queue_label || 'ranked') +
-        ' games · patches ' + bundle.patch_range;
-    }
-    renderTieredCards(document.getElementById('overview-cards'), bundle.overview_cards);
-    renderHeroActions(bundle);
-    renderScore(bundle);
-    renderPeer(bundle);
-    renderTieredCards(document.getElementById('lane-cards'), bundle.lane_cards);
-    renderTieredCards(document.getElementById('economy-cards'), bundle.economy_cards);
-    renderTieredCards(document.getElementById('vision-cards'), bundle.vision_cards);
-    renderTieredCards(document.getElementById('death-cards'), bundle.death_cards);
-    renderPositioningHints(bundle.positioning_hints);
-    renderTieredCards(document.getElementById('positioning-cards'), bundle.positioning_cards);
-    renderTieredCards(document.getElementById('teamfight-cards'), bundle.teamfight_cards);
-
-    var blindBlock = document.getElementById('blind-spots-block');
-    var blindBody = document.getElementById('blind-spots-body');
-    if (blindBody) {
-      blindBody.innerHTML = (bundle.blind_spots || []).map(function (spot) {
-        return '<tr><td>' + spot.zone + '</td><td>' + spot.deaths + '</td></tr>';
-      }).join('');
-    }
-    if (blindBlock) blindBlock.style.display = (bundle.blind_spots || []).length ? '' : 'none';
-
-    renderTableBody('objective-table-body', bundle.objective_rows, function (row) {
-      var kindLabel = row.kind.charAt(0).toUpperCase() + row.kind.slice(1);
-      return '<tr><td>' + iconCell(kindLabel, row.objective_icon) + '</td><td>' + row.count + '</td><td>' + pct(row.taken_rate) + '</td><td>' +
-        pct(row.presence_rate) + '</td><td>' + pct(row.early_rate) + '</td><td>' + pct(row.dead_before_rate) +
-        '</td><td>' + row.avg_wards_before + '</td></tr>';
-    });
-    renderTableBody('build-paths-body', bundle.build_paths, function (row) {
-      return '<tr><td>' + coreCell(row) + '</td><td>' + row.games + '</td><td>' + pct(row.winrate) + '</td><td>' +
-        row.avg_dpm + '</td><td>' + row.avg_deaths + '</td></tr>';
-    });
-    renderTableBody('rune-rows-body', bundle.rune_rows, function (row) {
-      return '<tr><td>' + iconCell(row.keystone, row.keystone_icon) + '</td><td>' + row.games + '</td><td>' + pct(row.winrate) + '</td><td>' +
-        row.avg_dpm + '</td><td>' + row.avg_deaths + '</td></tr>';
-    });
-    renderTableBody('matchup-rows-body', bundle.matchup_rows, function (row) {
-      return '<tr><td>' + iconCell(row.opponent, row.opponent_icon) + '</td><td>' + row.games + '</td><td>' + pct(row.winrate) + '</td><td>' +
-        row.avg_gd10 + '</td><td>' + row.avg_csd10 + '</td><td>' + row.avg_deaths_pre14 + '</td><td>' +
-        row.recommendation + '</td></tr>';
-    });
-
-    Object.keys(bundle.figures || {}).forEach(function (name) {
-      setFigure('fig-' + name, bundle.figures[name]);
-    });
-    renderFigureHints(bundle);
-    renderRecommendations(bundle);
-    renderFormProgression(queueKey);
-    renderGameReview(queueKey);
-
-    updateQueueButtons(queueKey);
-    updateGameWindowButtons(queueKey);
     try {
-      localStorage.setItem('reportQueueFilter', queueKey);
-      localStorage.setItem('reportGameWindow', windowKey);
-    } catch (e) {}
-    if (mainEl) mainEl.classList.remove('is-filter-loading');
+      currentQueue = queueKey;
+      currentWindow = windowKey;
+      var subtitle = document.getElementById('overview-subtitle');
+      if (subtitle) {
+        subtitle.textContent = bundle.total_games + ' ' + (bundle.queue_label || 'ranked') +
+          ' games · patches ' + bundle.patch_range;
+      }
+      renderTieredCards(document.getElementById('overview-cards'), bundle.overview_cards);
+      renderHeroActions(bundle);
+      renderScore(bundle);
+      renderPeer(bundle);
+      renderTieredCards(document.getElementById('lane-cards'), bundle.lane_cards);
+      renderTieredCards(document.getElementById('economy-cards'), bundle.economy_cards);
+      renderTieredCards(document.getElementById('vision-cards'), bundle.vision_cards);
+      renderTieredCards(document.getElementById('death-cards'), bundle.death_cards);
+      renderPositioningHints(bundle.positioning_hints);
+      renderTieredCards(document.getElementById('positioning-cards'), bundle.positioning_cards);
+      renderTieredCards(document.getElementById('teamfight-cards'), bundle.teamfight_cards);
+
+      var blindBlock = document.getElementById('blind-spots-block');
+      var blindBody = document.getElementById('blind-spots-body');
+      if (blindBody) {
+        blindBody.innerHTML = (bundle.blind_spots || []).map(function (spot) {
+          return '<tr><td>' + spot.zone + '</td><td>' + spot.deaths + '</td></tr>';
+        }).join('');
+      }
+      if (blindBlock) blindBlock.style.display = (bundle.blind_spots || []).length ? '' : 'none';
+
+      renderTableBody('objective-table-body', bundle.objective_rows, function (row) {
+        var kindLabel = row.kind.charAt(0).toUpperCase() + row.kind.slice(1);
+        return '<tr><td>' + iconCell(kindLabel, row.objective_icon) + '</td><td>' + row.count + '</td><td>' + pct(row.taken_rate) + '</td><td>' +
+          pct(row.presence_rate) + '</td><td>' + pct(row.early_rate) + '</td><td>' + pct(row.dead_before_rate) +
+          '</td><td>' + row.avg_wards_before + '</td></tr>';
+      });
+      renderTableBody('build-paths-body', bundle.build_paths, function (row) {
+        return '<tr><td>' + coreCell(row) + '</td><td>' + row.games + '</td><td>' + pct(row.winrate) + '</td><td>' +
+          row.avg_dpm + '</td><td>' + row.avg_deaths + '</td></tr>';
+      });
+      renderTableBody('rune-rows-body', bundle.rune_rows, function (row) {
+        return '<tr><td>' + iconCell(row.keystone, row.keystone_icon) + '</td><td>' + row.games + '</td><td>' + pct(row.winrate) + '</td><td>' +
+          row.avg_dpm + '</td><td>' + row.avg_deaths + '</td></tr>';
+      });
+      renderTableBody('matchup-rows-body', bundle.matchup_rows, function (row) {
+        return '<tr><td>' + iconCell(row.opponent, row.opponent_icon) + '</td><td>' + row.games + '</td><td>' + pct(row.winrate) + '</td><td>' +
+          row.avg_gd10 + '</td><td>' + row.avg_csd10 + '</td><td>' + row.avg_deaths_pre14 + '</td><td>' +
+          row.recommendation + '</td></tr>';
+      });
+
+      Object.keys(bundle.figures || {}).forEach(function (name) {
+        setFigure('fig-' + name, bundle.figures[name]);
+      });
+      renderFigureHints(bundle);
+      renderRecommendations(bundle);
+      renderFormProgression(queueKey);
+      renderGameReview(queueKey);
+
+      updateQueueButtons(queueKey);
+      updateGameWindowButtons(queueKey);
+      try {
+        localStorage.setItem('reportQueueFilter', queueKey);
+        localStorage.setItem('reportGameWindow', windowKey);
+      } catch (e) {}
+    } finally {
+      if (mainEl) mainEl.classList.remove('is-filter-loading');
+    }
   }
 
   document.querySelectorAll('.queue-filter-btn').forEach(function (btn) {
@@ -1848,10 +1841,7 @@
   var stickyHeader = document.getElementById('report-sticky-header');
   if (!stickyHeader) return;
   function syncStickyOffset() {
-    var bannerOffset = parseFloat(
-      getComputedStyle(document.documentElement).getPropertyValue('--web-banner-offset')
-    ) || 0;
-    var height = Math.ceil(stickyHeader.getBoundingClientRect().height) + 16 + bannerOffset;
+    var height = Math.ceil(stickyHeader.getBoundingClientRect().height) + 16;
     document.documentElement.style.setProperty('--report-sticky-offset', height + 'px');
   }
   function syncStickyShadow() {

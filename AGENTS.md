@@ -1,6 +1,6 @@
 # AGENTS.md — AI navigation guide
 
-Champion Stats Analyzer: downloads ranked LoL matches via Riot Match-V5, parses timelines,
+League Champion Analyser: downloads ranked LoL matches via Riot Match-V5, parses timelines,
 runs coaching analytics, and renders interactive HTML dashboards plus CSV/JSON exports.
 
 All user-facing workflows go through the **web UI**. There is no analysis CLI.

@@ -17,8 +17,6 @@
   --scrollbar-thumb-hover: var(--accent);
   /* Sticky queue/game filter bar — anchor scroll targets need this offset */
   --report-sticky-offset: 96px;
-  /* Fixed peer-status banner height (0 when hidden) */
-  --web-banner-offset: 0px;
 }
 html {
   scroll-padding-top: var(--report-sticky-offset);
@@ -50,10 +48,6 @@ body {
   color: var(--text);
   font: 15px/1.55 var(--font);
 }
-/* Keep category tabs / nav below the fixed peer-status banner */
-body.web-status-banner-visible {
-  padding-top: var(--web-banner-offset);
-}
 a { color: var(--accent); text-decoration: none; }
 button:focus-visible, .game-window-btn:focus-visible, .report-tab:focus-visible,
 .metric-tooltip-btn:focus-visible, .rec-extend:focus-visible {
@@ -62,8 +56,7 @@ button:focus-visible, .game-window-btn:focus-visible, .report-tab:focus-visible,
 .layout { display: flex; min-height: 100vh; }
 nav.report-nav {
   width: 240px; background: var(--panel); border-right: 1px solid var(--border);
-  padding: 20px 0; position: sticky; top: var(--web-banner-offset); height: calc(100vh - var(--web-banner-offset));
-  overflow-y: auto; flex-shrink: 0;
+  padding: 20px 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; flex-shrink: 0;
 }
 nav h1 { font-size: 18px; padding: 0 20px 16px; color: var(--accent); }
 .app-brand { display: flex; align-items: center; gap: 10px; padding: 0 16px 14px; }
@@ -99,7 +92,11 @@ nav h1 { font-size: 18px; padding: 0 20px 16px; color: var(--accent); }
   line-height: 1.2; text-align: center;
 }
 .nav-back a:hover { color: var(--accent); border-color: var(--accent); background: var(--panel-2); }
-main { flex: 1; padding: 32px clamp(16px, 4vw, 48px); max-width: 1280px; }
+main {
+  --main-pad-x: clamp(16px, 4vw, 48px);
+  --main-pad-y: 32px;
+  flex: 1; width: 100%; padding: var(--main-pad-y) var(--main-pad-x); max-width: 1280px;
+}
 section { margin-bottom: 56px; scroll-margin-top: var(--report-sticky-offset); }
 .report-section { border-radius: 12px; padding: 4px 0 8px; }
 .rec[id] { scroll-margin-top: var(--report-sticky-offset); }
@@ -495,20 +492,29 @@ tr:last-child td { border-bottom: none; }
 .delta-above { color: var(--win); } .delta-below { color: var(--loss); } .delta-inline { color: var(--muted); }
 .delta-improved { color: var(--win); } .delta-regressed { color: var(--loss); }
 footer { color: var(--muted); font-size: 13px; padding: 24px 0; border-top: 1px solid var(--border); }
+/* Lives inside .report-sticky-header so filters/tabs stay at top:0 with it */
 #web-status-banner {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 200;
-  padding: 8px 16px; text-align: center;
+  margin: 0 0 10px;
+  padding: 8px 14px; text-align: center;
   font: 600 0.85rem/1.4 var(--font);
-  color: #0b1220; background: #f5c451;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  color: #f6e7a8;
+  background: rgba(245, 196, 81, 0.16);
+  border: 1px solid rgba(245, 196, 81, 0.5);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
 }
 #web-status-banner[hidden] { display: none !important; }
 .report-sticky-header {
-  position: sticky; top: var(--web-banner-offset); z-index: 5;
+  /* Bleed to the edges of <main>; keep inner padding so controls align with content */
+  position: sticky; top: 0; z-index: 5;
+  width: auto;
+  margin: calc(-1 * var(--main-pad-y)) calc(-1 * var(--main-pad-x)) 8px;
+  padding: 12px var(--main-pad-x) 0;
   background: rgba(15, 17, 24, 0.92);
   backdrop-filter: blur(10px);
-  margin-bottom: 8px; border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   transition: box-shadow .2s ease, border-color .2s ease;
+  box-sizing: border-box;
 }
 .report-sticky-header.is-scrolled {
   box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
@@ -593,10 +599,6 @@ footer { color: var(--muted); font-size: 13px; padding: 24px 0; border-top: 1px 
 .build-card .game-icon { width: 24px; height: 24px; border-radius: 5px; }
 .build-card .meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
 .build-card strong { font-size: 12px; font-weight: 600; }
-@media (min-width: 861px) {
-  /* Desktop: sidebar owns category navigation; tabs are redundant */
-  .report-category-tabs { display: none; }
-}
 @media (max-width: 860px) {
   .layout { flex-direction: column; }
   nav.report-nav { width: 100%; height: auto; position: static; display: flex; flex-wrap: wrap; align-items: center; }

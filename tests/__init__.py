@@ -1,1 +1,1 @@
-"""Test suite for Viktor Analyzer."""
+"""Test suite for League Champion Analyser."""

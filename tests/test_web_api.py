@@ -41,7 +41,9 @@ def _write_report(output_dir: Path, slug: str, build_slug: str, **meta: Any) -> 
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> Iterator[TestClient]:
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    # Skip Riot account-v1 lookup; dedicated tests cover the precheck path.
+    monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
     config = WebConfig(
         app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
@@ -146,6 +148,86 @@ def test_submit_analysis_validates_input(client: TestClient) -> None:
     )
 
 
+def test_submit_rejects_unknown_riot_id(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(
+        players: list[dict[str, str]], region: str, output_dir: Path
+    ) -> None:
+        raise ValueError(
+            f"Player {players[0]['riot_id']}#{players[0]['tagline']} was not found "
+            f"on {region}. Check the Riot ID, tagline and region."
+        )
+
+    monkeypatch.setattr(web_app, "_verify_players_exist", boom)
+    response = client.post(
+        "/api/analyses", json={"riot_id": "Fake#EUW", "region": "euw1"}
+    )
+    assert response.status_code == 422
+    assert "Fake#EUW" in response.json()["detail"]
+    assert "not found" in response.json()["detail"]
+    assert client.job_store.list_active_jobs() == []
+
+
+def test_submit_rejects_riot_api_outage(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from league_stats.infra.riot_api import RiotApiError
+
+    def boom(
+        players: list[dict[str, str]], region: str, output_dir: Path
+    ) -> None:
+        raise RiotApiError("GET failed: HTTP 503")
+
+    monkeypatch.setattr(web_app, "_verify_players_exist", boom)
+    response = client.post(
+        "/api/analyses", json={"riot_id": "Test#EUW", "region": "euw1"}
+    )
+    assert response.status_code == 502
+    assert "Could not verify" in response.json()["detail"]
+
+
+def test_verify_players_exist_raises_for_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from league_stats.infra.riot_api import RiotApiError
+
+    class FakeClient:
+        def resolve_puuid(self, riot_id: str, tagline: str) -> str:
+            if riot_id == "Missing":
+                raise RiotApiError(
+                    "GET https://europe.api.riotgames.com/riot/account/v1/"
+                    f"accounts/by-riot-id/{riot_id}/{tagline} failed: HTTP 404 not found"
+                )
+            return "puuid-ok"
+
+    monkeypatch.setattr(web_app, "_build_precheck_client", lambda region, output_dir: FakeClient())
+    with pytest.raises(ValueError, match="Missing#EUW"):
+        web_app._verify_players_exist(
+            [
+                {"riot_id": "Ok", "tagline": "EUW"},
+                {"riot_id": "Missing", "tagline": "EUW"},
+            ],
+            "euw1",
+            tmp_path,
+        )
+
+
+def test_verify_players_exist_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeClient:
+        def resolve_puuid(self, riot_id: str, tagline: str) -> str:
+            return f"puuid-{riot_id}"
+
+    monkeypatch.setattr(web_app, "_build_precheck_client", lambda region, output_dir: FakeClient())
+    web_app._verify_players_exist(
+        [{"riot_id": "Alice", "tagline": "EUW"}],
+        "euw1",
+        tmp_path,
+    )
+
+
 def test_job_status_includes_queue_position(client: TestClient) -> None:
     job_id = client.post(
         "/api/analyses", json={"riot_id": "Test#EUW", "region": "euw1"}
@@ -155,6 +237,43 @@ def test_job_status_includes_queue_position(client: TestClient) -> None:
     assert body["job"]["queue_position"] == 0
     assert body["job"]["eta_s"] is not None
     assert client.get("/api/jobs/999").status_code == 404
+
+
+def test_cancel_queued_job(client: TestClient) -> None:
+    job_id = client.post(
+        "/api/analyses", json={"riot_id": "Test#EUW", "region": "euw1"}
+    ).json()["job"]["id"]
+    response = client.post(f"/api/jobs/{job_id}/cancel")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job"]["state"] == jobs.CANCELLED
+    assert body["job"]["stage_detail"] == "Cancelled by user"
+
+    status = client.get("/api/players/test_euw").json()
+    assert status["active_job"] is None
+
+    # Terminal jobs cannot be cancelled again.
+    assert client.post(f"/api/jobs/{job_id}/cancel").status_code == 409
+    assert client.post("/api/jobs/999/cancel").status_code == 404
+
+
+def test_cancel_keeps_existing_base_report(client: TestClient) -> None:
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    job_id = client.post(
+        "/api/analyses", json={"riot_id": "Test#EUW", "region": "euw1"}
+    ).json()["job"]["id"]
+    client.job_store.set_state(job_id, jobs.REPORT_READY, detail="Report ready")
+    client.job_store.mark_player_base_complete("test_euw")
+
+    response = client.post(f"/api/jobs/{job_id}/cancel")
+    assert response.status_code == 200
+    assert response.json()["job"]["state"] == jobs.CANCELLED
+
+    report = client.web_config.output_dir / "reports/test_euw/viktor_middle/report.html"
+    assert report.is_file()
+    status = client.get("/api/players/test_euw").json()
+    assert status["has_report"] is True
+    assert status["active_job"] is None
 
 
 def test_player_status_serves_existing_reports(client: TestClient) -> None:
@@ -206,6 +325,9 @@ def test_player_page_renders(client: TestClient) -> None:
     assert "test_euw" in response.text
     assert "Refresh with latest games" in response.text
     assert "Regenerate with same games" in response.text
+    assert "Cancel run" in response.text
+    assert "/api/jobs/" in response.text
+    assert "/cancel" in response.text
 
 
 def test_chat_proxy(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -332,7 +454,7 @@ def test_regenerate_recovers_group_from_player_label(client: TestClient) -> None
 def test_landing_page_mentions_group_reports(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
-    assert "Add another player" in response.text
+    assert "Add another account" in response.text
     assert "players" in response.text
 
 

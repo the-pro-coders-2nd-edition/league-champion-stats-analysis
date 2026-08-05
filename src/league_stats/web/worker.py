@@ -33,7 +33,7 @@ from league_stats.pipeline.services import PlayerContext, Services
 from league_stats.presentation.report import discover_player_builds
 from league_stats.web import jobs as job_states
 from league_stats.web.jobs import JOB_KIND_REGENERATE, JobStore, decode_players
-from league_stats.web.progress import JobProgressReporter
+from league_stats.web.progress import JobCancelled, JobProgressReporter
 from league_stats.utils import get_logger
 
 CHAT_ENDPOINT = "/api/chat"
@@ -182,6 +182,12 @@ def _friendly_error(exc: Exception, job: dict[str, Any]) -> str:
     return message
 
 
+def _ensure_not_cancelled(store: JobStore, job_id: int) -> None:
+    """Raise :class:`JobCancelled` when the user has cancelled this job."""
+    if store.is_cancelled(job_id):
+        raise JobCancelled()
+
+
 def _run_stage_a(
     services: Services,
     store: JobStore,
@@ -204,6 +210,7 @@ def _run_stage_a(
     available_any = False
     total = len(batch.pools)
     for index, pool in enumerate(batch.pools, start=1):
+        _ensure_not_cancelled(store, job_id)
         records = group_records(batch.records, pool.champion, pool.role)
         if should_skip_unchanged_build(services.config, pool, records, new_match_ids):
             log.info("Skipping %s: no new games since last report", pool.build_label)
@@ -246,6 +253,7 @@ def _run_stage_b(
     job_id = int(job["id"])
     total = len(batch.pools)
     for index, pool in enumerate(batch.pools, start=1):
+        _ensure_not_cancelled(store, job_id)
         records = group_records(batch.records, pool.champion, pool.role)
         if should_skip_unchanged_build(services.config, pool, records, new_match_ids):
             log.info(
@@ -278,10 +286,17 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
     reporter = JobProgressReporter(store, job_id)
     log.info("Job %d started: %s (%s)", job_id, slug, job["kind"])
 
+    if store.is_cancelled(job_id):
+        log.info("Job %d already cancelled before start", job_id)
+        return
+
     try:
         services = _build_job_services(
             job, web_config, reporter, job_store=store
         )
+    except JobCancelled:
+        log.info("Job %d cancelled during setup", job_id)
+        return
     except Exception as exc:
         store.set_state(job_id, job_states.FAILED, error=str(exc))
         log.exception("Job %d failed during setup", job_id)
@@ -290,6 +305,7 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
     try:
         contexts: list[PlayerContext]
         new_match_ids: frozenset[str] | None
+        _ensure_not_cancelled(store, job_id)
         if job["kind"] == JOB_KIND_REGENERATE:
             # Re-analyse from the local match store; do not download newer games.
             store.set_state(
@@ -305,6 +321,7 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
             contexts = fetch_result.contexts
             new_match_ids = fetch_result.new_match_ids
 
+        _ensure_not_cancelled(store, job_id)
         store.upsert_player(
             slug=slug,
             riot_id=str(job["riot_id"]),
@@ -318,6 +335,7 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
         ranked, available_any = _run_stage_a(
             services, store, job, batch, new_match_ids
         )
+        _ensure_not_cancelled(store, job_id)
         if not available_any:
             raise NoEligibleBuildsError("No builds could be analysed.")
 
@@ -330,10 +348,13 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
 
         peer_error: str | None = None
         try:
+            _ensure_not_cancelled(store, job_id)
             store.set_state(job_id, job_states.PEER_RUNNING, detail="Peer analysis starting…")
             _run_stage_b(
                 services, store, job, batch, ranked, new_match_ids
             )
+        except JobCancelled:
+            raise
         except Exception as exc:
             peer_error = f"Peer analysis failed: {exc}"
             store.mark_player_peer_failed(slug)
@@ -345,6 +366,9 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
             job_id, job_states.DONE, detail="Report complete", error=peer_error or ""
         )
         log.info("Job %d done (%s)", job_id, "with peer errors" if peer_error else "clean")
+    except JobCancelled:
+        # Leave any base reports on disk; cancel never deletes output/.
+        log.info("Job %d cancelled (reports kept if already written)", job_id)
     except Exception as exc:
         store.set_state(job_id, job_states.FAILED, error=_friendly_error(exc, job))
         log.exception("Job %d failed", job_id)

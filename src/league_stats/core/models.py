@@ -1,4 +1,4 @@
-"""Typed domain models for Viktor Analyzer.
+"""Typed domain models for League Champion Analyser.
 
 Every entity extracted from the Riot Match-V5 API is normalised into one of
 the Pydantic models below. ``MatchRecord`` is the aggregate root: one fully

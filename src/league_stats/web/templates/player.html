@@ -28,6 +28,7 @@
     <span class="dot pulse" id="job-dot"></span>
     <strong id="job-state">Queued</strong>
     <span class="muted" id="job-eta"></span>
+    <button class="btn-ghost" id="cancel-btn" type="button" hidden>Cancel run</button>
   </div>
   <div class="muted job-detail" id="job-detail"></div>
   <ol class="job-stages" id="job-stages" aria-label="Analysis progress">
@@ -64,7 +65,8 @@
     report_ready: 'Report ready — peer analysis pending',
     peer_running: 'Peer analysis running',
     done: 'Complete',
-    failed: 'Failed'
+    failed: 'Failed',
+    cancelled: 'Cancelled'
   };
   var ACTIVE = ['queued', 'fetching', 'analyzing', 'report_ready', 'peer_running'];
   var STAGE_ORDER = ['queued', 'fetching', 'analyzing', 'report_ready', 'peer_running'];
@@ -87,8 +89,11 @@
   var actionsCard = document.getElementById('actions-card');
   var refreshBtn = document.getElementById('refresh-btn');
   var regenerateBtn = document.getElementById('regenerate-btn');
+  var cancelBtn = document.getElementById('cancel-btn');
   var refreshHint = document.getElementById('refresh-hint');
   var timer = null;
+  var activeJobId = null;
+  var cancelling = false;
 
   function escapeHtml(value) {
     return String(value == null ? '' : value)
@@ -131,13 +136,24 @@
   }
 
   function renderJob(job) {
-    if (!job) { jobCard.hidden = true; return; }
+    if (!job) {
+      jobCard.hidden = true;
+      cancelBtn.hidden = true;
+      activeJobId = null;
+      return false;
+    }
     var active = ACTIVE.indexOf(job.state) !== -1;
-    jobCard.hidden = !active && job.state !== 'failed' && !job.error;
+    activeJobId = active ? job.id : null;
+    jobCard.hidden = !active && job.state !== 'failed' && job.state !== 'cancelled' && !job.error;
     jobState.textContent = STATE_LABELS[job.state] || job.state;
     jobDetail.textContent = job.stage_detail || '';
     jobError.textContent = job.error || '';
-    jobDot.className = 'dot' + (active ? ' pulse' : job.state === 'failed' ? ' err' : ' ok');
+    jobDot.className = 'dot' + (
+      active ? ' pulse' : (job.state === 'failed' || job.state === 'cancelled') ? ' err' : ' ok'
+    );
+    cancelBtn.hidden = !active;
+    cancelBtn.disabled = cancelling;
+    cancelBtn.textContent = cancelling ? 'Cancelling…' : 'Cancel run';
     renderStages(active ? job.state : (job.state === 'done' ? 'peer_running' : ''));
     if (job.state === 'done') {
       jobStages.querySelectorAll('.job-stage').forEach(function (node) {
@@ -313,6 +329,33 @@
   });
   regenerateBtn.addEventListener('click', function () {
     startJob('/regenerate', 'Regenerate failed.');
+  });
+  cancelBtn.addEventListener('click', function () {
+    if (!activeJobId || cancelling) return;
+    cancelling = true;
+    cancelBtn.disabled = true;
+    cancelBtn.textContent = 'Cancelling…';
+    fetch('/api/jobs/' + activeJobId + '/cancel', { method: 'POST' })
+      .then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok) {
+            throw new Error(data.detail || ('HTTP ' + response.status));
+          }
+          return data;
+        });
+      })
+      .then(function () {
+        cancelling = false;
+        if (timer) clearInterval(timer);
+        timer = setInterval(poll, 3000);
+        poll();
+      })
+      .catch(function (err) {
+        cancelling = false;
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = 'Cancel run';
+        jobError.textContent = err.message || 'Cancel failed.';
+      });
   });
 
   timer = setInterval(poll, 3000);

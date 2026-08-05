@@ -11,7 +11,8 @@ _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 BRAND_SOURCE_DIR = _PACKAGE_ROOT / "assets" / "brand"
 LOGO_FILENAME = "logo.png"
 FAVICON_FILENAME = "favicon.png"
-APP_TITLE = "Champion Stats Analyzer"
+APP_TITLE = "League Champion Analyser"
+_LEGACY_APP_TITLES = ("Champion Stats Analyzer", "Viktor Analyzer")
 
 
 def ensure_brand_assets(output_dir: Path) -> Path:
@@ -106,7 +107,10 @@ def refresh_saved_report_branding(output_dir: Path) -> int:
                 1,
             )
 
-        text = text.replace(f"<h1>{APP_TITLE}</h1>", brand_markup, 1)
+        for legacy_title in (APP_TITLE, *_LEGACY_APP_TITLES):
+            text = text.replace(f"<h1>{legacy_title}</h1>", brand_markup, 1)
+        for legacy_title in _LEGACY_APP_TITLES:
+            text = text.replace(legacy_title, APP_TITLE)
 
         # Old global index page is gone; send nav-back to the web home page.
         text = text.replace(

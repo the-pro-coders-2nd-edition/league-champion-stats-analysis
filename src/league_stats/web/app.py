@@ -26,8 +26,11 @@ from league_stats.core.config import (
     VALID_PLATFORMS,
     VALID_REGIONS,
     WebConfig,
+    load_config,
     load_web_config,
 )
+from league_stats.infra.cache import HttpCache, MatchStore
+from league_stats.infra.riot_api import RiotApiClient, RiotApiError, shared_rate_limiter
 from league_stats.presentation.brand_assets import (
     APP_TITLE,
     FAVICON_FILENAME,
@@ -125,6 +128,61 @@ def _resolve_players(body: AnalysisRequest) -> list[dict[str, str]]:
     if len(entries) > MAX_GROUP_PLAYERS:
         raise ValueError(f"At most {MAX_GROUP_PLAYERS} players per group.")
     return entries
+
+
+def _build_precheck_client(region: str, output_dir: Path) -> RiotApiClient:
+    """Build a Riot client sharing cache + rate limiter with analysis jobs."""
+    config = load_config(
+        riot_id="precheck",
+        tagline="PRE",
+        region=region,
+        output_dir=output_dir,
+    )
+    config.ensure_directories()
+    return RiotApiClient(
+        config,
+        HttpCache(config.http_cache_dir),
+        MatchStore(config.db_path),
+        limiter=shared_rate_limiter(
+            config.requests_per_second, config.requests_per_two_minutes
+        ),
+    )
+
+
+def _verify_players_exist(
+    players: list[dict[str, str]],
+    region: str,
+    output_dir: Path,
+) -> None:
+    """Resolve each Riot ID via account-v1 before enqueueing.
+
+    Raises:
+        ValueError: When one or more Riot IDs are unknown for the region.
+        RiotApiError: When the Riot API fails for a non-404 reason.
+    """
+    client = _build_precheck_client(region, output_dir)
+    missing: list[str] = []
+    for player in players:
+        label = f"{player['riot_id']}#{player['tagline']}"
+        try:
+            client.resolve_puuid(player["riot_id"], player["tagline"])
+        except RiotApiError as exc:
+            message = str(exc)
+            if "404" in message and "by-riot-id" in message:
+                missing.append(label)
+                continue
+            raise
+    if not missing:
+        return
+    if len(missing) == 1:
+        raise ValueError(
+            f"Player {missing[0]} was not found on {region}. "
+            "Check the Riot ID, tagline and region."
+        )
+    raise ValueError(
+        f"Players not found on {region}: {', '.join(missing)}. "
+        "Check each Riot ID, tagline and region."
+    )
 
 
 def _parse_players_label(label: str) -> list[dict[str, str]]:
@@ -550,7 +608,7 @@ def create_app(
             worker.stop()
         store.close()
 
-    app = FastAPI(title="Champion Stats Analyzer", lifespan=lifespan)
+    app = FastAPI(title=APP_TITLE, lifespan=lifespan)
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     app.state.job_store = store
     app.state.web_config = config
@@ -610,6 +668,16 @@ def create_app(
         if region not in VALID_PLATFORMS and region not in VALID_REGIONS:
             raise HTTPException(status_code=422, detail=f"Unknown region {region!r}.")
 
+        try:
+            _verify_players_exist(tracked, region, config.output_dir)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except RiotApiError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="Could not verify Riot ID with Riot API. Try again shortly.",
+            ) from exc
+
         primary = tracked[0]
         slug = players_group_slug([(p["riot_id"], p["tagline"]) for p in tracked])
         store.upsert_player(
@@ -640,6 +708,20 @@ def create_app(
         if job is None:
             raise HTTPException(status_code=404, detail="Unknown job")
         return {"job": _job_public(store, job)}
+
+    @app.post("/api/jobs/{job_id}/cancel")
+    def cancel_job(job_id: int) -> dict[str, Any]:
+        """Cancel a queued or in-progress job. Existing base reports are kept."""
+        job = store.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Unknown job")
+        cancelled = store.cancel(job_id)
+        if cancelled is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Job is already finished and cannot be cancelled.",
+            )
+        return {"job": _job_public(store, cancelled)}
 
     @app.get("/api/activity")
     def activity() -> dict[str, Any]:

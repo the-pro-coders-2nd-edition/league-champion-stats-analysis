@@ -29,6 +29,8 @@ html {
   scrollbar-width: thin;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track); scrollbar-width: thin; }
+/* Author display rules otherwise override the HTML hidden attribute. */
+[hidden] { display: none !important; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
 ::-webkit-scrollbar-thumb {
@@ -105,6 +107,37 @@ h2.section-label {
   font-size: 13px; font-weight: 700; color: var(--muted);
   letter-spacing: .06em; text-transform: uppercase;
   margin: 36px 0 14px;
+}
+.section-header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px;
+  margin: 36px 0 14px;
+}
+.section-header .section-label { margin: 0; flex: 1; min-width: 0; }
+.reports-search {
+  position: relative; flex: 1; min-width: 180px; max-width: 280px;
+}
+.reports-search-input {
+  width: 100%; min-height: 40px; padding: 9px 36px 9px 14px;
+  font-size: 14px;
+}
+.reports-search-input::-webkit-search-cancel-button,
+.reports-search-input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
+.reports-search-clear {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: var(--muted); padding: 6px 8px;
+  font: 600 16px/1 var(--font); box-shadow: none; border-radius: 6px;
+  cursor: pointer; line-height: 1;
+}
+.reports-search-clear:hover:not(:disabled) {
+  color: var(--text); background: rgba(124, 108, 240, .1); filter: none;
+}
+.reports-search-clear:focus-visible {
+  outline: none; box-shadow: var(--focus-ring);
+}
+.reports-no-match {
+  padding: 22px; border: 1px dashed var(--border); border-radius: var(--radius);
+  background: rgba(23, 26, 36, .55); color: var(--muted); font-size: 14px;
+  margin-bottom: 8px;
 }
 
 button, .btn {
@@ -277,6 +310,10 @@ input::placeholder { color: var(--muted); }
 .role-icon--sm { width: 16px; height: 16px; }
 
 .status-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.status-line #cancel-btn { margin-left: auto; color: var(--danger, #d35d6e); }
+.status-line #cancel-btn:hover:not(:disabled) {
+  color: var(--danger, #d35d6e); background: rgba(211, 93, 110, .1);
+}
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex: none; }
 .dot.ok { background: var(--win); }
 .dot.err { background: var(--loss); }
@@ -325,6 +362,8 @@ input::placeholder { color: var(--muted); }
   .form-row-end { margin-left: 0; width: 100%; }
   .form-row-end .btn-primary, .form-row-end select { flex: 1; }
   .form-actions { flex-direction: column; align-items: stretch; }
+  .section-header { flex-direction: column; align-items: stretch; }
+  .reports-search { max-width: none; }
 }
 </style>
 </head>

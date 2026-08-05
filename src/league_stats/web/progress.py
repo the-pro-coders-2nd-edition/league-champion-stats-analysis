@@ -7,8 +7,13 @@ import time
 from league_stats.core.progress import ProgressReporter
 from league_stats.web.jobs import JobStore
 
+
 # Minimum seconds between DB writes for high-frequency events.
 _THROTTLE_S = 1.0
+
+
+class JobCancelled(Exception):
+    """Raised when a running job was cancelled by the user."""
 
 
 class JobProgressReporter(ProgressReporter):
@@ -27,6 +32,8 @@ class JobProgressReporter(ProgressReporter):
         total: int | None = None,
         detail: str = "",
     ) -> None:
+        if self._store.is_cancelled(self._job_id):
+            raise JobCancelled()
         now = time.monotonic()
         is_final = current is not None and total is not None and current >= total
         if not is_final and now - self._last_write < _THROTTLE_S:

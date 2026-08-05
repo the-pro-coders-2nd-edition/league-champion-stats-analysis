@@ -12,7 +12,7 @@
       </div>
     </div>
     <div class="form-actions">
-      <button type="button" class="btn-text" id="add-player">+ Add another player</button>
+      <button type="button" class="btn-text" id="add-player">+ Add another account</button>
       <div class="form-row-end">
         <select name="region" aria-label="Region">
           {% for label, value in region_choices %}
@@ -27,16 +27,29 @@
   </form>
 </div>
 
-<h2 class="section-label" id="reports-heading">Recent reports</h2>
+<div class="section-header" id="reports-heading"{% if not groups %} hidden{% endif %}>
+  <h2 class="section-label">Recent reports</h2>
+  <div class="reports-search">
+    <input type="search" class="reports-search-input" id="reports-search"
+           placeholder="Search reports…" autocomplete="off"
+           aria-label="Filter reports by player name">
+    <button type="button" class="reports-search-clear" id="reports-search-clear"
+            hidden aria-label="Clear search">×</button>
+  </div>
+</div>
 <p class="reports-empty" id="reports-empty"{% if groups %} hidden{% endif %}>
   <strong>No reports yet</strong>
   Enter a Riot ID above to generate your first coaching report.
+</p>
+<p class="reports-no-match" id="reports-no-match" hidden>
+  No reports match your search.
 </p>
 <section class="player-cards" id="recent-reports" aria-label="Recent reports"{% if not groups %} hidden{% endif %}>
   {% for group in groups %}
   <a class="player-card{% if group.busy %} is-busy{% endif %}"
      href="/players/{{ group.slug }}"
      data-slug="{{ group.slug }}"
+     data-search="{{ group.players | map(attribute='label') | join(' ') }} {{ group.slug }}"
      data-has-report="{{ '1' if group.has_report else '0' }}"
      data-job-state="{{ group.job_state or '' }}"
      {% if group.busy %}title="Analysis in progress"{% endif %}>
@@ -86,6 +99,9 @@
   var reportsEl = document.getElementById('recent-reports');
   var reportsEmpty = document.getElementById('reports-empty');
   var reportsHeading = document.getElementById('reports-heading');
+  var reportsSearch = document.getElementById('reports-search');
+  var reportsSearchClear = document.getElementById('reports-search-clear');
+  var reportsNoMatch = document.getElementById('reports-no-match');
   var MAX_PLAYERS = 8;
   var STATE_TITLES = {
     queued: 'Queued',
@@ -143,6 +159,7 @@
       return;
     }
     submitBtn.disabled = true;
+    submitBtn.textContent = 'Checking…';
     var payload = {
       players: players,
       region: form.elements.region.value,
@@ -170,6 +187,7 @@
       .catch(function (err) {
         errorEl.textContent = err.message || 'Something went wrong.';
         submitBtn.disabled = false;
+        submitBtn.textContent = 'Analyze';
       });
   });
 
@@ -177,6 +195,41 @@
     reportsEl.hidden = false;
     if (reportsEmpty) reportsEmpty.hidden = true;
     if (reportsHeading) reportsHeading.hidden = false;
+    filterReports();
+  }
+
+  function filterReports() {
+    if (!reportsEl || !reportsSearch) return;
+    var query = (reportsSearch.value || '').trim().toLowerCase();
+    if (reportsSearchClear) reportsSearchClear.hidden = !query;
+    var cards = reportsEl.querySelectorAll('.player-card');
+    var visible = 0;
+    cards.forEach(function (card) {
+      var haystack = (card.dataset.search || card.dataset.slug || '').toLowerCase();
+      var match = !query || haystack.indexOf(query) !== -1;
+      card.hidden = !match;
+      if (match) visible += 1;
+    });
+    var hasCards = cards.length > 0;
+    if (reportsNoMatch) {
+      reportsNoMatch.hidden = !(hasCards && query && visible === 0);
+    }
+    if (hasCards && query && visible === 0) {
+      reportsEl.hidden = true;
+    } else if (hasCards) {
+      reportsEl.hidden = false;
+    }
+  }
+
+  if (reportsSearch) {
+    reportsSearch.addEventListener('input', filterReports);
+  }
+  if (reportsSearchClear) {
+    reportsSearchClear.addEventListener('click', function () {
+      reportsSearch.value = '';
+      reportsSearch.focus();
+      filterReports();
+    });
   }
 
   function escapeHtml(value) {
@@ -211,6 +264,9 @@
     card.className = 'player-card is-busy';
     card.href = '/players/' + item.slug;
     card.dataset.slug = item.slug;
+    var searchBits = (item.players || []).map(function (p) { return p.label || ''; });
+    searchBits.push(item.player_label || '', item.slug || '');
+    card.dataset.search = searchBits.join(' ').trim();
     card.dataset.hasReport = item.has_report ? '1' : '0';
     card.dataset.jobState = item.state || '';
     card.title = stageLabel(item.state);
@@ -222,6 +278,7 @@
       '<div class="player-card-meta">Queued for analysis…</div>' +
       '<div class="player-card-stage">' + escapeHtml(stageLabel(item.state)) + '</div>';
     reportsEl.insertBefore(card, reportsEl.firstChild);
+    filterReports();
     return card;
   }
 

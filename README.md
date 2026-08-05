@@ -1,4 +1,4 @@
-# Champion Stats Analyzer
+# League Champion Analyser
 
 A production-quality coaching analyzer for **ranked queue** (solo/duo and flex), built on the Riot
 **Match-V5** API. One run analyses **every champion + lane** you have played
@@ -203,6 +203,6 @@ Project layout lives under `src/league_stats/` — one module per concern; new a
 slot in as `analysis/<topic>.py` with an `extract_*` (timeline-level) and/or aggregate
 function, wired in `pipeline/frames.py` and `pipeline/orchestrator.py`.
 
-*Champion Stats Analyzer isn't endorsed by Riot Games and doesn't reflect the views or
+*League Champion Analyser isn't endorsed by Riot Games and doesn't reflect the views or
 opinions of Riot Games or anyone officially involved in producing or managing
 League of Legends.*

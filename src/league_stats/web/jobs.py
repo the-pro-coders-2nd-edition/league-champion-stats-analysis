@@ -23,10 +23,11 @@ REPORT_READY = "report_ready"
 PEER_RUNNING = "peer_running"
 DONE = "done"
 FAILED = "failed"
+CANCELLED = "cancelled"
 
 ACTIVE_STATES: tuple[str, ...] = (QUEUED, FETCHING, ANALYZING, REPORT_READY, PEER_RUNNING)
 RUNNING_STATES: tuple[str, ...] = (FETCHING, ANALYZING, REPORT_READY, PEER_RUNNING)
-TERMINAL_STATES: tuple[str, ...] = (DONE, FAILED)
+TERMINAL_STATES: tuple[str, ...] = (DONE, FAILED, CANCELLED)
 
 JOB_KIND_ANALYZE = "analyze"
 JOB_KIND_REFRESH = "refresh"
@@ -268,18 +269,22 @@ class JobStore:
     def claim_next(self) -> dict[str, Any] | None:
         """Atomically claim the oldest queued job, moving it to ``fetching``."""
         with self._lock:
-            row = self._conn.execute(
-                "SELECT id FROM jobs WHERE state = ? ORDER BY id LIMIT 1", (QUEUED,)
-            ).fetchone()
-            if row is None:
-                return None
-            now = time.time()
-            self._conn.execute(
-                "UPDATE jobs SET state = ?, started_at = ?, updated_at = ? WHERE id = ?",
-                (FETCHING, now, now, row["id"]),
-            )
-            self._conn.commit()
-            return self._get(int(row["id"]))
+            # Retry: a job may be cancelled between SELECT and the conditional UPDATE.
+            while True:
+                row = self._conn.execute(
+                    "SELECT id FROM jobs WHERE state = ? ORDER BY id LIMIT 1", (QUEUED,)
+                ).fetchone()
+                if row is None:
+                    return None
+                now = time.time()
+                cursor = self._conn.execute(
+                    "UPDATE jobs SET state = ?, started_at = ?, updated_at = ? "
+                    "WHERE id = ? AND state = ?",
+                    (FETCHING, now, now, row["id"], QUEUED),
+                )
+                self._conn.commit()
+                if cursor.rowcount:
+                    return self._get(int(row["id"]))
 
     def set_state(
         self,
@@ -288,9 +293,21 @@ class JobStore:
         *,
         detail: str | None = None,
         error: str | None = None,
-    ) -> None:
-        """Transition a job to a new state, optionally updating detail/error."""
+    ) -> bool:
+        """Transition a job to a new state, optionally updating detail/error.
+
+        Returns:
+            ``False`` when the job is already cancelled and ``state`` is not
+            ``cancelled`` (so the worker cannot overwrite a user cancel).
+        """
         with self._lock:
+            row = self._conn.execute(
+                "SELECT state FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                return False
+            if row["state"] == CANCELLED and state != CANCELLED:
+                return False
             now = time.time()
             sets = ["state = ?", "updated_at = ?"]
             params: list[Any] = [state, now]
@@ -308,6 +325,7 @@ class JobStore:
             params.append(job_id)
             self._conn.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id = ?", params)
             self._conn.commit()
+            return True
 
     def update_progress(
         self,
@@ -319,12 +337,48 @@ class JobStore:
     ) -> None:
         """Update progress fields without changing the job state."""
         with self._lock:
+            row = self._conn.execute(
+                "SELECT state FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            if row is None or row["state"] == CANCELLED:
+                return
             self._conn.execute(
                 "UPDATE jobs SET stage_detail = ?, stage_current = ?, stage_total = ?, "
                 "updated_at = ? WHERE id = ?",
                 (detail, current, total, time.time(), job_id),
             )
             self._conn.commit()
+
+    def is_cancelled(self, job_id: int) -> bool:
+        """Return whether the job has been cancelled."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT state FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            return row is not None and row["state"] == CANCELLED
+
+    def cancel(self, job_id: int) -> dict[str, Any] | None:
+        """Cancel a queued or running job without deleting on-disk reports.
+
+        Returns:
+            The updated job row, or ``None`` if the job is missing or already
+            in a terminal state.
+        """
+        with self._lock:
+            try:
+                job = self._get(job_id)
+            except LookupError:
+                return None
+            if job["state"] not in ACTIVE_STATES:
+                return None
+            now = time.time()
+            self._conn.execute(
+                "UPDATE jobs SET state = ?, stage_detail = ?, error = ?, "
+                "finished_at = ?, updated_at = ? WHERE id = ?",
+                (CANCELLED, "Cancelled by user", "", now, now, job_id),
+            )
+            self._conn.commit()
+            return self._get(job_id)
 
     def queue_position(self, job_id: int) -> int | None:
         """0-based number of queued jobs ahead; ``None`` unless still queued."""

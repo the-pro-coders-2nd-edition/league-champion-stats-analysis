@@ -305,6 +305,49 @@ def test_execute_job_no_builds_marks_failed(
     assert "20 ranked games" in final["error"]
 
 
+def test_execute_job_honours_cancel_before_peer(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cancel after stage A keeps the job cancelled and skips peer work."""
+    job = _claimed_job(store)
+    job_id = int(job["id"])
+
+    def cancel_after_analyze(
+        services: Any, batch: Any, pool: Any, *, ranked: Any, peer_comparison: Any
+    ) -> Path:
+        store.cancel(job_id)
+        return Path("report.html")
+
+    calls = _patch_pipeline(monkeypatch, analyze_build=cancel_after_analyze)
+
+    worker.execute_job(job, store, web_config)
+
+    final = store.get(job_id)
+    assert final["state"] == jobs.CANCELLED
+    assert "peer" not in calls
+    assert store.get_player("test_euw")["peer_completed_at"] is None
+
+
+def test_execute_job_cancel_during_fetch_does_not_mark_failed(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = _claimed_job(store)
+    job_id = int(job["id"])
+
+    def cancel_mid_fetch(services: Any) -> Any:
+        store.cancel(job_id)
+        raise worker.JobCancelled()
+
+    _patch_pipeline(monkeypatch, fetch_matches=cancel_mid_fetch)
+
+    worker.execute_job(job, store, web_config)
+
+    final = store.get(job_id)
+    assert final["state"] == jobs.CANCELLED
+    assert final["error"] == ""
+    assert store.get_player("test_euw")["base_completed_at"] is None
+
+
 def test_tracked_players_recovers_group_from_registry(store: JobStore) -> None:
     """Incomplete job players_json must not collapse a group slug to a solo path."""
     players = [
