@@ -187,9 +187,11 @@ install_and_start() {
   write_systemd_unit "$uv_bin"
 
   systemctl daemon-reload
-  systemctl enable --now "$SERVICE_NAME"
-  systemctl enable --now caddy
-  systemctl reload caddy || systemctl restart caddy
+  systemctl enable "$SERVICE_NAME"
+  systemctl enable caddy
+  # Always restart so a fresh pull / config rewrite is picked up.
+  systemctl restart "$SERVICE_NAME"
+  systemctl restart caddy
 
   echo
   show_status
