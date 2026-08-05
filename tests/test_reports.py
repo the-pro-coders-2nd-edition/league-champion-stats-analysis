@@ -9,7 +9,7 @@ import pandas as pd
 from league_stats.analysis.peer import build_comparisons
 from league_stats.core.champions import player_slug
 from league_stats.core.config import AppConfig
-from league_stats.cli.app import run_analysis
+from league_stats.pipeline.orchestrator import run_analysis
 from league_stats.core.models import MatchRecord, PeerComparisonResult, RankedEntry
 from league_stats.presentation.report import discover_reports, refresh_report_indexes
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline

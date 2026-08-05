@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-import typer
-
-from league_stats.core.champions import parse_riot_id
 from league_stats.core.config import AppConfig, PlayerIdentity, load_config
 from league_stats.core.progress import ProgressReporter
 from league_stats.infra.cache import HttpCache, MatchStore
@@ -49,26 +46,6 @@ class PlayerContext:
         if self.profile_icon_id is not None:
             payload["profile_icon_id"] = self.profile_icon_id
         return payload
-
-
-def parse_players_cli(
-    player_flags: list[str],
-    riot_id: str | None,
-    tagline: str | None,
-) -> list[PlayerIdentity] | None:
-    """Resolve CLI player identities from ``--player`` or ``--riot-id``/``--tagline``."""
-    if player_flags:
-        players: list[PlayerIdentity] = []
-        for value in player_flags:
-            try:
-                name, tag = parse_riot_id(value)
-            except ValueError as exc:
-                raise typer.BadParameter(str(exc)) from exc
-            players.append(PlayerIdentity(riot_id=name, tagline=tag))
-        return players
-    if riot_id and tagline:
-        return [PlayerIdentity(riot_id=riot_id, tagline=tagline)]
-    return None
 
 
 def build_services(

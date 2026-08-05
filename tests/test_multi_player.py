@@ -1,4 +1,4 @@
-"""Tests for multi-player pooling and CLI player parsing."""
+"""Tests for multi-player pooling."""
 
 from __future__ import annotations
 
@@ -7,29 +7,16 @@ from pathlib import Path
 import pytest
 
 from league_stats.infra.cache import MatchStore
-from league_stats.core.config import AppConfig, PlayerIdentity, load_config
-from league_stats.cli.app import PlayerContext, Services, _group_records, _parse_players_cli, run_all_builds
+from league_stats.core.config import PlayerIdentity, load_config
 from league_stats.infra.ddragon_assets import DDragonAssets
 from league_stats.ingest.parser import ItemCatalog, MatchParser, discover_build_pools
+from league_stats.pipeline.fetch import group_records
+from league_stats.pipeline.orchestrator import run_all_builds
+from league_stats.pipeline.services import PlayerContext, Services
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_player_match, make_timeline
 from tests.test_build_pools import _config, _seed_store
 
 ALT_PUUID = "alt-puuid-22222222-2222-2222-2222-222222222222"
-
-
-def test_parse_players_cli_accepts_repeatable_flag() -> None:
-    """--player flags are parsed into identities."""
-    players = _parse_players_cli(["Alice#EUW", "Bob#NA1"], None, None)
-    assert players == [
-        PlayerIdentity(riot_id="Alice", tagline="EUW"),
-        PlayerIdentity(riot_id="Bob", tagline="NA1"),
-    ]
-
-
-def test_parse_players_cli_prefers_player_over_riot_id() -> None:
-    """Explicit --player wins over --riot-id/--tagline."""
-    players = _parse_players_cli(["Solo#EUW"], "Other", "EUW")
-    assert players == [PlayerIdentity(riot_id="Solo", tagline="EUW")]
 
 
 def test_discover_build_pools_pools_multiple_players(tmp_path: Path) -> None:
@@ -68,7 +55,7 @@ def test_group_records_pools_same_build_across_players() -> None:
         "EUW1_2", champion="Viktor", position="MIDDLE", puuid=ALT_PUUID
     )
     theirs = parser.parse(alt_match, make_timeline(), ALT_PUUID)
-    grouped = _group_records([mine, theirs], "Viktor", "MIDDLE")
+    grouped = group_records([mine, theirs], "Viktor", "MIDDLE")
     assert len(grouped) == 2
 
 

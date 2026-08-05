@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import typer
 from tqdm import tqdm
 
 from league_stats.analysis.coach.engine import VISIBLE_RECOMMENDATIONS
@@ -225,7 +224,7 @@ def run_analysis(
     log = get_logger("pipeline")
     if not records:
         log.error("No qualifying ranked %s games found.", config.build_label)
-        raise typer.Exit(code=1)
+        raise ValueError(f"No qualifying ranked {config.build_label} games found.")
 
     records = sorted(records, key=lambda record: record.game_creation_ms, reverse=True)
     total_games = len(records)
@@ -652,11 +651,7 @@ def run_all_builds(
         player_contexts = result.contexts
         fresh_ids = result.new_match_ids
 
-    try:
-        batch = prepare_builds(services, player_contexts)
-    except NoEligibleBuildsError as exc:
-        log.error(str(exc))
-        raise typer.Exit(code=1)
+    batch = prepare_builds(services, player_contexts)
 
     player_label = services.config.players_label
     player_dir = services.config.player_reports_dir
@@ -698,7 +693,7 @@ def run_all_builds(
 
     if last_report is None and not analysed_or_kept:
         log.error("No builds could be analysed.")
-        raise typer.Exit(code=1)
+        raise NoEligibleBuildsError("No builds could be analysed.")
     if last_report is None:
         # Every eligible build was already up to date; refresh hubs so nav stays valid.
         last_report = player_dir / "index.html"

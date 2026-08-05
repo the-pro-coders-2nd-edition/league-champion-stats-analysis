@@ -1,6 +1,6 @@
-"""Backward-compatible CLI shim. Prefer ``league-champion-stats`` or ``python -m league_stats.cli.app``."""
+"""Start the Champion Stats Analyzer web app."""
 
-from league_stats.cli.app import app
+from league_stats.web.__main__ import main
 
 if __name__ == "__main__":
-    app()
+    main()

@@ -3,18 +3,19 @@
 Champion Stats Analyzer: downloads ranked LoL matches via Riot Match-V5, parses timelines,
 runs coaching analytics, and renders interactive HTML dashboards plus CSV/JSON exports.
 
+All user-facing workflows go through the **web UI**. There is no analysis CLI.
+
 ## Layer map (where to put code)
 
 | Layer | Path | Rule |
 |-------|------|------|
-| CLI | `src/league_stats/cli/app.py` | Typer commands only — no business logic |
 | Core | `src/league_stats/core/` | Config, Pydantic models, champion/role helpers — no I/O |
 | Infra | `src/league_stats/infra/` | HTTP, SQLite cache, DDragon assets |
 | Ingest | `src/league_stats/ingest/` | Raw JSON → `MatchRecord` |
 | Pipeline | `src/league_stats/pipeline/` | Orchestration, frames, bundles, view models |
 | Analysis | `src/league_stats/analysis/` | Pure stats on records/DataFrames |
 | Presentation | `src/league_stats/presentation/` | HTML, charts, exports, icons |
-| Web | `src/league_stats/web/` | FastAPI app, job queue (`jobs.py`), worker (`worker.py`), chat proxy |
+| Web | `src/league_stats/web/` | FastAPI app, job queue (`jobs.py`), worker (`worker.py`), chat proxy; entry via `__main__.py` |
 
 ## Naming glossary
 
@@ -66,18 +67,18 @@ Game Review is **orthogonal** to the game-window toggle — it follows the queue
 - Summoner spells → `output/assets/summoners/{SpellName}.png`
 - Rune style trees → `output/assets/rune_trees/{TreeName}.png` (Precision, Domination, …)
 
-## Web app (server mode)
+## Web app
 
-`uv run python -m league_stats.cli.app serve` starts FastAPI (`web/app.py`) with a
-DB-backed job queue (`data/app.sqlite`, `web/jobs.py`) drained by an in-process
-worker thread (`web/worker.py`).
+`uv run python main.py` (or `uv run python -m league_stats.web`) starts FastAPI
+(`web/app.py`) with a DB-backed job queue (`data/app.sqlite`, `web/jobs.py`)
+drained by an in-process worker thread (`web/worker.py`).
 
 - Jobs run **two-stage**: stage A renders every build with `peer_comparison=None`
   (state `report_ready`), stage B re-renders per build as peer data lands (`done`).
   Peer-stage failures are soft: the base report stays served.
 - The orchestrator seams are `prepare_builds()` / `analyze_build()` /
-  `build_peer_for_pool()` in `pipeline/orchestrator.py`; `run_all_builds()` (CLI)
-  composes the same functions single-stage.
+  `build_peer_for_pool()` in `pipeline/orchestrator.py`; `run_all_builds()`
+  composes the same functions single-stage (used by tests).
 - Progress flows through `core/progress.py` `ProgressReporter` → `Services.progress`
   → job row; the frontend polls `GET /api/jobs/{id}` and `GET /api/players/{slug}`.
 - Generated reports stay on disk under `output/` and are served statically at `/out`.
@@ -89,17 +90,15 @@ worker thread (`web/worker.py`).
 
 ## Security
 
-CLI-generated reports (no `chat_endpoint`) may embed `GEMINI_API_KEY` in static
-HTML for client-side chat. Do not share those publicly while a real key is baked
-in. Web-served reports never embed the key — chat is proxied via `POST /api/chat`.
+Web-served reports never embed `GEMINI_API_KEY` — chat is proxied via `POST /api/chat`.
+Do not share HTML that was rendered without `chat_endpoint` if a real key was baked in.
 
 ## Commands
 
 ```bash
 uv sync
-uv run python main.py analyze --riot-id "Name" --tagline "EUW"
-uv run python -m league_stats.cli.app report --riot-id "Name" --tagline "EUW"
-uv run python -m league_stats.cli.app serve          # web app on 127.0.0.1:8000
+uv run python main.py                    # web app on 127.0.0.1:8000
+uv run python -m league_stats.web        # same
 uv run pytest
 ```
 

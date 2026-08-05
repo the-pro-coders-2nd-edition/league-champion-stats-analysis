@@ -7,12 +7,12 @@ import re
 from pathlib import Path
 
 from league_stats.core.config import DEFAULT_QUEUE_FILTER, RANKED_FLEX_QUEUE_ID
-from league_stats.cli.app import (
-    _default_queue_filter_key,
-    _filter_records_by_queue,
-    _queue_filter_options,
-    run_analysis,
+from league_stats.pipeline.bundles import (
+    default_queue_filter_key as _default_queue_filter_key,
+    filter_records_by_queue as _filter_records_by_queue,
+    queue_filter_options as _queue_filter_options,
 )
+from league_stats.pipeline.orchestrator import run_analysis
 from league_stats.core.models import MatchRecord, RankedEntry
 from league_stats.ingest.parser import ItemCatalog, MatchParser
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline

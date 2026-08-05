@@ -68,53 +68,23 @@ same rate limits, but it doesn't expire daily.
 Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/):
 
 ```bash
-cd league-champion-stats-analysis
 uv sync
 ```
 
-### 3. Run
+### 3. Run the web app
+
+All analysis runs through the browser UI:
 
 ```bash
-# Download + analyse every eligible champion/lane build
-uv run python main.py analyze --riot-id "YourName" --tagline "EUW" --region europe
-
-# Single build only
-uv run python main.py analyze --riot-id "YourName" --tagline "EUW" --champion Aatrox --role top
-
-# Pool multiple players into one report group
-uv run python main.py analyze --player "Alice#EUW" --player "Bob#NA1"
-
-# Re-analyse from cached matches (no download)
-uv run python main.py report --riot-id "YourName" --tagline "EUW"
-
-# Require at least 30 games per build
-uv run python main.py analyze --riot-id "YourName" --tagline "EUW" --min-games 30
+uv run python main.py                       # http://127.0.0.1:8000
+uv run python main.py --host 0.0.0.0 --port 8080
+# equivalent:
+uv run python -m league_stats.web
 ```
 
-`--region` accepts regional routing values (`europe`, `americas`, `asia`, `sea`)
-or platform codes (`euw1`, `na1`, `kr`, ...).
-
-`--platform` sets the host for **league-v4** rank lookups (`euw1`, `eun1`, `na1`...).
-If omitted, it is inferred from your match ids (`EUW1_...` → `euw1`). Match-v5
-still uses the regional host (`europe`, etc.).
-
-Other commands:
-
-```bash
-uv run python main.py fetch --riot-id "YourName" --tagline "EUW"   # download only
-uv run python main.py report --riot-id "YourName" --tagline "EUW"  # re-analyse cached data
-uv run python main.py reports                                      # rebuild report index
-uv run python main.py clear-cache                                  # wipe the HTTP cache
-```
-
-### Web app (server mode)
-
-Run the analyzer as a web service — anyone can request a report from the browser:
-
-```bash
-uv run python main.py serve                 # http://127.0.0.1:8000
-uv run python main.py serve --host 0.0.0.0 --port 8080
-```
+Open the home page, enter a Riot ID (e.g. `YourName#EUW`), and submit. The app
+queues the job, downloads matches, and builds reports for every eligible
+champion + lane.
 
 - Submissions are queued (`data/app.sqlite`) and processed by a background worker;
   the status page shows live progress (queue position, download counts, ETA).
@@ -135,11 +105,10 @@ port = 8000
 worker_concurrency = 1
 ```
 
-You can also put defaults into a `config.toml` next to `main.py`:
+Optional defaults in `config.toml` next to `main.py` (region/platform used by
+jobs when not chosen in the UI):
 
 ```toml
-riot_id = "YourName"
-tagline = "EUW"
 region = "europe"
 match_count = 500
 ```
@@ -149,8 +118,8 @@ match_count = 500
 Each eligible build saves to **`output/reports/{player}/{champion_lane}/`**. Re-running
 for the same summoner refreshes every eligible build.
 
-Browse recent reports from the web home page (`uv run … serve`), or open any
-**`report.html`** and use the **sidebar build picker** to switch champions.
+Browse recent reports from the web home page, or open any **`report.html`** and
+use the **sidebar build picker** to switch champions.
 
 | File | Content |
 | --- | --- |
@@ -169,7 +138,7 @@ Browse recent reports from the web home page (`uv run … serve`), or open any
 
 ```mermaid
 graph TD
-    CLI[cli/app.py - Typer CLI] --> PIPE[pipeline/orchestrator.py]
+    WEB[web/ - FastAPI UI + job worker] --> PIPE[pipeline/orchestrator.py]
     PIPE --> CFG[core/config.py]
     PIPE --> FETCH[pipeline/fetch.py]
     FETCH --> API[infra/riot_api.py]

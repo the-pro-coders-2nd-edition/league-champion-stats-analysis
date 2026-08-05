@@ -114,11 +114,10 @@ class AppConfig(BaseModel):
     region: str = "europe"
     platform: str | None = None
     api_key: str
-    # NOTE(security): when chat_endpoint is unset (local CLI reports), the
-    # gemini_api_key is embedded directly into the generated static HTML so
-    # browser JS can call the Gemini API without a backend. Web-served reports
-    # set chat_endpoint instead, which routes chat through the backend proxy
-    # and keeps the key out of the HTML.
+    # NOTE(security): when chat_endpoint is unset, gemini_api_key is embedded
+    # into the generated static HTML so browser JS can call Gemini directly.
+    # Web-served reports set chat_endpoint instead, which routes chat through
+    # the backend proxy and keeps the key out of the HTML.
     gemini_api_key: str | None = None
     # Web-served reports only: backend chat proxy URL and player status URL.
     # When set, the rendered report calls these instead of embedding secrets.

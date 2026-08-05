@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from league_stats.core.config import AppConfig
-from league_stats.cli.app import run_analysis
+from league_stats.pipeline.orchestrator import run_analysis
 from league_stats.core.models import MatchRecord
 from league_stats.presentation.report import discover_reports, discover_player_builds, refresh_report_indexes
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline

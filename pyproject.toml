@@ -14,7 +14,6 @@ dependencies = [
     "scipy>=1.14",
     "matplotlib>=3.9",
     "jinja2>=3.1",
-    "typer>=0.12",
     "pydantic>=2.9",
     "tqdm>=4.66",
     "joblib>=1.4",
@@ -33,7 +32,7 @@ dev = [
 ]
 
 [project.scripts]
-league-champion-stats = "league_stats.cli.app:app"
+league-champion-stats = "league_stats.web.__main__:main"
 
 [build-system]
 requires = ["hatchling"]

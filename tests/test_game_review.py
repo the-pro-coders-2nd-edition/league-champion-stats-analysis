@@ -27,7 +27,7 @@ from league_stats.pipeline.frames import build_analysis_frames
 from league_stats.pipeline.game_review import build_game_review_views as pipeline_build_game_review
 from league_stats.pipeline.summaries import build_export_summary, compute_report_stats
 from league_stats.infra.ddragon_assets import DDragonAssets
-from league_stats.cli.app import run_analysis
+from league_stats.pipeline.orchestrator import run_analysis
 from league_stats.ingest.parser import ItemCatalog, MatchParser
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 from tests.test_reports import _config
