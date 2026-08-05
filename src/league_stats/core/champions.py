@@ -38,6 +38,12 @@ CHAMPION_DISPLAY_NAMES: Final[dict[str, str]] = {
     "DrMundo": "Dr. Mundo",
 }
 
+# Match-v5 ``championName`` values whose Data Dragon image id differs (casing).
+# See https://github.com/RiotGames/developer-relations/issues/580
+CHAMPION_ICON_IDS: Final[dict[str, str]] = {
+    "FiddleSticks": "Fiddlesticks",
+}
+
 
 def normalize_role(value: str) -> str:
     """Map a user-facing lane name to Riot's ``teamPosition`` value.
@@ -86,6 +92,18 @@ def champion_display_name(riot_id: str) -> str:
         The display name (e.g. ``Wukong`` instead of ``MonkeyKing``).
     """
     return CHAMPION_DISPLAY_NAMES.get(str(riot_id), str(riot_id))
+
+
+def champion_icon_id(riot_id: str) -> str:
+    """Map a match-v5 champion id to the Data Dragon icon filename stem.
+
+    Args:
+        riot_id: Champion id from match-v5 ``championName``.
+
+    Returns:
+        The stem used in ``cdn/.../img/champion/{id}.png``.
+    """
+    return CHAMPION_ICON_IDS.get(str(riot_id), str(riot_id))
 
 
 def build_label(champion: str, role: str) -> str:

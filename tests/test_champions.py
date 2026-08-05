@@ -8,6 +8,7 @@ from league_stats.core.champions import (
     build_champion_catalog,
     build_label,
     champion_display_name,
+    champion_icon_id,
     champion_slug,
     normalize_role,
     player_slug,
@@ -42,6 +43,12 @@ def test_champion_display_name() -> None:
     assert champion_display_name("MonkeyKing") == "Wukong"
     assert champion_display_name("DrMundo") == "Dr. Mundo"
     assert champion_display_name("Ahri") == "Ahri"
+
+
+def test_champion_icon_id() -> None:
+    """Match-v5 FiddleSticks maps to the Data Dragon icon stem."""
+    assert champion_icon_id("FiddleSticks") == "Fiddlesticks"
+    assert champion_icon_id("Ahri") == "Ahri"
 
 
 def test_champion_slug() -> None:

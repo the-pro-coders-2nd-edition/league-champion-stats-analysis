@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from league_stats.core.champions import (
     champion_display_name,
+    champion_icon_id,
     parse_riot_id,
     players_group_slug,
 )
@@ -459,7 +460,10 @@ def _player_builds(output_dir: Path, slug: str) -> list[dict[str, Any]]:
                 "generated_at": build.get("generated_at", ""),
                 "href": f"/out/reports/{slug}/{build.get('href', '')}",
                 "champion_icon": _web_asset_href(
-                    output_dir, "assets", "champions", f"{champion_id}.png"
+                    output_dir,
+                    "assets",
+                    "champions",
+                    f"{champion_icon_id(champion_id)}.png",
                 ),
                 "role_icon": _web_asset_href(
                     output_dir, "assets", "roles", f"{role}.png"

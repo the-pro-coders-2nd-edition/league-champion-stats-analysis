@@ -12,7 +12,7 @@ from typing import Any
 import requests
 from tqdm import tqdm
 
-from league_stats.core.champions import VALID_ROLES, champion_display_name
+from league_stats.core.champions import VALID_ROLES, champion_display_name, champion_icon_id
 from league_stats.core.config import AppConfig
 from league_stats.ingest.parser import PERK_NAMES
 from league_stats.infra.riot_api import DDRAGON_BASE
@@ -234,7 +234,7 @@ class DDragonAssets:
 
     def champion_icon_path(self, champion: str) -> Path | None:
         """Return the on-disk champion icon path when it exists."""
-        path = self._champions_dir / f"{champion}.png"
+        path = self._champions_dir / f"{champion_icon_id(champion)}.png"
         return path if path.is_file() else None
 
     def keystone_icon_path(self, keystone_name: str) -> Path | None:

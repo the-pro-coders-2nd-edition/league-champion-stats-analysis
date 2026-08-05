@@ -47,6 +47,24 @@ def test_champion_and_keystone_hrefs(tmp_path: Path) -> None:
     assert assets.champion_href("Missing", from_dir=report_dir) is None
 
 
+def test_fiddlesticks_match_id_resolves_ddragon_icon(tmp_path: Path) -> None:
+    """Match-v5 uses FiddleSticks; DDragon stores Fiddlesticks.png."""
+    config = _config(tmp_path)
+    assets = DDragonAssets(config)
+    assets._champions_dir.mkdir(parents=True)
+    (assets._champions_dir / "Fiddlesticks.png").write_bytes(b"png")
+
+    report_dir = config.output_dir / "reports" / "player" / "fiddlesticks_jungle"
+    report_dir.mkdir(parents=True)
+
+    assert assets.champion_icon_path("FiddleSticks") == (
+        assets._champions_dir / "Fiddlesticks.png"
+    )
+    assert assets.champion_href("FiddleSticks", from_dir=report_dir) == (
+        "../../../assets/champions/Fiddlesticks.png"
+    )
+
+
 def test_ensure_profile_icon_downloads_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config = _config(tmp_path)
     assets = DDragonAssets(config)
