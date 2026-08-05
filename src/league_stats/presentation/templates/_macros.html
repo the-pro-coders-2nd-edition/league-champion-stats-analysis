@@ -24,7 +24,7 @@
   {%- endif -%}
   <div class="build-card-body">
     <strong>{{ build_heading(build.champion, build.role_icon, build.role_display) }}</strong>
-    <div class="meta">{{ build.games }}g · {{ '%.0f' % (build.winrate * 100) }}%</div>
+    <div class="meta">{{ build.games }} games · {{ '%.0f' % (build.winrate * 100) }}%</div>
   </div>
 </a>
 {%- endmacro %}
@@ -89,13 +89,6 @@
 <div class="category-divider category-divider--{{ category }}" role="presentation">
   <span class="category-divider-label">{{ label }}</span>
 </div>
-{%- endmacro %}
-
-{% macro nav_link(href, label, icon, section_id) -%}
-<a href="{{ href }}" class="nav-link" data-section="{{ section_id }}">
-  <iconify-icon icon="{{ icon }}" class="nav-link-icon" aria-hidden="true"></iconify-icon>
-  <span>{{ label }}</span>
-</a>
 {%- endmacro %}
 
 {% macro icon_cell(name, icon_href=none) -%}
@@ -175,13 +168,13 @@
 </div>
 {%- endmacro %}
 
-{% macro app_brand(title, logo_href=none, variant='page') -%}
-<div class="app-brand app-brand--{{ variant }}">
+{% macro app_brand(title, logo_href=none, variant='page', home_href='/') -%}
+<a class="app-brand app-brand--{{ variant }}" href="{{ home_href }}" title="Home">
   {%- if logo_href -%}
   <img src="{{ logo_href }}" alt="" class="app-logo" aria-hidden="true">
   {%- endif -%}
   <span class="app-brand-title">{{ title }}</span>
-</div>
+</a>
 {%- endmacro %}
 
 {% macro generated_at_time(value) -%}
@@ -213,9 +206,9 @@
       && date.getMonth() === now.getMonth()
       && date.getDate() === now.getDate();
     if (today) {
-      return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     }
-    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
   document.querySelectorAll('.js-generated-at').forEach(function (el) {

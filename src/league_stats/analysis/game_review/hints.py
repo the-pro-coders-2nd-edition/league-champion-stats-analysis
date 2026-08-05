@@ -29,14 +29,14 @@ GAME_REVIEW_SCORE_DIMENSIONS: tuple[str, ...] = (
     "Objectives",
 )
 
-OBJECTIVE_DEAD_SETUP_LABEL = "Died in setup window (45s)"
+OBJECTIVE_DEAD_SETUP_LABEL = "Died in setup window (45–10s)"
 
 OBJECTIVE_COLUMN_TOOLTIPS: dict[str, str] = {
     "Taken": "Whether your team secured this epic monster.",
     "Present": "You were within range when the objective was taken.",
     OBJECTIVE_DEAD_SETUP_LABEL: (
-        "You died within 45 seconds before this objective was taken "
-        "(even if you respawned and arrived in time)."
+        "You died in the 45–10s setup window before this objective was taken "
+        "(caught before the fight; last-10s teamfight deaths are excluded)."
     ),
     "Wards before": METRIC_TOOLTIPS["Wards before"],
 }
@@ -55,6 +55,11 @@ def game_review_tooltips() -> dict[str, dict[str, str]]:
             score[label] = hint
     score["Survival"] = (
         "0–100 score from deaths normalized to a 30-minute game; fewer deaths score higher."
+    )
+    score["Objectives"] = (
+        "0–100 score from epic-monster presence vs your baseline "
+        "(wide band so a few takes don't snap to 0/100), lightly adjusted "
+        "by deaths right before objectives."
     )
     score["Game score"] = (
         "Personal performance vs your baseline for this single game (0–100, letter tier). "

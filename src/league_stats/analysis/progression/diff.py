@@ -21,6 +21,7 @@ from league_stats.analysis.progression.stats import (
     wilson_interval,
     winrate_significant,
 )
+from league_stats.analysis.progression.stories import build_form_stories
 from league_stats.core.config import AppConfig
 from league_stats.core.models import FormSnapshot, MatchRecord, MetricDelta, ProgressionComparison
 from league_stats.pipeline.frames import build_analysis_frames
@@ -278,6 +279,11 @@ def build_progression_comparison(
     snapshot.headline = _headline(snapshot, top_improved, top_regressed)
 
     recommendations = generate_form_recommendations(deltas)
+    stories = build_form_stories(
+        deltas,
+        behavioral_shifts=behavioral_shifts,
+        recommendations=recommendations,
+    )
 
     return ProgressionComparison(
         preset_key=preset_key,
@@ -292,4 +298,5 @@ def build_progression_comparison(
         top_regressed=top_regressed,
         behavioral_shifts=behavioral_shifts,
         recommendations=recommendations,
+        stories=stories,
     )

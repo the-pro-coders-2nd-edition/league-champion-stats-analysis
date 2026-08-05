@@ -36,6 +36,7 @@ def _slim_game(detail: GameDetail) -> dict[str, Any]:
         "opponent": detail.opponent,
         "kda": detail.kda,
         "archetype": detail.archetype,
+        "account": detail.account,
         "score": detail.score.model_dump(),
         "highlights": {
             "good": [f"{b.title}: {b.detail}" for b in detail.behaviors_good],

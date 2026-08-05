@@ -48,6 +48,8 @@ def _slug_for_players(players: list[dict[str, Any]]) -> str:
 
 def _players_from_reports(output_dir: Path, job_slug: str) -> list[dict[str, Any]]:
     """Recover pooled identities from on-disk report metadata when the DB drifted."""
+    from league_stats.core.models import solo_rank_fields
+
     builds = discover_player_builds(output_dir / "reports" / job_slug)
     for build in builds:
         raw = build.get("players")
@@ -68,6 +70,7 @@ def _players_from_reports(output_dir: Path, job_slug: str) -> list[dict[str, Any
                     entry["profile_icon_id"] = int(raw_icon)
                 except (TypeError, ValueError):
                     pass
+            entry.update(solo_rank_fields(item))
             players.append(entry)
         if players and _slug_for_players(players) == job_slug:
             return players
@@ -129,6 +132,8 @@ def _build_job_services(
         for entry in tracked
         if entry.get("riot_id") and entry.get("tagline")
     ] or None
+    filter_champion = str(job.get("filter_champion") or "").strip() or None
+    filter_role = str(job.get("filter_role") or "").strip() or None
     config = load_config(
         riot_id=job["riot_id"],
         tagline=job["tagline"],
@@ -136,6 +141,8 @@ def _build_job_services(
         output_dir=web_config.output_dir,
         chat_endpoint=CHAT_ENDPOINT if web_config.gemini_api_key else None,
         players=players,
+        filter_champion=filter_champion,
+        filter_role=filter_role,
     )
     # Poll URL must match the report directory slug. Mismatched polls compare
     # timestamps across solo vs group folders and infinite-reload the page.
@@ -188,6 +195,11 @@ def _ensure_not_cancelled(store: JobStore, job_id: int) -> None:
         raise JobCancelled()
 
 
+def _job_is_build_scoped(job: dict[str, Any]) -> bool:
+    """True when the job targets a single champion+role build."""
+    return bool(job.get("filter_champion") or job.get("filter_role"))
+
+
 def _run_stage_a(
     services: Services,
     store: JobStore,
@@ -197,7 +209,8 @@ def _run_stage_a(
 ) -> tuple[RankedEntry | None, bool]:
     """Render every eligible build without peer data.
 
-    Builds with an existing report and no newly fetched games are skipped.
+    Builds with an existing report and no newly fetched games are skipped,
+    unless the job is scoped to a single build (explicit champion refresh).
 
     Returns:
         The player's ranked entry (fetched once) and whether any report is
@@ -209,10 +222,13 @@ def _run_stage_a(
     ranked_resolved = False
     available_any = False
     total = len(batch.pools)
+    force_rebuild = _job_is_build_scoped(job)
     for index, pool in enumerate(batch.pools, start=1):
         _ensure_not_cancelled(store, job_id)
         records = group_records(batch.records, pool.champion, pool.role)
-        if should_skip_unchanged_build(services.config, pool, records, new_match_ids):
+        if not force_rebuild and should_skip_unchanged_build(
+            services.config, pool, records, new_match_ids
+        ):
             log.info("Skipping %s: no new games since last report", pool.build_label)
             store.update_progress(
                 job_id,
@@ -252,10 +268,13 @@ def _run_stage_b(
     log = get_logger("worker")
     job_id = int(job["id"])
     total = len(batch.pools)
+    force_rebuild = _job_is_build_scoped(job)
     for index, pool in enumerate(batch.pools, start=1):
         _ensure_not_cancelled(store, job_id)
         records = group_records(batch.records, pool.champion, pool.role)
-        if should_skip_unchanged_build(services.config, pool, records, new_match_ids):
+        if not force_rebuild and should_skip_unchanged_build(
+            services.config, pool, records, new_match_ids
+        ):
             log.info(
                 "Skipping peer for %s: no new games since last report", pool.build_label
             )
@@ -330,14 +349,14 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
             players=[context.as_player_dict() for context in contexts],
         )
 
-        store.set_state(job_id, job_states.ANALYZING, detail="Discovering builds…")
+        store.set_state(job_id, job_states.ANALYZING, detail="Discovering reports…")
         batch = prepare_builds(services, contexts)
         ranked, available_any = _run_stage_a(
             services, store, job, batch, new_match_ids
         )
         _ensure_not_cancelled(store, job_id)
         if not available_any:
-            raise NoEligibleBuildsError("No builds could be analysed.")
+            raise NoEligibleBuildsError("No reports could be analysed.")
 
         store.mark_player_base_complete(slug)
         store.set_state(

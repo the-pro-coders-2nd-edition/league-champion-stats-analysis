@@ -141,3 +141,126 @@ def test_progression_comparison_schema_roundtrip() -> None:
     restored = ProgressionComparison.model_validate(payload)
     assert restored.preset_key == "20_80"
     assert restored.snapshot.recent_games == 20
+
+
+def test_form_stories_fold_death_rate_into_deaths() -> None:
+    from league_stats.analysis.progression.stories import build_form_stories
+    from league_stats.core.models import Recommendation, RecommendationTone
+
+    deaths = MetricDelta(
+        metric="deaths",
+        label="Deaths/game",
+        section="overview",
+        recent=6.0,
+        baseline=4.0,
+        delta=2.0,
+        delta_pct=50.0,
+        direction="lower",
+        verdict="regressed",
+        significant=True,
+        effect_size=0.9,
+        recent_n=20,
+        baseline_n=80,
+    )
+    greed = MetricDelta(
+        metric="greed_death_rate",
+        label="Greed death rate",
+        section="deaths",
+        recent=0.35,
+        baseline=0.18,
+        delta=0.17,
+        delta_pct=94.0,
+        direction="lower",
+        verdict="regressed",
+        significant=True,
+        effect_size=0.7,
+        recent_n=20,
+        baseline_n=80,
+    )
+    vision = MetricDelta(
+        metric="vspm",
+        label="Vision/min",
+        section="vision",
+        recent=1.4,
+        baseline=1.0,
+        delta=0.4,
+        delta_pct=40.0,
+        direction="higher",
+        verdict="improved",
+        significant=True,
+        effect_size=0.6,
+        recent_n=20,
+        baseline_n=80,
+    )
+    recs = [
+        Recommendation(
+            category="Form",
+            title="Deaths creeping up",
+            detail="Tighten reset timing after plates and kills.",
+            evidence="Deaths rose.",
+            tone=RecommendationTone.NEGATIVE,
+            priority=3.0,
+        ),
+        Recommendation(
+            category="Form",
+            title="Vision trending up",
+            detail="Keep buying control wards.",
+            evidence="VS/min rose.",
+            tone=RecommendationTone.POSITIVE,
+            priority=2.0,
+        ),
+    ]
+    stories = build_form_stories(
+        [deaths, greed, vision],
+        behavioral_shifts=["Greed deaths rose from 18% to 35% (+17 pp)"],
+        recommendations=recs,
+        limit=3,
+    )
+    assert len(stories) == 2
+    assert stories[0].metric == "deaths"
+    assert stories[0].tone == "fix"
+    assert stories[0].habit is not None
+    assert "greed" in stories[0].habit.lower()
+    assert "reset" in stories[0].action.lower()
+    assert stories[1].metric == "vspm"
+    assert stories[1].tone == "keep"
+    assert all(story.metric != "greed_death_rate" for story in stories)
+
+
+def test_form_stories_action_does_not_restate_driver() -> None:
+    from league_stats.analysis.progression.stories import build_form_stories
+    from league_stats.core.models import Recommendation, RecommendationTone
+
+    delta = MetricDelta(
+        metric="deaths",
+        label="Deaths/game",
+        section="overview",
+        recent=6.5,
+        baseline=4.2,
+        delta=2.3,
+        delta_pct=55.0,
+        direction="lower",
+        verdict="regressed",
+        significant=True,
+        effect_size=1.1,
+        recent_n=20,
+        baseline_n=80,
+    )
+    stories = build_form_stories(
+        [delta],
+        recommendations=[
+            Recommendation(
+                category="Form",
+                title="Deaths creeping up",
+                detail="Tighten reset timing after plates and kills.",
+                evidence="Deaths/game rose from 4.2 to 6.5.",
+                tone=RecommendationTone.NEGATIVE,
+                priority=4.0,
+            )
+        ],
+    )
+    assert len(stories) == 1
+    assert "4.2" in stories[0].driver
+    assert "6.5" in stories[0].driver
+    assert "4.2" not in stories[0].action
+    assert "6.5" not in stories[0].action

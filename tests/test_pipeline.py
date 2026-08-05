@@ -89,7 +89,15 @@ def test_full_pipeline_generates_all_artifacts(tmp_path: Path) -> None:
     assert "Improvement score" in html and "Recommendations" in html
     assert "Form tracker" in html
     assert 'id="progression-views-data"' in html
+    assert 'id="form-dossier"' in html
+    assert 'data-tab="pulse"' in html
+    assert 'id="form-stories"' in html
+    assert 'data-tab="evidence"' in html
+    assert 'data-tab="pulse"' in html
     assert "Rank peer comparison" in html
+    assert 'id="peer-dossier"' in html
+    assert 'data-tab="gaps"' in html
+    assert 'id="peer-verdict"' in html
     assert "← New analysis" in html
     assert 'href="/"' in html
 
@@ -149,6 +157,8 @@ def test_web_stage_a_report_shows_peer_pending_placeholder(tmp_path: Path) -> No
         tagline="EUW",
         region="europe",
         api_key="RGAPI-test",
+        champion="Viktor",
+        role="MIDDLE",
         output_dir=tmp_path / "output",
         graphs_dir=tmp_path / "graphs",
         cache_dir=tmp_path / "cache",
@@ -165,5 +175,69 @@ def test_web_stage_a_report_shows_peer_pending_placeholder(tmp_path: Path) -> No
     assert 'id="rank-peers"' in html
     assert 'data-peer-pending="1"' in html
     assert 'id="rank-peers-pending"' in html
+    assert 'peer-dossier--pending' in html
     assert "Advanced stats" in html
-    assert 'href="#rank-peers"' in html
+    assert 'id="report-refresh-btn"' in html
+    assert 'var REFRESH_CHAMPION = "Viktor";' in html
+    assert 'var REFRESH_ROLE = "MIDDLE";' in html
+    assert "STATUS_ENDPOINT + '/refresh'" in html
+    meta = json.loads((report_path.parent / "meta.json").read_text(encoding="utf-8"))
+    assert meta["has_peer_comparison"] is False
+    assert not (report_path.parent / "rank_comparison.csv").exists()
+
+
+def test_peer_report_marks_meta_ready_and_keeps_export(tmp_path: Path) -> None:
+    """Peer stage writes has_peer_comparison into meta and the CSV export."""
+    from league_stats.analysis.peer import build_comparisons
+    from league_stats.core.models import PeerComparisonResult, RankedEntry
+
+    config = AppConfig(
+        riot_id="Test",
+        tagline="EUW",
+        region="europe",
+        api_key="RGAPI-test",
+        champion="Viktor",
+        role="MIDDLE",
+        output_dir=tmp_path / "output",
+        graphs_dir=tmp_path / "graphs",
+        cache_dir=tmp_path / "cache",
+        template_dir=Path(__file__).resolve().parent.parent
+        / "src/league_stats/presentation/templates",
+    )
+    config.ensure_directories()
+    records = _make_records()
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75)
+    peer_metrics = {
+        "win": 0.5,
+        "kda": 2.4,
+        "dpm": 640.0,
+        "cspm": 7.0,
+        "deaths": 5.0,
+        "vspm": 1.0,
+        "control_wards": 2.0,
+        "kill_participation": 0.6,
+        "damage_share": 0.2,
+    }
+    peer = PeerComparisonResult(
+        rank_label=ranked.label,
+        tier=ranked.tier,
+        source="test benchmark",
+        peer_games=10,
+        peer_players=5,
+        comparisons=build_comparisons(
+            pd.DataFrame([r.to_row() for r in records]).mean(numeric_only=True).to_dict(),
+            peer_metrics,
+        ),
+    )
+    report_path = run_analysis(
+        config, records, peer_comparison=peer, ranked=ranked
+    )
+    meta = json.loads((report_path.parent / "meta.json").read_text(encoding="utf-8"))
+    assert meta["has_peer_comparison"] is True
+    assert (report_path.parent / "rank_comparison.csv").is_file()
+
+    # Re-running without peers must clear the stale peer export.
+    run_analysis(config, records, peer_comparison=None, ranked=ranked)
+    meta = json.loads((report_path.parent / "meta.json").read_text(encoding="utf-8"))
+    assert meta["has_peer_comparison"] is False
+    assert not (report_path.parent / "rank_comparison.csv").exists()

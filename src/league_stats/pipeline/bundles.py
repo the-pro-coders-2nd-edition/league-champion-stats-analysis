@@ -230,6 +230,9 @@ def bundle_to_template_context(
     if peer_comparison is not None:
         context["peer_comparison"] = peer_comparison
         context["peer_rows"] = [peer_row_display(row.model_dump()) for row in peer_comparison.comparisons]
+        peer_payload = bundle.get("peer") or {}
+        if peer_payload.get("rank_icon"):
+            context["peer_rank_icon"] = peer_payload["rank_icon"]
     return context
 
 
@@ -458,14 +461,28 @@ def build_window_bundle(
         figures["peer_comparison"] = graphs.peer_comparison_chart(
             window_peer.comparisons, build_label=window_peer.build_label
         )
-        bundle["peer"] = {
+        peer_payload: dict[str, Any] = {
             "subtitle": peer_subtitle(window_peer),
+            "rank_label": window_peer.rank_label,
+            "rank_badge": window_peer.rank_badge or window_peer.rank_label,
+            "build_label": window_peer.build_label,
+            "source": window_peer.source,
+            "peer_games": window_peer.peer_games,
+            "peer_players": window_peer.peer_players,
             "tier": window_peer.tier,
             "confidence": window_peer.confidence,
             "strengths": window_peer.strengths,
             "weaknesses": window_peer.weaknesses,
             "rows": [peer_row_display(row.model_dump()) for row in window_peer.comparisons],
         }
+        if assets is not None and window_peer.tier:
+            assets.ensure_rank_emblem(window_peer.tier)
+            rank_icon = assets.rank_emblem_href(
+                window_peer.tier, from_dir=graphs_dir.parent
+            )
+            if rank_icon:
+                peer_payload["rank_icon"] = rank_icon
+        bundle["peer"] = peer_payload
         bundle["figures"]["peer_comparison"] = figures["peer_comparison"]
         bundle["_peer_result"] = window_peer
 

@@ -31,8 +31,26 @@ RECENT_WARDS_WINDOW_MS: int = 60_000
 AFTER_TOWER_WINDOW_MS: int = 45_000
 AFTER_OBJECTIVE_WINDOW_MS: int = 60_000
 BEFORE_OBJECTIVE_WINDOW_MS: int = 60_000
+# Exclude the last 10s before the take — those deaths are usually the objective fight itself.
+BEFORE_OBJECTIVE_EXCLUDE_MS: int = 10_000
 AFTER_RECALL_WINDOW_MS: int = 45_000
 DEAD_BEFORE_WINDOW_MS: int = 45_000
+
+
+def in_objective_setup_window(
+    death_ts: int,
+    objective_ts: int,
+    *,
+    window_ms: int = BEFORE_OBJECTIVE_WINDOW_MS,
+    exclude_ms: int = BEFORE_OBJECTIVE_EXCLUDE_MS,
+) -> bool:
+    """True when death falls in the pre-objective catch window (not the fight).
+
+    Counts deaths from ``window_ms`` down to just after ``exclude_ms`` before the
+    take — e.g. the 60–10s setup window — so mid-pit teamfight deaths are ignored.
+    """
+    delta = objective_ts - death_ts
+    return exclude_ms < delta <= window_ms
 SIDE_LANE_MIN: float = 14.0
 LANE_GANK_ZONES: frozenset[Zone] = frozenset({Zone.TOP_LANE, Zone.MID_LANE, Zone.BOT_LANE})
 ZHONYA_ITEM_IDS: frozenset[int] = frozenset({3157, 2420})
@@ -171,10 +189,10 @@ def extract_deaths(
                     0 <= ts - t <= AFTER_OBJECTIVE_WINDOW_MS for t in team_monster_ts
                 ),
                 side_lane_push=is_side_lane(zone) and minute > SIDE_LANE_MIN,
-                before_dragon=any(0 <= t - ts <= BEFORE_OBJECTIVE_WINDOW_MS for t in dragon_ts),
-                before_baron=any(0 <= t - ts <= BEFORE_OBJECTIVE_WINDOW_MS for t in baron_ts),
+                before_dragon=any(in_objective_setup_window(ts, t) for t in dragon_ts),
+                before_baron=any(in_objective_setup_window(ts, t) for t in baron_ts),
                 before_neutral_objective=any(
-                    0 <= t - ts <= BEFORE_OBJECTIVE_WINDOW_MS for t in neutral_objective_ts
+                    in_objective_setup_window(ts, t) for t in neutral_objective_ts
                 ),
                 after_recall=any(
                     0 <= ts - int(r.minute * 60_000) <= AFTER_RECALL_WINDOW_MS for r in recalls

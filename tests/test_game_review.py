@@ -107,6 +107,33 @@ def test_game_score_personal_baseline() -> None:
     assert score.survival >= 50
 
 
+def test_objectives_score_avoids_binary_extremes() -> None:
+    """Modest presence gaps should land mid-range, not snap to 0/100."""
+    baseline = {
+        "objectives_present_rate": 0.60,
+        "deaths_before_neutral_objective": 0.5,
+    }
+    above = compute_game_score(
+        {"objectives_present_rate": 0.80, "deaths_before_neutral_objective": 0},
+        baseline,
+        role="MIDDLE",
+    )
+    below = compute_game_score(
+        {"objectives_present_rate": 0.40, "deaths_before_neutral_objective": 1},
+        baseline,
+        role="MIDDLE",
+    )
+    perfect = compute_game_score(
+        {"objectives_present_rate": 1.0, "deaths_before_neutral_objective": 0},
+        baseline,
+        role="MIDDLE",
+    )
+    assert 55 <= above.objectives <= 90
+    assert 10 <= below.objectives <= 45
+    assert above.objectives < perfect.objectives
+    assert perfect.objectives <= 100
+
+
 def test_game_score_fallback_small_sample() -> None:
     records = _make_records(2)
     frames = build_analysis_frames(records)
@@ -178,6 +205,24 @@ def test_compare_values_share_precision() -> None:
     assert gd10.delta == round(float(row["gd10"]) - baseline["gd10"], 0)
 
 
+def test_compare_gap_color_scales_with_delta_size() -> None:
+    """Larger baseline gaps get stronger red/green, same calibration as Form Tracker."""
+    from league_stats.presentation.metric_colors import interpolate_metric_color
+
+    record = _parse_record()
+    row = record.to_row()
+    baseline = {key: float(value) for key, value in row.items() if isinstance(value, (int, float))}
+    baseline["gd10"] = float(row["gd10"]) - 150.0
+    big = next(item for item in compare_to_baseline(row, baseline, role="MIDDLE") if item.metric == "gd10")
+    baseline["gd10"] = float(row["gd10"]) - 30.0
+    small = next(item for item in compare_to_baseline(row, baseline, role="MIDDLE") if item.metric == "gd10")
+    assert big.verdict == "above"
+    assert small.verdict == "above"
+    assert big.gap_color == interpolate_metric_color(150 / 300)
+    assert small.gap_color == interpolate_metric_color(30 / 300)
+    assert big.gap_color != small.gap_color
+
+
 def test_death_flags_use_readable_labels() -> None:
     records = _make_records(3)
     frames = build_analysis_frames(records)
@@ -186,6 +231,13 @@ def test_death_flags_use_readable_labels() -> None:
         for flag in death.flags:
             assert flag[0].isupper()
             assert "_" not in flag
+
+
+def test_game_review_includes_account_name() -> None:
+    records = _make_records(3)
+    frames = build_analysis_frames(records)
+    detail = build_game_review_views(_make_config(), records, frames).queues["all"].games[0]
+    assert detail.account == "Test#EUW"
 
 
 def test_build_game_review_views_serializes() -> None:
@@ -301,5 +353,7 @@ def test_report_has_game_review_category_tab(tmp_path: Path) -> None:
     assert 'data-category="games"' in html
     assert 'id="game-review-data"' in html
     assert 'id="game-review-matchup"' in html
-    assert 'data-tab="key-moments"' in html
-    assert 'nav-group--games' in html
+    assert 'data-tab="story"' in html
+    assert 'id="game-review-panel-key-moments"' in html
+    assert 'game-review-layout' in html
+    assert 'report-tab--games' in html

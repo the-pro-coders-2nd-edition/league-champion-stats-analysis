@@ -67,6 +67,7 @@ from league_stats.presentation.report import (
     ReportBuilder,
     build_manifest_entry,
     build_player_builds_nav,
+    discover_player_builds,
     refresh_report_indexes,
     write_report_meta,
 )
@@ -77,10 +78,41 @@ class NoEligibleBuildsError(RuntimeError):
     """Raised when no champion+lane build has enough qualifying games."""
 
 
+def _merge_manifest_with_disk(
+    manifest_builds: list[dict[str, Any]], player_dir: Path
+) -> list[dict[str, Any]]:
+    """Keep sidebar links for every on-disk report, preferring live pool stats."""
+    by_slug: dict[str, dict[str, Any]] = {
+        champion_slug(str(entry["champion"]), str(entry["role"])): entry
+        for entry in manifest_builds
+    }
+    for disk in discover_player_builds(player_dir):
+        champion = str(disk.get("champion", "")).strip()
+        role = str(disk.get("role", "")).strip()
+        if not champion or not role:
+            continue
+        slug = champion_slug(champion, role)
+        if slug in by_slug:
+            continue
+        by_slug[slug] = build_manifest_entry(
+            champion=champion,
+            role=role,
+            games=int(disk.get("games", 0) or 0),
+            winrate=float(disk.get("winrate", 0.0) or 0.0),
+        )
+    return sorted(
+        by_slug.values(),
+        key=lambda entry: (int(entry.get("games", 0)), str(entry.get("build_label", ""))),
+        reverse=True,
+    )
+
+
 def _meta_players(
     config: AppConfig, profile_players: list[dict[str, Any]] | None
 ) -> list[dict[str, Any]]:
-    """Build the ``players`` list for report meta, preserving profile icon ids."""
+    """Build the ``players`` list for report meta, preserving icon/rank fields."""
+    from league_stats.core.models import solo_rank_fields
+
     if profile_players:
         shaped: list[dict[str, Any]] = []
         for player in profile_players:
@@ -96,6 +128,7 @@ def _meta_players(
                     entry["profile_icon_id"] = int(raw_icon)
                 except (TypeError, ValueError):
                     pass
+            entry.update(solo_rank_fields(player))
             shaped.append(entry)
         if shaped:
             return shaped
@@ -201,12 +234,18 @@ def write_full_exports(
     if peer_comparison is not None:
         export_tables["rank_comparison"] = comparisons_dataframe(peer_comparison)
 
-    Exporter(run_dir).write_all(
+    exporter = Exporter(run_dir)
+    exporter.write_all(
         tables=export_tables,
         summary=summary,
         recommendations=recommendations,
         build_label=config.build_label,
     )
+    # Stage-A rewrites must not leave a prior peer export looking "ready".
+    if peer_comparison is None:
+        stale = run_dir / "rank_comparison.csv"
+        if stale.is_file():
+            stale.unlink()
     return summary
 
 
@@ -379,6 +418,8 @@ def run_analysis(
         "chat_endpoint": config.chat_endpoint,
         "status_endpoint": config.status_endpoint,
         "report_slug": champion_slug(config.champion, config.role),
+        "refresh_champion": config.champion,
+        "refresh_role": config.role,
         "chat_report_ref": (
             f"{config.reports_group_slug}/{champion_slug(config.champion, config.role)}"
         ),
@@ -438,6 +479,7 @@ def run_analysis(
             "games": total_games,
             "winrate": default_bundle["overview"]["winrate"],
             "generated_at": generated_at,
+            "has_peer_comparison": peer_comparison is not None,
         },
     )
     player_label = config.players_label
@@ -523,27 +565,17 @@ def prepare_builds(
         services.config,
         min_games=services.config.min_games,
     )
-    if services.config.filter_champion:
-        pools = [p for p in pools if p.champion == services.config.filter_champion]
-    if services.config.filter_role:
-        normalized = services.config.filter_role
-        pools = [p for p in pools if p.role == normalized]
     if not pools:
         raise NoEligibleBuildsError(
-            f"No champion+lane builds with at least {services.config.min_games} "
+            f"No champion+lane reports with at least {services.config.min_games} "
             "ranked games found."
         )
 
-    log.info(
-        "Found %d eligible build(s) with >= %d games: %s",
-        len(pools),
-        services.config.min_games,
-        ", ".join(pool.build_label for pool in pools),
-    )
-
     services.assets.ensure_downloaded()
 
-    all_records = load_all_records(services, puuids)
+    account_by_puuid = {context.puuid: context.label for context in player_contexts}
+    all_records = load_all_records(services, puuids, account_by_puuid=account_by_puuid)
+    # Nav / hub list every eligible build even when analysis is scoped to one.
     manifest_builds: list[dict[str, Any]] = []
     for pool in pools:
         grouped = group_records(all_records, pool.champion, pool.role)
@@ -556,8 +588,42 @@ def prepare_builds(
                 winrate=winrate,
             )
         )
+
+    analysis_pools = pools
+    if services.config.filter_champion:
+        analysis_pools = [
+            p for p in analysis_pools if p.champion == services.config.filter_champion
+        ]
+    if services.config.filter_role:
+        normalized = services.config.filter_role
+        analysis_pools = [p for p in analysis_pools if p.role == normalized]
+    if not analysis_pools:
+        raise NoEligibleBuildsError(
+            f"No champion+lane reports with at least {services.config.min_games} "
+            "ranked games found."
+        )
+
+    log.info(
+        "Found %d eligible build(s) with >= %d games: %s",
+        len(analysis_pools),
+        services.config.min_games,
+        ", ".join(pool.build_label for pool in analysis_pools),
+    )
+    if len(analysis_pools) < len(pools):
+        log.info(
+            "Scoped analysis to %d of %d build(s); nav keeps all %d",
+            len(analysis_pools),
+            len(pools),
+            len(manifest_builds),
+        )
+
+    if services.config.filter_champion or services.config.filter_role:
+        manifest_builds = _merge_manifest_with_disk(
+            manifest_builds, services.config.player_reports_dir
+        )
+
     return BuildBatch(
-        pools=pools,
+        pools=analysis_pools,
         records=all_records,
         manifest_builds=manifest_builds,
         primary_puuid=primary_puuid,
@@ -692,8 +758,8 @@ def run_all_builds(
             analysed_or_kept = True
 
     if last_report is None and not analysed_or_kept:
-        log.error("No builds could be analysed.")
-        raise NoEligibleBuildsError("No builds could be analysed.")
+        log.error("No reports could be analysed.")
+        raise NoEligibleBuildsError("No reports could be analysed.")
     if last_report is None:
         # Every eligible build was already up to date; refresh hubs so nav stays valid.
         last_report = player_dir / "index.html"

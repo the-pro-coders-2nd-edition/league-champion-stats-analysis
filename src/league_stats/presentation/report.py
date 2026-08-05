@@ -178,7 +178,7 @@ def build_player_builds_nav(
         nav.append(
             {
                 "label": (
-                    f'{build["build_label"]} · {build["games"]}g · '
+                    f'{build["build_label"]} · {build["games"]} games · '
                     f"{winrate * 100:.0f}% WR"
                 ),
                 "build_label": str(build["build_label"]),

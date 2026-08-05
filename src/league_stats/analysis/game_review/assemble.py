@@ -168,6 +168,7 @@ def assemble_game_detail(
         side=record.side.value,
         kda=f"{record.combat.kills}/{record.combat.deaths}/{record.combat.assists}",
         archetype=archetype,
+        account=record.account,
         score=compute_game_score(game_row, baseline_means, role=role),
         behaviors_good=good,
         behaviors_bad=bad,

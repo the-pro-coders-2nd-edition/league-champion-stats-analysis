@@ -496,6 +496,7 @@ def build_peer_comparison(
     return PeerComparisonResult(
         rank_label=ranked.label,
         tier=ranked.tier,
+        rank_badge=ranked.emblem_label,
         champion=champion,
         role=role,
         build_label=label,

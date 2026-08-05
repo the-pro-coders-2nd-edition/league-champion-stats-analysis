@@ -31,7 +31,7 @@ def test_gank_death_under_own_tower_laning(record: MatchRecord) -> None:
 
 
 def test_first_death_context(record: MatchRecord) -> None:
-    """The 12-minute jungle death is solo and 60 s before a dragon, not a lane gank."""
+    """The 12-minute jungle death is solo and 60 s before a dragon (still in setup window)."""
     death = next(d for d in record.deaths if d.minute == pytest.approx(12.0, abs=0.1))
     assert death.zone == Zone.JUNGLE
     assert death.alone is True
@@ -43,6 +43,19 @@ def test_first_death_context(record: MatchRecord) -> None:
     assert death.ult_available is True  # R skilled at 11 min
     assert death.flash_available is None  # documented API limitation
 
+
+def test_objective_setup_window_excludes_teamfight_deaths() -> None:
+    """Deaths in the last 10s before a take are fight deaths, not setup catches."""
+    from league_stats.analysis.deaths import in_objective_setup_window
+
+    take = 780_000
+    assert in_objective_setup_window(take - 60_000, take) is True
+    assert in_objective_setup_window(take - 30_000, take) is True
+    assert in_objective_setup_window(take - 10_001, take) is True
+    assert in_objective_setup_window(take - 10_000, take) is False
+    assert in_objective_setup_window(take - 5_000, take) is False
+    assert in_objective_setup_window(take + 1_000, take) is False
+    assert in_objective_setup_window(take - 61_000, take) is False
 
 def test_second_death_context(record: MatchRecord) -> None:
     """The late bot-lane death is a side-lane push death after an objective."""

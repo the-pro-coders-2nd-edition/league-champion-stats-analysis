@@ -232,7 +232,7 @@ def evaluate_behaviors(
             _Candidate(
                 "negative",
                 "Died in setup window",
-                f"Died within 45s before an objective at {label}.",
+                f"Died in the 60–10s setup window before an objective at {label}.",
                 8.5 + len(objective_minutes),
                 "objectives",
             )

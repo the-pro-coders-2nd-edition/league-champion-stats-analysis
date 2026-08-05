@@ -62,6 +62,14 @@
           <img class="player-card-icon" src="{{ member.profile_icon }}" alt="" width="24" height="24">
           {% endif %}
           <span class="player-card-label">{{ member.label }}</span>
+          {% if member.solo_rank_label %}
+          <span class="player-card-rank">
+            {% if member.solo_rank_icon %}
+            <img class="player-card-rank-icon" src="{{ member.solo_rank_icon }}" alt="" width="28" height="28">
+            {% endif %}
+            <span class="player-card-rank-label">{{ member.solo_rank_label }}</span>
+          </span>
+          {% endif %}
         </div>
         {% endfor %}
       </div>
@@ -69,7 +77,7 @@
     </div>
     <div class="player-card-meta">
       {% if group.has_report %}
-      {{ group.build_count }} build{{ "s" if group.build_count != 1 }} · {{ group.total_games }} games
+      {{ group.build_count }} report{{ "s" if group.build_count != 1 }} · {{ group.total_games }} games
       {% else %}
       Queued for analysis…
       {% endif %}
@@ -249,8 +257,19 @@
         ? '<img class="player-card-icon" src="' + escapeHtml(member.profile_icon) +
           '" alt="" width="24" height="24">'
         : '';
+      var rank = '';
+      if (member.solo_rank_label) {
+        var rankIcon = member.solo_rank_icon
+          ? '<img class="player-card-rank-icon" src="' + escapeHtml(member.solo_rank_icon) +
+            '" alt="" width="28" height="28">'
+          : '';
+        rank = '<span class="player-card-rank">' + rankIcon +
+          '<span class="player-card-rank-label">' +
+          escapeHtml(member.solo_rank_label) + '</span></span>';
+      }
       return '<div class="player-card-member">' + icon +
-        '<span class="player-card-label">' + escapeHtml(member.label || '') + '</span></div>';
+        '<span class="player-card-label">' + escapeHtml(member.label || '') +
+        '</span>' + rank + '</div>';
     }).join('');
   }
 

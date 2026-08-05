@@ -35,7 +35,28 @@ def test_enqueue_and_get(store: JobStore) -> None:
     loaded = store.get(int(job["id"]))
     assert loaded is not None
     assert loaded["riot_id"] == "Test"
+    assert loaded.get("filter_champion") is None
+    assert loaded.get("filter_role") is None
     assert store.get(9999) is None
+
+
+def test_enqueue_stores_build_filter(store: JobStore) -> None:
+    job, created = store.enqueue(
+        kind=jobs.JOB_KIND_REFRESH,
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        player_slug="test_euw",
+        filter_champion="Fiora",
+        filter_role="TOP",
+    )
+    assert created
+    assert job["filter_champion"] == "Fiora"
+    assert job["filter_role"] == "TOP"
+    loaded = store.get(int(job["id"]))
+    assert loaded is not None
+    assert loaded["filter_champion"] == "Fiora"
+    assert loaded["filter_role"] == "TOP"
 
 
 def test_enqueue_dedups_active_jobs(store: JobStore) -> None:
@@ -146,6 +167,32 @@ def test_encode_players_preserves_profile_icon_id() -> None:
     assert decoded == [
         {"riot_id": "Alice", "tagline": "EUW", "profile_icon_id": 7},
         {"riot_id": "Bob", "tagline": "EUW"},
+    ]
+
+
+def test_encode_players_preserves_solo_rank() -> None:
+    encoded = jobs.encode_players(
+        [
+            {
+                "riot_id": "Alice",
+                "tagline": "EUW",
+                "solo_tier": "DIAMOND",
+                "solo_rank": "IV",
+                "solo_lp": 83,
+            },
+            {"riot_id": "Bob", "tagline": "EUW", "solo_tier": "master", "solo_lp": 420},
+        ]
+    )
+    decoded = jobs.decode_players(encoded)
+    assert decoded == [
+        {
+            "riot_id": "Alice",
+            "tagline": "EUW",
+            "solo_tier": "DIAMOND",
+            "solo_rank": "IV",
+            "solo_lp": 83,
+        },
+        {"riot_id": "Bob", "tagline": "EUW", "solo_tier": "MASTER", "solo_lp": 420},
     ]
 
 

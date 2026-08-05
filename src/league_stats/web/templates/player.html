@@ -17,6 +17,14 @@
       <img class="player-member-icon" src="{{ member.profile_icon }}" alt="" width="32" height="32">
       {% endif %}
       <span class="player-member-label">{{ member.label }}</span>
+      {% if member.solo_rank_label %}
+      <span class="player-member-rank">
+        {% if member.solo_rank_icon %}
+            <img class="player-member-rank-icon" src="{{ member.solo_rank_icon }}" alt="" width="40" height="40">
+        {% endif %}
+        <span class="player-member-rank-label">{{ member.solo_rank_label }}</span>
+      </span>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
@@ -34,7 +42,7 @@
   <ol class="job-stages" id="job-stages" aria-label="Analysis progress">
     <li class="job-stage" data-stage="queued">Queued</li>
     <li class="job-stage" data-stage="fetching">Download matches</li>
-    <li class="job-stage" data-stage="analyzing">Analyze builds</li>
+    <li class="job-stage" data-stage="analyzing">Analyze reports</li>
     <li class="job-stage" data-stage="report_ready">Base report</li>
     <li class="job-stage" data-stage="peer_running">Peer comparison</li>
   </ol>
@@ -43,7 +51,7 @@
 </div>
 
 <div id="builds-section" hidden>
-  <h2 class="section-label">Reports by build</h2>
+  <h2 class="section-label">Reports</h2>
   <div class="build-grid" id="builds-grid"></div>
 </div>
 
@@ -116,7 +124,7 @@
       return String(value).slice(0, 16).replace('T', ' ');
     }
     try {
-      return date.toLocaleString(undefined, {
+      return date.toLocaleString('en-US', {
         month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
       });
     } catch (err) {
@@ -189,9 +197,19 @@
           ? '<img class="player-member-icon" src="' + escapeHtml(member.profile_icon) +
             '" alt="" width="32" height="32">'
           : '';
+        var rank = '';
+        if (member.solo_rank_label) {
+          var rankIcon = member.solo_rank_icon
+            ? '<img class="player-member-rank-icon" src="' + escapeHtml(member.solo_rank_icon) +
+              '" alt="" width="40" height="40">'
+            : '';
+          rank = '<span class="player-member-rank">' + rankIcon +
+            '<span class="player-member-rank-label">' +
+            escapeHtml(member.solo_rank_label) + '</span></span>';
+        }
         return '<div class="player-member">' + icon +
           '<span class="player-member-label">' + escapeHtml(member.label || '') +
-          '</span></div>';
+          '</span>' + rank + '</div>';
       }).join('');
       if (breadcrumb) {
         breadcrumb.textContent = items.map(function (m) { return m.label || ''; }).filter(Boolean).join(', ') || label;
@@ -212,7 +230,7 @@
       '<div class="build-card build-card--skeleton" aria-hidden="true"></div>';
   }
 
-  function renderBuilds(builds, peerPending) {
+  function renderBuilds(builds, peersPending) {
     if (!builds.length) {
       buildsGrid.innerHTML = '';
       buildsSection.hidden = true;
@@ -226,7 +244,7 @@
       tile.href = build.href;
       var winrate = build.winrate != null ? Math.round(build.winrate * 100) : null;
       var winClass = winrate == null ? '' : (winrate >= 50 ? 'win' : 'loss');
-      var champion = build.champion || build.build_label || 'Build';
+      var champion = build.champion || build.build_label || 'Report';
       var roleLabel = build.role_display || build.role || '';
       var iconHtml = build.champion_icon
         ? '<img src="' + escapeHtml(build.champion_icon) + '" alt="" class="game-icon">'
@@ -235,6 +253,7 @@
         ? '<img src="' + escapeHtml(build.role_icon) + '" alt="" title="' + escapeHtml(roleLabel) + '" class="role-icon role-icon--sm">'
         : '';
       var updated = formatUpdated(build.generated_at);
+      var showPeerBadge = peersPending && !build.peers_ready;
       tile.innerHTML =
         iconHtml +
         '<div class="build-card-body">' +
@@ -250,7 +269,7 @@
               : '') +
           '</div>' +
           (updated ? '<div class="build-card-updated">Updated ' + escapeHtml(updated) + '</div>' : '') +
-          (peerPending ? '<span class="build-card-badge">Base ready · peers pending</span>' : '') +
+          (showPeerBadge ? '<span class="build-card-badge">Base ready · peers pending</span>' : '') +
         '</div>';
       buildsGrid.appendChild(tile);
     });
@@ -267,23 +286,26 @@
         var active = renderJob(job);
         renderMembers(data.players || [], data.player_label || '');
         var builds = data.builds || [];
-        var peerPending = active && (
+        var peersPending = active && (
           job.state === 'report_ready' || job.state === 'peer_running'
         ) && builds.length > 0;
         if (!builds.length && active && job.state !== 'queued' && job.state !== 'failed') {
           renderSkeletonBuilds();
         } else {
-          renderBuilds(builds, peerPending);
+          renderBuilds(builds, peersPending);
         }
         actionsCard.hidden = !(data.has_report && !active);
+        var anyPeersPending = peersPending && builds.some(function (build) {
+          return !build.peers_ready;
+        });
         if (data.has_report) {
           subtitle.textContent = active
-            ? (peerPending
+            ? (anyPeersPending
               ? 'Base reports are ready — peer comparison still running.'
               : 'Reports below update as the analysis progresses.')
             : data.peer_failed
               ? 'Reports ready (peer analysis failed — refresh to retry).'
-              : 'Pick a champion + lane build below.';
+              : 'Pick a champion + lane report below.';
         } else {
           subtitle.textContent = active
             ? 'Your report is being prepared — this page updates automatically.'

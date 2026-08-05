@@ -75,16 +75,18 @@ def refresh_saved_report_branding(output_dir: Path) -> int:
     )
     brand_css = (
         "nav h1 { font-size: 18px; padding: 0 20px 16px; color: var(--accent); }\n"
-        ".app-brand { display: flex; align-items: center; gap: 10px; padding: 0 20px 16px; }\n"
+        ".app-brand { display: flex; align-items: center; gap: 10px; padding: 0 20px 16px; "
+        "color: inherit; text-decoration: none; font-weight: inherit; }\n"
+        ".app-brand:hover { text-decoration: none; }\n"
         ".app-brand--nav .app-brand-title { font-size: 18px; font-weight: 700; "
         "color: var(--accent); line-height: 1.2; }\n"
         ".app-brand--nav .app-logo { width: 34px; height: 34px; border-radius: 8px; "
         "flex-shrink: 0; object-fit: cover; box-shadow: 0 2px 10px rgba(0, 0, 0, .35); }\n"
     )
     brand_markup = (
-        '<div class="app-brand app-brand--nav">'
+        '<a class="app-brand app-brand--nav" href="/" title="Home">'
         '<img src="../../../assets/brand/logo.png" alt="" class="app-logo" aria-hidden="true">'
-        f'<span class="app-brand-title">{APP_TITLE}</span></div>'
+        f'<span class="app-brand-title">{APP_TITLE}</span></a>'
     )
     updated = 0
 
@@ -111,6 +113,16 @@ def refresh_saved_report_branding(output_dir: Path) -> int:
             text = text.replace(f"<h1>{legacy_title}</h1>", brand_markup, 1)
         for legacy_title in _LEGACY_APP_TITLES:
             text = text.replace(legacy_title, APP_TITLE)
+
+        # Make the sidebar logo/title link back to the web home page.
+        text = text.replace(
+            '<div class="app-brand app-brand--nav">',
+            '<a class="app-brand app-brand--nav" href="/" title="Home">',
+        )
+        text = text.replace(
+            f'<span class="app-brand-title">{APP_TITLE}</span></div>',
+            f'<span class="app-brand-title">{APP_TITLE}</span></a>',
+        )
 
         # Old global index page is gone; send nav-back to the web home page.
         text = text.replace(

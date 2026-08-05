@@ -24,6 +24,17 @@ def progression_to_markdown(comparison: ProgressionComparison) -> str:
         "",
     ]
 
+    if comparison.stories:
+        lines.extend(["## Form stories", ""])
+        for story in comparison.stories:
+            label = "Keep" if story.tone == "keep" else "Fix"
+            lines.append(f"### [{label}] {story.title}")
+            lines.append(f"- Driver: {story.driver}")
+            if story.habit:
+                lines.append(f"- Habit: {story.habit}")
+            lines.append(f"- Action: {story.action}")
+            lines.append("")
+
     if comparison.top_improved:
         lines.extend(["## Top improvements", ""])
         for delta in comparison.top_improved:
@@ -35,19 +46,5 @@ def progression_to_markdown(comparison: ProgressionComparison) -> str:
         for delta in comparison.top_regressed:
             lines.append(f"- **{delta.label}**: {delta.baseline:.2f} → {delta.recent:.2f}")
         lines.append("")
-
-    if comparison.behavioral_shifts:
-        lines.extend(["## Behavioral shifts", ""])
-        for shift in comparison.behavioral_shifts:
-            lines.append(f"- {shift}")
-        lines.append("")
-
-    if comparison.recommendations:
-        lines.extend(["## Coaching tips", ""])
-        for rec in comparison.recommendations:
-            lines.append(f"### {rec.title}")
-            lines.append(rec.detail)
-            lines.append(f"_{rec.evidence}_")
-            lines.append("")
 
     return "\n".join(lines).strip() + "\n"

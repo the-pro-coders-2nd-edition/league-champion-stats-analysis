@@ -92,6 +92,57 @@ def test_ensure_profile_icon_downloads_once(tmp_path: Path, monkeypatch: pytest.
     )
 
 
+def test_ensure_rank_emblem_downloads_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = _config(tmp_path)
+    assets = DDragonAssets(config)
+    calls: list[tuple[str, Path]] = []
+
+    def fake_download(url: str, destination: Path) -> None:
+        calls.append((url, destination))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"png")
+
+    monkeypatch.setattr(assets, "_download_binary", fake_download)
+    path = assets.ensure_rank_emblem("DIAMOND")
+    assert path is not None
+    assert path.name == "emblem-diamond.png"
+    assert calls[0][0].endswith("/images/ranked-emblem/emblem-diamond.png")
+    assert assets.ensure_rank_emblem("diamond") == path
+    assert len(calls) == 1
+    assert assets.ensure_rank_emblem("not-a-tier") is None
+    report_dir = config.output_dir / "reports" / "player" / "viktor_middle"
+    report_dir.mkdir(parents=True)
+    assert assets.rank_emblem_href("DIAMOND", from_dir=report_dir) == (
+        "../../../assets/ranks/emblem-diamond.png"
+    )
+
+
+def test_prepare_rank_emblem_trims_transparent_padding(tmp_path: Path) -> None:
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    from league_stats.infra import ddragon_assets as assets_mod
+    from league_stats.infra.ddragon_assets import prepare_rank_emblem, _png_dimensions
+
+    path = tmp_path / "emblem-diamond.png"
+    canvas = np.zeros((720, 1280, 4), dtype=float)
+    canvas[260:460, 480:800] = (0.2, 0.5, 0.9, 1.0)
+    plt.imsave(path, canvas)
+    assert _png_dimensions(path) == (1280, 720)
+
+    prepared = prepare_rank_emblem(path)
+    assert prepared == path
+    width, height = _png_dimensions(path) or (0, 0)
+    # Content is 320x200; 12% pad keeps the crop under the cinematic threshold
+    # but larger than a flush alpha crop.
+    assert 320 < width < 500
+    assert 200 < height < 400
+    assert (tmp_path / ".format").read_text(encoding="utf-8") == assets_mod.RANK_EMBLEM_FORMAT
+    # Second call should leave the trimmed file alone.
+    assert prepare_rank_emblem(path) == path
+    assert _png_dimensions(path) == (width, height)
+
+
 def test_summoner_and_rune_tree_hrefs(tmp_path: Path) -> None:
     config = _config(tmp_path)
     assets = DDragonAssets(config)
@@ -122,6 +173,38 @@ def test_needs_grub_refresh_detects_legacy_sprite(tmp_path: Path) -> None:
     assert _needs_grub_refresh(objectives_dir) is True
     grub.write_bytes(b"png")
     assert _needs_grub_refresh(objectives_dir) is False
+
+
+def test_prepare_objective_icon_knocks_out_edge_black(tmp_path: Path) -> None:
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    from league_stats.infra.ddragon_assets import prepare_objective_icon, _png_dimensions
+
+    path = tmp_path / "dragon.png"
+    canvas = np.zeros((64, 64, 4), dtype=float)
+    canvas[:, :, 3] = 1.0  # opaque black padding
+    # Colored silhouette with an internal dark detail that must survive.
+    canvas[20:44, 20:44] = (0.75, 0.45, 0.2, 1.0)
+    canvas[28:32, 28:32] = (0.0, 0.0, 0.0, 1.0)
+    plt.imsave(path, canvas)
+
+    prepared = prepare_objective_icon(path)
+    assert prepared == path
+    image = plt.imread(path)
+    assert image.shape[2] >= 4
+    # Corners become transparent after knockout + trim.
+    assert float(image[0, 0, 3]) < 0.05
+    # Internal black detail remains opaque.
+    cy = image.shape[0] // 2
+    cx = image.shape[1] // 2
+    assert float(image[cy, cx, 3]) > 0.5
+    width, height = _png_dimensions(path) or (0, 0)
+    assert width < 64
+    assert height < 64
+    # Idempotent on a second pass.
+    assert prepare_objective_icon(path) == path
+    assert _png_dimensions(path) == (width, height)
 
 
 def test_ui_icon_href(tmp_path: Path) -> None:

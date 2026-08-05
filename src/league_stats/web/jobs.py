@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     tagline TEXT NOT NULL,
     region TEXT NOT NULL,
     players_json TEXT NOT NULL DEFAULT '[]',
+    filter_champion TEXT,
+    filter_role TEXT,
     state TEXT NOT NULL DEFAULT 'queued',
     stage_detail TEXT NOT NULL DEFAULT '',
     stage_current INTEGER,
@@ -73,6 +75,8 @@ CREATE TABLE IF NOT EXISTS players (
 
 def encode_players(players: list[dict[str, Any]]) -> str:
     """Serialize tracked players for SQLite storage."""
+    from league_stats.core.models import solo_rank_fields
+
     payload: list[dict[str, Any]] = []
     for player in players:
         entry: dict[str, Any] = {
@@ -85,6 +89,7 @@ def encode_players(players: list[dict[str, Any]]) -> str:
                 entry["profile_icon_id"] = int(raw_icon)
             except (TypeError, ValueError):
                 pass
+        entry.update(solo_rank_fields(player))
         payload.append(entry)
     return json.dumps(payload, separators=(",", ":"))
 
@@ -93,6 +98,8 @@ def decode_players(
     raw: str | None, *, riot_id: str = "", tagline: str = ""
 ) -> list[dict[str, Any]]:
     """Deserialize tracked players, falling back to the primary identity."""
+    from league_stats.core.models import solo_rank_fields
+
     if raw:
         try:
             parsed = json.loads(raw)
@@ -114,6 +121,7 @@ def decode_players(
                         entry["profile_icon_id"] = int(raw_icon)
                     except (TypeError, ValueError):
                         pass
+                entry.update(solo_rank_fields(item))
                 players.append(entry)
             if players:
                 return players
@@ -150,6 +158,13 @@ class JobStore:
                 self._conn.execute(
                     f"ALTER TABLE {table} ADD COLUMN players_json TEXT NOT NULL DEFAULT '[]'"
                 )
+        job_columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(jobs)")
+        }
+        if "filter_champion" not in job_columns:
+            self._conn.execute("ALTER TABLE jobs ADD COLUMN filter_champion TEXT")
+        if "filter_role" not in job_columns:
+            self._conn.execute("ALTER TABLE jobs ADD COLUMN filter_role TEXT")
         self._conn.commit()
 
     # ------------------------------------------------------------------ jobs
@@ -163,13 +178,20 @@ class JobStore:
         region: str,
         player_slug: str,
         players: list[dict[str, Any]] | None = None,
+        filter_champion: str | None = None,
+        filter_role: str | None = None,
     ) -> tuple[dict[str, Any], bool]:
         """Queue a job, deduplicating against an existing active job.
+
+        Optional ``filter_champion`` / ``filter_role`` scope analysis to one
+        build (used by per-champion report refresh).
 
         Returns:
             ``(job, created)`` — the active or newly created job row.
         """
         tracked = players or [{"riot_id": riot_id, "tagline": tagline}]
+        champion = (filter_champion or "").strip() or None
+        role = (filter_role or "").strip() or None
         with self._lock:
             existing = self._active_job_for(player_slug)
             if existing is not None:
@@ -178,8 +200,9 @@ class JobStore:
             cursor = self._conn.execute(
                 """
                 INSERT INTO jobs (kind, player_slug, riot_id, tagline, region,
-                                  players_json, state, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  players_json, filter_champion, filter_role,
+                                  state, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     kind,
@@ -188,6 +211,8 @@ class JobStore:
                     tagline,
                     region,
                     encode_players(tracked),
+                    champion,
+                    role,
                     QUEUED,
                     now,
                     now,

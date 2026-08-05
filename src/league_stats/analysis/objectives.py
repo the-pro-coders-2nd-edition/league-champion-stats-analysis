@@ -6,6 +6,10 @@ from typing import Any
 
 import pandas as pd
 
+from league_stats.analysis.deaths import (
+    BEFORE_OBJECTIVE_EXCLUDE_MS,
+    in_objective_setup_window,
+)
 from league_stats.analysis.timeline import TimelineContext
 from league_stats.core.models import MatchRecord, ObjectiveKind, ObjectiveRecord
 from league_stats.utils import BARON_PIT, DRAGON_PIT, distance, ms_to_min
@@ -82,7 +86,15 @@ def extract_objectives(ctx: TimelineContext) -> list[ObjectiveRecord]:
                 present=present,
                 arrived_early=early,
                 arrived_late=present and not early,
-                dead_before=any(0 <= ts - t <= DEAD_BEFORE_WINDOW_MS for t in my_death_ts),
+                dead_before=any(
+                    in_objective_setup_window(
+                        t,
+                        ts,
+                        window_ms=DEAD_BEFORE_WINDOW_MS,
+                        exclude_ms=BEFORE_OBJECTIVE_EXCLUDE_MS,
+                    )
+                    for t in my_death_ts
+                ),
                 wards_before=len(player_wards),
                 control_wards_before=sum(
                     1 for w in player_wards if w.get("wardType") == "CONTROL_WARD"

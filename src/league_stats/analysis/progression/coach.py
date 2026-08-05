@@ -11,20 +11,13 @@ def _priority(delta: MetricDelta) -> float:
     return round(effect * significance + (delta.recent_n + delta.baseline_n) / 100, 3)
 
 
-def _find_delta(deltas: list[MetricDelta], metric: str) -> MetricDelta | None:
-    for delta in deltas:
-        if delta.metric == metric:
-            return delta
-    return None
-
-
 def _rule_winrate_improved(delta: MetricDelta) -> Recommendation | None:
     if delta.metric != "win" or delta.verdict != "improved" or not delta.significant:
         return None
     return Recommendation(
         category="Form",
         title="Win rate trending up",
-        detail="Your recent games are converting more often than your prior baseline.",
+        detail="Stay with the habits that are converting more games — don't shake up your build yet.",
         evidence=(
             f"Win rate moved from {delta.baseline * 100:.0f}% to {delta.recent * 100:.0f}% "
             f"({delta.delta * 100:+.0f} pp, p={delta.p_value:.3f})."
@@ -43,7 +36,7 @@ def _rule_winrate_regressed(delta: MetricDelta) -> Recommendation | None:
     return Recommendation(
         category="Form",
         title="Recent win rate dip",
-        detail="Recent results are below your longer baseline — review what changed in laning and deaths.",
+        detail="Review laning and death timing in recent losses before changing your build.",
         evidence=(
             f"Win rate dropped from {delta.baseline * 100:.0f}% to {delta.recent * 100:.0f}% "
             f"({delta.delta * 100:+.0f} pp, p={delta.p_value:.3f})."
@@ -62,7 +55,7 @@ def _rule_deaths_regressed(delta: MetricDelta) -> Recommendation | None:
     return Recommendation(
         category="Form",
         title="Deaths creeping up",
-        detail="You are dying more often in recent games than in your baseline period.",
+        detail="Tighten reset timing after plates and kills — stop dying for one more wave.",
         evidence=(
             f"Deaths/game rose from {delta.baseline:.1f} to {delta.recent:.1f} "
             f"(d={delta.effect_size:.2f}, p={delta.p_value:.3f})."
@@ -81,7 +74,7 @@ def _rule_laning_improved(delta: MetricDelta) -> Recommendation | None:
     return Recommendation(
         category="Form",
         title=f"{delta.label} improved",
-        detail="Early game fundamentals are stronger in your recent window — keep the same lane habits.",
+        detail="Keep the same early trading pattern and wave control that built this lead.",
         evidence=(
             f"{delta.label} moved from {delta.baseline:+.0f} to {delta.recent:+.0f} "
             f"(p={delta.p_value:.3f})."
@@ -102,7 +95,7 @@ def _rule_greed_deaths(delta: MetricDelta) -> Recommendation | None:
     return Recommendation(
         category="Form",
         title="More greed deaths lately",
-        detail="A higher share of recent deaths follow overextension — tighten reset timing after plates.",
+        detail="After plates or a kill, reset before river — don't stay for one more wave.",
         evidence=(
             f"Greed death rate rose from {delta.baseline * 100:.0f}% to {delta.recent * 100:.0f}%."
         ),
@@ -120,7 +113,7 @@ def _rule_vision_improved(delta: MetricDelta) -> Recommendation | None:
     return Recommendation(
         category="Form",
         title="Vision trending up",
-        detail="Recent games show better map information — maintain control ward habits before objectives.",
+        detail="Keep buying control wards and placing them before objectives.",
         evidence=f"VS/min rose from {delta.baseline:.2f} to {delta.recent:.2f}.",
         tone=RecommendationTone.POSITIVE,
         p_value=delta.p_value,
@@ -136,7 +129,7 @@ def _rule_vision_regressed(delta: MetricDelta) -> Recommendation | None:
     return Recommendation(
         category="Form",
         title="Vision dropped recently",
-        detail="Recent games have less vision per minute than your baseline — buy more control wards.",
+        detail="Buy more control wards and place them before major objectives.",
         evidence=f"VS/min fell from {delta.baseline:.2f} to {delta.recent:.2f}.",
         tone=RecommendationTone.NEGATIVE,
         p_value=delta.p_value,
@@ -154,7 +147,7 @@ def _rule_generic_regression(delta: MetricDelta) -> Recommendation | None:
     return Recommendation(
         category="Form",
         title=f"{delta.label} slipped",
-        detail=f"Recent {delta.label.lower()} is below your baseline — worth reviewing replays from this stretch.",
+        detail=f"Pick one recent game where {delta.label.lower()} hurt you and change one habit next game.",
         evidence=f"Baseline {delta.baseline:.2f} → recent {delta.recent:.2f}.",
         tone=RecommendationTone.NEGATIVE,
         p_value=delta.p_value,

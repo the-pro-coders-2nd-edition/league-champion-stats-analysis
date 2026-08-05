@@ -284,9 +284,52 @@ def test_player_status_serves_existing_reports(client: TestClient) -> None:
     assert body["has_report"] is True
     assert body["builds"][0]["slug"] == "viktor_middle"
     assert body["builds"][0]["href"] == "/out/reports/test_euw/viktor_middle/report.html"
+    assert body["builds"][0]["peers_ready"] is False
     assert body["active_job"] is None
 
     assert client.get("/api/players/unknown_player").status_code == 404
+
+
+def test_player_builds_expose_per_build_peers_ready(client: TestClient) -> None:
+    ready = _write_report(
+        client.web_config.output_dir,
+        "test_euw",
+        "viktor_middle",
+        has_peer_comparison=True,
+    )
+    _write_report(
+        client.web_config.output_dir,
+        "test_euw",
+        "fiora_top",
+        champion="Fiora",
+        role="TOP",
+        role_display="top",
+        build_label="Fiora top",
+        has_peer_comparison=False,
+    )
+    # Legacy report: no meta flag, but peer export on disk.
+    legacy = _write_report(
+        client.web_config.output_dir,
+        "test_euw",
+        "ahri_middle",
+        champion="Ahri",
+        role="MIDDLE",
+        role_display="mid",
+        build_label="Ahri mid",
+    )
+    meta = json.loads((legacy / "meta.json").read_text(encoding="utf-8"))
+    meta.pop("has_peer_comparison", None)
+    (legacy / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    (legacy / "rank_comparison.csv").write_text("metric,you,peer\n", encoding="utf-8")
+
+    builds = {
+        build["slug"]: build
+        for build in client.get("/api/players/test_euw").json()["builds"]
+    }
+    assert builds["viktor_middle"]["peers_ready"] is True
+    assert builds["fiora_top"]["peers_ready"] is False
+    assert builds["ahri_middle"]["peers_ready"] is True
+    assert (ready / "meta.json").is_file()
 
 
 def test_report_served_statically(client: TestClient) -> None:
@@ -303,8 +346,56 @@ def test_refresh_recovers_identity_from_disk(client: TestClient) -> None:
     body = response.json()
     assert body["job"]["kind"] == jobs.JOB_KIND_REFRESH
     assert body["job"]["state"] == jobs.QUEUED
+    assert body["job"]["filter_champion"] is None
+    assert body["job"]["filter_role"] is None
 
     assert client.post("/api/players/nobody/refresh").status_code == 404
+
+
+def test_refresh_scopes_to_single_build(client: TestClient) -> None:
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    _write_report(
+        client.web_config.output_dir,
+        "test_euw",
+        "fiora_top",
+        champion="Fiora",
+        role="TOP",
+        role_display="top",
+        build_label="Fiora top",
+    )
+    response = client.post(
+        "/api/players/test_euw/refresh",
+        json={"champion": "fiora", "role": "top"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["created"] is True
+    assert body["job"]["kind"] == jobs.JOB_KIND_REFRESH
+    assert body["job"]["filter_champion"] == "Fiora"
+    assert body["job"]["filter_role"] == "TOP"
+    job = client.job_store.get(int(body["job"]["id"]))
+    assert job is not None
+    assert job["filter_champion"] == "Fiora"
+    assert job["filter_role"] == "TOP"
+
+
+def test_refresh_single_build_rejects_unknown_champion(client: TestClient) -> None:
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    response = client.post(
+        "/api/players/test_euw/refresh",
+        json={"champion": "Ahri", "role": "MIDDLE"},
+    )
+    assert response.status_code == 404
+    assert "Ahri" in response.json()["detail"]
+
+
+def test_refresh_single_build_requires_both_fields(client: TestClient) -> None:
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    response = client.post(
+        "/api/players/test_euw/refresh",
+        json={"champion": "Viktor"},
+    )
+    assert response.status_code == 422
 
 
 def test_regenerate_queues_from_disk(client: TestClient) -> None:

@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from league_stats.core.champions import (
     champion_display_name,
     champion_icon_id,
+    normalize_role,
     parse_riot_id,
     players_group_slug,
 )
@@ -90,6 +91,17 @@ class ChatRequest(BaseModel):
 
     report: str = Field(min_length=3, max_length=200)
     history: list[Any]
+
+
+class RefreshRequest(BaseModel):
+    """Optional body for ``POST /api/players/{slug}/refresh``.
+
+    When ``champion`` and ``role`` are set, only that build is re-analysed
+    after fetching the latest matches; peers still run async for that build.
+    """
+
+    champion: str = Field(default="", max_length=64)
+    role: str = Field(default="", max_length=32)
 
 
 def _parse_player_entry(value: str, tagline: str = "") -> dict[str, str]:
@@ -216,22 +228,26 @@ def _slug_for_players(players: list[dict[str, Any]]) -> str:
 def _merge_player_icons(
     primary: list[dict[str, Any]], *sources: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Copy ``profile_icon_id`` onto ``primary`` from any matching source entry."""
+    """Copy profile icon + solo rank onto ``primary`` from matching sources."""
+    from league_stats.core.models import solo_rank_fields
+
     icons: dict[tuple[str, str], int] = {}
+    ranks: dict[tuple[str, str], dict[str, Any]] = {}
     for source in sources:
         for player in source:
-            raw = player.get("profile_icon_id")
-            if raw is None:
-                continue
-            try:
-                icon_id = int(raw)
-            except (TypeError, ValueError):
-                continue
             key = (
                 str(player.get("riot_id", "")).casefold(),
                 str(player.get("tagline", "")).casefold(),
             )
-            icons[key] = icon_id
+            raw = player.get("profile_icon_id")
+            if raw is not None:
+                try:
+                    icons[key] = int(raw)
+                except (TypeError, ValueError):
+                    pass
+            rank = solo_rank_fields(player)
+            if rank:
+                ranks[key] = rank
     merged: list[dict[str, Any]] = []
     for player in primary:
         entry: dict[str, Any] = {
@@ -250,6 +266,13 @@ def _merge_player_icons(
             )
         ) is not None:
             entry["profile_icon_id"] = icon
+        own_rank = solo_rank_fields(player)
+        if own_rank:
+            entry.update(own_rank)
+        elif rank := ranks.get(
+            (entry["riot_id"].casefold(), entry["tagline"].casefold())
+        ):
+            entry.update(rank)
         merged.append(entry)
     return merged
 
@@ -261,6 +284,8 @@ def _players_from_meta(meta: dict[str, Any]) -> list[dict[str, Any]]:
     a comma-separated ``player`` label plus the primary ``riot_id``/``tagline``;
     parse the label so refresh/regenerate keep every account in the group.
     """
+    from league_stats.core.models import solo_rank_fields
+
     raw_players = meta.get("players")
     if isinstance(raw_players, list) and raw_players:
         recovered: list[dict[str, Any]] = []
@@ -278,6 +303,7 @@ def _players_from_meta(meta: dict[str, Any]) -> list[dict[str, Any]]:
                     entry["profile_icon_id"] = int(raw_icon)
                 except (TypeError, ValueError):
                     pass
+            entry.update(solo_rank_fields(item))
             recovered.append(entry)
         if recovered:
             return recovered
@@ -350,6 +376,8 @@ def _job_public(store: JobStore, job: dict[str, Any] | None) -> dict[str, Any] |
         "created_at": job["created_at"],
         "started_at": job["started_at"],
         "finished_at": job["finished_at"],
+        "filter_champion": job.get("filter_champion") or None,
+        "filter_role": job.get("filter_role") or None,
     }
     position = store.queue_position(int(job["id"]))
     public["queue_position"] = position
@@ -370,7 +398,10 @@ def _web_asset_href(output_dir: Path, *parts: str) -> str | None:
 def _shaped_players(
     output_dir: Path, tracked: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """API/template shape for group members (label + optional profile icon)."""
+    """API/template shape for group members (label + optional icon/rank)."""
+    from league_stats.core.models import format_solo_rank_label, solo_rank_fields
+    from league_stats.infra.ddragon_assets import fetch_rank_emblem
+
     shaped: list[dict[str, Any]] = []
     for player in tracked:
         riot_id = str(player["riot_id"])
@@ -384,14 +415,26 @@ def _shaped_players(
                 )
             except (TypeError, ValueError):
                 icon_href = None
-        shaped.append(
-            {
-                "riot_id": riot_id,
-                "tagline": tagline,
-                "label": f"{riot_id}#{tagline}",
-                "profile_icon": icon_href,
-            }
-        )
+        entry: dict[str, Any] = {
+            "riot_id": riot_id,
+            "tagline": tagline,
+            "label": f"{riot_id}#{tagline}",
+            "profile_icon": icon_href,
+        }
+        rank = solo_rank_fields(player)
+        if rank:
+            tier = str(rank["solo_tier"])
+            entry["solo_rank_label"] = format_solo_rank_label(
+                tier,
+                str(rank.get("solo_rank") or ""),
+                rank.get("solo_lp"),
+            )
+            emblem = fetch_rank_emblem(output_dir / "assets" / "ranks", tier)
+            if emblem is not None:
+                entry["solo_rank_icon"] = _web_asset_href(
+                    output_dir, "assets", "ranks", emblem.name
+                )
+        shaped.append(entry)
     return shaped
 
 
@@ -447,6 +490,7 @@ def _player_builds(output_dir: Path, slug: str) -> list[dict[str, Any]]:
         build_slug = str(build.get("href", "")).split("/", 1)[0]
         champion_id = str(build.get("champion", ""))
         role = str(build.get("role", ""))
+        report_dir = output_dir / "reports" / slug / build_slug
         shaped.append(
             {
                 "slug": build_slug,
@@ -458,6 +502,7 @@ def _player_builds(output_dir: Path, slug: str) -> list[dict[str, Any]]:
                 "games": build.get("games", 0),
                 "winrate": build.get("winrate"),
                 "generated_at": build.get("generated_at", ""),
+                "peers_ready": _build_peers_ready(build, report_dir),
                 "href": f"/out/reports/{slug}/{build.get('href', '')}",
                 "champion_icon": _web_asset_href(
                     output_dir,
@@ -471,6 +516,14 @@ def _player_builds(output_dir: Path, slug: str) -> list[dict[str, Any]]:
             }
         )
     return shaped
+
+
+def _build_peers_ready(meta: dict[str, Any], report_dir: Path) -> bool:
+    """Whether this build's on-disk report already includes peer comparison."""
+    if "has_peer_comparison" in meta:
+        return bool(meta.get("has_peer_comparison"))
+    # Legacy reports written before the meta flag: infer from peer export.
+    return (report_dir / "rank_comparison.csv").is_file()
 
 
 def _report_groups(
@@ -784,7 +837,52 @@ def create_app(
             "peer_completed_at": player["peer_completed_at"] if player else None,
         }
 
-    def _enqueue_player_job(slug: str, kind: str) -> dict[str, Any]:
+    def _resolve_build_filter(
+        slug: str,
+        champion: str,
+        role: str,
+        builds: list[dict[str, Any]],
+    ) -> tuple[str, str]:
+        """Map a refresh body to canonical Riot champion id + role.
+
+        Raises:
+            HTTPException: When the role is invalid or no matching report exists.
+        """
+        champion_raw = champion.strip()
+        role_raw = role.strip()
+        if not champion_raw or not role_raw:
+            raise HTTPException(
+                status_code=422,
+                detail="Both champion and role are required to refresh a single build.",
+            )
+        try:
+            role_norm = normalize_role(role_raw)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        needle = champion_raw.lower()
+        for build in builds:
+            build_champion = str(build.get("champion", ""))
+            build_role = str(build.get("role", ""))
+            if build_champion.lower() != needle:
+                continue
+            try:
+                if normalize_role(build_role) != role_norm:
+                    continue
+            except ValueError:
+                continue
+            return build_champion, role_norm
+        raise HTTPException(
+            status_code=404,
+            detail=f"No {champion_raw} {role_norm.lower()} report for this player.",
+        )
+
+    def _enqueue_player_job(
+        slug: str,
+        kind: str,
+        *,
+        filter_champion: str | None = None,
+        filter_role: str | None = None,
+    ) -> dict[str, Any]:
         """Queue a job for a known player, recovering identity from disk if needed."""
         player = store.get_player(slug)
         builds = discover_player_builds(config.reports_dir / slug)
@@ -823,11 +921,32 @@ def create_app(
             region=region,
             player_slug=slug,
             players=tracked,
+            filter_champion=filter_champion,
+            filter_role=filter_role,
         )
         return {"job": _job_public(store, job), "created": created, "player_slug": slug}
 
     @app.post("/api/players/{slug}/refresh")
-    def refresh_player(slug: str) -> dict[str, Any]:
+    def refresh_player(
+        slug: str, body: RefreshRequest | None = None
+    ) -> dict[str, Any]:
+        """Fetch latest matches and re-analyse; optionally scope to one build."""
+        payload = body or RefreshRequest()
+        champion = payload.champion.strip()
+        role = payload.role.strip()
+        if champion or role:
+            builds = discover_player_builds(config.reports_dir / slug)
+            if not builds and store.get_player(slug) is None:
+                raise HTTPException(status_code=404, detail="Unknown player")
+            filter_champion, filter_role = _resolve_build_filter(
+                slug, champion, role, builds
+            )
+            return _enqueue_player_job(
+                slug,
+                JOB_KIND_REFRESH,
+                filter_champion=filter_champion,
+                filter_role=filter_role,
+            )
         return _enqueue_player_job(slug, JOB_KIND_REFRESH)
 
     @app.post("/api/players/{slug}/regenerate")

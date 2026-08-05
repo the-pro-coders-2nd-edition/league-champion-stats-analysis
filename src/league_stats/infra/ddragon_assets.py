@@ -71,6 +71,28 @@ OBJECTIVE_KIND_FILES: dict[str, str] = {
     "herald": "herald.png",
     "grubs": "grubs.png",
 }
+RANK_EMBLEM_TIERS: frozenset[str] = frozenset(
+    {
+        "iron",
+        "bronze",
+        "silver",
+        "gold",
+        "platinum",
+        "emerald",
+        "diamond",
+        "master",
+        "grandmaster",
+        "challenger",
+    }
+)
+# Breathing room around the alpha bbox after cropping cinematic frames.
+RANK_EMBLEM_TRIM_PAD_RATIO: float = 0.12
+# Bump when trim behaviour changes so cached crests are rebuilt.
+RANK_EMBLEM_FORMAT: str = "pad-v1"
+# Scoreboard objective sprites ship with opaque black padding; knock it out then trim.
+OBJECTIVE_ICON_FORMAT: str = "knockout-v1"
+OBJECTIVE_ICON_TRIM_PAD_RATIO: float = 0.06
+OBJECTIVE_BLACK_RGB_MAX: int = 18
 
 
 class DDragonAssets:
@@ -89,6 +111,7 @@ class DDragonAssets:
         self._summoners_dir = self._assets_root / "summoners"
         self._items_dir = self._assets_root / "items"
         self._profile_icons_dir = self._assets_root / "profile_icons"
+        self._ranks_dir = self._assets_root / "ranks"
         self._roles_dir = self._assets_root / "roles"
         self._ui_dir = self._assets_root / "ui"
         self._objectives_dir = self._assets_root / "objectives"
@@ -128,6 +151,7 @@ class DDragonAssets:
         self._summoners_dir.mkdir(parents=True, exist_ok=True)
         self._items_dir.mkdir(parents=True, exist_ok=True)
         self._profile_icons_dir.mkdir(parents=True, exist_ok=True)
+        self._ranks_dir.mkdir(parents=True, exist_ok=True)
         self._roles_dir.mkdir(parents=True, exist_ok=True)
         self._ui_dir.mkdir(parents=True, exist_ok=True)
         self._objectives_dir.mkdir(parents=True, exist_ok=True)
@@ -296,6 +320,50 @@ class DDragonAssets:
     def profile_icon_href(self, icon_id: int, *, from_dir: Path) -> str | None:
         """Relative URL from an HTML directory to a profile icon."""
         path = self.profile_icon_path(icon_id)
+        if path is None:
+            return None
+        return _relative_href(from_dir, path)
+
+    def rank_emblem_path(self, tier: str) -> Path | None:
+        """Return the on-disk solo/duo rank emblem path when it exists."""
+        normalized = tier.strip().lower()
+        if normalized not in RANK_EMBLEM_TIERS:
+            return None
+        path = self._ranks_dir / f"emblem-{normalized}.png"
+        return prepare_rank_emblem(path)
+
+    def ensure_rank_emblem(self, tier: str) -> Path | None:
+        """Download one Community Dragon ranked emblem when missing.
+
+        Source files are wide cinematic frames with large transparent margins;
+        the cached copy is alpha-trimmed so the crest fills UI icon boxes.
+
+        Returns:
+            The on-disk path when available, else ``None``.
+        """
+        normalized = tier.strip().lower()
+        if normalized not in RANK_EMBLEM_TIERS:
+            return None
+        self._ranks_dir.mkdir(parents=True, exist_ok=True)
+        _invalidate_stale_rank_emblems(self._ranks_dir)
+        destination = self._ranks_dir / f"emblem-{normalized}.png"
+        if destination.is_file():
+            return prepare_rank_emblem(destination)
+        url = (
+            f"{COMMUNITY_DRAGON_BASE}/plugins/rcp-fe-lol-static-assets/global/default/"
+            f"images/ranked-emblem/emblem-{normalized}.png"
+        )
+        self._download_binary(url, destination)
+        if not destination.is_file():
+            return None
+        if _rank_emblem_needs_trim(destination):
+            _trim_transparent_png(destination)
+        _set_rank_emblem_format(self._ranks_dir)
+        return destination if destination.is_file() else None
+
+    def rank_emblem_href(self, tier: str, *, from_dir: Path) -> str | None:
+        """Relative URL from an HTML directory to a ranked emblem."""
+        path = self.rank_emblem_path(tier)
         if path is None:
             return None
         return _relative_href(from_dir, path)
@@ -643,15 +711,26 @@ class DDragonAssets:
         )
 
     def _ensure_objective_icons(self, *, force: bool = False) -> None:
-        if self._objectives_cached() and not force and not _needs_grub_refresh(self._objectives_dir):
+        format_stale = _needs_objective_format_refresh(self._objectives_dir)
+        if (
+            self._objectives_cached()
+            and not force
+            and not _needs_grub_refresh(self._objectives_dir)
+            and not format_stale
+        ):
             return
         for filename, url in OBJECTIVE_ICON_SOURCES.items():
             destination = self._objectives_dir / filename
-            if destination.is_file() and not force and not (
-                filename == "grubs.png" and _needs_grub_refresh(self._objectives_dir)
-            ):
-                continue
-            self._download_binary(url, destination)
+            needs_download = (
+                force
+                or not destination.is_file()
+                or (filename == "grubs.png" and _needs_grub_refresh(self._objectives_dir))
+            )
+            if needs_download:
+                self._download_binary(url, destination)
+            if destination.is_file() and (needs_download or format_stale):
+                prepare_objective_icon(destination)
+        _set_objective_icon_format(self._objectives_dir)
 
     def _ensure_map_image(self, *, force: bool = False) -> None:
         destination = self._map_dir / "summoners_rift.png"
@@ -726,12 +805,230 @@ def _png_dimensions(path: Path) -> tuple[int, int] | None:
         return None
 
 
+def prepare_rank_emblem(path: Path) -> Path | None:
+    """Return ``path`` after trimming padded Community Dragon frames when needed."""
+    if not path.is_file():
+        return None
+    if _rank_emblem_needs_trim(path):
+        _trim_transparent_png(path)
+        _set_rank_emblem_format(path.parent)
+        return path if path.is_file() else None
+    if _rank_emblem_format_ok(path.parent):
+        return path
+    size = _png_dimensions(path)
+    if size is not None and size[0] < 800 and size[1] < 600:
+        # Tight crops from an older trim pass cannot be re-padded.
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        return None
+    _set_rank_emblem_format(path.parent)
+    return path
+
+
+def fetch_rank_emblem(
+    ranks_dir: Path,
+    tier: str,
+    *,
+    session: requests.Session | None = None,
+) -> Path | None:
+    """Download and trim one rank emblem into ``ranks_dir`` when missing."""
+    normalized = tier.strip().lower()
+    if normalized not in RANK_EMBLEM_TIERS:
+        return None
+    ranks_dir.mkdir(parents=True, exist_ok=True)
+    _invalidate_stale_rank_emblems(ranks_dir)
+    destination = ranks_dir / f"emblem-{normalized}.png"
+    prepared = prepare_rank_emblem(destination)
+    if prepared is not None:
+        return prepared
+    url = (
+        f"{COMMUNITY_DRAGON_BASE}/plugins/rcp-fe-lol-static-assets/global/default/"
+        f"images/ranked-emblem/emblem-{normalized}.png"
+    )
+    client = session or requests.Session()
+    try:
+        response = client.get(url, timeout=15)
+        response.raise_for_status()
+        destination.write_bytes(response.content)
+    except requests.RequestException as exc:
+        get_logger("ddragon_assets").warning("Failed to download %s: %s", url, exc)
+        return None
+    return prepare_rank_emblem(destination)
+
+
+def _rank_emblem_format_path(ranks_dir: Path) -> Path:
+    return ranks_dir / ".format"
+
+
+def _rank_emblem_format_ok(ranks_dir: Path) -> bool:
+    path = _rank_emblem_format_path(ranks_dir)
+    if not path.is_file():
+        return False
+    try:
+        return path.read_text(encoding="utf-8").strip() == RANK_EMBLEM_FORMAT
+    except OSError:
+        return False
+
+
+def _set_rank_emblem_format(ranks_dir: Path) -> None:
+    ranks_dir.mkdir(parents=True, exist_ok=True)
+    _rank_emblem_format_path(ranks_dir).write_text(RANK_EMBLEM_FORMAT, encoding="utf-8")
+
+
+def _invalidate_stale_rank_emblems(ranks_dir: Path) -> None:
+    if _rank_emblem_format_ok(ranks_dir):
+        return
+    if not ranks_dir.is_dir():
+        return
+    for stale in ranks_dir.glob("emblem-*.png"):
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+
+
+def _rank_emblem_needs_trim(path: Path) -> bool:
+    """Detect the wide cinematic ranked-emblem frames (large transparent margins)."""
+    size = _png_dimensions(path)
+    if size is None:
+        return False
+    width, height = size
+    return width >= 800 or height >= 600
+
+
+def _trim_transparent_png(path: Path, *, pad_ratio: float = RANK_EMBLEM_TRIM_PAD_RATIO) -> None:
+    """Crop near-transparent margins, keeping a little breathing room."""
+    import numpy as np
+    import matplotlib.image as mpimg
+    import matplotlib.pyplot as plt
+
+    try:
+        image = mpimg.imread(path)
+    except (OSError, ValueError) as exc:
+        get_logger("ddragon_assets").warning("Could not read %s for trim: %s", path, exc)
+        return
+    if image.ndim != 3 or image.shape[2] < 4:
+        return
+    alpha = image[:, :, 3]
+    mask = alpha > 0.02
+    rows = np.any(mask, axis=1)
+    cols = np.any(mask, axis=0)
+    if not rows.any() or not cols.any():
+        return
+    row_idx = np.flatnonzero(rows)
+    col_idx = np.flatnonzero(cols)
+    rmin, rmax = int(row_idx[0]), int(row_idx[-1])
+    cmin, cmax = int(col_idx[0]), int(col_idx[-1])
+    content_h = rmax - rmin + 1
+    content_w = cmax - cmin + 1
+    pad = max(4, int(round(max(content_w, content_h) * pad_ratio)))
+    rmin = max(0, rmin - pad)
+    rmax = min(image.shape[0] - 1, rmax + pad)
+    cmin = max(0, cmin - pad)
+    cmax = min(image.shape[1] - 1, cmax + pad)
+    cropped = image[rmin : rmax + 1, cmin : cmax + 1]
+    if cropped.shape[0] == image.shape[0] and cropped.shape[1] == image.shape[1]:
+        return
+    plt.imsave(path, cropped)
+
+
 def _needs_grub_refresh(objectives_dir: Path) -> bool:
     """Detect the legacy match-history grub sprite cached as the objective icon."""
     path = objectives_dir / "grubs.png"
     if not path.is_file():
         return False
     return path.stat().st_size > 10_000
+
+
+def _objective_icon_format_path(objectives_dir: Path) -> Path:
+    return objectives_dir / ".format"
+
+
+def _objective_icon_format_ok(objectives_dir: Path) -> bool:
+    path = _objective_icon_format_path(objectives_dir)
+    if not path.is_file():
+        return False
+    try:
+        return path.read_text(encoding="utf-8").strip() == OBJECTIVE_ICON_FORMAT
+    except OSError:
+        return False
+
+
+def _needs_objective_format_refresh(objectives_dir: Path) -> bool:
+    return not _objective_icon_format_ok(objectives_dir)
+
+
+def _set_objective_icon_format(objectives_dir: Path) -> None:
+    objectives_dir.mkdir(parents=True, exist_ok=True)
+    _objective_icon_format_path(objectives_dir).write_text(OBJECTIVE_ICON_FORMAT, encoding="utf-8")
+
+
+def prepare_objective_icon(path: Path) -> Path | None:
+    """Knock out scoreboard black padding and trim transparent margins."""
+    if not path.is_file():
+        return None
+    _knockout_edge_black(path)
+    _trim_transparent_png(path, pad_ratio=OBJECTIVE_ICON_TRIM_PAD_RATIO)
+    return path if path.is_file() else None
+
+
+def _knockout_edge_black(path: Path) -> None:
+    """Make edge-connected near-black pixels transparent; keep internal dark details."""
+    import numpy as np
+    import matplotlib.image as mpimg
+    import matplotlib.pyplot as plt
+
+    try:
+        image = mpimg.imread(path)
+    except (OSError, ValueError) as exc:
+        get_logger("ddragon_assets").warning("Could not read %s for knockout: %s", path, exc)
+        return
+    if image.ndim != 3 or image.shape[2] < 4:
+        return
+    rgba = image.astype(np.float32, copy=True)
+    if rgba.max() > 1.0:
+        rgba /= 255.0
+    height, width = rgba.shape[:2]
+    threshold = OBJECTIVE_BLACK_RGB_MAX / 255.0
+    near_black = (
+        (rgba[:, :, 0] <= threshold)
+        & (rgba[:, :, 1] <= threshold)
+        & (rgba[:, :, 2] <= threshold)
+    )
+    already_clear = rgba[:, :, 3] <= 0.02
+    fillable = near_black | already_clear
+    visited = np.zeros((height, width), dtype=bool)
+    stack: list[tuple[int, int]] = []
+    for x in range(width):
+        if fillable[0, x]:
+            stack.append((0, x))
+        if fillable[height - 1, x]:
+            stack.append((height - 1, x))
+    for y in range(height):
+        if fillable[y, 0]:
+            stack.append((y, 0))
+        if fillable[y, width - 1]:
+            stack.append((y, width - 1))
+    while stack:
+        y, x = stack.pop()
+        if visited[y, x] or not fillable[y, x]:
+            continue
+        visited[y, x] = True
+        if y > 0:
+            stack.append((y - 1, x))
+        if y + 1 < height:
+            stack.append((y + 1, x))
+        if x > 0:
+            stack.append((y, x - 1))
+        if x + 1 < width:
+            stack.append((y, x + 1))
+    knockout = visited & near_black
+    if not knockout.any():
+        return
+    rgba[knockout, 3] = 0.0
+    plt.imsave(path, np.clip(rgba, 0.0, 1.0))
 
 
 def _needs_minion_crop(source: Path, destination: Path) -> bool:

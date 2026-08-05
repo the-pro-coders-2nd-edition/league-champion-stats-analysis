@@ -7,6 +7,7 @@ from typing import Any
 from league_stats.analysis.progression.metrics import progression_metrics_for_role
 from league_stats.core.config import GAME_REVIEW_MAX_COMPARISONS
 from league_stats.core.models import GameComparisonRow
+from league_stats.presentation.metric_colors import interpolate_metric_color, score_form_delta
 
 
 def _verdict(delta: float, direction: str) -> str:
@@ -15,6 +16,21 @@ def _verdict(delta: float, direction: str) -> str:
     if direction == "higher":
         return "above" if delta > 0 else "below"
     return "below" if delta > 0 else "above"
+
+
+def _improvement_delta(delta: float, direction: str) -> float:
+    """Positive value means this game beat the baseline on this metric."""
+    return delta if direction == "higher" else -delta
+
+
+def _gap_color(metric: str, delta: float, direction: str, verdict: str) -> str:
+    """Red/green intensity scaled by how far this game sits from baseline."""
+    if verdict == "on_par":
+        return ""
+    score = score_form_delta(metric, _improvement_delta(delta, direction))
+    if score is None:
+        return ""
+    return interpolate_metric_color(score)
 
 
 def _top_rows(rows: list[GameComparisonRow]) -> list[GameComparisonRow]:
@@ -70,6 +86,7 @@ def compare_to_baseline(
         game_f = float(game_value)
         base_f = float(baseline)
         delta = game_f - base_f
+        verdict = _verdict(delta, spec.direction)
         rows.append(
             GameComparisonRow(
                 metric=spec.metric,
@@ -77,7 +94,8 @@ def compare_to_baseline(
                 game_value=_round_comparison(spec.metric, game_f),
                 benchmark_value=_round_comparison(spec.metric, base_f),
                 delta=_round_comparison(spec.metric, delta),
-                verdict=_verdict(delta, spec.direction),
+                verdict=verdict,
+                gap_color=_gap_color(spec.metric, delta, spec.direction, verdict),
             )
         )
     return _top_rows(rows)

@@ -44,7 +44,7 @@ def detect_death_shifts(recent_deaths: dict[str, Any], baseline_deaths: dict[str
 def detect_zone_shift(recent_deaths: dict[str, Any], baseline_deaths: dict[str, Any]) -> list[str]:
     """Flag when the most common death zone changed."""
     recent_zone = recent_deaths.get("most_common_zone")
-    baseline_zone = recent_deaths.get("most_common_zone")
+    baseline_zone = baseline_deaths.get("most_common_zone")
     if not recent_zone or not baseline_zone or recent_zone == baseline_zone:
         return []
     return [f"Most deaths moved from {baseline_zone} to {recent_zone}"]

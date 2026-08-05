@@ -76,3 +76,4 @@ nav h1 { font-size: 18px; padding: 0 20px 16px; color: var(--accent); }
     assert APP_TITLE in text
     assert 'href="../../../index.html"' not in text
     assert '<a href="/">← New analysis</a>' in text
+    assert 'class="app-brand app-brand--nav" href="/" title="Home"' in text

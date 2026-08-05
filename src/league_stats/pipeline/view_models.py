@@ -372,7 +372,7 @@ def peer_subtitle(peer: PeerComparisonResult) -> str:
     confidence = peer.confidence.replace("_", " ")
     return (
         f"Your averages vs {peer.build_label} at {peer.rank_label} · "
-        f"{peer.source} · {peer.peer_games} peer games "
+        f"{peer.peer_games} peer games "
         f"({peer.peer_players} players, {confidence} confidence)"
     )
 
@@ -422,6 +422,7 @@ def game_list_row_display(detail: dict[str, Any]) -> dict[str, Any]:
         "duration_min": detail.get("duration_min"),
         "kda": detail.get("kda"),
         "archetype": detail.get("archetype"),
+        "account": detail.get("account"),
         "score_overall": score.get("overall"),
         "score_tier": score.get("tier"),
         "flags": [flag for flag in flags if flag],

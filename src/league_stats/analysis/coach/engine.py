@@ -634,8 +634,8 @@ class CoachEngine:
             category="Objectives",
             title="Deaths right before epic monsters are throwing objectives",
             detail=(
-                f"You win only {split['winrate_high']:.0%} of games where you die within 60 "
-                f"seconds before a dragon, elder, or baron is taken, versus "
+                f"You win only {split['winrate_high']:.0%} of games where you die within the "
+                f"60–10 seconds window before a dragon, elder, or baron is taken, versus "
                 f"{split['winrate_low']:.0%} otherwise. Reset 90 seconds before spawns, then "
                 "move with your team."
             ),

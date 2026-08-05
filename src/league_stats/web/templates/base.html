@@ -233,6 +233,14 @@ input::placeholder { color: var(--muted); }
   background: var(--panel-2); border: 1px solid var(--border); flex: none;
 }
 .player-card-label { min-width: 0; overflow-wrap: anywhere; }
+.player-card-rank {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: 2px; flex: none; color: var(--muted); font-weight: 600; font-size: 12px;
+}
+.player-card-rank-icon {
+  width: 28px; height: 28px; object-fit: contain; flex: none;
+}
+.player-card-rank-label { white-space: nowrap; }
 .player-card-meta { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
 .player-card-stage {
   display: none; margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--accent);
@@ -258,13 +266,21 @@ input::placeholder { color: var(--muted); }
 .player-member {
   display: flex; align-items: center; gap: 10px;
   font-size: 24px; font-weight: 700; line-height: 1.25; color: var(--text);
-  letter-spacing: -.01em;
+  letter-spacing: -.01em; flex-wrap: wrap;
 }
 .player-member-label { min-width: 0; overflow-wrap: anywhere; }
 .player-member-icon {
   width: 32px; height: 32px; border-radius: 8px; object-fit: cover;
   background: var(--panel-2); border: 1px solid var(--border); flex: none;
 }
+.player-member-rank {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--muted); font-size: 16px; font-weight: 600; letter-spacing: 0;
+}
+.player-member-rank-icon {
+  width: 40px; height: 40px; object-fit: contain; flex: none;
+}
+.player-member-rank-label { white-space: nowrap; }
 
 .build-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px;

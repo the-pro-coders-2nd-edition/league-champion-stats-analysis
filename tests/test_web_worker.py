@@ -164,6 +164,57 @@ def test_execute_job_skips_unchanged_builds(
     assert player["peer_completed_at"] is not None
 
 
+def test_execute_scoped_refresh_forces_rebuild(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Champion-scoped refresh always re-analyses even when skip would apply."""
+    store.enqueue(
+        kind=jobs.JOB_KIND_REFRESH,
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        player_slug="test_euw",
+        filter_champion="Viktor",
+        filter_role="MIDDLE",
+    )
+    job = store.claim_next()
+    assert job is not None
+    assert job["filter_champion"] == "Viktor"
+
+    skip_calls = {"n": 0}
+
+    def always_skip(*args: Any, **kwargs: Any) -> bool:
+        skip_calls["n"] += 1
+        return True
+
+    captured: dict[str, Any] = {}
+
+    def capture_services(job_row: Any, cfg: Any, reporter: Any, **kwargs: Any) -> Any:
+        services = _fake_services()
+        services.config = SimpleNamespace(
+            filter_champion=job_row.get("filter_champion"),
+            filter_role=job_row.get("filter_role"),
+        )
+        captured["filter_champion"] = job_row.get("filter_champion")
+        captured["filter_role"] = job_row.get("filter_role")
+        return services
+
+    calls = _patch_pipeline(
+        monkeypatch,
+        _build_job_services=capture_services,
+        should_skip_unchanged_build=always_skip,
+    )
+
+    worker.execute_job(job, store, web_config)
+
+    final = store.get(int(job["id"]))
+    assert final["state"] == jobs.DONE
+    assert captured["filter_champion"] == "Viktor"
+    assert captured["filter_role"] == "MIDDLE"
+    assert skip_calls["n"] == 0
+    assert calls == ["fetch", "prepare", "ranked", "analyze(peer=False)", "peer", "analyze(peer=True)"]
+
+
 def test_execute_regenerate_uses_cache_and_forces_reanalysis(
     store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -294,7 +345,7 @@ def test_execute_job_no_builds_marks_failed(
     job = _claimed_job(store)
 
     def no_builds(services: Any, contexts: Any) -> Any:
-        raise NoEligibleBuildsError("No champion+lane builds with at least 20 ranked games found.")
+        raise NoEligibleBuildsError("No champion+lane reports with at least 20 ranked games found.")
 
     _patch_pipeline(monkeypatch, prepare_builds=no_builds)
 

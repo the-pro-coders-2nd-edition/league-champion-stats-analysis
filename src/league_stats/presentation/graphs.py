@@ -46,6 +46,37 @@ GRID_COLOR = "#2a2f40"
 FONT_FAMILY = 'Manrope, -apple-system, "Segoe UI", sans-serif'
 COLORWAY = [ACCENT, WIN_COLOR, "#4db8c4", "#e0b155", "#b48cff", "#6eb5ff"]
 
+# Characteristic unit for asinh-compressed bipolar % / delta bars.
+# Values near this stay roughly linear; larger outliers get compressed.
+_COMPRESS_SCALE = 5.0
+_COMPRESS_TICK_MAGNITUDES = (5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000)
+
+
+def _compress_signed(value: float) -> float:
+    """Compress bipolar magnitudes so extreme outliers don't dominate bar length.
+
+    Uses ``asinh(x / 5)`` — same shape as before, but the scale starts at 5
+    instead of 1 (so ±1/±2 are tiny and the first meaningful unit is ±5).
+    """
+    return float(np.arcsinh(value / _COMPRESS_SCALE))
+
+
+def _compressed_xaxis(*, raw_values: list[float], title: str, suffix: str = "") -> dict[str, Any]:
+    """X-axis config with original-unit tick labels over an asinh-compressed scale."""
+    max_abs = max((abs(float(v)) for v in raw_values), default=0.0)
+    candidates: list[float] = [0.0]
+    for mag in _COMPRESS_TICK_MAGNITUDES:
+        if mag <= max_abs * 1.15:
+            candidates.extend([-float(mag), float(mag)])
+    ordered = sorted(set(candidates))
+    ticktext = ["0" if c == 0 else f"{c:+.0f}{suffix}" for c in ordered]
+    return {
+        "title": title,
+        "tickmode": "array",
+        "tickvals": [_compress_signed(c) for c in ordered],
+        "ticktext": ticktext,
+    }
+
 
 def _div(fig: go.Figure) -> str:
     """Serialise a figure as an embeddable HTML div (no plotly.js inline)."""
@@ -566,14 +597,25 @@ class GraphFactory:
                 direction=c.direction,
             )
             colors.append(interpolate_metric_color(gap_score) if gap_score is not None else NEUTRAL_HEX)
+        compressed = [_compress_signed(d) for d in deltas]
         fig = go.Figure(go.Bar(
-            x=deltas, y=labels, orientation="h", marker_color=colors,
-            text=[f"{d:+.0f}%" for d in deltas], textposition="outside",
+            x=compressed,
+            y=labels,
+            orientation="h",
+            marker_color=colors,
+            text=[f"{d:+.0f}%" for d in deltas],
+            textposition="outside",
+            customdata=deltas,
+            hovertemplate="%{y}: %{customdata:+.0f}%<extra></extra>",
         ))
         fig.add_vline(x=0, line_color="#888", line_dash="dot")
         fig.update_layout(
             title=f"Gap vs average {build_label} at your rank (% difference)",
-            xaxis_title="% above (+) or below (-) peers",
+            xaxis=_compressed_xaxis(
+                raw_values=deltas,
+                title="% above (+) or below (-) peers (compressed scale)",
+                suffix="%",
+            ),
             height=max(420, 28 * len(labels)),
         )
         return _div(fig)
@@ -652,18 +694,24 @@ class GraphFactory:
             else:
                 colors.append(interpolate_metric_color(gap_score) if gap_score is not None else NEUTRAL_HEX)
             bar_text.append(gap_display)
+        compressed = [_compress_signed(v) for v in values]
         fig = go.Figure(go.Bar(
-            x=values,
+            x=compressed,
             y=labels,
             orientation="h",
             marker_color=colors,
             text=bar_text,
             textposition="outside",
+            customdata=values,
+            hovertemplate="%{y}: %{customdata:+.1f}<extra></extra>",
         ))
         fig.add_vline(x=0, line_color="#888", line_dash="dot")
         fig.update_layout(
             title="Largest recent vs baseline shifts",
-            xaxis_title="Change from baseline (% · lane diffs in raw units)",
+            xaxis=_compressed_xaxis(
+                raw_values=values,
+                title="Change from baseline (% · lane diffs; compressed scale)",
+            ),
             height=max(320, 28 * len(labels)),
         )
         return _div(fig)

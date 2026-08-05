@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from league_stats.analysis.coach.engine import VISIBLE_RECOMMENDATIONS
 from league_stats.analysis.progression.diff import build_progression_comparison
 from league_stats.analysis.progression.export import progression_to_markdown
 from league_stats.analysis.progression.slicing import slice_baseline, slice_recent
@@ -44,6 +43,29 @@ def _sample_subtitle(comparison: ProgressionComparison | None) -> str:
     )
 
 
+def _empty_preset(
+    *,
+    sample_subtitle: str,
+    insufficient_reason: str,
+    snapshot: dict | None = None,
+    comparison: Any = None,
+) -> dict[str, Any]:
+    return {
+        "available": False,
+        "insufficient_reason": insufficient_reason,
+        "sample_subtitle": sample_subtitle,
+        "snapshot": snapshot or {},
+        "delta_rows": [],
+        "top_improved": [],
+        "top_regressed": [],
+        "behavioral_shifts": [],
+        "recommendations": [],
+        "stories": [],
+        "figures": {},
+        "comparison": comparison,
+    }
+
+
 def _serialize_comparison(
     comparison: ProgressionComparison | None,
     *,
@@ -54,40 +76,25 @@ def _serialize_comparison(
     """Convert a comparison to a JSON-friendly preset bundle."""
     sample_subtitle = _sample_subtitle(comparison)
     if comparison is None:
-        return {
-            "available": False,
-            "insufficient_reason": "Could not build comparison.",
-            "sample_subtitle": sample_subtitle,
-            "snapshot": {},
-            "delta_rows": [],
-            "top_improved": [],
-            "top_regressed": [],
-            "behavioral_shifts": [],
-            "recommendations": [],
-            "figures": {},
-            "comparison": None,
-        }
+        return _empty_preset(
+            sample_subtitle=sample_subtitle,
+            insufficient_reason="Could not build comparison.",
+        )
 
     snap = comparison.snapshot
     if snap.confidence == "insufficient":
-        return {
-            "available": False,
-            "insufficient_reason": snap.headline,
-            "sample_subtitle": sample_subtitle,
-            "snapshot": snap.model_dump(),
-            "delta_rows": [],
-            "top_improved": [],
-            "top_regressed": [],
-            "behavioral_shifts": [],
-            "recommendations": [],
-            "figures": {},
-            "comparison": comparison.model_dump(),
-        }
+        return _empty_preset(
+            sample_subtitle=sample_subtitle,
+            insufficient_reason=snap.headline,
+            snapshot=snap.model_dump(),
+            comparison=comparison.model_dump(),
+        )
 
     delta_rows = [form_row_display(delta.model_dump()) for delta in comparison.deltas]
     top_improved = [form_row_display(delta.model_dump()) for delta in comparison.top_improved]
     top_regressed = [form_row_display(delta.model_dump()) for delta in comparison.top_regressed]
     recommendations = [_recommendation_payload(rec) for rec in comparison.recommendations]
+    stories = [story.model_dump() for story in comparison.stories]
 
     from league_stats.pipeline.frames import build_analysis_frames
 
@@ -107,6 +114,7 @@ def _serialize_comparison(
         "top_regressed": top_regressed,
         "behavioral_shifts": comparison.behavioral_shifts,
         "recommendations": recommendations,
+        "stories": stories,
         "figures": figures,
         "comparison": comparison.model_dump(),
     }
@@ -174,10 +182,8 @@ def progression_to_template_context(preset_bundle: dict[str, Any]) -> dict[str, 
         "form_delta_rows": preset_bundle.get("delta_rows", []),
         "form_top_improved": preset_bundle.get("top_improved", []),
         "form_top_regressed": preset_bundle.get("top_regressed", []),
-        "form_behavioral_shifts": preset_bundle.get("behavioral_shifts", []),
-        "form_recommendations": preset_bundle.get("recommendations", []),
+        "form_stories": preset_bundle.get("stories", []),
         "form_figures": preset_bundle.get("figures", {}),
-        "form_recommendation_visible_count": VISIBLE_RECOMMENDATIONS,
     }
 
 

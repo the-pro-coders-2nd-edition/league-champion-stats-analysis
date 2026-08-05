@@ -23,16 +23,27 @@ class FetchResult:
 
 
 def _resolve_player_context(services: Services, player: PlayerIdentity) -> PlayerContext:
-    """Resolve PUUID and cache the current profile icon when available."""
+    """Resolve PUUID and cache profile icon + solo/duo rank when available."""
     puuid = services.client.resolve_puuid(player.riot_id, player.tagline)
     icon_id = services.client.fetch_profile_icon_id(puuid)
     if icon_id is not None:
         services.assets.ensure_profile_icon(icon_id)
+    ranked = services.client.fetch_solo_rank(puuid)
+    solo_tier = solo_rank = None
+    solo_lp: int | None = None
+    if ranked is not None:
+        solo_tier = ranked.tier.upper()
+        solo_rank = ranked.rank.upper() if ranked.rank else None
+        solo_lp = ranked.league_points
+        services.assets.ensure_rank_emblem(solo_tier)
     return PlayerContext(
         riot_id=player.riot_id,
         tagline=player.tagline,
         puuid=puuid,
         profile_icon_id=icon_id,
+        solo_tier=solo_tier,
+        solo_rank=solo_rank,
+        solo_lp=solo_lp,
     )
 
 
@@ -61,12 +72,22 @@ def resolve_player_contexts(services: Services) -> list[PlayerContext]:
     ]
 
 
-def load_all_records(services: Services, puuids: str | list[str]) -> list[MatchRecord]:
-    """Parse stored ranked queue games for one or more players."""
+def load_all_records(
+    services: Services,
+    puuids: str | list[str],
+    *,
+    account_by_puuid: dict[str, str] | None = None,
+) -> list[MatchRecord]:
+    """Parse stored ranked queue games for one or more players.
+
+    ``account_by_puuid`` fills in the configured Riot ID when the match payload
+    omits ``riotIdGameName`` / ``riotIdTagline`` (older cached docs).
+    """
     if isinstance(puuids, str):
         puuid_list = [puuids]
     else:
         puuid_list = list(puuids)
+    labels = account_by_puuid or {}
     log = get_logger("pipeline")
     catalog = ItemCatalog(services.client.fetch_item_catalog())
     match_filter = BaseMatchFilter(services.config)
@@ -92,9 +113,14 @@ def load_all_records(services: Services, puuids: str | list[str]) -> list[MatchR
             if not match_filter.accept(match, puuid):
                 continue
             try:
-                records.append(parser.parse(match, timeline, puuid))
+                record = parser.parse(match, timeline, puuid)
             except Exception as exc:
                 log.warning("Failed to parse %s: %s", match_id, exc)
+                continue
+            label = labels.get(puuid)
+            if label and not record.account:
+                record = record.model_copy(update={"account": label})
+            records.append(record)
     records.sort(key=lambda r: r.game_creation_ms, reverse=True)
     log.info("Parsed %d qualifying ranked queue games", len(records))
     return records

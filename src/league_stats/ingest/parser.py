@@ -357,6 +357,17 @@ def discover_build_pools(
     return pools
 
 
+def participant_account_label(participant: dict[str, Any]) -> str | None:
+    """Build ``GameName#Tag`` from a match-v5 participant when available."""
+    game_name = str(
+        participant.get("riotIdGameName") or participant.get("summonerName") or ""
+    ).strip()
+    tagline = str(participant.get("riotIdTagline") or "").strip()
+    if game_name and tagline:
+        return f"{game_name}#{tagline}"
+    return game_name or None
+
+
 class MatchParser:
     """Assembles :class:`~models.MatchRecord` objects from raw documents."""
 
@@ -435,6 +446,7 @@ class MatchParser:
             role=str(me.get("teamPosition", "")),
             win=bool(me["win"]),
             side=Side.BLUE if me["teamId"] == 100 else Side.RED,
+            account=participant_account_label(me),
             lane_opponent=opponent,
             ally_comp=[str(p["championName"]) for p in allies],
             enemy_comp=[str(p["championName"]) for p in enemies],

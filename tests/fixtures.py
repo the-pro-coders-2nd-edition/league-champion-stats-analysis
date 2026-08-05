@@ -44,6 +44,8 @@ def make_participant(pid: int, team_id: int, champion: str, position: str) -> di
     return {
         "participantId": pid,
         "puuid": MY_PUUID if is_me else f"puuid-{pid}",
+        "riotIdGameName": "Test" if is_me else f"Player{pid}",
+        "riotIdTagline": "EUW" if is_me else "NA1",
         "teamId": team_id,
         "championName": champion,
         "teamPosition": position,

@@ -6,7 +6,7 @@
 <title>{{ app_title }} — {{ player_name }}</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
-{% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, nav_link, tiered_cards, rec_card, metric_card, generated_at_time, format_generated_at_script %}
+{% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, tiered_cards, rec_card, metric_card, generated_at_time, format_generated_at_script %}
 {{ favicon_links(favicon_href) }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,6 +24,7 @@
   </div>
   {% if player_builds %}
   <div class="nav-builds">
+    <div class="nav-builds-label">Champions</div>
     <div class="build-grid">
       {% for build in player_builds %}
       {{ build_card(build) }}
@@ -31,44 +32,6 @@
     </div>
   </div>
   {% endif %}
-  <div class="nav-sections">
-    <div class="nav-group nav-group--performance">
-      <div class="nav-group-label">Performance</div>
-      {{ nav_link('#overview', 'Overview', 'lucide:layout-dashboard', 'overview') }}
-      {{ nav_link('#coaching', 'Coaching', 'lucide:lightbulb', 'coaching') }}
-      {{ nav_link('#form-tracker', 'Form tracker', 'lucide:trending-up', 'form-tracker') }}
-    </div>
-    <div class="nav-group nav-group--games">
-      <div class="nav-group-label">Recent games</div>
-      {{ nav_link('#game-review', 'Game Review', 'lucide:layout-list', 'game-review') }}
-    </div>
-    <div class="nav-group nav-group--laning">
-      <div class="nav-group-label">{{ early_section_title | default('Laning') }}</div>
-      {{ nav_link('#lane', 'Lane', 'lucide:map', 'lane') }}
-      {{ nav_link('#economy', 'Economy', 'lucide:coins', 'economy') }}
-    </div>
-    <div class="nav-group nav-group--impact">
-      <div class="nav-group-label">Game impact</div>
-      {{ nav_link('#vision', 'Vision', 'lucide:eye', 'vision') }}
-      {{ nav_link('#deaths', 'Deaths', 'lucide:skull', 'deaths') }}
-      {{ nav_link('#positioning', 'Positioning', 'lucide:footprints', 'positioning') }}
-      {{ nav_link('#teamfights', 'Fights', 'lucide:users', 'teamfights') }}
-      {{ nav_link('#objectives', 'Objectives', 'lucide:target', 'objectives') }}
-    </div>
-    <div class="nav-group nav-group--champion">
-      <div class="nav-group-label">Champion</div>
-      {{ nav_link('#items', 'Items', 'lucide:wand-sparkles', 'items') }}
-      {{ nav_link('#runes', 'Runes', 'lucide:sparkles', 'runes') }}
-      {{ nav_link('#matchups', 'Matchups', 'lucide:swords', 'matchups') }}
-    </div>
-    <div class="nav-group nav-group--analysis">
-      <div class="nav-group-label">Analysis</div>
-      {% if has_peer_comparison or status_endpoint %}
-      {{ nav_link('#rank-peers', 'Peers', 'lucide:bar-chart-2', 'rank-peers') }}
-      {% endif %}
-      {{ nav_link('#graphs', 'Advanced', 'lucide:line-chart', 'graphs') }}
-    </div>
-  </div>
 </nav>
 <main>
 
@@ -101,6 +64,19 @@
       >{{ option.label }}</button>
       {% endfor %}
     </div>
+    {% if status_endpoint and refresh_champion and refresh_role %}
+    <div class="filter-group filter-group--actions" id="report-refresh-bar">
+      <button
+        type="button"
+        class="report-refresh-btn"
+        id="report-refresh-btn"
+        title="Fetch latest games and rebuild this champion report"
+      >
+        <iconify-icon icon="mdi:refresh" width="16" height="16" aria-hidden="true"></iconify-icon>
+        <span>Refresh</span>
+      </button>
+    </div>
+    {% endif %}
   </div>
   <div class="report-category-tabs" id="report-category-tabs" role="tablist" aria-label="Report categories">
     <button type="button" class="report-tab report-tab--performance is-active" data-category="performance" role="tab" aria-selected="true" aria-controls="category-performance" id="tab-performance">Performance</button>
@@ -117,6 +93,8 @@
   var STATUS_ENDPOINT = {{ status_endpoint | tojson }};
   var REPORT_SLUG = {{ report_slug | default("") | tojson }};
   var PAGE_GENERATED_AT = {{ generated_at | default("") | tojson }};
+  var REFRESH_CHAMPION = {{ refresh_champion | default("") | tojson }};
+  var REFRESH_ROLE = {{ refresh_role | default("") | tojson }};
   var REPORT_HREF = {{
     (("/out/reports/" ~ chat_report_ref ~ "/report.html") | tojson)
     if chat_report_ref else "null"
@@ -124,7 +102,9 @@
   var ACTIVE_STATES = ['queued', 'fetching', 'analyzing', 'report_ready', 'peer_running'];
   var banner = document.getElementById('web-status-banner');
   var bannerText = document.getElementById('web-status-banner-text');
+  var refreshBtn = document.getElementById('report-refresh-btn');
   var timer = null;
+  var refreshing = false;
 
   function setBannerVisible(visible, text) {
     if (text != null) bannerText.textContent = text;
@@ -146,6 +126,12 @@
       return href === window.location.pathname;
     }
     return true;
+  }
+
+  function startPolling(intervalMs) {
+    if (timer) clearInterval(timer);
+    timer = setInterval(poll, intervalMs || 10000);
+    poll();
   }
 
   function poll() {
@@ -172,6 +158,7 @@
         if (job && ACTIVE_STATES.indexOf(job.state) !== -1) {
           setBannerVisible(true, job.stage_detail ||
             (job.state === 'report_ready' ? 'Peer analysis queued…' : 'Analysis in progress…'));
+          if (refreshBtn) refreshBtn.disabled = true;
           if (peerPending) {
             peerPending.textContent = job.stage_detail ||
               (job.state === 'report_ready'
@@ -181,21 +168,58 @@
           }
         } else {
           setBannerVisible(false);
+          if (refreshBtn && !refreshing) refreshBtn.disabled = false;
           if (peerPending && data.peer_failed) {
             peerPending.textContent = 'Peer comparison could not be completed for this report.';
             peerPending.classList.add('is-failed');
           }
-          if (!job || job.state === 'done' || job.state === 'failed') {
-            clearInterval(timer);
-            timer = null;
+          if (!job || job.state === 'done' || job.state === 'failed' || job.state === 'cancelled') {
+            if (timer) {
+              clearInterval(timer);
+              timer = null;
+            }
           }
         }
       })
       .catch(function () { /* transient network error: keep polling */ });
   }
 
-  timer = setInterval(poll, 10000);
-  poll();
+  if (refreshBtn && REFRESH_CHAMPION && REFRESH_ROLE) {
+    refreshBtn.addEventListener('click', function () {
+      if (refreshing || refreshBtn.disabled) return;
+      refreshing = true;
+      refreshBtn.disabled = true;
+      setBannerVisible(true, 'Queueing refresh…');
+      fetch(STATUS_ENDPOINT + '/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ champion: REFRESH_CHAMPION, role: REFRESH_ROLE }),
+      })
+        .then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) {
+              var detail = data && data.detail;
+              throw new Error(typeof detail === 'string' ? detail : 'Refresh failed.');
+            }
+            return data;
+          });
+        })
+        .then(function (data) {
+          refreshing = false;
+          var job = data && data.job;
+          setBannerVisible(true, (job && job.stage_detail) || 'Fetching latest games…');
+          startPolling(3000);
+        })
+        .catch(function (err) {
+          refreshing = false;
+          refreshBtn.disabled = false;
+          setBannerVisible(true, err.message || 'Refresh failed.');
+          setTimeout(function () { setBannerVisible(false); }, 5000);
+        });
+    });
+  }
+
+  startPolling(10000);
 })();
 </script>
 {% endif %}
@@ -321,107 +345,117 @@
     <p id="form-unavailable-text">{{ form_insufficient_reason or 'Need more games for Form Tracker.' }}</p>
   </div>
   <div id="form-content"{% if not form_available %} style="display:none"{% endif %}>
-    <div class="form-hero cards">
-      <div class="card form-score-card">
-        <div class="label">Form score</div>
-        <div class="form-score-value" id="form-score-value">{{ '%+.0f' % form_snapshot.form_score if form_snapshot else '0' }}</div>
-        <div class="form-meta">
-          <span class="form-badge form-badge--{{ form_snapshot.trend if form_snapshot else 'stable' }}" id="form-trend-badge">{{ form_snapshot.trend if form_snapshot else 'stable' }}</span>
-          <span class="form-badge form-badge--confidence" id="form-confidence-badge">{{ form_snapshot.confidence if form_snapshot else 'insufficient' }} confidence</span>
-          {% if form_snapshot and form_snapshot.current_streak %}
-          <span class="form-streak" id="form-streak">{{ form_snapshot.current_streak }}</span>
+    <div class="form-dossier form-dossier--{{ form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable' }}" id="form-dossier">
+      <div class="form-stage" id="form-stage">
+        <div class="form-stage-inner">
+          <div class="form-stage-score">
+            <div class="label">Form score</div>
+            <div class="form-score-value form-score-value--{{ form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable' }}" id="form-score-value">{{ '%+.0f' % form_snapshot.form_score if form_snapshot and form_snapshot.form_score is defined else '0' }}</div>
+            <div class="form-meta">
+              <span class="form-badge form-badge--{{ form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable' }}" id="form-trend-badge">{{ form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable' }}</span>
+              <span class="form-badge form-badge--confidence" id="form-confidence-badge">{{ form_snapshot.confidence if form_snapshot and form_snapshot.confidence else 'insufficient' }} confidence</span>
+            </div>
+          </div>
+          <div class="form-stage-wr">
+            <div class="label">Win rate</div>
+            <div class="form-wr-bridge" id="form-wr-shift">
+              {% if form_snapshot %}
+              <span class="form-wr-from">{{ '%.0f' % (form_snapshot.baseline_winrate * 100) }}%</span>
+              <span class="form-wr-arrow" aria-hidden="true">→</span>
+              <span class="form-wr-to">{{ '%.0f' % (form_snapshot.recent_winrate * 100) }}%</span>
+              <span class="form-wr-delta{% if form_snapshot.winrate_delta_pp > 0 %} form-wr-delta--up{% elif form_snapshot.winrate_delta_pp < 0 %} form-wr-delta--down{% endif %}">
+                {{ '%+.1f' % form_snapshot.winrate_delta_pp }} pp
+              </span>
+              {% else %}—{% endif %}
+            </div>
+            <p class="form-headline" id="form-headline">{{ form_snapshot.headline if form_snapshot else '' }}</p>
+          </div>
+        </div>
+      </div>
+      <div class="form-tabs" id="form-tabs" role="tablist">
+        <button type="button" class="form-tab is-active" data-tab="pulse" role="tab" aria-selected="true">Pulse</button>
+        <button type="button" class="form-tab" data-tab="evidence" role="tab" aria-selected="false">Evidence</button>
+      </div>
+      <div class="form-panel" id="form-panel-pulse" role="tabpanel">
+        <div class="figure-block">
+          <div class="figure" id="fig-form_rolling_wr">{{ form_figures.form_rolling_wr | safe if form_figures else '' }}</div>
+          <p class="figure-caption">Rolling win rate — shaded region is your recent window; grey band is baseline WR.</p>
+        </div>
+        <div class="form-stories" id="form-stories">
+          {% if form_stories %}
+          {% for story in form_stories %}
+          <article class="form-story form-story--{{ story.tone }}">
+            <span class="form-story-label">{{ 'Keep' if story.tone == 'keep' else 'Fix' }}</span>
+            <strong class="form-story-title">{{ story.title }}</strong>
+            <p class="form-story-driver"><span class="form-story-kicker">Driver</span> {{ story.driver }}</p>
+            {% if story.habit %}
+            <p class="form-story-habit"><span class="form-story-kicker">Habit</span> {{ story.habit }}</p>
+            {% endif %}
+            <p class="form-story-action"><span class="form-story-kicker">Action</span> {{ story.action }}</p>
+          </article>
+          {% endfor %}
+          {% else %}
+          <p class="sub form-stories-empty" id="form-stories-empty">No standout form stories for this window.</p>
           {% endif %}
         </div>
       </div>
-      <div class="card card--wide">
-        <div class="label">Win rate shift</div>
-        <p class="form-headline" id="form-wr-shift">
-          {% if form_snapshot %}
-          {{ '%.0f' % (form_snapshot.recent_winrate * 100) }}% recent vs {{ '%.0f' % (form_snapshot.baseline_winrate * 100) }}% baseline ({{ '%+.1f' % form_snapshot.winrate_delta_pp }} pp)
-          {% else %}—{% endif %}
-        </p>
-        <p class="sub" id="form-headline">{{ form_snapshot.headline if form_snapshot else '' }}</p>
+      <div class="form-panel" id="form-panel-evidence" role="tabpanel" hidden>
+        <div class="form-movers" id="form-movers">
+          <div class="form-mover-section">
+            <h4 class="form-feed-title">Top improvements</h4>
+            <div class="form-mover-feed" id="form-improved-list">
+              {% for row in form_top_improved %}
+              <div class="form-mover form-mover--improved">
+                <span class="form-mover-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
+                <span class="form-mover-values">{{ row.baseline }} → {{ row.recent }}</span>
+                <span class="form-mover-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
+              </div>
+              {% else %}
+              <p class="sub">No standout improvements.</p>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="form-mover-section">
+            <h4 class="form-feed-title">Regressions</h4>
+            <div class="form-mover-feed" id="form-regressed-list">
+              {% for row in form_top_regressed %}
+              <div class="form-mover form-mover--regressed">
+                <span class="form-mover-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
+                <span class="form-mover-values">{{ row.baseline }} → {{ row.recent }}</span>
+                <span class="form-mover-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
+              </div>
+              {% else %}
+              <p class="sub">No standout regressions.</p>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="figure-block">
+          <div class="figure" id="fig-form_metric_delta_bar">{{ form_figures.form_metric_delta_bar | safe if form_figures else '' }}</div>
+          <p class="figure-caption">Largest metric shifts between recent games and your baseline period.</p>
+        </div>
+        <details class="form-all-metrics">
+          <summary>All metrics</summary>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>Metric</th><th>Recent</th><th>Baseline</th><th>Change</th><th>Verdict</th></tr>
+              </thead>
+              <tbody id="form-table-body">
+                {% for row in form_delta_rows %}
+                <tr>
+                  <td>{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</td>
+                  <td>{{ row.recent }}</td>
+                  <td>{{ row.baseline }}</td>
+                  <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</td>
+                  <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.verdict }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </details>
       </div>
-    </div>
-    <div class="form-movers cards" id="form-movers">
-      <div class="card card--wide">
-        <div class="label">Top improvements</div>
-        <ul class="peer-highlight-list" id="form-improved-list">
-          {% for row in form_top_improved %}
-          <li>{{ row.label }}: {{ row.baseline }} → {{ row.recent }} ({{ row.gap }})</li>
-          {% else %}
-          <li>—</li>
-          {% endfor %}
-        </ul>
-      </div>
-      <div class="card card--wide">
-        <div class="label">Regressions</div>
-        <ul class="peer-highlight-list" id="form-regressed-list">
-          {% for row in form_top_regressed %}
-          <li>{{ row.label }}: {{ row.baseline }} → {{ row.recent }} ({{ row.gap }})</li>
-          {% else %}
-          <li>—</li>
-          {% endfor %}
-        </ul>
-      </div>
-    </div>
-    <div class="card card--wide" id="form-shifts-block"{% if not form_behavioral_shifts %} style="display:none"{% endif %}>
-      <div class="label">Behavioral shifts</div>
-      <ul class="peer-highlight-list" id="form-shifts-list">
-        {% for shift in form_behavioral_shifts %}
-        <li>{{ shift }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-    <div class="table-scroll">
-      <table>
-        <thead>
-          <tr><th>Metric</th><th>Recent</th><th>Baseline</th><th>Change</th><th>Verdict</th></tr>
-        </thead>
-        <tbody id="form-table-body">
-          {% for row in form_delta_rows %}
-          <tr>
-            <td>{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</td>
-            <td>{{ row.recent }}</td>
-            <td>{{ row.baseline }}</td>
-            <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}{% if row.significant %} *{% endif %}</td>
-            <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.verdict }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div class="rec-columns" id="form-recommendations-root" style="margin-top: 20px;">
-      <div class="rec-column rec-column-positive" id="form-rec-positive-column">
-        <h3>Keep doing</h3>
-        {% set form_positive = form_recommendations | selectattr('tone', 'equalto', 'positive') | list %}
-        {% if form_positive %}
-        {% for rec in form_positive[:form_recommendation_visible_count] %}
-        {{ rec_card(rec) }}
-        {% endfor %}
-        {% else %}
-        <p class="rec-empty">No recent improvements flagged yet.</p>
-        {% endif %}
-      </div>
-      <div class="rec-column rec-column-negative" id="form-rec-negative-column">
-        <h3>Work on</h3>
-        {% set form_negative = form_recommendations | selectattr('tone', 'equalto', 'negative') | list %}
-        {% if form_negative %}
-        {% for rec in form_negative[:form_recommendation_visible_count] %}
-        {{ rec_card(rec) }}
-        {% endfor %}
-        {% else %}
-        <p class="rec-empty">No regressions flagged in recent form.</p>
-        {% endif %}
-      </div>
-    </div>
-    <div class="figure-block">
-      <div class="figure" id="fig-form_rolling_wr">{{ form_figures.form_rolling_wr | safe if form_figures else '' }}</div>
-      <p class="figure-caption">Rolling win rate — shaded region is your recent window; grey band is baseline WR.</p>
-    </div>
-    <div class="figure-block">
-      <div class="figure" id="fig-form_metric_delta_bar">{{ form_figures.form_metric_delta_bar | safe if form_figures else '' }}</div>
-      <p class="figure-caption">Largest metric shifts between recent games and your baseline period.</p>
     </div>
   </div>
 </section>
@@ -437,28 +471,28 @@
     <p>No ranked games in this queue for Game Review.</p>
   </div>
   <div id="game-review-content"{% if not game_review_available | default(false) %} style="display:none"{% endif %}>
-    <div class="game-review-list" id="game-review-list"></div>
-    <div class="game-review-detail" id="game-review-detail" hidden>
-      <div class="game-review-matchup" id="game-review-matchup"></div>
-      <div class="game-review-score-hero cards" id="game-review-score-hero"></div>
-      <div class="game-review-behaviors cards" id="game-review-behaviors"></div>
-      <div class="game-review-compare cards" id="game-review-compare"></div>
-      <div class="game-review-tabs" id="game-review-tabs">
-        <button type="button" class="game-review-tab is-active" data-tab="summary">Summary</button>
-        <button type="button" class="game-review-tab" data-tab="timeline">Timeline</button>
-        <button type="button" class="game-review-tab" data-tab="deaths">Deaths</button>
-        <button type="button" class="game-review-tab" data-tab="fights">Fights</button>
-        <button type="button" class="game-review-tab" data-tab="objectives">Objectives</button>
-        <button type="button" class="game-review-tab" data-tab="key-moments">Key moments</button>
-        <button type="button" class="game-review-tab" data-tab="build">Build</button>
+    <div class="game-review-layout">
+      <aside class="game-review-rail" aria-label="Recent games">
+        <div class="game-review-list" id="game-review-list"></div>
+      </aside>
+      <div class="game-review-detail" id="game-review-detail" hidden>
+        <div class="game-review-stage" id="game-review-matchup"></div>
+        <div class="game-review-verdict" id="game-review-verdict"></div>
+        <div class="game-review-scoreboard" id="game-review-score-hero"></div>
+        <div class="game-review-tabs" id="game-review-tabs" role="tablist">
+          <button type="button" class="game-review-tab is-active" data-tab="overview" role="tab" aria-selected="true">Overview</button>
+          <button type="button" class="game-review-tab" data-tab="story" role="tab" aria-selected="false">Story</button>
+          <button type="button" class="game-review-tab" data-tab="mistakes" role="tab" aria-selected="false">Mistakes</button>
+          <button type="button" class="game-review-tab" data-tab="loadout" role="tab" aria-selected="false">Loadout</button>
+        </div>
+        <div class="game-review-panel" id="game-review-panel-overview" role="tabpanel"></div>
+        <div class="game-review-panel" id="game-review-panel-story" role="tabpanel" hidden>
+          <div class="game-review-story-block figure-block" id="game-review-panel-timeline"></div>
+          <div class="game-review-story-block" id="game-review-panel-key-moments"></div>
+        </div>
+        <div class="game-review-panel" id="game-review-panel-mistakes" role="tabpanel" hidden></div>
+        <div class="game-review-panel" id="game-review-panel-loadout" role="tabpanel" hidden></div>
       </div>
-      <div class="game-review-panel" id="game-review-panel-summary"></div>
-      <div class="game-review-panel figure-block" id="game-review-panel-timeline" hidden></div>
-      <div class="game-review-panel" id="game-review-panel-deaths" hidden></div>
-      <div class="game-review-panel" id="game-review-panel-fights" hidden></div>
-      <div class="game-review-panel" id="game-review-panel-objectives" hidden></div>
-      <div class="game-review-panel" id="game-review-panel-key-moments" hidden></div>
-      <div class="game-review-panel" id="game-review-panel-build" hidden></div>
     </div>
   </div>
 </section>
@@ -553,7 +587,7 @@
   <div class="table-scroll">
   <table>
     <thead>
-    <tr><th>Objective</th><th>Count</th><th>Taken</th><th>Present</th><th>Arrived early</th><th>{{ metric_label("Died in setup window (45s)", tooltip=metric_tooltip("Died in setup window (45s)")) }}</th><th>{{ metric_label("Wards before", tooltip=metric_tooltip("Wards before")) }}</th></tr>
+    <tr><th>Objective</th><th>Count</th><th>Taken</th><th>Present</th><th>Arrived early</th><th>{{ metric_label("Died in setup window (45–10s)", tooltip=metric_tooltip("Died in setup window (45–10s)")) }}</th><th>{{ metric_label("Wards before", tooltip=metric_tooltip("Wards before")) }}</th></tr>
     </thead>
     <tbody id="objective-table-body">
     {% for row in objective_rows %}
@@ -634,47 +668,130 @@
 {% if has_peer_comparison %}
 <section id="rank-peers" class="report-section report-section--analysis">
   {{ section_title("Rank peer comparison", "chart", "accent", category='analysis') }}
-  <p class="sub" id="peer-subtitle">Your averages vs {{ build_label }} at <strong>{{ peer_comparison.rank_label }}</strong> · {{ peer_comparison.source }} · {{ peer_comparison.peer_games }} peer games ({{ peer_comparison.peer_players }} players, {{ peer_comparison.confidence }} confidence)</p>
-  <div id="peer-highlight-cards" class="cards">
-    {% for label, items, icon, tone in [('Strengths', peer_comparison.strengths, 'trophy', 'win'), ('Weaknesses', peer_comparison.weaknesses, 'skull', 'danger')] %}
-    <div class="card card--wide">
-      <div class="label">{{ metric_label(label, icon, tone) }}</div>
-      {% if items %}
-      <ul class="peer-highlight-list">
-        {% for item in items %}<li>{{ item }}</li>{% endfor %}
-      </ul>
-      {% else %}<p class="sub" style="margin:8px 0 0">—</p>{% endif %}
+  <p class="sub sub--lead" id="peer-subtitle">Your averages vs {{ build_label }} at <strong>{{ peer_comparison.rank_label }}</strong> · {{ peer_comparison.peer_games }} peer games ({{ peer_comparison.peer_players }} players, {{ peer_comparison.confidence }} confidence)</p>
+  {% set peer_above = peer_rows | selectattr('verdict', 'equalto', 'above') | list %}
+  {% set peer_below = peer_rows | selectattr('verdict', 'equalto', 'below') | list %}
+  {% set peer_lean = 'above' if peer_above|length > peer_below|length else ('below' if peer_below|length > peer_above|length else 'even') %}
+  <div class="peer-dossier peer-dossier--{{ peer_lean }}" id="peer-dossier">
+    <div class="peer-stage" id="peer-stage">
+      <div class="peer-stage-inner">
+        <div class="peer-stage-rank">
+          <div class="label">Rank peers</div>
+          <div class="peer-rank-value" id="peer-rank-value">
+            {% if peer_rank_icon %}
+            <img class="peer-rank-icon" src="{{ peer_rank_icon }}" alt="" width="48" height="48">
+            {% endif %}
+            <span class="peer-rank-label" id="peer-rank-label">{{ peer_comparison.rank_badge or peer_comparison.rank_label }}</span>
+          </div>
+        </div>
+        <div class="peer-stage-meta">
+          <div class="peer-balance" id="peer-balance">
+            <span class="peer-balance-chip peer-balance-chip--above"><strong id="peer-above-count">{{ peer_above|length }}</strong> above</span>
+            <span class="peer-balance-chip peer-balance-chip--below"><strong id="peer-below-count">{{ peer_below|length }}</strong> below</span>
+          </div>
+          <div class="peer-meta-chips" id="peer-meta-chips">
+            <span class="peer-meta-chip">{{ peer_comparison.peer_games }} peer games</span>
+            <span class="peer-meta-chip">{{ peer_comparison.peer_players }} players</span>
+            <span class="peer-meta-chip peer-meta-chip--confidence">{{ peer_comparison.confidence }} confidence</span>
+          </div>
+        </div>
+      </div>
     </div>
-    {% endfor %}
-  </div>
-  <div class="figure-block">
-    <div class="figure" id="fig-peer_comparison">{{ figures.peer_comparison | safe }}</div>
-    <p class="figure-caption">Gap vs same-rank peers — greener bars are strengths, redder bars trail the benchmark (intensity reflects gap size).</p>
-  </div>
-  <div class="table-scroll">
-  <table>
-    <thead>
-    <tr><th>Metric</th><th>You</th><th>{{ peer_comparison.tier|title }} {{ build_label }} avg</th><th>Gap</th><th>Verdict</th></tr>
-    </thead>
-    <tbody id="peer-table-body">
-    {% for row in peer_rows %}
-    <tr>
-      <td>{{ metric_label(row.label, row.icon, row.icon_tone, icon_href=row.icon_href) }}</td>
-      <td>{{ row.yours }}</td>
-      <td>{{ row.peer_avg }}</td>
-      <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</td>
-      <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.verdict }}</td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+    <div class="peer-verdict" id="peer-verdict">
+      <div class="peer-verdict-grid">
+        {% for item in peer_comparison.weaknesses[:2] %}
+        {% set parts = item.split(': ') %}
+        <div class="peer-callout peer-callout--fix">
+          <span class="peer-callout-label">Fix</span>
+          <strong class="peer-callout-title">{{ parts[0] }}</strong>
+          {% if parts|length > 1 %}<span class="peer-callout-detail">{{ parts[1:] | join(': ') }}</span>{% endif %}
+        </div>
+        {% endfor %}
+        {% for item in peer_comparison.strengths[:2] %}
+        {% set parts = item.split(': ') %}
+        <div class="peer-callout peer-callout--keep">
+          <span class="peer-callout-label">Keep</span>
+          <strong class="peer-callout-title">{{ parts[0] }}</strong>
+          {% if parts|length > 1 %}<span class="peer-callout-detail">{{ parts[1:] | join(': ') }}</span>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% if not peer_comparison.strengths and not peer_comparison.weaknesses %}
+      <p class="sub peer-verdict-empty">No standout gaps vs this rank sample.</p>
+      {% endif %}
+    </div>
+    <div class="peer-tabs" id="peer-tabs" role="tablist">
+      <button type="button" class="peer-tab is-active" data-tab="gaps" role="tab" aria-selected="true">Gaps</button>
+      <button type="button" class="peer-tab" data-tab="drivers" role="tab" aria-selected="false">Drivers</button>
+      <button type="button" class="peer-tab" data-tab="details" role="tab" aria-selected="false">Details</button>
+    </div>
+    <div class="peer-panel" id="peer-panel-gaps" role="tabpanel">
+      <div class="figure-block">
+        <div class="figure" id="fig-peer_comparison">{{ figures.peer_comparison | safe }}</div>
+        <p class="figure-caption">Gap vs same-rank peers — greener bars are strengths, redder bars trail the benchmark (intensity reflects gap size).</p>
+      </div>
+    </div>
+    <div class="peer-panel" id="peer-panel-drivers" role="tabpanel" hidden>
+      <div class="peer-drivers" id="peer-drivers">
+        <div class="peer-driver-section">
+          <h4 class="peer-feed-title">Above peers</h4>
+          <div class="peer-driver-feed" id="peer-above-list">
+            {% for row in peer_above[:6] %}
+            <div class="peer-driver peer-driver--above">
+              <span class="peer-driver-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
+              <span class="peer-driver-values">{{ row.yours }} vs {{ row.peer_avg }}</span>
+              <span class="peer-driver-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
+            </div>
+            {% else %}
+            <p class="sub">No above-peer metrics.</p>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="peer-driver-section">
+          <h4 class="peer-feed-title">Below peers</h4>
+          <div class="peer-driver-feed" id="peer-below-list">
+            {% for row in peer_below[:6] %}
+            <div class="peer-driver peer-driver--below">
+              <span class="peer-driver-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
+              <span class="peer-driver-values">{{ row.yours }} vs {{ row.peer_avg }}</span>
+              <span class="peer-driver-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
+            </div>
+            {% else %}
+            <p class="sub">No below-peer metrics.</p>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="peer-panel" id="peer-panel-details" role="tabpanel" hidden>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Metric</th><th>You</th><th id="peer-table-peer-header">{{ peer_comparison.tier|title }} {{ build_label }} avg</th><th>Gap</th><th>Verdict</th></tr>
+          </thead>
+          <tbody id="peer-table-body">
+          {% for row in peer_rows %}
+          <tr>
+            <td>{{ metric_label(row.label, row.iconify or row.icon, row.icon_tone, icon_href=row.icon_href) }}</td>
+            <td>{{ row.yours }}</td>
+            <td>{{ row.peer_avg }}</td>
+            <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</td>
+            <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.verdict }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </section>
 {% elif status_endpoint %}
 <section id="rank-peers" class="report-section report-section--analysis" data-peer-pending="1">
   {{ section_title("Rank peer comparison", "chart", "accent", category='analysis') }}
-  <div class="peer-pending" role="status" aria-live="polite">
-    <p class="sub" id="rank-peers-pending">Peer comparison is still running — this section updates when it finishes.</p>
+  <div class="peer-dossier peer-dossier--pending">
+    <div class="peer-pending" role="status" aria-live="polite">
+      <p class="sub" id="rank-peers-pending">Peer comparison is still running — this section updates when it finishes.</p>
+    </div>
   </div>
 </section>
 {% endif %}
@@ -737,7 +854,6 @@
 (function () {
   var buildLabel = {{ build_label | tojson }};
   var visibleCount = {{ recommendation_visible_count }};
-  var formVisibleCount = {{ form_recommendation_visible_count | default(3) }};
   var reportViews = {};
   var progressionViews = {};
   var gameReviewViews = {};
@@ -883,6 +999,43 @@
     }).join('');
   }
 
+  function parsePeerHighlight(line) {
+    var text = String(line || '');
+    var idx = text.indexOf(': ');
+    if (idx === -1) return { title: text, detail: '' };
+    return { title: text.slice(0, idx), detail: text.slice(idx + 2) };
+  }
+
+  function peerDriverRowHtml(row, tone) {
+    var style = row.gap_color ? ' style="color:' + row.gap_color + '"' : '';
+    return '<div class="peer-driver peer-driver--' + tone + '">' +
+      '<span class="peer-driver-label">' + metricLabel(row.label, row.iconify, row.icon_tone, row.icon_href) + '</span>' +
+      '<span class="peer-driver-values">' + escapeHtml(String(row.yours)) + ' vs ' + escapeHtml(String(row.peer_avg)) + '</span>' +
+      '<span class="peer-driver-gap"' + style + '>' + escapeHtml(String(row.gap)) + '</span></div>';
+  }
+
+  function renderPeerVerdict(peer) {
+    var verdict = document.getElementById('peer-verdict');
+    if (!verdict) return;
+    var keep = (peer.strengths || []).slice(0, 2).map(parsePeerHighlight);
+    var fix = (peer.weaknesses || []).slice(0, 2).map(parsePeerHighlight);
+    if (!keep.length && !fix.length) {
+      verdict.innerHTML = '<p class="sub peer-verdict-empty">No standout gaps vs this rank sample.</p>';
+      return;
+    }
+    function callout(item, tone, label) {
+      return '<div class="peer-callout peer-callout--' + tone + '">' +
+        '<span class="peer-callout-label">' + label + '</span>' +
+        '<strong class="peer-callout-title">' + escapeHtml(item.title) + '</strong>' +
+        (item.detail ? '<span class="peer-callout-detail">' + escapeHtml(item.detail) + '</span>' : '') +
+        '</div>';
+    }
+    verdict.innerHTML = '<div class="peer-verdict-grid">' +
+      fix.map(function (item) { return callout(item, 'fix', 'Fix'); }).join('') +
+      keep.map(function (item) { return callout(item, 'keep', 'Keep'); }).join('') +
+      '</div>';
+  }
+
   function renderPeer(bundle) {
     var section = document.getElementById('rank-peers');
     if (!section) return;
@@ -894,30 +1047,93 @@
       return;
     }
     section.style.display = '';
+    var peer = bundle.peer;
     var subtitle = document.getElementById('peer-subtitle');
-    if (subtitle) subtitle.textContent = bundle.peer.subtitle;
-    var cards = document.getElementById('peer-highlight-cards');
-    if (cards) {
-      cards.innerHTML =
-        '<div class="card card--wide"><div class="label">' + metricLabel('Strengths', 'lucide:trophy', 'win') + '</div>' +
-        (bundle.peer.strengths.length ? '<ul class="peer-highlight-list">' +
-          bundle.peer.strengths.map(function (item) { return '<li>' + escapeHtml(item) + '</li>'; }).join('') + '</ul>' :
-          '<p class="sub" style="margin:8px 0 0">—</p>') + '</div>' +
-        '<div class="card card--wide"><div class="label">' + metricLabel('Weaknesses', 'lucide:skull', 'danger') + '</div>' +
-        (bundle.peer.weaknesses.length ? '<ul class="peer-highlight-list">' +
-          bundle.peer.weaknesses.map(function (item) { return '<li>' + escapeHtml(item) + '</li>'; }).join('') + '</ul>' :
-          '<p class="sub" style="margin:8px 0 0">—</p>') + '</div>';
+    if (subtitle) subtitle.textContent = peer.subtitle || '';
+    var rows = peer.rows || [];
+    var aboveRows = rows.filter(function (row) { return row.verdict === 'above'; });
+    var belowRows = rows.filter(function (row) { return row.verdict === 'below'; });
+    var lean = aboveRows.length > belowRows.length
+      ? 'above'
+      : (belowRows.length > aboveRows.length ? 'below' : 'even');
+    var dossier = document.getElementById('peer-dossier');
+    if (dossier) dossier.className = 'peer-dossier peer-dossier--' + lean;
+    var rankValue = document.getElementById('peer-rank-value');
+    if (rankValue) {
+      var rankText = peer.rank_badge || peer.rank_label || peer.tier || '—';
+      var rankIcon = peer.rank_icon
+        ? '<img class="peer-rank-icon" src="' + escapeHtml(peer.rank_icon) +
+          '" alt="" width="48" height="48">'
+        : '';
+      rankValue.innerHTML = rankIcon +
+        '<span class="peer-rank-label" id="peer-rank-label">' + escapeHtml(rankText) + '</span>';
+    }
+    var aboveCount = document.getElementById('peer-above-count');
+    if (aboveCount) aboveCount.textContent = String(aboveRows.length);
+    var belowCount = document.getElementById('peer-below-count');
+    if (belowCount) belowCount.textContent = String(belowRows.length);
+    var metaChips = document.getElementById('peer-meta-chips');
+    if (metaChips) {
+      var chips = [];
+      if (peer.peer_games != null) chips.push('<span class="peer-meta-chip">' + peer.peer_games + ' peer games</span>');
+      if (peer.peer_players != null) chips.push('<span class="peer-meta-chip">' + peer.peer_players + ' players</span>');
+      if (peer.confidence) {
+        chips.push('<span class="peer-meta-chip peer-meta-chip--confidence">' +
+          escapeHtml(String(peer.confidence).replace(/_/g, ' ')) + ' confidence</span>');
+      }
+      metaChips.innerHTML = chips.join('');
+    }
+    renderPeerVerdict(peer);
+    var aboveList = document.getElementById('peer-above-list');
+    if (aboveList) {
+      aboveList.innerHTML = aboveRows.length
+        ? aboveRows.slice(0, 6).map(function (row) { return peerDriverRowHtml(row, 'above'); }).join('')
+        : '<p class="sub">No above-peer metrics.</p>';
+    }
+    var belowList = document.getElementById('peer-below-list');
+    if (belowList) {
+      belowList.innerHTML = belowRows.length
+        ? belowRows.slice(0, 6).map(function (row) { return peerDriverRowHtml(row, 'below'); }).join('')
+        : '<p class="sub">No below-peer metrics.</p>';
+    }
+    var peerHeader = document.getElementById('peer-table-peer-header');
+    if (peerHeader) {
+      var tierLabel = peer.tier ? (peer.tier.charAt(0).toUpperCase() + peer.tier.slice(1).toLowerCase()) : 'Peer';
+      peerHeader.textContent = tierLabel + ' ' + (peer.build_label || 'avg') + ' avg';
     }
     var body = document.getElementById('peer-table-body');
     if (body) {
-      body.innerHTML = (bundle.peer.rows || []).map(function (row) {
+      body.innerHTML = rows.map(function (row) {
         var style = row.gap_color ? ' style="color:' + row.gap_color + '"' : '';
         return '<tr><td>' + metricLabel(row.label, row.iconify, row.icon_tone, row.icon_href) + '</td><td>' + row.yours + '</td><td>' + row.peer_avg +
           '</td><td class="delta-' + row.verdict + '"' + style + '>' + row.gap + '</td><td class="delta-' + row.verdict + '"' + style + '>' + row.verdict + '</td></tr>';
       }).join('');
     }
-    setFigure('fig-peer_comparison', bundle.figures.peer_comparison || '');
+    setFigure('fig-peer_comparison', (bundle.figures || {}).peer_comparison || '');
   }
+
+  document.querySelectorAll('.peer-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      var name = tab.getAttribute('data-tab');
+      document.querySelectorAll('.peer-tab').forEach(function (node) {
+        var active = node === tab;
+        node.classList.toggle('is-active', active);
+        node.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      document.querySelectorAll('.peer-panel').forEach(function (panel) {
+        panel.hidden = panel.id !== 'peer-panel-' + name;
+      });
+      if (name === 'gaps') {
+        requestAnimationFrame(function () {
+          var panel = document.getElementById('peer-panel-gaps');
+          if (!panel || !window.Plotly || !window.Plotly.Plots) return;
+          panel.querySelectorAll('.js-plotly-plot').forEach(function (plot) {
+            window.Plotly.Plots.resize(plot);
+          });
+        });
+      }
+    });
+  });
 
   function coreCell(row) {
     if (row.first_item_icon || row.second_item_icon) {
@@ -1093,6 +1309,39 @@
       ' compared to the ' + baseline + ' game' + (baseline === 1 ? '' : 's') + ' before that.';
   }
 
+  function formWrBridgeHtml(snap) {
+    var delta = Number(snap.winrate_delta_pp || 0);
+    var deltaClass = delta > 0 ? ' form-wr-delta--up' : (delta < 0 ? ' form-wr-delta--down' : '');
+    return '<span class="form-wr-from">' + Math.round((snap.baseline_winrate || 0) * 100) + '%</span>' +
+      '<span class="form-wr-arrow" aria-hidden="true">→</span>' +
+      '<span class="form-wr-to">' + Math.round((snap.recent_winrate || 0) * 100) + '%</span>' +
+      '<span class="form-wr-delta' + deltaClass + '">' +
+      (delta >= 0 ? '+' : '') + delta.toFixed(1) + ' pp</span>';
+  }
+
+  function formMoverRowHtml(row, tone) {
+    var style = row.gap_color ? ' style="color:' + row.gap_color + '"' : '';
+    return '<div class="form-mover form-mover--' + tone + '">' +
+      '<span class="form-mover-label">' + metricLabel(row.label, row.iconify, row.icon_tone, row.icon_href) + '</span>' +
+      '<span class="form-mover-values">' + escapeHtml(String(row.baseline)) + ' → ' + escapeHtml(String(row.recent)) + '</span>' +
+      '<span class="form-mover-gap"' + style + '>' + escapeHtml(String(row.gap)) + '</span></div>';
+  }
+
+  function formStoryHtml(story) {
+    var tone = story.tone === 'keep' ? 'keep' : 'fix';
+    var label = tone === 'keep' ? 'Keep' : 'Fix';
+    var habit = story.habit
+      ? '<p class="form-story-habit"><span class="form-story-kicker">Habit</span> ' + escapeHtml(story.habit) + '</p>'
+      : '';
+    return '<article class="form-story form-story--' + tone + '">' +
+      '<span class="form-story-label">' + label + '</span>' +
+      '<strong class="form-story-title">' + escapeHtml(story.title) + '</strong>' +
+      '<p class="form-story-driver"><span class="form-story-kicker">Driver</span> ' + escapeHtml(story.driver) + '</p>' +
+      habit +
+      '<p class="form-story-action"><span class="form-story-kicker">Action</span> ' + escapeHtml(story.action) + '</p>' +
+      '</article>';
+  }
+
   function renderFormProgression(queueKey) {
     var view = progressionViews[queueKey];
     var presetKey = view ? view.default_preset : null;
@@ -1115,79 +1364,85 @@
     if (unavailable) unavailable.style.display = 'none';
     if (content) content.style.display = '';
     var snap = preset.snapshot || {};
+    var trend = snap.trend || 'stable';
+    var dossier = document.getElementById('form-dossier');
+    if (dossier) {
+      dossier.className = 'form-dossier form-dossier--' + trend;
+    }
     var scoreNode = document.getElementById('form-score-value');
-    if (scoreNode) scoreNode.textContent = (snap.form_score >= 0 ? '+' : '') + Math.round(snap.form_score);
+    if (scoreNode) {
+      scoreNode.textContent = (snap.form_score >= 0 ? '+' : '') + Math.round(snap.form_score);
+      scoreNode.className = 'form-score-value form-score-value--' + trend;
+    }
     var trendBadge = document.getElementById('form-trend-badge');
     if (trendBadge) {
-      trendBadge.textContent = snap.trend || 'stable';
-      trendBadge.className = 'form-badge form-badge--' + (snap.trend || 'stable');
+      trendBadge.textContent = trend;
+      trendBadge.className = 'form-badge form-badge--' + trend;
     }
     var confBadge = document.getElementById('form-confidence-badge');
     if (confBadge) confBadge.textContent = (snap.confidence || 'low') + ' confidence';
-    var streakNode = document.getElementById('form-streak');
-    if (streakNode) streakNode.textContent = snap.current_streak || '';
     var wrShift = document.getElementById('form-wr-shift');
-    if (wrShift) {
-      wrShift.textContent = Math.round((snap.recent_winrate || 0) * 100) + '% recent vs ' +
-        Math.round((snap.baseline_winrate || 0) * 100) + '% baseline (' +
-        (snap.winrate_delta_pp >= 0 ? '+' : '') + Number(snap.winrate_delta_pp || 0).toFixed(1) + ' pp)';
-    }
+    if (wrShift) wrShift.innerHTML = formWrBridgeHtml(snap);
     var headline = document.getElementById('form-headline');
     if (headline) headline.textContent = snap.headline || '';
-    function moverLine(row) {
-      return '<li>' + escapeHtml(row.label) + ': ' + row.baseline + ' → ' + row.recent + ' (' + row.gap + ')</li>';
+
+    var storiesRoot = document.getElementById('form-stories');
+    if (storiesRoot) {
+      var stories = preset.stories || [];
+      storiesRoot.innerHTML = stories.length
+        ? stories.map(formStoryHtml).join('')
+        : '<p class="sub form-stories-empty">No standout form stories for this window.</p>';
     }
+
     var improved = document.getElementById('form-improved-list');
     if (improved) {
       var imp = preset.top_improved || [];
-      improved.innerHTML = imp.length ? imp.map(moverLine).join('') : '<li>—</li>';
+      improved.innerHTML = imp.length
+        ? imp.map(function (row) { return formMoverRowHtml(row, 'improved'); }).join('')
+        : '<p class="sub">No standout improvements.</p>';
     }
     var regressed = document.getElementById('form-regressed-list');
     if (regressed) {
       var reg = preset.top_regressed || [];
-      regressed.innerHTML = reg.length ? reg.map(moverLine).join('') : '<li>—</li>';
-    }
-    var shiftsBlock = document.getElementById('form-shifts-block');
-    var shiftsList = document.getElementById('form-shifts-list');
-    var shifts = preset.behavioral_shifts || [];
-    if (shiftsBlock) shiftsBlock.style.display = shifts.length ? '' : 'none';
-    if (shiftsList) {
-      shiftsList.innerHTML = shifts.map(function (s) { return '<li>' + escapeHtml(s) + '</li>'; }).join('');
+      regressed.innerHTML = reg.length
+        ? reg.map(function (row) { return formMoverRowHtml(row, 'regressed'); }).join('')
+        : '<p class="sub">No standout regressions.</p>';
     }
     var body = document.getElementById('form-table-body');
     if (body) {
       body.innerHTML = (preset.delta_rows || []).map(function (row) {
         var style = row.gap_color ? ' style="color:' + row.gap_color + '"' : '';
-        var sig = row.significant ? ' *' : '';
         return '<tr><td>' + metricLabel(row.label, row.iconify, row.icon_tone, row.icon_href) + '</td><td>' + row.recent +
-          '</td><td>' + row.baseline + '</td><td class="delta-' + row.verdict + '"' + style + '>' + row.gap + sig +
+          '</td><td>' + row.baseline + '</td><td class="delta-' + row.verdict + '"' + style + '>' + row.gap +
           '</td><td class="delta-' + row.verdict + '"' + style + '>' + row.verdict + '</td></tr>';
       }).join('');
-    }
-    function renderFormRec(rec) {
-      var pValue = rec.p_value != null ? ' · p = ' + Number(rec.p_value).toFixed(4) : '';
-      var priority = rec.priority_label || 'Medium';
-      return '<div class="rec ' + rec.badge + '"><div class="rec-head"><span class="badge badge--priority badge--' + rec.badge + '">' +
-        priority + '</span><span class="badge">' + escapeHtml(rec.category) + '</span><strong>' + escapeHtml(rec.title) +
-        '</strong></div><p>' + escapeHtml(rec.detail) + '</p><details class="rec-evidence"><summary>Why this?</summary><p class="meta">Evidence: ' +
-        escapeHtml(rec.evidence) + pValue + '</p></details></div>';
-    }
-    var posCol = document.getElementById('form-rec-positive-column');
-    var negCol = document.getElementById('form-rec-negative-column');
-    if (posCol && negCol) {
-      var allRecs = preset.recommendations || [];
-      var positive = allRecs.filter(function (rec) { return rec.tone === 'positive'; }).slice(0, formVisibleCount);
-      var negative = allRecs.filter(function (rec) { return rec.tone === 'negative'; }).slice(0, formVisibleCount);
-      posCol.innerHTML = '<h3>Keep doing</h3>' + (positive.length
-        ? positive.map(renderFormRec).join('')
-        : '<p class="rec-empty">No recent improvements flagged yet.</p>');
-      negCol.innerHTML = '<h3>Work on</h3>' + (negative.length
-        ? negative.map(renderFormRec).join('')
-        : '<p class="rec-empty">No regressions flagged in recent form.</p>');
     }
     setFigure('fig-form_rolling_wr', (preset.figures || {}).form_rolling_wr || '');
     setFigure('fig-form_metric_delta_bar', (preset.figures || {}).form_metric_delta_bar || '');
   }
+
+  document.querySelectorAll('.form-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      var name = tab.getAttribute('data-tab');
+      document.querySelectorAll('.form-tab').forEach(function (node) {
+        var active = node === tab;
+        node.classList.toggle('is-active', active);
+        node.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      document.querySelectorAll('.form-panel').forEach(function (panel) {
+        panel.hidden = panel.id !== 'form-panel-' + name;
+      });
+      if (name === 'pulse' || name === 'evidence') {
+        requestAnimationFrame(function () {
+          var panel = document.getElementById('form-panel-' + name);
+          if (!panel || !window.Plotly || !window.Plotly.Plots) return;
+          panel.querySelectorAll('.js-plotly-plot').forEach(function (plot) {
+            window.Plotly.Plots.resize(plot);
+          });
+        });
+      }
+    });
+  });
 
   function formatGameTime(minutes) {
     var totalSec = Math.max(0, Math.round(Number(minutes) * 60));
@@ -1264,10 +1519,11 @@
     if (!rows || !rows.length) return '';
     var body = rows.map(function (row) {
       var metric = row.metric || row.label;
+      var style = row.gap_color ? ' style="color:' + row.gap_color + '"' : '';
       return '<tr><td>' + escapeHtml(row.label) + '</td><td>' + formatGameReviewMetricValue(metric, row.game_value) + '</td><td>' +
-        formatGameReviewMetricValue(metric, row.benchmark_value) + '</td><td class="delta-' + row.verdict + '">' +
+        formatGameReviewMetricValue(metric, row.benchmark_value) + '</td><td class="delta-' + row.verdict + '"' + style + '>' +
         formatGameReviewMetricDelta(metric, row.delta) + '</td><td class="delta-' +
-        row.verdict + '">' + row.verdict + '</td></tr>';
+        row.verdict + '"' + style + '>' + row.verdict + '</td></tr>';
     }).join('');
     return '<div class="card card--wide"><div class="label">' + escapeHtml(title) +
       '</div><div class="table-scroll"><table><thead><tr><th>Metric</th><th>This game</th><th>Benchmark</th><th>Delta</th><th>Verdict</th></tr></thead><tbody>' +
@@ -1494,62 +1750,157 @@
     bindKeyMomentScrubber(game, 0);
   }
 
+  function primaryBehaviorSignal(game) {
+    var bad = (game.behaviors_bad || [])[0];
+    if (bad) return { tone: 'bad', title: bad.title };
+    var good = (game.behaviors_good || [])[0];
+    if (good) return { tone: 'good', title: good.title };
+    return null;
+  }
+
+  function renderVerdictCallouts(game) {
+    var keep = (game.behaviors_good || []).slice(0, 2);
+    var fix = (game.behaviors_bad || []).slice(0, 2);
+    if (!keep.length && !fix.length) {
+      return '<p class="sub game-review-verdict-empty">No standout behavior flags for this game.</p>';
+    }
+    function callout(item, tone, label) {
+      return '<div class="game-review-callout game-review-callout--' + tone + '">' +
+        '<span class="game-review-callout-label">' + label + '</span>' +
+        '<strong class="game-review-callout-title">' + escapeHtml(item.title) + '</strong>' +
+        '<span class="game-review-callout-detail">' + escapeHtml(item.detail) + '</span></div>';
+    }
+    return '<div class="game-review-verdict-grid">' +
+      fix.map(function (item) { return callout(item, 'fix', 'Fix'); }).join('') +
+      keep.map(function (item) { return callout(item, 'keep', 'Keep'); }).join('') +
+      '</div>';
+  }
+
+  function renderMistakesFeed(game) {
+    var objectiveHints = gameReviewTooltips.objectives || {};
+    var deaths = game.deaths || [];
+    var fights = game.fights || [];
+    var objectives = game.objectives || [];
+    var parts = [];
+
+    parts.push('<div class="game-review-feed-section"><h4 class="game-review-feed-title">Deaths</h4>');
+    if (!deaths.length) {
+      parts.push('<p class="sub">No deaths recorded.</p>');
+    } else {
+      parts.push('<div class="game-review-feed">' + deaths.map(function (row) {
+        var flags = (row.flags || []).join(', ');
+        return '<div class="game-review-event game-review-event--bad">' +
+          '<span class="game-review-event-time">' + formatGameTime(row.minute) + '</span>' +
+          '<div class="game-review-event-body">' +
+          '<strong>Died in ' + escapeHtml(row.zone || 'unknown') + '</strong>' +
+          '<span class="game-review-event-meta">' + iconCell(row.killer || '—', row.killer_icon, true) +
+          (flags ? ' · ' + escapeHtml(flags) : '') + '</span></div></div>';
+      }).join('') + '</div>');
+    }
+    parts.push('</div>');
+
+    parts.push('<div class="game-review-feed-section"><h4 class="game-review-feed-title">Fights</h4>');
+    if (!fights.length) {
+      parts.push('<p class="sub">No teamfights joined.</p>');
+    } else {
+      parts.push('<div class="game-review-feed">' + fights.map(function (row) {
+        var tone = row.fight_won ? 'good' : 'bad';
+        var verdict = row.fight_won ? 'Fight won' : 'Fight lost';
+        return '<div class="game-review-event game-review-event--' + tone + '">' +
+          '<span class="game-review-event-time">' + formatGameTime(row.start_minute) + '</span>' +
+          '<div class="game-review-event-body">' +
+          '<strong>' + verdict + '</strong>' +
+          '<span class="game-review-event-meta">' + row.kills + '/' + row.deaths + '/' + row.assists +
+          ' · ' + row.damage + ' dmg · ' + fightManpower(row) + '</span></div></div>';
+      }).join('') + '</div>');
+    }
+    parts.push('</div>');
+
+    parts.push('<div class="game-review-feed-section"><h4 class="game-review-feed-title">Objectives</h4>');
+    if (!objectives.length) {
+      parts.push('<p class="sub">No objectives tracked.</p>');
+    } else {
+      parts.push('<div class="game-review-feed">' + objectives.map(function (row) {
+        var kindLabel = row.kind.charAt(0).toUpperCase() + row.kind.slice(1);
+        var tone = row.taken_by_team ? 'good' : 'bad';
+        var verdict = row.taken_by_team ? 'Secured' : 'Missed';
+        var notes = [];
+        if (row.present) notes.push('present');
+        else notes.push('absent');
+        if (row.dead_before) notes.push('died in setup');
+        if (row.wards_before != null) notes.push(row.wards_before + ' wards before');
+        return '<div class="game-review-event game-review-event--' + tone + '" title="' +
+          escapeHtml([objectiveHints.Taken, objectiveHints.Present].filter(Boolean).join(' ')) + '">' +
+          '<span class="game-review-event-time">' + formatGameTime(row.minute) + '</span>' +
+          '<div class="game-review-event-body">' +
+          '<strong>' + verdict + ' · ' + iconCell(kindLabel, row.objective_icon, true) + '</strong>' +
+          '<span class="game-review-event-meta">' + escapeHtml(notes.join(' · ')) + '</span></div></div>';
+      }).join('') + '</div>');
+    }
+    parts.push('</div>');
+    return parts.join('');
+  }
+
   function renderGameReviewDetail(game) {
     if (!game) return;
     selectedGameId = game.match_id;
     var detail = document.getElementById('game-review-detail');
-    if (detail) detail.hidden = false;
-    var matchup = document.getElementById('game-review-matchup');
-    if (matchup) {
-      matchup.innerHTML =
-        '<div class="game-review-matchup-inner">' +
+    if (detail) {
+      detail.hidden = false;
+      detail.classList.toggle('game-review-detail--win', game.result === 'win');
+      detail.classList.toggle('game-review-detail--loss', game.result !== 'win');
+    }
+    var score = game.score || {};
+    var build = game.build || {};
+    var stage = document.getElementById('game-review-matchup');
+    if (stage) {
+      var resultClass = game.result === 'win' ? 'game-review-result--win' : 'game-review-result--loss';
+      var metaBits = [];
+      if (game.account) metaBits.push(escapeHtml(game.account));
+      metaBits.push(escapeHtml(game.date));
+      metaBits.push(formatGameTime(game.duration_min));
+      metaBits.push(escapeHtml(game.side));
+      if (game.archetype) metaBits.push(escapeHtml(game.archetype));
+      stage.innerHTML =
+        '<div class="game-review-stage-inner">' +
+        '<span class="game-review-result game-review-result--stage ' + resultClass + '">' +
+        (game.result === 'win' ? 'Victory' : 'Defeat') + '</span>' +
+        '<div class="game-review-stage-matchup">' +
         iconCell(game.champion || 'You', game.champion_icon, true) +
         '<span class="game-review-matchup-vs">vs</span>' +
         iconCell(game.opponent || 'Opponent', game.opponent_icon, true) +
-        '<div class="game-review-matchup-meta">' +
-        '<strong>' + escapeHtml(game.date) + '</strong> · ' + formatGameTime(game.duration_min) + ' · ' +
-        escapeHtml(game.kda) + ' · ' + escapeHtml(game.side) +
-        '</div></div>';
+        '</div>' +
+        '<div class="game-review-stage-kda">' + escapeHtml(game.kda) + '</div>' +
+        '<div class="game-review-stage-score">' +
+        '<span class="game-review-stage-score-value">' + (score.overall || 0) + '</span>' +
+        '<span class="form-badge form-badge--stable">' + escapeHtml(score.tier || '—') + '</span>' +
+        '</div>' +
+        '<div class="game-review-stage-meta">' + metaBits.join(' · ') + '</div>' +
+        ((build.keystone_icon || build.secondary_tree_icon || (build.summoners || []).length)
+          ? '<div class="game-review-stage-loadout">' + renderGameReviewRunes(build) +
+            ((build.summoners || []).length ? '<span class="game-review-rune-sep" aria-hidden="true">·</span>' +
+              renderGameReviewSummoners(build) : '') + '</div>'
+          : '') +
+        '</div>';
     }
-    var score = game.score || {};
+    var verdict = document.getElementById('game-review-verdict');
+    if (verdict) verdict.innerHTML = renderVerdictCallouts(game);
+
     var hero = document.getElementById('game-review-score-hero');
     if (hero) {
-      var build = game.build || {};
       var gameScoreHint = ((gameReviewTooltips.score || {})['Game score']) || '';
-      hero.innerHTML = '<div class="card form-score-card" title="' + escapeHtml(gameScoreHint) + '"><div class="label">Game score</div><div class="form-score-value">' +
-        (score.overall || 0) + '</div><div class="form-meta"><span class="form-badge form-badge--stable">' +
-        escapeHtml(score.tier || '—') + '</span><span class="form-badge">' + escapeHtml(game.archetype || '') +
-        '</span></div>' +
-        (build.keystone_icon || build.secondary_tree_icon
-          ? '<div class="game-review-keystone">' + renderGameReviewRunes(build) + '</div>'
-          : '') +
-        '</div><div class="card card--wide game-score-bars">' +
+      hero.innerHTML = '<div class="game-review-scoreboard-bars" title="' + escapeHtml(gameScoreHint) + '">' +
         scoreBar('Laning', score.laning) + scoreBar('Survival', score.survival) + scoreBar('Impact', score.impact) +
         scoreBar('Vision', score.vision) + scoreBar('Objectives', score.objectives) +
         '</div>';
     }
-    var behaviors = document.getElementById('game-review-behaviors');
-    if (behaviors) {
-      function behaviorList(items, title) {
-        if (!items || !items.length) return '<div class="card card--wide"><div class="label">' + title + '</div><ul class="peer-highlight-list"><li>—</li></ul></div>';
-        return '<div class="card card--wide"><div class="label">' + title + '</div><ul class="peer-highlight-list">' +
-          items.map(function (item) {
-            return '<li><strong>' + escapeHtml(item.title) + '</strong> — ' + escapeHtml(item.detail) + '</li>';
-          }).join('') + '</ul></div>';
-      }
-      behaviors.innerHTML = behaviorList(game.behaviors_good, 'Good behaviors') +
-        behaviorList(game.behaviors_bad, 'Bad behaviors');
-    }
-    var compare = document.getElementById('game-review-compare');
-    if (compare) {
-      compare.innerHTML = renderGameReviewComparisonTable('vs You (baseline)', game.vs_baseline);
-    }
-    var summaryPanel = document.getElementById('game-review-panel-summary');
-    if (summaryPanel) {
+
+    var overviewPanel = document.getElementById('game-review-panel-overview');
+    if (overviewPanel) {
       var stats = game.key_stats || {};
       var statLabels = gameReviewTooltips.key_stats_labels || {};
       var statHints = gameReviewTooltips.key_stats || {};
-      summaryPanel.innerHTML = '<div class="cards">' + Object.keys(stats).map(function (key) {
+      var statsHtml = '<div class="cards game-review-overview-stats">' + Object.keys(stats).map(function (key) {
         var val = stats[key];
         if (val === null || val === undefined) return '';
         var label = statLabels[key] || key;
@@ -1557,7 +1908,10 @@
         return '<div class="card" title="' + escapeHtml(hint) + '"><div class="label">' + escapeHtml(label) +
           '</div><div class="value">' + formatGameReviewMetricValue(key, val) + '</div></div>';
       }).join('') + '</div>';
+      var compareHtml = renderGameReviewComparisonTable('vs You (baseline)', game.vs_baseline);
+      overviewPanel.innerHTML = statsHtml + (compareHtml ? '<div class="game-review-compare">' + compareHtml + '</div>' : '');
     }
+
     var timelinePanel = document.getElementById('game-review-panel-timeline');
     if (timelinePanel) {
       if (game.timeline_figure) {
@@ -1566,58 +1920,18 @@
         timelinePanel.innerHTML = '<p class="sub">Timeline unavailable.</p>';
       }
     }
-    var deathsPanel = document.getElementById('game-review-panel-deaths');
-    if (deathsPanel) {
-      deathsPanel.innerHTML = (game.deaths || []).length
-        ? '<div class="table-scroll"><table><thead><tr><th>Time</th><th>Zone</th><th>Killer</th><th>Flags</th></tr></thead><tbody>' +
-          game.deaths.map(function (row) {
-            return '<tr><td>' + formatGameTime(row.minute) + '</td><td>' + escapeHtml(row.zone) + '</td><td>' +
-              iconCell(row.killer || '—', row.killer_icon) + '</td><td>' + escapeHtml((row.flags || []).join(', ') || '—') + '</td></tr>';
-          }).join('') + '</tbody></table></div>'
-        : '<p class="sub">No deaths recorded.</p>';
-    }
-    var fightsPanel = document.getElementById('game-review-panel-fights');
-    if (fightsPanel) {
-      fightsPanel.innerHTML = (game.fights || []).length
-        ? '<div class="table-scroll"><table><thead><tr><th>Time</th><th>K/D/A</th><th>Damage</th><th>Won</th><th>Manpower</th></tr></thead><tbody>' +
-          game.fights.map(function (row) {
-            var rowClass = row.fight_won ? 'game-review-fight-row--won' : 'game-review-fight-row--lost';
-            return '<tr class="' + rowClass + '"><td>' + formatGameTime(row.start_minute) + '</td><td>' +
-              row.kills + '/' + row.deaths + '/' + row.assists +
-              '</td><td>' + row.damage + '</td><td>' + boolIcon(row.fight_won) + '</td><td>' +
-              fightManpower(row) + '</td></tr>';
-          }).join('') + '</tbody></table></div>'
-        : '<p class="sub">No teamfights joined.</p>';
-    }
-    var objectivesPanel = document.getElementById('game-review-panel-objectives');
-    if (objectivesPanel) {
-      var objectiveHints = gameReviewTooltips.objectives || {};
-      objectivesPanel.innerHTML = (game.objectives || []).length
-        ? '<div class="table-scroll"><table><thead><tr>' +
-          '<th title="' + escapeHtml(objectiveHints.Taken || '') + '">Taken</th>' +
-          '<th>Objective</th><th>Time</th>' +
-          '<th title="' + escapeHtml(objectiveHints.Present || '') + '">Present</th>' +
-          '<th title="' + escapeHtml(objectiveHints['Died in setup window (45s)'] || '') + '">Died in setup window (45s)</th>' +
-          '<th title="' + escapeHtml(objectiveHints['Wards before'] || '') + '">Wards before</th></tr></thead><tbody>' +
-          game.objectives.map(function (row) {
-            var kindLabel = row.kind.charAt(0).toUpperCase() + row.kind.slice(1);
-            var rowClass = row.taken_by_team ? 'game-review-obj-row--taken' : 'game-review-obj-row--missed';
-            return '<tr class="' + rowClass + '"><td>' + boolIcon(row.taken_by_team) + '</td><td>' +
-              iconCell(kindLabel, row.objective_icon, true) + '</td><td>' + formatGameTime(row.minute) + '</td><td>' +
-              boolIcon(row.present) + '</td><td>' + boolIcon(row.dead_before) + '</td><td>' +
-              row.wards_before + '</td></tr>';
-          }).join('') + '</tbody></table></div>'
-        : '<p class="sub">No objectives tracked.</p>';
-    }
     renderGameReviewKeyMoments(game);
-    var buildPanel = document.getElementById('game-review-panel-build');
-    if (buildPanel) {
-      var build = game.build || {};
+
+    var mistakesPanel = document.getElementById('game-review-panel-mistakes');
+    if (mistakesPanel) mistakesPanel.innerHTML = renderMistakesFeed(game);
+
+    var loadoutPanel = document.getElementById('game-review-panel-loadout');
+    if (loadoutPanel) {
       var itemIcons = build.item_icons || [];
       var itemsHtml = (build.items || []).map(function (itemName, index) {
         return iconCell(itemName, itemIcons[index] || null, true);
       }).join('<span class="core-arrow" aria-hidden="true">→</span>');
-      buildPanel.innerHTML = '<div class="cards"><div class="card card--wide"><div class="label">Runes</div><div class="value">' +
+      loadoutPanel.innerHTML = '<div class="cards"><div class="card card--wide"><div class="label">Runes</div><div class="value">' +
         renderGameReviewRunes(build) + '</div></div><div class="card"><div class="label">Summoners</div><div class="value">' +
         renderGameReviewSummoners(build) + '</div></div><div class="card card--wide"><div class="label">Item path</div><div class="value core-cell">' +
         (itemsHtml || '—') + '</div></div><div class="card card--wide"><div class="label">Skill order</div><div class="value">' +
@@ -1648,26 +1962,24 @@
     var list = document.getElementById('game-review-list');
     if (list) {
       list.innerHTML = bundle.games.map(function (game) {
-        var resultClass = game.result === 'win' ? 'game-review-result--win' : 'game-review-result--loss';
-        var goodTags = (game.behaviors_good || []).slice(0, 2).map(function (b) {
-          return '<span class="game-review-tag game-review-tag--good">' + escapeHtml(b.title) + '</span>';
-        }).join('');
-        var badTags = (game.behaviors_bad || []).slice(0, 2).map(function (b) {
-          return '<span class="game-review-tag game-review-tag--bad">' + escapeHtml(b.title) + '</span>';
-        }).join('');
-        var flags = goodTags + badTags;
-        return '<button type="button" class="game-review-row' +
+        var isWin = game.result === 'win';
+        var resultClass = isWin ? 'game-review-result--win' : 'game-review-result--loss';
+        var signal = primaryBehaviorSignal(game);
+        var signalHtml = signal
+          ? '<span class="game-review-signal game-review-signal--' + signal.tone + '">' +
+            escapeHtml(signal.title) + '</span>'
+          : '<span class="game-review-signal game-review-signal--none">—</span>';
+        return '<button type="button" class="game-review-row game-review-row--' +
+          (isWin ? 'win' : 'loss') +
           (game.match_id === selectedGameId ? ' is-selected' : '') +
           '" data-match-id="' + escapeHtml(game.match_id) + '">' +
-          '<span class="game-review-result ' + resultClass + '">' + (game.result === 'win' ? 'W' : 'L') + '</span>' +
+          '<span class="game-review-result ' + resultClass + '">' + (isWin ? 'W' : 'L') + '</span>' +
           '<span class="game-review-icons">' + iconCell(game.champion || 'You', game.champion_icon, true) +
           '<span class="game-review-vs">vs</span>' + iconCell(game.opponent || 'Opponent', game.opponent_icon, true) + '</span>' +
-          '<span class="game-review-meta">' + escapeHtml(game.date) + ' · ' + formatGameTime(game.duration_min) + '</span>' +
+          '<span class="game-review-rail-stats">' +
           '<span class="game-review-kda">' + escapeHtml(game.kda) + '</span>' +
-          '<span class="game-review-score">' + ((game.score && game.score.overall) || 0) +
-          ' <small>(' + escapeHtml((game.score && game.score.tier) || '') + ')</small></span>' +
-          '<span class="game-review-archetype">' + escapeHtml(game.archetype || '') + '</span>' +
-          '<span class="game-review-flags">' + flags + '</span></button>';
+          '<span class="game-review-score">' + ((game.score && game.score.overall) || 0) + '</span>' +
+          '</span>' + signalHtml + '</button>';
       }).join('');
       list.querySelectorAll('.game-review-row').forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -1685,18 +1997,18 @@
     tab.addEventListener('click', function () {
       var name = tab.getAttribute('data-tab');
       document.querySelectorAll('.game-review-tab').forEach(function (node) {
-        node.classList.toggle('is-active', node === tab);
+        var active = node === tab;
+        node.classList.toggle('is-active', active);
+        node.setAttribute('aria-selected', active ? 'true' : 'false');
       });
       document.querySelectorAll('.game-review-panel').forEach(function (panel) {
         panel.hidden = panel.id !== 'game-review-panel-' + name;
       });
-      if (name !== 'key-moments') {
+      if (name !== 'story') {
         stopKeyMomentScrubber();
       } else if (keyMomentPlayback.game && keyMomentPlayback.game.key_moments &&
           keyMomentPlayback.game.key_moments.length) {
         bindKeyMomentScrubber(keyMomentPlayback.game, selectedKeyMomentIndex);
-      }
-      if (name === 'timeline') {
         requestAnimationFrame(function () {
           var panel = document.getElementById('game-review-panel-timeline');
           if (!panel || !window.Plotly || !window.Plotly.Plots) return;
@@ -1916,7 +2228,6 @@
 
   var tabs = Array.prototype.slice.call(document.querySelectorAll('.report-tab[data-category]'));
   var panels = Array.prototype.slice.call(document.querySelectorAll('.report-category-panel[data-category]'));
-  var navGroups = Array.prototype.slice.call(document.querySelectorAll('.nav-group'));
   if (!tabs.length || !panels.length) return;
 
   var activeCategory = 'performance';
@@ -1952,11 +2263,6 @@
       } else {
         panel.setAttribute('hidden', '');
       }
-    });
-    navGroups.forEach(function (group) {
-      var groupCategory = group.className.match(/nav-group--(\w+)/);
-      var match = groupCategory ? groupCategory[1] : null;
-      group.classList.toggle('is-category-active', match === category);
     });
     if (options.persist !== false) {
       try {
@@ -2062,41 +2368,6 @@
   } else {
     scrollInitialHash();
   }
-})();
-</script>
-<script>
-(function () {
-  var navLinks = document.querySelectorAll('.nav-link[data-section]');
-  if (!navLinks.length || !('IntersectionObserver' in window)) return;
-
-  var observer = null;
-  var activeId = null;
-
-  function setActiveNav(id) {
-    if (!id || id === activeId) return;
-    activeId = id;
-    navLinks.forEach(function (link) {
-      link.classList.toggle('is-active', link.getAttribute('data-section') === id);
-    });
-  }
-
-  function observeSections() {
-    if (observer) observer.disconnect();
-    var activePanel = document.querySelector('.report-category-panel.is-active');
-    if (!activePanel) return;
-    var sections = Array.prototype.slice.call(activePanel.querySelectorAll('section[id]'));
-    if (!sections.length) return;
-    observer = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (entry.isIntersecting) setActiveNav(entry.target.id);
-      });
-    }, { rootMargin: '-18% 0px -62% 0px', threshold: 0 });
-    sections.forEach(function (section) { observer.observe(section); });
-    setActiveNav(sections[0].id);
-  }
-
-  observeSections();
-  document.addEventListener('report-category-change', observeSections);
 })();
 </script>
 <script>

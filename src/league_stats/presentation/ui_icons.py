@@ -191,9 +191,9 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "VS/min in wins": "Vision score per minute averaged over wins only.",
     "VS/min in losses": "Vision score per minute averaged over losses only.",
     # Objectives
-    "Died in setup window (45s)": (
-        "Share of epic objectives where you died within 45 seconds before the take "
-        "(even if you respawned and were present when it died)."
+    "Died in setup window (45–10s)": (
+        "Share of epic objectives where you died in the 45–10s setup window before the take "
+        "(caught before the fight; deaths in the last 10s are excluded as teamfight deaths)."
     ),
     "Wards before": "Average wards you placed in the 2 minutes before each objective take. Any ward type counts; map location is not filtered.",
     # Deaths
@@ -201,7 +201,14 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "Solo deaths": "Share of deaths with no allies within 2200 map units.",
     "Greed deaths": "Share of deaths shortly after deep side-lane pushing without nearby allies.",
     "Side-lane deaths": "Share of deaths while isolated in a side lane after minute 14.",
-    "Before dragon": "Share of deaths within 60 seconds before a dragon take.",
+    "Before dragon": (
+        "Share of deaths in the 60–10s setup window before a dragon take "
+        "(excludes the last 10s, which are usually the objective fight)."
+    ),
+    "Before neutral obj.": (
+        "Share of deaths in the 60–10s setup window before a dragon, elder, or baron take "
+        "(excludes the last 10s, which are usually the objective fight)."
+    ),
     "Gold at death": "Average gold in your inventory at the moment of death.",
     "Outnumbered deaths": "Share of deaths where nearby enemies outnumbered nearby allies.",
     "Avg death minute": "Mean game minute when you died.",

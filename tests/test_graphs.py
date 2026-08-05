@@ -97,6 +97,8 @@ def test_death_heatmap_coords_mirror_red_side() -> None:
 
 
 def test_form_metric_delta_bar_uses_normalized_bar_length_with_raw_labels(tmp_path: Path) -> None:
+    import numpy as np
+
     factory = GraphFactory(tmp_path / "graphs")
     html = factory.form_metric_delta_bar(
         [
@@ -130,6 +132,9 @@ def test_form_metric_delta_bar_uses_normalized_bar_length_with_raw_labels(tmp_pa
             ),
         ]
     )
-    assert '"x":[148,-20]' in html or '"x":[148.0,-20.0]' in html
+    # Bar lengths use asinh(x/5) so the scale starts at 5 and extremes stay tame.
+    expected_x = [float(np.arcsinh(148.0 / 5.0)), float(np.arcsinh(-20.0 / 5.0))]
+    assert f'"x":{expected_x}' in html or f'"x":[{expected_x[0]},{expected_x[1]}]' in html
     assert '"text":["+148","-20%"]' in html
+    assert "compressed scale" in html
     assert LOSS_HEX not in html

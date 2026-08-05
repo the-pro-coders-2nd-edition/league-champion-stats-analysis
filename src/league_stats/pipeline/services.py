@@ -32,19 +32,28 @@ class PlayerContext:
     tagline: str
     puuid: str
     profile_icon_id: int | None = None
+    solo_tier: str | None = None
+    solo_rank: str | None = None
+    solo_lp: int | None = None
 
     @property
     def label(self) -> str:
         return f"{self.riot_id}#{self.tagline}"
 
     def as_player_dict(self) -> dict[str, str | int]:
-        """Identity dict suitable for job/meta persistence (optional icon)."""
+        """Identity dict suitable for job/meta persistence (optional icon/rank)."""
         payload: dict[str, str | int] = {
             "riot_id": self.riot_id,
             "tagline": self.tagline,
         }
         if self.profile_icon_id is not None:
             payload["profile_icon_id"] = self.profile_icon_id
+        if self.solo_tier:
+            payload["solo_tier"] = self.solo_tier
+            if self.solo_rank:
+                payload["solo_rank"] = self.solo_rank
+            if self.solo_lp is not None:
+                payload["solo_lp"] = self.solo_lp
         return payload
 
 

@@ -294,6 +294,7 @@ class MatchRecord(BaseModel):
     role: str
     win: bool
     side: Side
+    account: str | None = None
     lane_opponent: str | None = None
     ally_comp: list[str] = Field(default_factory=list)
     enemy_comp: list[str] = Field(default_factory=list)
@@ -542,6 +543,51 @@ class RankedEntry(BaseModel):
             return f"{self.tier.title()} {self.league_points} LP"
         return f"{self.tier.title()} {self.rank}"
 
+    @property
+    def short_label(self) -> str:
+        """Compact standing for UI next to a tier emblem (e.g. ``IV - 83LP``)."""
+        if self.tier in ("MASTER", "GRANDMASTER", "CHALLENGER"):
+            return f"{self.league_points}LP"
+        return f"{self.rank} - {self.league_points}LP"
+
+    @property
+    def emblem_label(self) -> str:
+        """Division (or LP) shown beside a tier emblem (e.g. ``IV``)."""
+        if self.tier in ("MASTER", "GRANDMASTER", "CHALLENGER"):
+            return f"{self.league_points}LP"
+        return self.rank
+
+
+def solo_rank_fields(source: dict[str, Any]) -> dict[str, Any]:
+    """Extract optional solo/duo rank fields from a player dict."""
+    tier = str(source.get("solo_tier") or "").strip().upper()
+    if not tier:
+        return {}
+    entry: dict[str, Any] = {"solo_tier": tier}
+    rank = str(source.get("solo_rank") or "").strip().upper()
+    if rank:
+        entry["solo_rank"] = rank
+    raw_lp = source.get("solo_lp")
+    if raw_lp is not None:
+        try:
+            entry["solo_lp"] = int(raw_lp)
+        except (TypeError, ValueError):
+            pass
+    return entry
+
+
+def format_solo_rank_label(
+    tier: str, rank: str = "", league_points: int | None = None
+) -> str:
+    """Compact standing for UI next to a tier emblem (e.g. ``IV - 83LP``)."""
+    return RankedEntry(
+        tier=tier.upper(),
+        rank=(rank or "").upper(),
+        league_points=int(league_points or 0),
+        wins=0,
+        losses=0,
+    ).short_label
+
 
 class MetricComparison(BaseModel):
     """One metric compared between the player and rank peers."""
@@ -561,6 +607,7 @@ class PeerComparisonResult(BaseModel):
 
     rank_label: str
     tier: str
+    rank_badge: str = ""
     champion: str = "Viktor"
     role: str = "MIDDLE"
     build_label: str = "Viktor mid"
@@ -610,6 +657,18 @@ class FormSnapshot(BaseModel):
     headline: str = ""
 
 
+class FormStory(BaseModel):
+    """One ranked form narrative: driver numbers + optional habit + action."""
+
+    tone: Literal["keep", "fix"]
+    metric: str
+    title: str
+    driver: str
+    action: str
+    habit: str | None = None
+    priority: float = 0.0
+
+
 class ProgressionComparison(BaseModel):
     """Full recent-vs-baseline comparison for one build and preset."""
 
@@ -625,6 +684,7 @@ class ProgressionComparison(BaseModel):
     top_regressed: list[MetricDelta] = Field(default_factory=list)
     behavioral_shifts: list[str] = Field(default_factory=list)
     recommendations: list[Recommendation] = Field(default_factory=list)
+    stories: list[FormStory] = Field(default_factory=list)
 
 
 class GameScoreBreakdown(BaseModel):
@@ -657,6 +717,7 @@ class GameComparisonRow(BaseModel):
     benchmark_value: float
     delta: float
     verdict: str
+    gap_color: str = ""
 
 
 class GameDeathRow(BaseModel):
@@ -772,6 +833,7 @@ class GameDetail(BaseModel):
     side: str
     kda: str
     archetype: str
+    account: str | None = None
     champion_icon: str | None = None
     opponent_icon: str | None = None
     score: GameScoreBreakdown

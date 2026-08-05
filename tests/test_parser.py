@@ -173,6 +173,11 @@ def test_parse_runes_and_summoners(record: MatchRecord) -> None:
     assert record.summoners == ["Flash", "Teleport"]
 
 
+def test_parse_account_label(record: MatchRecord) -> None:
+    """Tracked player Riot ID is copied onto the match record."""
+    assert record.account == "Test#EUW"
+
+
 def test_parse_vision_lifetime(record: MatchRecord) -> None:
     """The control ward placed at 400 s and killed at 500 s lived 100 s."""
     assert record.vision.avg_control_ward_lifetime_s == pytest.approx(100.0, abs=1.0)
