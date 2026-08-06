@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -990,5 +990,13 @@ def create_app(
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/riot.txt", response_class=PlainTextResponse)
+    def riot_site_verification() -> PlainTextResponse:
+        """Serve Riot Developer Portal domain ownership proof."""
+        path = Path(__file__).resolve().parents[3] / "riot.txt"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="riot.txt missing")
+        return PlainTextResponse(path.read_text(encoding="utf-8").strip() + "\n")
 
     return app

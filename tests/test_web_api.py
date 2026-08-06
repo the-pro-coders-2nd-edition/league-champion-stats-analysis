@@ -60,6 +60,13 @@ def test_health(client: TestClient) -> None:
     assert client.get("/health").json() == {"status": "ok"}
 
 
+def test_riot_txt_verification(client: TestClient) -> None:
+    response = client.get("/riot.txt")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert response.text.strip() == "9b5dca7f-4ae5-4831-8755-072ae2ff9318"
+
+
 def test_landing_page_lists_reports(client: TestClient) -> None:
     _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
     response = client.get("/")
