@@ -127,6 +127,14 @@ def _build_job_services(
     tracked = _tracked_players_for_job(
         job, job_store, output_dir=web_config.output_dir
     )
+    job_slug = str(job["player_slug"]).strip()
+    if job_slug and tracked:
+        resolved_slug = _slug_for_players(tracked)
+        if resolved_slug != job_slug:
+            raise ValueError(
+                f"Report folder {job_slug!r} does not match resolved players "
+                f"{resolved_slug!r}. Re-submit this player from the home page."
+            )
     players = [
         PlayerIdentity(riot_id=entry["riot_id"], tagline=entry["tagline"])
         for entry in tracked
@@ -143,18 +151,12 @@ def _build_job_services(
         players=players,
         filter_champion=filter_champion,
         filter_role=filter_role,
+        # Always write under the URL the user refreshed — never a parallel folder.
+        output_reports_slug=job_slug or None,
     )
     # Poll URL must match the report directory slug. Mismatched polls compare
     # timestamps across solo vs group folders and infinite-reload the page.
-    report_slug = config.reports_group_slug
-    job_slug = str(job["player_slug"])
-    if report_slug != job_slug:
-        get_logger("worker").warning(
-            "Job slug %r != reports_group_slug %r; binding status_endpoint to report path",
-            job_slug,
-            report_slug,
-        )
-    config.status_endpoint = f"/api/players/{report_slug}"
+    config.status_endpoint = f"/api/players/{config.reports_group_slug}"
     config.ensure_directories()
     http_cache = HttpCache(config.http_cache_dir)
     store = MatchStore(config.db_path)

@@ -65,7 +65,7 @@
           {% if member.solo_rank_label %}
           <span class="player-card-rank">
             {% if member.solo_rank_icon %}
-            <img class="player-card-rank-icon" src="{{ member.solo_rank_icon }}" alt="" width="28" height="28">
+            <img class="player-card-rank-icon" src="{{ member.solo_rank_icon }}" alt="" width="20" height="20">
             {% endif %}
             <span class="player-card-rank-label">{{ member.solo_rank_label }}</span>
           </span>
@@ -261,7 +261,7 @@
       if (member.solo_rank_label) {
         var rankIcon = member.solo_rank_icon
           ? '<img class="player-card-rank-icon" src="' + escapeHtml(member.solo_rank_icon) +
-            '" alt="" width="28" height="28">'
+            '" alt="" width="20" height="20">'
           : '';
         rank = '<span class="player-card-rank">' + rankIcon +
           '<span class="player-card-rank-label">' +

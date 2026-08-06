@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Any
 
+from league_stats.analysis.matchups import matchup_advice
 from league_stats.core.models import PeerComparisonResult
 from league_stats.core.role_metrics import (
     MetricSpec,
@@ -15,6 +17,7 @@ from league_stats.core.role_metrics import (
     role_profile,
 )
 from league_stats.presentation.metric_colors import (
+    CS_DIFF_SPAN,
     color_winrate,
     interpolate_metric_color,
     score_death_share,
@@ -161,13 +164,19 @@ def enrich_value_semantics(entry: dict[str, Any]) -> None:
     if "diff @10" in lower or label.startswith("GD@") or label.startswith("CSD@"):
         number = _parse_signed_number(value)
         if number is not None:
-            _apply_value_color(entry, score_lane_diff(number))
+            # CS diffs are ~±15 at full intensity; gold/XP stay on the ±300 span.
+            cs_metric = "cs diff" in lower or label.upper().startswith("CSD")
+            span = CS_DIFF_SPAN if cs_metric else None
+            _apply_value_color(entry, score_lane_diff(number, span=span))
         return
 
     if "win rate" in lower or lower.startswith("wr when"):
         pct_value = _parse_percent(value)
         if pct_value is not None:
             _apply_value_color(entry, score_winrate(pct_value))
+        return
+
+    if "death rate in fights" in lower:
         return
 
     if "deaths" in lower or "death rate" in lower:
@@ -427,3 +436,69 @@ def game_list_row_display(detail: dict[str, Any]) -> dict[str, Any]:
         "score_tier": score.get("tier"),
         "flags": [flag for flag in flags if flag],
     }
+
+
+def _finite_or_none(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(number) or math.isinf(number):
+        return None
+    return number
+
+
+def _score_deaths_pre14(value: float) -> float:
+    """Lower early deaths are better; ~0.75 is neutral, 1.5 is strongly bad."""
+    return max(-1.0, min(1.0, (0.75 - value) / 0.75))
+
+
+def matchup_row_display(row: dict[str, Any], *, role: str | None = None) -> dict[str, Any]:
+    """Attach verdict/advice labels and metric colors for the matchup table."""
+    item = dict(row)
+    for key in (
+        "avg_gd10",
+        "avg_gd15",
+        "avg_xpd10",
+        "avg_csd10",
+        "avg_dpm",
+        "avg_deaths",
+        "avg_deaths_pre14",
+        "avg_kills",
+        "winrate",
+    ):
+        if key in item:
+            item[key] = _finite_or_none(item.get(key))
+
+    item.update(matchup_advice(item, role=role))
+
+    winrate = item.get("winrate")
+    if winrate is not None:
+        item["winrate_color"] = color_winrate(float(winrate))
+
+    gd10 = item.get("avg_gd10")
+    if gd10 is not None:
+        item["gd10_color"] = interpolate_metric_color(score_lane_diff(float(gd10)))
+
+    csd10 = item.get("avg_csd10")
+    if csd10 is not None:
+        item["csd10_color"] = interpolate_metric_color(
+            score_lane_diff(float(csd10), span=CS_DIFF_SPAN)
+        )
+
+    deaths_pre14 = item.get("avg_deaths_pre14")
+    if deaths_pre14 is not None:
+        item["deaths_pre14_color"] = interpolate_metric_color(
+            _score_deaths_pre14(float(deaths_pre14))
+        )
+
+    return item
+
+
+def annotate_matchup_rows(
+    rows: list[dict[str, Any]],
+    *,
+    role: str | None = None,
+) -> list[dict[str, Any]]:
+    """Annotate matchup table rows with advice and display colors."""
+    return [matchup_row_display(row, role=role) for row in rows]

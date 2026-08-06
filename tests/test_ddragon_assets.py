@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 
 from league_stats.core.config import AppConfig
-from league_stats.infra.ddragon_assets import DDragonAssets, _needs_grub_refresh, _relative_href, path_to_data_uri
+from league_stats.infra.ddragon_assets import (
+    DDragonAssets,
+    build_item_name_to_id,
+    build_summoner_icon_files,
+    _needs_grub_refresh,
+    _relative_href,
+    path_to_data_uri,
+)
 
 
 def _config(tmp_path: Path) -> AppConfig:
@@ -324,3 +331,117 @@ def test_download_assets_from_ddragon(tmp_path: Path) -> None:
     assert assets.keystone_icon_path("Electrocute") is not None
     assert assets.summoner_icon_path("Flash") is not None
     assert assets.rune_tree_icon_path("Domination") is not None
+
+
+def test_build_item_name_to_id_prefers_summoners_rift() -> None:
+    items = {
+        773157: {
+            "name": "Zhonya's Hourglass",
+            "maps": {"11": False, "12": True, "30": False},
+        },
+        3157: {
+            "name": "Zhonya's Hourglass",
+            "maps": {"11": True, "12": True, "30": False},
+        },
+        226657: {
+            "name": "Rod of Ages",
+            "maps": {"11": False, "12": False, "30": True},
+        },
+        6657: {
+            "name": "Rod of Ages",
+            "maps": {"11": True, "12": True, "30": False},
+        },
+        773151: {
+            "name": "Liandry's Torment",
+            "maps": {"11": False, "12": True, "30": False},
+        },
+        6653: {
+            "name": "Liandry's Torment",
+            "maps": {"11": True, "12": True, "30": False},
+        },
+    }
+    mapping = build_item_name_to_id(items)
+    assert mapping["Zhonya's Hourglass"] == 3157
+    assert mapping["Rod of Ages"] == 6657
+    assert mapping["Liandry's Torment"] == 6653
+
+
+def test_build_summoner_icon_files_prefers_classic_mode() -> None:
+    spells = {
+        "SummonerCherryFlash": {
+            "name": "Flash",
+            "image": {"full": "SummonerCherryFlash.png"},
+            "modes": ["CHERRY"],
+        },
+        "SummonerFlash": {
+            "name": "Flash",
+            "image": {"full": "SummonerFlash.png"},
+            "modes": ["CLASSIC", "ARAM"],
+        },
+        "SummonerFlash_Jade": {
+            "name": "Flash",
+            "image": {"full": "SummonerFlash_Jade.png"},
+            "modes": ["JADE"],
+        },
+    }
+    assert build_summoner_icon_files(spells)["Flash"] == "SummonerFlash.png"
+
+
+def test_ensure_downloaded_refreshes_when_patch_advances(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stale classic icons must be overwritten when versions.json moves forward."""
+    config = _config(tmp_path)
+    assets = DDragonAssets(config)
+    assets._champions_dir.mkdir(parents=True)
+    assets._runes_dir.mkdir(parents=True)
+    assets._items_dir.mkdir(parents=True)
+    assets._summoners_dir.mkdir(parents=True)
+    assets._rune_trees_dir.mkdir(parents=True)
+    assets._roles_dir.mkdir(parents=True)
+    assets._ui_dir.mkdir(parents=True)
+    assets._objectives_dir.mkdir(parents=True)
+    assets._map_dir.mkdir(parents=True)
+    assets._manifest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    stale = assets._champions_dir / "Ahri.png"
+    stale.write_bytes(b"old-icon")
+    (assets._runes_dir / "8112.png").write_bytes(b"rune")
+    (assets._items_dir / "1001.png").write_bytes(b"item")
+    for role in ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"):
+        (assets._roles_dir / f"{role}.png").write_bytes(b"role")
+    assets._manifest_path.write_text(
+        '{"version": "14.1.1", "item_names": {"Boots": 1001}}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(assets, "_fetch_latest_version", lambda: "16.13.1")
+    monkeypatch.setattr(
+        assets,
+        "_fetch_champions",
+        lambda version: {"Ahri": {"id": "Ahri", "name": "Ahri"}},
+    )
+    monkeypatch.setattr(assets, "_fetch_keystone_icons", lambda version: {8112: "perk-images/Styles/Domination/Electrocute/Electrocute.png"})
+    monkeypatch.setattr(
+        assets,
+        "_fetch_items",
+        lambda version: {1001: {"name": "Boots", "image": {"full": "1001.png"}}},
+    )
+    monkeypatch.setattr(assets, "_fetch_summoner_icons", lambda version: {"Flash": "SummonerFlash.png"})
+    monkeypatch.setattr(assets, "_fetch_rune_tree_icons", lambda version: {"Domination": "perk-images/Styles/7200_Domination.png"})
+    monkeypatch.setattr(assets, "_ensure_ui_icons", lambda *, force=False: None)
+    monkeypatch.setattr(assets, "_ensure_objective_icons", lambda *, force=False: None)
+    monkeypatch.setattr(assets, "_ensure_map_image", lambda *, force=False: None)
+    monkeypatch.setattr(assets, "_ensure_role_icons", lambda *, force=False: None)
+
+    def fake_download(url: str, destination: Path) -> None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"new-icon")
+
+    monkeypatch.setattr(assets, "_download_binary", fake_download)
+
+    version = assets.ensure_downloaded()
+    assert version == "16.13.1"
+    assert stale.read_bytes() == b"new-icon"
+    assert assets._read_manifest()["version"] == "16.13.1"

@@ -25,6 +25,7 @@ from league_stats.core.champions import (
     players_group_slug,
 )
 from league_stats.core.config import (
+    DEFAULT_TEMPLATE_DIR,
     VALID_PLATFORMS,
     VALID_REGIONS,
     WebConfig,
@@ -41,6 +42,7 @@ from league_stats.presentation.brand_assets import (
     refresh_saved_report_branding,
 )
 from league_stats.presentation.report import discover_player_builds, is_group_player_label
+from league_stats.presentation.report_static import ensure_report_static_assets
 from league_stats.utils import setup_logging
 from league_stats.web.chat import ChatError, gemini_reply, load_report_summary, validate_history
 from league_stats.web.jobs import (
@@ -649,6 +651,9 @@ def create_app(
     config.output_dir.mkdir(parents=True, exist_ok=True)
     config.reports_dir.mkdir(parents=True, exist_ok=True)
     ensure_brand_assets(config.output_dir)
+    # Refresh every saved report's CSS so skipped builds don't keep stale
+    # button styles after a template deploy / local edit.
+    ensure_report_static_assets(config.output_dir, DEFAULT_TEMPLATE_DIR, sync_existing=True)
     refresh_saved_report_branding(config.output_dir)
     brand = _brand_page_context(config.output_dir)
 
@@ -669,6 +674,15 @@ def create_app(
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     app.state.job_store = store
     app.state.web_config = config
+
+    @app.middleware("http")
+    async def revalidate_report_stylesheets(request: Request, call_next):  # type: ignore[no-untyped-def]
+        """Force CSS under /out to revalidate so HTML/CSS versions cannot skew."""
+        response = await call_next(request)
+        path = request.url.path
+        if path.startswith("/out/") and path.endswith(".css"):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
 
     app.mount("/out", StaticFiles(directory=str(config.output_dir), html=True), name="out")
 

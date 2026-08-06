@@ -58,6 +58,13 @@ body {
   font: 15px/1.55 var(--font);
 }
 a { color: var(--accent); text-decoration: none; }
+/* Base button chrome — prevents ugly UA widgets when a class-specific rule
+   is missing (stale per-build CSS) or still loading. */
+button {
+  font: inherit; color: var(--text);
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; cursor: pointer;
+}
 button:focus-visible, .game-window-btn:focus-visible, .report-tab:focus-visible,
 .report-refresh-btn:focus-visible,
 .metric-tooltip-btn:focus-visible, .rec-extend:focus-visible {
@@ -625,6 +632,28 @@ table { width: 100%; border-collapse: collapse; background: var(--panel); border
 th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); }
 th { background: var(--panel-2); color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
 tr:last-child td { border-bottom: none; }
+.sortable-table th:has(.sort-btn) { padding: 0; }
+.sort-btn {
+  display: inline-flex; align-items: center; gap: 6px; width: 100%;
+  padding: 9px 12px; margin: 0; border: 0; background: transparent;
+  color: inherit; font: inherit; font-weight: 600; font-size: 12px;
+  text-transform: uppercase; letter-spacing: .04em; text-align: left;
+  cursor: pointer;
+}
+.sort-btn:hover { color: var(--text); background: rgba(124, 108, 240, 0.08); }
+.sort-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); color: var(--text); }
+.sort-btn.is-sorted { color: var(--text); }
+.sort-btn::after {
+  content: '';
+  width: 0; height: 0; opacity: .35; flex-shrink: 0;
+  border-left: 4px solid transparent; border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+}
+.sort-btn.is-sorted::after { opacity: 1; }
+.sort-btn.is-sorted-asc::after {
+  border-top: 0;
+  border-bottom: 5px solid currentColor;
+}
 .rec { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; padding: 16px 18px; margin: 12px 0; }
 .rec.high { border-left-color: inherit; } .rec.medium { border-left-color: inherit; } .rec.low { border-left-color: inherit; }
 .rec-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
@@ -649,6 +678,26 @@ tr:last-child td { border-bottom: none; }
 .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--panel-2); color: var(--muted); margin-right: 8px; text-transform: uppercase; letter-spacing: .05em; }
 .delta-above { color: var(--win); } .delta-below { color: var(--loss); } .delta-inline { color: var(--muted); }
 .delta-improved { color: var(--win); } .delta-regressed { color: var(--loss); }
+.matchup-table td { vertical-align: top; }
+.matchup-table .matchup-metric { font-variant-numeric: tabular-nums; font-weight: 600; }
+.matchup-verdict {
+  display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px;
+  border-radius: 999px; letter-spacing: .04em; text-transform: uppercase;
+  background: var(--panel-2); color: var(--muted); white-space: nowrap;
+}
+.matchup-verdict--favorable { color: var(--win); background: rgba(63, 182, 139, 0.14); }
+.matchup-verdict--lean_favorable { color: var(--win); background: rgba(63, 182, 139, 0.08); }
+.matchup-verdict--even { color: #e0b155; background: rgba(224, 177, 85, 0.12); }
+.matchup-verdict--lean_unfavorable { color: var(--loss); background: rgba(224, 85, 99, 0.08); }
+.matchup-verdict--unfavorable { color: var(--loss); background: rgba(224, 85, 99, 0.14); }
+.matchup-verdict--thin_sample { color: var(--muted); background: rgba(154, 160, 181, 0.12); }
+.matchup-plan { min-width: 220px; max-width: 360px; }
+.matchup-focus {
+  display: inline-block; margin: 0 8px 4px 0; padding: 2px 7px;
+  border-radius: 6px; background: rgba(124, 108, 240, 0.14); color: #b7aff8;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+}
+.matchup-tip { display: block; color: var(--muted); font-size: 13px; line-height: 1.45; }
 footer { color: var(--muted); font-size: 13px; padding: 24px 0; border-top: 1px solid var(--border); }
 /* Lives inside .report-sticky-header so filters/tabs stay at top:0 with it */
 #web-status-banner {
@@ -1234,9 +1283,15 @@ footer { color: var(--muted); font-size: 13px; padding: 24px 0; border-top: 1px 
   display: inline-flex; align-items: center; flex-wrap: wrap;
   font-size: 13px; font-weight: 600; line-height: 1.35;
 }
-.game-review-event-body strong .game-icon {
-  width: 22px; height: 22px;
+/* Scoreboard objective sprites already have transparent padding — no chrome box. */
+.game-review-event-body strong .game-icon,
+#objective-table-body .game-icon,
+.map-pin--objective .game-icon {
   border: 0; background: transparent; border-radius: 0;
+}
+.game-review-event-body strong .game-icon,
+#objective-table-body .game-icon {
+  width: 22px; height: 22px;
 }
 .game-review-event-meta {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
@@ -1291,6 +1346,7 @@ footer { color: var(--muted); font-size: 13px; padding: 24px 0; border-top: 1px 
   filter: grayscale(0.85);
 }
 .map-pin--objective .icon-cell { width: 18px; height: 18px; opacity: 0.85; }
+.map-pin--objective .game-icon { width: 18px; height: 18px; }
 .map-pin--objective-up .icon-cell { opacity: 1; filter: none; }
 .map-pin--objective-down .icon-cell { opacity: 0.35; filter: grayscale(0.9); }
 .map-pin--objective-highlight .icon-cell { filter: drop-shadow(0 0 6px rgba(255, 214, 102, 0.95)); opacity: 1; }

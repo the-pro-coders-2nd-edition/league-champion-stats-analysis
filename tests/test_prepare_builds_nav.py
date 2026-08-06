@@ -87,3 +87,50 @@ def test_prepare_builds_scoped_keeps_full_manifest(
 
     assert [pool.build_label for pool in batch.pools] == ["Fiora top"]
     assert {entry["champion"] for entry in batch.manifest_builds} == {"Viktor", "Fiora"}
+
+
+def test_prepare_builds_unscoped_keeps_on_disk_siblings(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Full-account refresh must not drop existing reports from the Champions nav."""
+    player_dir = tmp_path / "reports" / "test_euw"
+    _write_meta(player_dir, "viktor_middle", champion="Viktor", role="MIDDLE", games=40)
+    _write_meta(player_dir, "fiora_top", champion="Fiora", role="TOP", games=30)
+    # Below the live min_games threshold, but still on disk from an earlier run.
+    _write_meta(player_dir, "bard_utility", champion="Bard", role="UTILITY", games=12)
+
+    pools = [
+        BuildPool(champion="Viktor", role="MIDDLE", games=40),
+        BuildPool(champion="Fiora", role="TOP", games=30),
+    ]
+    monkeypatch.setattr(orchestrator, "discover_build_pools", lambda *a, **k: pools)
+    monkeypatch.setattr(orchestrator, "load_all_records", lambda *a, **k: [])
+    monkeypatch.setattr(
+        orchestrator,
+        "group_records",
+        lambda records, champion, role: [
+            SimpleNamespace(win=True)
+        ]
+        * (40 if champion == "Viktor" else 30),
+    )
+
+    config = SimpleNamespace(
+        min_games=20,
+        filter_champion=None,
+        filter_role=None,
+        player_reports_dir=player_dir,
+    )
+    assets = SimpleNamespace(ensure_downloaded=lambda: None)
+    services = SimpleNamespace(store=object(), config=config, assets=assets)
+    contexts = [
+        PlayerContext(riot_id="Test", tagline="EUW", puuid="puuid", profile_icon_id=1)
+    ]
+
+    batch = prepare_builds(services, contexts)
+
+    assert len(batch.pools) == 2
+    assert {entry["champion"] for entry in batch.manifest_builds} == {
+        "Viktor",
+        "Fiora",
+        "Bard",
+    }

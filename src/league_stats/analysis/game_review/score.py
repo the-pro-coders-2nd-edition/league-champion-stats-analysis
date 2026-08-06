@@ -9,7 +9,6 @@ from league_stats.core.role_metrics import role_profile
 from league_stats.presentation.metric_colors import (
     score_deaths_per_game,
     score_form_delta,
-    score_lane_diff,
 )
 
 # Map ingredient columns onto the fixed game-review score dimensions.
@@ -126,12 +125,13 @@ def _component_score(
         return 50
 
     direction = _metric_direction(column)
-    if column in {"gd10", "cs10", "gd15", "xpd10", "csd10"}:
-        return _to_percent_score(score_lane_diff(float(game_value) - float(baseline)))
-
     improvement = float(game_value) - float(baseline)
     if direction == "lower":
         improvement = float(baseline) - float(game_value)
+
+    if column in {"gd10", "cs10", "gd15", "xpd10", "csd10"}:
+        # score_form_delta applies gold (±300) vs CS (±15) spans.
+        return _to_percent_score(score_form_delta(column, float(game_value) - float(baseline)))
 
     if column == "deaths":
         duration = float(game_row.get("duration_min") or 30.0)

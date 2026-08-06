@@ -129,6 +129,9 @@ class AppConfig(BaseModel):
     role: str = "MIDDLE"
     filter_champion: str | None = None
     filter_role: str | None = None
+    # When set (web jobs), report paths use this slug instead of deriving it
+    # from ``players``. Keeps refresh writes inside the folder the user opened.
+    output_reports_slug: str | None = None
     queue_id: int = RANKED_SOLO_QUEUE_ID
     output_dir: Path = Path("output")
     cache_dir: Path = Path(".cache")
@@ -160,6 +163,9 @@ class AppConfig(BaseModel):
     @property
     def reports_group_slug(self) -> str:
         """Filesystem slug for this player or multi-player group."""
+        pinned = (self.output_reports_slug or "").strip()
+        if pinned:
+            return pinned
         return players_group_slug([(player.riot_id, player.tagline) for player in self.players])
 
     @field_validator("role", mode="before")

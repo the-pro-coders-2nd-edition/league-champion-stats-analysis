@@ -4,15 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ app_title }} — {{ player_name }}</title>
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-<script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
 {% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, tiered_cards, rec_card, metric_card, generated_at_time, format_generated_at_script %}
 {{ favicon_links(favicon_href) }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="static/report.css">
-<link rel="stylesheet" href="static/chatbot.css">
+{# Styles before blocking CDN scripts so buttons never paint unstyled. #}
+<link rel="stylesheet" href="{{ report_css_href | default('static/report.css') }}">
+<link rel="stylesheet" href="{{ chatbot_css_href | default('static/chatbot.css') }}">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
 <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual';</script>
 </head>
 <body>
@@ -645,16 +646,37 @@
 
 <section id="matchups" class="report-section report-section--champion">
   {{ section_title("Matchups", "combat", "accent", category='champion') }}
+  <p class="sub sub--lead">Lane opponents you've faced most. <strong>Verdict</strong> is your win rate read; <strong>Play plan</strong> is the single biggest pattern in those games.</p>
   <div class="figure-block">
     <div class="figure" id="fig-matchup_bar">{{ figures.matchup_bar | safe }}</div>
     <p class="figure-caption">Win rate vs lane opponents — bar length shows sample size; color shows above/below 50% WR.</p>
   </div>
   <div class="table-scroll">
-  <table>
-    <thead><tr><th>Opponent</th><th>Games</th><th>Win rate</th><th>GD@10</th><th>CSD@10</th><th>Deaths pre-14</th><th>Recommendation</th></tr></thead>
+  <table class="sortable-table matchup-table" id="matchup-table" data-sortable="matchups">
+    <thead>
+      <tr>
+        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="opponent" data-sort-type="string">Opponent</button></th>
+        <th aria-sort="descending"><button type="button" class="sort-btn is-sorted is-sorted-desc" data-sort-key="games" data-sort-type="number">Games</button></th>
+        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="winrate" data-sort-type="number" title="Your win rate in this matchup">WR</button></th>
+        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="verdict" data-sort-type="verdict" title="Win-rate read, softer below 3 games">Verdict</button></th>
+        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="avg_gd10" data-sort-type="number" title="Average gold difference at 10 minutes">Gold@10</button></th>
+        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="avg_csd10" data-sort-type="number" title="Average CS difference at 10 minutes">CS@10</button></th>
+        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="avg_deaths_pre14" data-sort-type="number" title="Average deaths before 14 minutes">Deaths&nbsp;&lt;14</button></th>
+        <th>Play plan</th>
+      </tr>
+    </thead>
     <tbody id="matchup-rows-body">
     {% for row in matchup_rows %}
-    <tr><td>{% if row.opponent_icon %}<span class="icon-cell"><img src="{{ row.opponent_icon }}" alt="" class="game-icon game-icon--sm"><span>{{ row.opponent }}</span></span>{% else %}{{ row.opponent }}{% endif %}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td>{{ row.avg_gd10 }}</td><td>{{ row.avg_csd10 }}</td><td>{{ row.avg_deaths_pre14 }}</td><td>{{ row.recommendation }}</td></tr>
+    <tr>
+      <td>{% if row.opponent_icon %}<span class="icon-cell"><img src="{{ row.opponent_icon }}" alt="" class="game-icon game-icon--sm"><span>{{ row.opponent }}</span></span>{% else %}{{ row.opponent }}{% endif %}</td>
+      <td>{{ row.games }}</td>
+      <td>{% if row.winrate_color %}<span class="matchup-metric" style="color: {{ row.winrate_color }}">{{ '%.0f' % (row.winrate * 100) }}%</span>{% else %}{{ '%.0f' % (row.winrate * 100) }}%{% endif %}</td>
+      <td><span class="matchup-verdict matchup-verdict--{{ row.verdict | default('even') }}">{{ row.verdict_label | default('Even') }}</span></td>
+      <td>{% if row.avg_gd10 is not none %}{% if row.gd10_color %}<span class="matchup-metric" style="color: {{ row.gd10_color }}">{{ '%+.0f' % row.avg_gd10 }}</span>{% else %}{{ '%+.0f' % row.avg_gd10 }}{% endif %}{% else %}—{% endif %}</td>
+      <td>{% if row.avg_csd10 is not none %}{% if row.csd10_color %}<span class="matchup-metric" style="color: {{ row.csd10_color }}">{{ '%+.0f' % row.avg_csd10 }}</span>{% else %}{{ '%+.0f' % row.avg_csd10 }}{% endif %}{% else %}—{% endif %}</td>
+      <td>{% if row.avg_deaths_pre14 is not none %}{% if row.deaths_pre14_color %}<span class="matchup-metric" style="color: {{ row.deaths_pre14_color }}">{{ '%.1f' % row.avg_deaths_pre14 }}</span>{% else %}{{ '%.1f' % row.avg_deaths_pre14 }}{% endif %}{% else %}—{% endif %}</td>
+      <td class="matchup-plan">{% if row.focus %}<span class="matchup-focus">{{ row.focus }}</span>{% endif %}<span class="matchup-tip">{{ row.recommendation }}</span></td>
+    </tr>
     {% endfor %}
     </tbody>
   </table>
@@ -883,6 +905,7 @@
 
   var currentQueue = {{ queue_filter_default | tojson }};
   var currentWindow = {{ game_window_default | tojson }};
+  var matchupSort = { key: 'games', dir: 'desc', type: 'number' };
 
   function pct(value) {
     return Math.round(Number(value) * 100) + '%';
@@ -1168,6 +1191,105 @@
     var body = document.getElementById(id);
     if (!body) return;
     body.innerHTML = (rows || []).map(renderRow).join('');
+  }
+
+  // Worse → better; thin sample is unranked and sorts last.
+  var MATCHUP_VERDICT_RANK = {
+    unfavorable: 0,
+    lean_unfavorable: 1,
+    even: 2,
+    lean_favorable: 3,
+    favorable: 4
+  };
+
+  function sortValue(value, type) {
+    if (value == null || value === '') return null;
+    if (type === 'number') {
+      var num = Number(value);
+      return Number.isFinite(num) ? num : null;
+    }
+    if (type === 'verdict') {
+      var rank = MATCHUP_VERDICT_RANK[String(value)];
+      return rank == null ? null : rank;
+    }
+    return String(value).toLowerCase();
+  }
+
+  function sortRows(rows, key, dir, type) {
+    var ascending = dir === 'asc';
+    return (rows || []).slice().sort(function (left, right) {
+      var a = sortValue(left[key], type);
+      var b = sortValue(right[key], type);
+      if (a == null && b == null) return 0;
+      if (a == null) return 1;
+      if (b == null) return -1;
+      if (a < b) return ascending ? -1 : 1;
+      if (a > b) return ascending ? 1 : -1;
+      var gamesA = Number(left.games) || 0;
+      var gamesB = Number(right.games) || 0;
+      if (gamesA !== gamesB) return gamesB - gamesA;
+      return String(left.opponent || '').localeCompare(String(right.opponent || ''));
+    });
+  }
+
+  function updateMatchupSortHeaders() {
+    document.querySelectorAll('#matchup-table .sort-btn').forEach(function (btn) {
+      var active = btn.getAttribute('data-sort-key') === matchupSort.key;
+      var header = btn.closest('th');
+      btn.classList.toggle('is-sorted', active);
+      btn.classList.toggle('is-sorted-asc', active && matchupSort.dir === 'asc');
+      btn.classList.toggle('is-sorted-desc', active && matchupSort.dir === 'desc');
+      if (header) {
+        header.setAttribute('aria-sort', active
+          ? (matchupSort.dir === 'asc' ? 'ascending' : 'descending')
+          : 'none');
+      }
+    });
+  }
+
+  function signedMetric(value, color, digits) {
+    if (value == null || value === '') return '—';
+    var num = Number(value);
+    if (!Number.isFinite(num)) return '—';
+    var text = (num > 0 ? '+' : '') + num.toFixed(digits == null ? 0 : digits);
+    if (color) {
+      return '<span class="matchup-metric" style="color:' + color + '">' + text + '</span>';
+    }
+    return text;
+  }
+
+  function renderMatchupRow(row) {
+    var wr = pct(row.winrate);
+    var wrHtml = row.winrate_color
+      ? '<span class="matchup-metric" style="color:' + row.winrate_color + '">' + wr + '</span>'
+      : wr;
+    var deaths = row.avg_deaths_pre14;
+    var deathsHtml = '—';
+    if (deaths != null && deaths !== '' && Number.isFinite(Number(deaths))) {
+      deathsHtml = Number(deaths).toFixed(1);
+      if (row.deaths_pre14_color) {
+        deathsHtml = '<span class="matchup-metric" style="color:' + row.deaths_pre14_color + '">' +
+          deathsHtml + '</span>';
+      }
+    }
+    var verdict = escapeHtml(row.verdict_label || 'Even');
+    var verdictKey = escapeHtml(row.verdict || 'even');
+    var focus = row.focus
+      ? '<span class="matchup-focus">' + escapeHtml(row.focus) + '</span>'
+      : '';
+    var tip = '<span class="matchup-tip">' + escapeHtml(row.recommendation || '') + '</span>';
+    return '<tr><td>' + iconCell(row.opponent, row.opponent_icon) + '</td><td>' + row.games +
+      '</td><td>' + wrHtml +
+      '</td><td><span class="matchup-verdict matchup-verdict--' + verdictKey + '">' + verdict + '</span></td><td>' +
+      signedMetric(row.avg_gd10, row.gd10_color, 0) + '</td><td>' +
+      signedMetric(row.avg_csd10, row.csd10_color, 0) + '</td><td>' +
+      deathsHtml + '</td><td class="matchup-plan">' + focus + tip + '</td></tr>';
+  }
+
+  function renderMatchupRows(rows) {
+    var sorted = sortRows(rows, matchupSort.key, matchupSort.dir, matchupSort.type);
+    renderTableBody('matchup-rows-body', sorted, renderMatchupRow);
+    updateMatchupSortHeaders();
   }
 
   function renderHeroActions(bundle) {
@@ -2070,11 +2192,7 @@
         return '<tr><td>' + iconCell(row.keystone, row.keystone_icon) + '</td><td>' + row.games + '</td><td>' + pct(row.winrate) + '</td><td>' +
           row.avg_dpm + '</td><td>' + row.avg_deaths + '</td></tr>';
       });
-      renderTableBody('matchup-rows-body', bundle.matchup_rows, function (row) {
-        return '<tr><td>' + iconCell(row.opponent, row.opponent_icon) + '</td><td>' + row.games + '</td><td>' + pct(row.winrate) + '</td><td>' +
-          row.avg_gd10 + '</td><td>' + row.avg_csd10 + '</td><td>' + row.avg_deaths_pre14 + '</td><td>' +
-          row.recommendation + '</td></tr>';
-      });
+      renderMatchupRows(bundle.matchup_rows);
 
       Object.keys(bundle.figures || {}).forEach(function (name) {
         setFigure('fig-' + name, bundle.figures[name]);
@@ -2106,6 +2224,26 @@
     btn.addEventListener('click', function () {
       if (btn.disabled) return;
       applyView(currentQueue, btn.getAttribute('data-window'));
+    });
+  });
+
+  document.querySelectorAll('#matchup-table .sort-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var key = btn.getAttribute('data-sort-key');
+      var type = btn.getAttribute('data-sort-type') || 'string';
+      if (!key) return;
+      if (matchupSort.key === key) {
+        matchupSort.dir = matchupSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        matchupSort.key = key;
+        matchupSort.type = type;
+        // Numbers & verdict: high/best first; strings A→Z.
+        matchupSort.dir = (type === 'number' || type === 'verdict') ? 'desc' : 'asc';
+      }
+      var view = reportViews[currentQueue];
+      var bundle = view && view.windows[currentWindow];
+      if (!bundle) return;
+      renderMatchupRows(bundle.matchup_rows);
     });
   });
 

@@ -35,6 +35,7 @@ from league_stats.pipeline.summaries import ReportStats, build_domain_summaries,
 from league_stats.core.role_metrics import role_profile
 from league_stats.pipeline.view_models import (
     annotate_card_tiers,
+    annotate_matchup_rows,
     card,
     card_entries,
     cards_from_specs,
@@ -311,8 +312,14 @@ def build_window_bundle(
     score, components = improvement_score(frames.matches_df, role=config.role)
     matchups_export = frames.matchups_df.copy()
     if not matchups_export.empty:
-        matchups_export["recommendation"] = matchups_export.apply(matchup_recommendation, axis=1)
-    matchup_rows = matchups_export.head(20).to_dict("records") if not matchups_export.empty else []
+        matchups_export["recommendation"] = matchups_export.apply(
+            lambda row: matchup_recommendation(row, role=config.role),
+            axis=1,
+        )
+    matchup_rows = annotate_matchup_rows(
+        matchups_export.head(20).to_dict("records") if not matchups_export.empty else [],
+        role=config.role,
+    )
 
     icon_resolver = None
     if assets is not None:

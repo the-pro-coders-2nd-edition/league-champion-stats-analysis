@@ -53,17 +53,27 @@ def test_death_section_cards_skip_value_colors() -> None:
 
 
 def test_enrich_value_semantics_colors_diff_and_win_rate() -> None:
+    from league_stats.presentation.metric_colors import CS_DIFF_SPAN, score_lane_diff
+
     gd = {"label": "Gold diff @10", "value": "+250", "value_class": ""}
+    csd = {"label": "CS diff @10", "value": "+8", "value_class": ""}
     wr = {"label": "Lane win rate", "value": "42%", "value_class": ""}
     mid_wr = {"label": "Lane win rate", "value": "50%", "value_class": ""}
+    fight_deaths = {"label": "Death rate in fights", "value": "42%", "value_class": ""}
     enrich_value_semantics(gd)
+    enrich_value_semantics(csd)
     enrich_value_semantics(wr)
     enrich_value_semantics(mid_wr)
+    enrich_value_semantics(fight_deaths)
     assert gd["value_class"] == "win"
+    assert csd["value_class"] == "win"
     assert wr["value_class"] == "loss"
     assert mid_wr["value_class"] == ""
     assert gd["value_color"] != wr["value_color"]
+    assert csd["value_color"] == interpolate_metric_color(score_lane_diff(8.0, span=CS_DIFF_SPAN))
     assert mid_wr["value_color"] == interpolate_metric_color(0.0)
+    assert not fight_deaths.get("value_color")
+    assert not fight_deaths.get("value_class")
 
 
 def test_overview_card_entries_include_tiers() -> None:

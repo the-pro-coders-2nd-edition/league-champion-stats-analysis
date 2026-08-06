@@ -71,6 +71,10 @@ from league_stats.presentation.report import (
     refresh_report_indexes,
     write_report_meta,
 )
+from league_stats.presentation.report_static import (
+    ensure_report_static_assets,
+    report_stylesheet_hrefs,
+)
 from league_stats.utils import get_logger
 
 
@@ -204,7 +208,10 @@ def write_full_exports(
 
     matchups_export = analysis_frames.matchups_df.copy()
     if not matchups_export.empty:
-        matchups_export["recommendation"] = matchups_export.apply(matchup_recommendation, axis=1)
+        matchups_export["recommendation"] = matchups_export.apply(
+            lambda row: matchup_recommendation(row, role=config.role),
+            axis=1,
+        )
     corr_export = (
         stats_bundle.corr.reset_index().rename(columns={"index": "feature"})
         if not stats_bundle.corr.empty
@@ -449,9 +456,21 @@ def run_analysis(
             from_dir=run_dir,
         )
 
+    # Shared + per-build stylesheet publish (keeps skipped sibling reports from
+    # serving stale CSS against newer button markup after template changes).
+    ensure_report_static_assets(
+        config.output_dir, config.template_dir, sync_existing=False
+    )
     static_src = config.template_dir / "static"
     if static_src.is_dir():
         shutil.copytree(static_src, run_dir / "static", dirs_exist_ok=True)
+    context.update(
+        report_stylesheet_hrefs(
+            from_dir=run_dir,
+            output_dir=config.output_dir,
+            template_dir=config.template_dir,
+        )
+    )
 
     builder = ReportBuilder(config.template_dir)
     report_path = builder.render(run_dir / "report.html", context)
@@ -617,10 +636,11 @@ def prepare_builds(
             len(manifest_builds),
         )
 
-    if services.config.filter_champion or services.config.filter_role:
-        manifest_builds = _merge_manifest_with_disk(
-            manifest_builds, services.config.player_reports_dir
-        )
+    # Always keep on-disk sibling reports in the Champions nav, even when a
+    # build drops below min_games or analysis is scoped to a single refresh.
+    manifest_builds = _merge_manifest_with_disk(
+        manifest_builds, services.config.player_reports_dir
+    )
 
     return BuildBatch(
         pools=analysis_pools,

@@ -200,11 +200,11 @@ input::placeholder { color: var(--muted); }
 .muted { color: var(--muted); font-size: .9rem; }
 
 .player-cards {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 14px; margin-bottom: 8px;
 }
 .player-card {
-  display: block; padding: 16px 18px; background: var(--panel);
+  display: block; position: relative; padding: 16px 18px; background: var(--panel);
   border: 1px solid var(--border); border-radius: var(--radius); color: var(--text);
   text-decoration: none; font-weight: inherit;
   transition: border-color .15s, background .15s, transform .15s;
@@ -216,13 +216,16 @@ input::placeholder { color: var(--muted); }
 .player-card-name {
   display: flex; align-items: flex-start; gap: 8px;
 }
+.player-card:has(.badge-group) .player-card-name {
+  padding-right: 52px; /* room for absolute Group badge */
+}
 .player-card-status {
   width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
   flex: none; margin-top: 8px; display: none;
 }
 .player-card.is-busy .player-card-status { display: inline-block; animation: pulse 1.4s ease-in-out infinite; }
 .player-card-members {
-  display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0;
 }
 .player-card-member {
   display: flex; align-items: center; gap: 8px;
@@ -232,13 +235,19 @@ input::placeholder { color: var(--muted); }
   width: 24px; height: 24px; border-radius: 4px; object-fit: cover;
   background: var(--panel-2); border: 1px solid var(--border); flex: none;
 }
-.player-card-label { min-width: 0; overflow-wrap: anywhere; }
+.player-card-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .player-card-rank {
-  display: inline-flex; align-items: center; gap: 4px;
-  margin-left: 2px; flex: none; color: var(--muted); font-weight: 600; font-size: 12px;
+  display: inline-flex; align-items: center; gap: 3px;
+  flex: none; color: var(--muted); font-weight: 600; font-size: 12px;
 }
 .player-card-rank-icon {
-  width: 28px; height: 28px; object-fit: contain; flex: none;
+  width: 20px; height: 20px; object-fit: contain; flex: none;
 }
 .player-card-rank-label { white-space: nowrap; }
 .player-card-meta { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
@@ -247,10 +256,10 @@ input::placeholder { color: var(--muted); }
 }
 .player-card.is-busy .player-card-stage { display: block; }
 .badge-group {
+  position: absolute; top: 12px; right: 12px;
   display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .04em;
   text-transform: uppercase; padding: 2px 6px; border-radius: 4px;
-  background: rgba(124, 108, 240, 0.15); color: var(--accent); flex-shrink: 0;
-  margin-top: 4px;
+  background: rgba(124, 108, 240, 0.15); color: var(--accent);
 }
 
 .reports-empty {

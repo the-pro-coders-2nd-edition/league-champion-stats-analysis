@@ -420,3 +420,67 @@ def test_tracked_players_recovers_group_from_registry(store: JobStore) -> None:
         "players_json": '[{"riot_id":"Alice","tagline":"EUW"}]',
     }
     assert worker._tracked_players_for_job(job, store) == players
+
+
+def test_build_job_services_rejects_slug_mismatch(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Never write a refresh into a different account folder than the job slug."""
+    monkeypatch.setenv("RIOT_API_KEY", "RGAPI-test")
+    job = {
+        "id": 1,
+        "player_slug": "alice_euw__bob_euw",
+        "riot_id": "Alice",
+        "tagline": "EUW",
+        "region": "euw1",
+        # Solo identity only — must not collapse the group report path.
+        "players_json": '[{"riot_id":"Alice","tagline":"EUW"}]',
+        "filter_champion": None,
+        "filter_role": None,
+    }
+    reporter = SimpleNamespace(update=lambda *a, **k: None)
+
+    with pytest.raises(ValueError, match="does not match resolved players"):
+        worker._build_job_services(job, web_config, reporter, job_store=store)
+
+
+def test_build_job_services_pins_output_slug(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scoped refresh must rewrite only under the job's report folder."""
+    monkeypatch.setenv("RIOT_API_KEY", "RGAPI-test")
+    players = [
+        {"riot_id": "Alice", "tagline": "EUW"},
+        {"riot_id": "Bob", "tagline": "EUW"},
+    ]
+    store.upsert_player(
+        slug="alice_euw__bob_euw",
+        riot_id="Alice",
+        tagline="EUW",
+        region="euw1",
+        players=players,
+    )
+    job = {
+        "id": 1,
+        "player_slug": "alice_euw__bob_euw",
+        "riot_id": "Alice",
+        "tagline": "EUW",
+        "region": "euw1",
+        "players_json": '[{"riot_id":"Alice","tagline":"EUW"}]',
+        "filter_champion": "Viktor",
+        "filter_role": "MIDDLE",
+    }
+    reporter = SimpleNamespace(update=lambda *a, **k: None)
+
+    services = worker._build_job_services(
+        job, web_config, reporter, job_store=store
+    )
+    try:
+        assert services.config.reports_group_slug == "alice_euw__bob_euw"
+        assert services.config.output_reports_slug == "alice_euw__bob_euw"
+        assert services.config.filter_champion == "Viktor"
+        assert services.config.filter_role == "MIDDLE"
+        assert services.config.status_endpoint == "/api/players/alice_euw__bob_euw"
+    finally:
+        services.store.close()
+        services.http_cache.close()

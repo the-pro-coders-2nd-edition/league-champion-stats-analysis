@@ -93,6 +93,52 @@ RANK_EMBLEM_FORMAT: str = "pad-v1"
 OBJECTIVE_ICON_FORMAT: str = "knockout-v1"
 OBJECTIVE_ICON_TRIM_PAD_RATIO: float = 0.06
 OBJECTIVE_BLACK_RGB_MAX: int = 18
+# Prefer Summoner's Rift / CLASSIC entries when DDragon ships duplicate names
+# (ARAM 77xxx and Arena 22xxx often keep classic remade-item art).
+SUMMONERS_RIFT_MAP_ID: str = "11"
+ITEM_NAME_MAP_FORMAT: str = "sr-map11-v1"
+SUMMONER_ICON_FORMAT: str = "classic-mode-v1"
+
+
+def build_item_name_to_id(items: dict[int, dict[str, Any]]) -> dict[str, int]:
+    """Map display names to item ids, preferring Summoner's Rift (map 11).
+
+    Data Dragon ``item.json`` repeats names across SR / ARAM / Arena. Taking the
+    last JSON entry picks ARAM ``77xxx`` ids whose icons are often the classic
+    pre-rework art (Zhonya, Rod of Ages, Liandry, …).
+    """
+    best: dict[str, tuple[int, int, int]] = {}
+    for item_id, data in items.items():
+        name = str(data.get("name", "")).strip()
+        if not name:
+            continue
+        maps = data.get("maps") or {}
+        on_sr = 1 if maps.get(SUMMONERS_RIFT_MAP_ID) else 0
+        # Higher on_sr wins; among ties, smaller id (canonical SR ids).
+        score = (on_sr, -int(item_id))
+        current = best.get(name)
+        if current is None or score > (current[0], current[1]):
+            best[name] = (on_sr, -int(item_id), int(item_id))
+    return {name: entry[2] for name, entry in best.items()}
+
+
+def build_summoner_icon_files(spells: dict[str, dict[str, Any]]) -> dict[str, str]:
+    """Map summoner spell display names to icon filenames (prefer CLASSIC mode)."""
+    best: dict[str, tuple[int, int, str]] = {}
+    for index, data in enumerate(spells.values()):
+        spell_name = str(data.get("name", "")).strip()
+        image = data.get("image") or {}
+        filename = str(image.get("full", "")).strip()
+        if not spell_name or not filename:
+            continue
+        modes = {str(mode).upper() for mode in (data.get("modes") or [])}
+        classic = 1 if "CLASSIC" in modes else 0
+        # Prefer CLASSIC; among non-classic, keep the earlier/stabler entry.
+        score = (classic, -index)
+        current = best.get(spell_name)
+        if current is None or score > (current[0], current[1]):
+            best[spell_name] = (classic, -index, filename)
+    return {name: entry[2] for name, entry in best.items()}
 
 
 class DDragonAssets:
@@ -139,7 +185,11 @@ class DDragonAssets:
         )
 
     def ensure_downloaded(self, *, force: bool = False) -> str:
-        """Download champion and keystone icons when missing or ``force`` is set.
+        """Download champion and keystone icons when missing, forced, or patch-stale.
+
+        Compares the local manifest to Data Dragon ``versions.json[0]``. When the
+        patch advances, existing PNGs are overwritten so reports do not keep
+        classic/outdated square icons from an older cache.
 
         Returns:
             The Data Dragon patch version used for the download.
@@ -157,57 +207,58 @@ class DDragonAssets:
         self._objectives_dir.mkdir(parents=True, exist_ok=True)
         self._map_dir.mkdir(parents=True, exist_ok=True)
         self._manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_role_icons(force=force)
-        self._ensure_ui_icons(force=force)
-        self._ensure_objective_icons(force=force)
-        self._ensure_map_image(force=force)
-        self._ensure_summoner_icons(force=force)
-        self._ensure_rune_tree_icons(force=force)
 
         manifest = self._read_manifest()
-        if (
-            not force
-            and manifest.get("version")
-            and self._champions_dir.is_dir()
-            and any(self._champions_dir.glob("*.png"))
-            and self._runes_dir.is_dir()
-            and any(self._runes_dir.glob("*.png"))
-            and self._items_dir.is_dir()
-            and any(self._items_dir.glob("*.png"))
-        ):
-            self._version = str(manifest["version"])
-            self._item_name_to_id = {
-                str(name): int(item_id)
-                for name, item_id in manifest.get("item_names", {}).items()
-            }
-            self._log.info("Using cached Data Dragon assets for patch %s", self._version)
-            return self._version
+        cached_version = str(manifest.get("version", "")).strip()
 
         try:
             version = self._fetch_latest_version()
         except requests.RequestException as exc:
             self._log.warning("Could not reach Data Dragon: %s", exc)
-            cached_version = str(manifest.get("version", ""))
             if cached_version:
                 self._version = cached_version
+                self._load_item_names(manifest)
+                self._ensure_role_icons(force=force)
+                self._ensure_ui_icons(force=force)
+                self._ensure_objective_icons(force=force)
+                self._ensure_map_image(force=force)
+                self._ensure_summoner_icons(force=force)
+                self._ensure_rune_tree_icons(force=force)
                 return cached_version
             return ""
 
-        if (
-            not force
-            and manifest.get("version") == version
-            and self._champions_dir.is_dir()
-            and any(self._champions_dir.glob("*.png"))
-            and self._runes_dir.is_dir()
-            and any(self._runes_dir.glob("*.png"))
-            and self._items_dir.is_dir()
-            and any(self._items_dir.glob("*.png"))
-        ):
+        version_changed = bool(cached_version) and cached_version != version
+        item_map_stale = manifest.get("item_name_map") != ITEM_NAME_MAP_FORMAT
+        summoner_map_stale = manifest.get("summoner_icon_map") != SUMMONER_ICON_FORMAT
+        refresh = force or version_changed
+        if version_changed:
+            self._log.info(
+                "Data Dragon patch advanced %s → %s; refreshing icon cache",
+                cached_version,
+                version,
+            )
+
+        # Community Dragon paths use /latest; refresh them with the patch bump too.
+        self._ensure_role_icons(force=refresh)
+        self._ensure_ui_icons(force=refresh)
+        self._ensure_objective_icons(force=refresh)
+        self._ensure_map_image(force=refresh)
+
+        if not refresh and self._versioned_assets_cached():
             self._version = version
-            self._item_name_to_id = {
-                str(name): int(item_id)
-                for name, item_id in manifest.get("item_names", {}).items()
-            }
+            if item_map_stale:
+                self._refresh_item_name_map(version, manifest)
+            else:
+                self._load_item_names(manifest)
+            self._ensure_summoner_icons(force=summoner_map_stale)
+            self._ensure_rune_tree_icons(force=False)
+            if item_map_stale or summoner_map_stale:
+                self._write_manifest(
+                    version,
+                    champions=int(manifest.get("champions", 0)),
+                    keystones=int(manifest.get("keystones", 0)),
+                    items=int(manifest.get("items", 0)),
+                )
             self._log.info("Using cached Data Dragon assets for patch %s", version)
             return version
 
@@ -217,35 +268,30 @@ class DDragonAssets:
             items = self._fetch_items(version)
         except requests.RequestException as exc:
             self._log.warning("Could not download Data Dragon assets: %s", exc)
-            cached_version = str(manifest.get("version", ""))
             if cached_version and self.champion_icon_path("Ahri"):
                 self._version = cached_version
+                self._load_item_names(manifest)
                 return cached_version
             return version
 
-        self._download_champion_icons(version, champions, force=force)
-        self._download_rune_icons(version, rune_icons, force=force)
-        self._download_item_icons(version, items, force=force)
-        self._download_summoner_icons(version, self._fetch_summoner_icons(version), force=force)
-        self._download_rune_tree_icons(version, self._fetch_rune_tree_icons(version), force=force)
+        self._download_champion_icons(version, champions, force=refresh)
+        self._download_rune_icons(version, rune_icons, force=refresh)
+        self._download_item_icons(version, items, force=refresh)
+        self._download_summoner_icons(
+            version,
+            self._fetch_summoner_icons(version),
+            force=refresh or summoner_map_stale,
+        )
+        self._download_rune_tree_icons(version, self._fetch_rune_tree_icons(version), force=refresh)
 
-        self._item_name_to_id = {
-            str(data.get("name", "")): int(item_id)
-            for item_id, data in items.items()
-            if data.get("name")
-        }
+        self._item_name_to_id = build_item_name_to_id(items)
         self._version = version
-        manifest = {
-            "version": version,
-            "champions": len(champions),
-            "keystones": len(rune_icons),
-            "items": len(items),
-            "roles": len(ROLE_ICON_FILES),
-            "summoners": len(list(self._summoners_dir.glob("*.png"))) if self._summoners_dir.is_dir() else 0,
-            "rune_trees": len(list(self._rune_trees_dir.glob("*.png"))) if self._rune_trees_dir.is_dir() else 0,
-            "item_names": self._item_name_to_id,
-        }
-        self._manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        self._write_manifest(
+            version,
+            champions=len(champions),
+            keystones=len(rune_icons),
+            items=len(items),
+        )
         self._log.info(
             "Downloaded %d champion icons, %d keystone icons, %d item icons and %d role icons (patch %s)",
             len(champions),
@@ -255,6 +301,65 @@ class DDragonAssets:
             version,
         )
         return version
+
+    def _versioned_assets_cached(self) -> bool:
+        return (
+            self._champions_dir.is_dir()
+            and any(self._champions_dir.glob("*.png"))
+            and self._runes_dir.is_dir()
+            and any(self._runes_dir.glob("*.png"))
+            and self._items_dir.is_dir()
+            and any(self._items_dir.glob("*.png"))
+        )
+
+    def _load_item_names(self, manifest: dict[str, Any]) -> None:
+        self._item_name_to_id = {
+            str(name): int(item_id)
+            for name, item_id in manifest.get("item_names", {}).items()
+        }
+
+    def _refresh_item_name_map(self, version: str, manifest: dict[str, Any]) -> None:
+        """Rebuild name→id using SR-preferring rules without redownloading PNGs."""
+        try:
+            items = self._fetch_items(version)
+        except requests.RequestException as exc:
+            self._log.warning("Could not refresh item name map: %s", exc)
+            self._load_item_names(manifest)
+            return
+        self._item_name_to_id = build_item_name_to_id(items)
+        self._log.info(
+            "Rebuilt item name map (%s) with %d Summoner's Rift–preferred names",
+            ITEM_NAME_MAP_FORMAT,
+            len(self._item_name_to_id),
+        )
+
+    def _write_manifest(
+        self,
+        version: str,
+        *,
+        champions: int,
+        keystones: int,
+        items: int,
+    ) -> None:
+        manifest = {
+            "version": version,
+            "item_name_map": ITEM_NAME_MAP_FORMAT,
+            "summoner_icon_map": SUMMONER_ICON_FORMAT,
+            "champions": champions,
+            "keystones": keystones,
+            "items": items,
+            "roles": len(ROLE_ICON_FILES),
+            "summoners": (
+                len(list(self._summoners_dir.glob("*.png"))) if self._summoners_dir.is_dir() else 0
+            ),
+            "rune_trees": (
+                len(list(self._rune_trees_dir.glob("*.png")))
+                if self._rune_trees_dir.is_dir()
+                else 0
+            ),
+            "item_names": self._item_name_to_id,
+        }
+        self._manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     def champion_icon_path(self, champion: str) -> Path | None:
         """Return the on-disk champion icon path when it exists."""
@@ -583,14 +688,7 @@ class DDragonAssets:
             timeout=15,
         )
         response.raise_for_status()
-        icons: dict[str, str] = {}
-        for data in response.json()["data"].values():
-            spell_name = str(data.get("name", "")).strip()
-            image = data.get("image") or {}
-            filename = str(image.get("full", "")).strip()
-            if spell_name and filename:
-                icons[spell_name] = filename
-        return icons
+        return build_summoner_icon_files(dict(response.json()["data"]))
 
     def _fetch_items(self, version: str) -> dict[int, dict[str, Any]]:
         response = self._session.get(

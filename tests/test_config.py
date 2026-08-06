@@ -28,6 +28,18 @@ def test_players_group_slug_joins_multiple_players() -> None:
     assert slug == "alice_euw__bob_na1"
 
 
+def test_output_reports_slug_pins_report_paths() -> None:
+    """Web jobs can pin report output to the folder the user refreshed."""
+    config = AppConfig(
+        riot_id="Alice",
+        tagline="EUW",
+        api_key="RGAPI-test",
+        output_reports_slug="alice_euw__bob_euw",
+    )
+    assert config.reports_group_slug == "alice_euw__bob_euw"
+    assert config.player_reports_dir == Path("output") / "reports" / "alice_euw__bob_euw"
+
+
 def test_load_config_reads_api_key_from_dotenv(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
