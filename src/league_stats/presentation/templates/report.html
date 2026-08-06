@@ -703,7 +703,7 @@
             {% if peer_rank_icon %}
             <img class="peer-rank-icon" src="{{ peer_rank_icon }}" alt="" width="48" height="48">
             {% endif %}
-            <span class="peer-rank-label" id="peer-rank-label">{{ peer_comparison.rank_badge or peer_comparison.rank_label }}</span>
+            <span class="peer-rank-label" id="peer-rank-label">{{ peer_comparison.rank_label }}</span>
           </div>
         </div>
         <div class="peer-stage-meta">
@@ -1083,7 +1083,7 @@
     if (dossier) dossier.className = 'peer-dossier peer-dossier--' + lean;
     var rankValue = document.getElementById('peer-rank-value');
     if (rankValue) {
-      var rankText = peer.rank_badge || peer.rank_label || peer.tier || '—';
+      var rankText = peer.rank_label || peer.tier || '—';
       var rankIcon = peer.rank_icon
         ? '<img class="peer-rank-icon" src="' + escapeHtml(peer.rank_icon) +
           '" alt="" width="48" height="48">'
