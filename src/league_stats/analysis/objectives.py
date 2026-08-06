@@ -43,6 +43,109 @@ def _kind_of(event: dict[str, Any]) -> ObjectiveKind | None:
     return None
 
 
+def _setup_at(
+    ctx: TimelineContext,
+    *,
+    ts: int,
+    pit: tuple[float, float],
+    my_death_ts: list[int],
+    wards: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Player setup context relative to an objective take timestamp."""
+    pos_now = ctx.position_at_ms(ctx.participant_id, ts)
+    pos_before = ctx.position_at_ms(ctx.participant_id, max(0, ts - EARLY_LOOKBACK_MS))
+    present = pos_now is not None and distance(pos_now, pit) <= PRESENCE_RADIUS
+    early = pos_before is not None and distance(pos_before, pit) <= EARLY_RADIUS
+    player_wards = [
+        w
+        for w in wards
+        if int(w.get("creatorId", 0)) == ctx.participant_id
+        and 0 <= ts - int(w["timestamp"]) <= VISION_WINDOW_MS
+    ]
+    return {
+        "present": present,
+        "arrived_early": early,
+        "arrived_late": present and not early,
+        "dead_before": any(
+            in_objective_setup_window(
+                t,
+                ts,
+                window_ms=DEAD_BEFORE_WINDOW_MS,
+                exclude_ms=BEFORE_OBJECTIVE_EXCLUDE_MS,
+            )
+            for t in my_death_ts
+        ),
+        "wards_before": len(player_wards),
+        "control_wards_before": sum(
+            1 for w in player_wards if w.get("wardType") == "CONTROL_WARD"
+        ),
+    }
+
+
+def _record_for_event(
+    ctx: TimelineContext,
+    event: dict[str, Any],
+    *,
+    kind: ObjectiveKind,
+    my_team_id: int,
+    my_death_ts: list[int],
+    wards: list[dict[str, Any]],
+) -> ObjectiveRecord:
+    ts = int(event["timestamp"])
+    pit = DRAGON_PIT if kind in (ObjectiveKind.DRAGON, ObjectiveKind.ELDER) else BARON_PIT
+    setup = _setup_at(ctx, ts=ts, pit=pit, my_death_ts=my_death_ts, wards=wards)
+    return ObjectiveRecord(
+        minute=ms_to_min(ts),
+        kind=kind,
+        taken_by_team=int(event.get("killerTeamId", 0)) == my_team_id,
+        **setup,
+    )
+
+
+def _record_for_grubs(
+    ctx: TimelineContext,
+    events: list[dict[str, Any]],
+    *,
+    my_team_id: int,
+    my_death_ts: list[int],
+    wards: list[dict[str, Any]],
+) -> ObjectiveRecord:
+    """Collapse every Void grub kill in the match into one camp objective."""
+    ordered = sorted(events, key=lambda e: int(e["timestamp"]))
+    first_ts = int(ordered[0]["timestamp"])
+    secured = sum(1 for e in ordered if int(e.get("killerTeamId", 0)) == my_team_id)
+    total = len(ordered)
+    present = False
+    for event in ordered:
+        setup = _setup_at(
+            ctx,
+            ts=int(event["timestamp"]),
+            pit=BARON_PIT,
+            my_death_ts=my_death_ts,
+            wards=wards,
+        )
+        if setup["present"]:
+            present = True
+            break
+    # Setup/vision judged against the start of the contest (first grub kill).
+    first_setup = _setup_at(
+        ctx, ts=first_ts, pit=BARON_PIT, my_death_ts=my_death_ts, wards=wards
+    )
+    return ObjectiveRecord(
+        minute=ms_to_min(first_ts),
+        kind=ObjectiveKind.GRUBS,
+        taken_by_team=secured > (total - secured),
+        present=present,
+        arrived_early=first_setup["arrived_early"],
+        arrived_late=present and not first_setup["arrived_early"],
+        dead_before=first_setup["dead_before"],
+        wards_before=first_setup["wards_before"],
+        control_wards_before=first_setup["control_wards_before"],
+        secured_count=secured,
+        objective_total=total,
+    )
+
+
 def extract_objectives(ctx: TimelineContext) -> list[ObjectiveRecord]:
     """Contextualise every epic monster take in the game.
 
@@ -50,7 +153,8 @@ def extract_objectives(ctx: TimelineContext) -> list[ObjectiveRecord]:
         ctx: Timeline context.
 
     Returns:
-        One :class:`~models.ObjectiveRecord` per epic monster kill.
+        One :class:`~models.ObjectiveRecord` per epic monster take. Void grubs
+        (HORDE) are collapsed into a single camp record with a secured split.
     """
     my_team_id = 100 if ctx.blue_side else 200
     my_death_ts = [
@@ -61,46 +165,35 @@ def extract_objectives(ctx: TimelineContext) -> list[ObjectiveRecord]:
     wards = ctx.events_of("WARD_PLACED")
 
     records: list[ObjectiveRecord] = []
+    grub_events: list[dict[str, Any]] = []
     for event in ctx.events_of("ELITE_MONSTER_KILL"):
         kind = _kind_of(event)
         if kind is None:
             continue
-        ts = int(event["timestamp"])
-        pit = DRAGON_PIT if kind in (ObjectiveKind.DRAGON, ObjectiveKind.ELDER) else BARON_PIT
-
-        pos_now = ctx.position_at_ms(ctx.participant_id, ts)
-        pos_before = ctx.position_at_ms(ctx.participant_id, max(0, ts - EARLY_LOOKBACK_MS))
-        present = pos_now is not None and distance(pos_now, pit) <= PRESENCE_RADIUS
-        early = pos_before is not None and distance(pos_before, pit) <= EARLY_RADIUS
-        player_wards = [
-            w
-            for w in wards
-            if int(w.get("creatorId", 0)) == ctx.participant_id
-            and 0 <= ts - int(w["timestamp"]) <= VISION_WINDOW_MS
-        ]
+        if kind is ObjectiveKind.GRUBS:
+            grub_events.append(event)
+            continue
         records.append(
-            ObjectiveRecord(
-                minute=ms_to_min(ts),
+            _record_for_event(
+                ctx,
+                event,
                 kind=kind,
-                taken_by_team=int(event.get("killerTeamId", 0)) == my_team_id,
-                present=present,
-                arrived_early=early,
-                arrived_late=present and not early,
-                dead_before=any(
-                    in_objective_setup_window(
-                        t,
-                        ts,
-                        window_ms=DEAD_BEFORE_WINDOW_MS,
-                        exclude_ms=BEFORE_OBJECTIVE_EXCLUDE_MS,
-                    )
-                    for t in my_death_ts
-                ),
-                wards_before=len(player_wards),
-                control_wards_before=sum(
-                    1 for w in player_wards if w.get("wardType") == "CONTROL_WARD"
-                ),
+                my_team_id=my_team_id,
+                my_death_ts=my_death_ts,
+                wards=wards,
             )
         )
+    if grub_events:
+        records.append(
+            _record_for_grubs(
+                ctx,
+                grub_events,
+                my_team_id=my_team_id,
+                my_death_ts=my_death_ts,
+                wards=wards,
+            )
+        )
+    records.sort(key=lambda r: r.minute)
     return records
 
 
@@ -129,9 +222,27 @@ def objectives_dataframe(records: list[MatchRecord]) -> pd.DataFrame:
                     "dead_before": obj.dead_before,
                     "wards_before": obj.wards_before,
                     "control_wards_before": obj.control_wards_before,
+                    "secured_count": obj.secured_count,
+                    "objective_total": obj.objective_total,
                 }
             )
     return pd.DataFrame(rows)
+
+
+def _taken_rate(group: pd.DataFrame) -> float:
+    """Prefer secured-share for multi-kill camps (grubs); else boolean take rate."""
+    if {"secured_count", "objective_total"}.issubset(group.columns):
+        shares = []
+        for _, row in group.iterrows():
+            secured = row.get("secured_count")
+            total = row.get("objective_total")
+            if pd.notna(secured) and pd.notna(total) and float(total) > 0:
+                shares.append(float(secured) / float(total))
+            else:
+                shares.append(float(bool(row.get("taken_by_team"))))
+        if shares:
+            return round(float(sum(shares) / len(shares)), 3)
+    return round(float(group["taken_by_team"].mean()), 3)
 
 
 def objective_summary(obj_df: pd.DataFrame) -> dict[str, Any]:
@@ -149,7 +260,7 @@ def objective_summary(obj_df: pd.DataFrame) -> dict[str, Any]:
     for kind, group in obj_df.groupby("kind"):
         by_kind[str(kind)] = {
             "count": int(len(group)),
-            "taken_rate": round(float(group["taken_by_team"].mean()), 3),
+            "taken_rate": _taken_rate(group),
             "presence_rate": round(float(group["present"].mean()), 3),
             "early_rate": round(float(group["arrived_early"].mean()), 3),
             "dead_before_rate": round(float(group["dead_before"].mean()), 3),

@@ -220,7 +220,12 @@ class TeamfightRecord(BaseModel):
 
 
 class ObjectiveRecord(BaseModel):
-    """A dragon/baron/herald/grubs/elder take and the player's context."""
+    """A dragon/baron/herald/grubs/elder take and the player's context.
+
+    Void grubs are collapsed into one record per camp: ``secured_count`` /
+    ``objective_total`` track the split (e.g. 2/3), while ``taken_by_team``
+    is true when the player's team secured a strict majority.
+    """
 
     minute: float
     kind: ObjectiveKind
@@ -231,6 +236,8 @@ class ObjectiveRecord(BaseModel):
     dead_before: bool = False
     wards_before: int = 0
     control_wards_before: int = 0
+    secured_count: int | None = None
+    objective_total: int | None = None
 
 
 class CombatStats(BaseModel):
@@ -687,16 +694,33 @@ class ProgressionComparison(BaseModel):
     stories: list[FormStory] = Field(default_factory=list)
 
 
+class GameScoreIngredient(BaseModel):
+    """One metric contributing to a game-review dimension score."""
+
+    column: str
+    label: str
+    score: int
+    game_value: float | None = None
+    baseline_value: float | None = None
+    weight: float = 1.0
+    direction: Literal["higher", "lower"] = "higher"
+
+
+class GameScoreDimension(BaseModel):
+    """One role-native score category for a single game (0–100)."""
+
+    name: str
+    score: int
+    hint: str = ""
+    ingredients: list[GameScoreIngredient] = Field(default_factory=list)
+
+
 class GameScoreBreakdown(BaseModel):
     """Per-game score across role-aware dimensions (0–100 each)."""
 
     overall: int
     tier: str
-    laning: int
-    survival: int
-    impact: int
-    vision: int
-    objectives: int
+    dimensions: list[GameScoreDimension] = Field(default_factory=list)
 
 
 class GameBehavior(BaseModel):
@@ -754,6 +778,8 @@ class GameObjectiveRow(BaseModel):
     dead_before: bool
     wards_before: int
     objective_icon: str | None = None
+    secured_count: int | None = None
+    objective_total: int | None = None
 
 
 class GameBuildInfo(BaseModel):

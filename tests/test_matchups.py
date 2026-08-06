@@ -89,6 +89,7 @@ def test_early_deaths_outrank_generic_lane_loss() -> None:
         role="MIDDLE",
     )
     assert advice["focus"] == "Survive"
+    assert advice["focus_key"] == "survive"
     assert "deaths" in advice["recommendation"].lower() or "all-in" in advice["recommendation"].lower()
 
 

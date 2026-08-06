@@ -21,14 +21,6 @@ GAME_REVIEW_KEY_STATS: dict[str, tuple[str, str]] = {
     "fights_disadvantaged": ("Disadvantaged fights", "Disadvantaged fights"),
 }
 
-GAME_REVIEW_SCORE_DIMENSIONS: tuple[str, ...] = (
-    "Laning",
-    "Survival",
-    "Impact",
-    "Vision",
-    "Objectives",
-)
-
 OBJECTIVE_DEAD_SETUP_LABEL = "Died in setup window (45–10s)"
 
 OBJECTIVE_COLUMN_TOOLTIPS: dict[str, str] = {
@@ -48,23 +40,12 @@ def _tooltip(label: str) -> str | None:
 
 def game_review_tooltips() -> dict[str, dict[str, str]]:
     """Tooltip map embedded in the report for Game Review panels."""
-    score: dict[str, str] = {}
-    for label in (*GAME_REVIEW_SCORE_DIMENSIONS, "Game score"):
-        hint = _tooltip(label)
-        if hint:
-            score[label] = hint
-    score["Survival"] = (
-        "0–100 score from deaths normalized to a 30-minute game; fewer deaths score higher."
-    )
-    score["Objectives"] = (
-        "0–100 score from epic-monster presence vs your baseline "
-        "(wide band so a few takes don't snap to 0/100), lightly adjusted "
-        "by deaths right before objectives."
-    )
-    score["Game score"] = (
-        "Personal performance vs your baseline for this single game (0–100, letter tier). "
-        "Independent of win/loss."
-    )
+    score = {
+        "Game score": (
+            "Personal performance vs your baseline for this single game (0–100, letter tier). "
+            "Independent of win/loss. Expand a category to see the metrics behind it."
+        ),
+    }
     key_stats: dict[str, str] = {}
     key_stats_labels: dict[str, str] = {}
     for column, (label, tooltip_key) in GAME_REVIEW_KEY_STATS.items():

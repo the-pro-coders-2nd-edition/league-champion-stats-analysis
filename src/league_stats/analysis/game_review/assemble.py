@@ -139,6 +139,12 @@ def assemble_game_detail(
             present=bool(row.get("present")),
             dead_before=bool(row.get("dead_before")),
             wards_before=int(row.get("wards_before") or 0),
+            secured_count=(
+                int(row["secured_count"]) if pd.notna(row.get("secured_count")) else None
+            ),
+            objective_total=(
+                int(row["objective_total"]) if pd.notna(row.get("objective_total")) else None
+            ),
         )
         for row in (objectives_df.to_dict("records") if not objectives_df.empty else [])
     ]

@@ -368,6 +368,7 @@ def matchup_advice(row: Mapping[str, Any], *, role: str | None = None) -> dict[s
         "verdict": verdict,
         "verdict_label": _VERDICT_LABELS[verdict],
         "focus": focus,
+        "focus_key": focus.lower().replace(" ", "-"),
         "recommendation": recommendation,
     }
 

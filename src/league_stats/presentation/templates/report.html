@@ -483,15 +483,15 @@
         <div class="game-review-tabs" id="game-review-tabs" role="tablist">
           <button type="button" class="game-review-tab is-active" data-tab="overview" role="tab" aria-selected="true">Overview</button>
           <button type="button" class="game-review-tab" data-tab="story" role="tab" aria-selected="false">Story</button>
-          <button type="button" class="game-review-tab" data-tab="mistakes" role="tab" aria-selected="false">Mistakes</button>
+          <button type="button" class="game-review-tab" data-tab="key-moments" role="tab" aria-selected="false">Key Moments</button>
           <button type="button" class="game-review-tab" data-tab="loadout" role="tab" aria-selected="false">Loadout</button>
         </div>
         <div class="game-review-panel" id="game-review-panel-overview" role="tabpanel"></div>
         <div class="game-review-panel" id="game-review-panel-story" role="tabpanel" hidden>
           <div class="game-review-story-block figure-block" id="game-review-panel-timeline"></div>
-          <div class="game-review-story-block" id="game-review-panel-key-moments"></div>
+          <div class="game-review-story-block" id="game-review-key-moments-viewer"></div>
         </div>
-        <div class="game-review-panel" id="game-review-panel-mistakes" role="tabpanel" hidden></div>
+        <div class="game-review-panel" id="game-review-panel-key-moments" role="tabpanel" hidden></div>
         <div class="game-review-panel" id="game-review-panel-loadout" role="tabpanel" hidden></div>
       </div>
     </div>
@@ -675,7 +675,7 @@
       <td>{% if row.avg_gd10 is not none %}{% if row.gd10_color %}<span class="matchup-metric" style="color: {{ row.gd10_color }}">{{ '%+.0f' % row.avg_gd10 }}</span>{% else %}{{ '%+.0f' % row.avg_gd10 }}{% endif %}{% else %}—{% endif %}</td>
       <td>{% if row.avg_csd10 is not none %}{% if row.csd10_color %}<span class="matchup-metric" style="color: {{ row.csd10_color }}">{{ '%+.0f' % row.avg_csd10 }}</span>{% else %}{{ '%+.0f' % row.avg_csd10 }}{% endif %}{% else %}—{% endif %}</td>
       <td>{% if row.avg_deaths_pre14 is not none %}{% if row.deaths_pre14_color %}<span class="matchup-metric" style="color: {{ row.deaths_pre14_color }}">{{ '%.1f' % row.avg_deaths_pre14 }}</span>{% else %}{{ '%.1f' % row.avg_deaths_pre14 }}{% endif %}{% else %}—{% endif %}</td>
-      <td class="matchup-plan">{% if row.focus %}<span class="matchup-focus">{{ row.focus }}</span>{% endif %}<span class="matchup-tip">{{ row.recommendation }}</span></td>
+      <td class="matchup-plan">{% if row.focus %}<span class="matchup-focus matchup-focus--{{ row.focus_key | default('standard') }}">{{ row.focus }}</span>{% endif %}<span class="matchup-tip">{{ row.recommendation }}</span></td>
     </tr>
     {% endfor %}
     </tbody>
@@ -1274,8 +1274,9 @@
     }
     var verdict = escapeHtml(row.verdict_label || 'Even');
     var verdictKey = escapeHtml(row.verdict || 'even');
+    var focusKey = escapeHtml(row.focus_key || 'standard');
     var focus = row.focus
-      ? '<span class="matchup-focus">' + escapeHtml(row.focus) + '</span>'
+      ? '<span class="matchup-focus matchup-focus--' + focusKey + '">' + escapeHtml(row.focus) + '</span>'
       : '';
     var tip = '<span class="matchup-tip">' + escapeHtml(row.recommendation || '') + '</span>';
     return '<tr><td>' + iconCell(row.opponent, row.opponent_icon) + '</td><td>' + row.games +
@@ -1611,12 +1612,58 @@
     return '—';
   }
 
-  function scoreBar(label, value) {
-    var pct = Math.max(0, Math.min(100, Number(value) || 0));
-    var hint = ((gameReviewTooltips.score || {})[label]) || '';
-    return '<div class="game-score-bar" title="' + escapeHtml(hint) + '"><div class="game-score-bar-label"><span>' + escapeHtml(label) +
-      '</span><span>' + pct + '</span></div><div class="game-score-bar-track"><div class="game-score-bar-fill" style="width:' +
-      pct + '%"></div></div></div>';
+  function formatScoreIngredientValue(column, value) {
+    if (value === null || value === undefined || !isFinite(Number(value))) return '—';
+    var num = Number(value);
+    var rateKeys = {
+      kill_participation: 1, damage_share: 1, gold_share: 1, damage_taken_share: 1,
+      tf_participation: 1, tf_won_share: 1, lane_priority: 1, objectives_present_rate: 1, kp15: 1
+    };
+    if (rateKeys[column] || (column && String(column).slice(-5) === '_rate')) {
+      return (num * 100).toFixed(0) + '%';
+    }
+    if (column === 'vspm' || column === 'ccpm' || column === 'first_item_min') {
+      return num.toFixed(1);
+    }
+    if (column === 'avg_unspent_gold' || column === 'gd10' || column === 'gd15' || column === 'xpd10') {
+      return String(Math.round(num));
+    }
+    if (Math.abs(num - Math.round(num)) < 1e-6) return String(Math.round(num));
+    return num.toFixed(1);
+  }
+
+  function scoreBar(dimension) {
+    dimension = dimension || {};
+    var pct = Math.max(0, Math.min(100, Number(dimension.score) || 0));
+    var label = dimension.name || 'Score';
+    var hint = dimension.hint || ((gameReviewTooltips.score || {})[label]) || '';
+    var ingredients = dimension.ingredients || [];
+    var rows = ingredients.map(function (item) {
+      var subPct = Math.max(0, Math.min(100, Number(item.score) || 0));
+      var gameTxt = formatScoreIngredientValue(item.column, item.game_value);
+      var baseTxt = formatScoreIngredientValue(item.column, item.baseline_value);
+      return '<div class="game-score-ingredient">' +
+        '<div class="game-score-ingredient-head">' +
+          '<span class="game-score-ingredient-label">' + escapeHtml(item.label || item.column || '') + '</span>' +
+          '<span class="game-score-ingredient-score">' + subPct + '</span>' +
+        '</div>' +
+        '<div class="game-score-ingredient-meta">' + escapeHtml(gameTxt) +
+          ' vs your avg ' + escapeHtml(baseTxt) + '</div>' +
+        '<div class="game-score-ingredient-track"><div class="game-score-ingredient-fill" style="width:' +
+          subPct + '%"></div></div>' +
+        '</div>';
+    }).join('');
+    var body = rows
+      ? '<div class="game-score-ingredients">' + rows + '</div>'
+      : '<div class="game-score-ingredients game-score-ingredients--empty">No substats for this category.</div>';
+    return '<details class="game-score-bar"' + (hint ? ' title="' + escapeHtml(hint) + '"' : '') + '>' +
+      '<summary class="game-score-bar-summary">' +
+        '<div class="game-score-bar-label"><span>' + escapeHtml(label) +
+        '</span><span>' + pct + '</span></div>' +
+        '<div class="game-score-bar-track"><div class="game-score-bar-fill" style="width:' +
+        pct + '%"></div></div>' +
+      '</summary>' + body +
+      '</details>';
   }
 
   function renderGameReviewRunes(build) {
@@ -1830,7 +1877,7 @@
   }
 
   function renderGameReviewKeyMoments(game) {
-    var panel = document.getElementById('game-review-panel-key-moments');
+    var panel = document.getElementById('game-review-key-moments-viewer');
     if (!panel) return;
     stopKeyMomentScrubber();
     var moments = game.key_moments || [];
@@ -1898,7 +1945,7 @@
       '</div>';
   }
 
-  function renderMistakesFeed(game) {
+  function renderKeyMomentsFeed(game) {
     var objectiveHints = gameReviewTooltips.objectives || {};
     var deaths = game.deaths || [];
     var fights = game.fights || [];
@@ -1944,14 +1991,31 @@
     } else {
       parts.push('<div class="game-review-feed">' + objectives.map(function (row) {
         var kindLabel = row.kind.charAt(0).toUpperCase() + row.kind.slice(1);
-        var tone = row.taken_by_team ? 'good' : 'bad';
-        var verdict = row.taken_by_team ? 'Secured' : 'Missed';
+        var isGrubs = row.kind === 'grubs' && row.secured_count != null && row.objective_total != null;
+        var tone;
+        var verdict;
+        var grubClass = '';
+        if (isGrubs) {
+          var secured = Number(row.secured_count);
+          var total = Number(row.objective_total) || 3;
+          // Single batch of 3; color by secured count (0–3).
+          var share = total > 0 ? secured / total : 0;
+          var bucket = Math.max(0, Math.min(3, Math.round(secured)));
+          grubClass = ' game-review-event--grubs-' + bucket;
+          if (share >= 2 / 3) tone = 'good';
+          else if (share <= 1 / 3) tone = 'bad';
+          else tone = 'mixed';
+          verdict = secured + '/' + total + ' secured';
+        } else {
+          tone = row.taken_by_team ? 'good' : 'bad';
+          verdict = row.taken_by_team ? 'Secured' : 'Missed';
+        }
         var notes = [];
         if (row.present) notes.push('present');
         else notes.push('absent');
         if (row.dead_before) notes.push('died in setup');
         if (row.wards_before != null) notes.push(row.wards_before + ' wards before');
-        return '<div class="game-review-event game-review-event--' + tone + '" title="' +
+        return '<div class="game-review-event game-review-event--' + tone + grubClass + '" title="' +
           escapeHtml([objectiveHints.Taken, objectiveHints.Present].filter(Boolean).join(' ')) + '">' +
           '<span class="game-review-event-time">' + formatGameTime(row.minute) + '</span>' +
           '<div class="game-review-event-body">' +
@@ -2011,9 +2075,11 @@
     var hero = document.getElementById('game-review-score-hero');
     if (hero) {
       var gameScoreHint = ((gameReviewTooltips.score || {})['Game score']) || '';
+      var dimensions = score.dimensions || [];
       hero.innerHTML = '<div class="game-review-scoreboard-bars" title="' + escapeHtml(gameScoreHint) + '">' +
-        scoreBar('Laning', score.laning) + scoreBar('Survival', score.survival) + scoreBar('Impact', score.impact) +
-        scoreBar('Vision', score.vision) + scoreBar('Objectives', score.objectives) +
+        (dimensions.length
+          ? dimensions.map(function (dim) { return scoreBar(dim); }).join('')
+          : '<p class="game-review-verdict-empty">No score dimensions available.</p>') +
         '</div>';
     }
 
@@ -2044,8 +2110,8 @@
     }
     renderGameReviewKeyMoments(game);
 
-    var mistakesPanel = document.getElementById('game-review-panel-mistakes');
-    if (mistakesPanel) mistakesPanel.innerHTML = renderMistakesFeed(game);
+    var keyMomentsPanel = document.getElementById('game-review-panel-key-moments');
+    if (keyMomentsPanel) keyMomentsPanel.innerHTML = renderKeyMomentsFeed(game);
 
     var loadoutPanel = document.getElementById('game-review-panel-loadout');
     if (loadoutPanel) {

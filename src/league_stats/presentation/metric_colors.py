@@ -132,9 +132,14 @@ def score_lane_diff(value: float, *, span: float | None = None) -> float:
     return _clamp(value / (span if span is not None else _LANE_DIFF_SPAN))
 
 
+def normalize_count_for_duration(count: float, duration_min: float) -> float:
+    """Express a game-total count as the equivalent value in a 30-minute game."""
+    return float(count) * _REFERENCE_GAME_MIN / max(float(duration_min), 1.0)
+
+
 def normalize_deaths_for_duration(deaths: float, duration_min: float) -> float:
     """Express deaths as equivalent deaths in a 30-minute game."""
-    return float(deaths) * _REFERENCE_GAME_MIN / max(float(duration_min), 1.0)
+    return normalize_count_for_duration(deaths, duration_min)
 
 
 def score_deaths_per_game(value: float, *, duration_min: float = _REFERENCE_GAME_MIN) -> float:

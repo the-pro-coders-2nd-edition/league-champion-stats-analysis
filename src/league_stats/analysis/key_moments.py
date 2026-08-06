@@ -37,10 +37,10 @@ SPLIT_PUSH_RADIUS: float = 4_000.0
 # Summoner's Rift spawn windows (approximate; kill events refine respawn state).
 DRAGON_FIRST_SPAWN_MS: int = 5 * 60_000
 DRAGON_RESPAWN_MS: int = 5 * 60_000
-GRUBS_FIRST_SPAWN_MS: int = 5 * 60_000
-GRUBS_DESPAWN_MS: int = 13 * 60_000 + 45_000
-GRUBS_MAX_KILLS: int = 6
-HERALD_SPAWN_MS: int = 14 * 60_000
+GRUBS_FIRST_SPAWN_MS: int = 8 * 60_000
+GRUBS_DESPAWN_MS: int = 14 * 60_000 + 45_000
+GRUBS_MAX_KILLS: int = 3
+HERALD_SPAWN_MS: int = 15 * 60_000
 HERALD_DESPAWN_MS: int = 19 * 60_000 + 45_000
 BARON_SPAWN_MS: int = 20 * 60_000
 BARON_RESPAWN_MS: int = 6 * 60_000
@@ -304,6 +304,7 @@ def _event_candidates(ctx: TimelineContext) -> list[_Candidate]:
     candidates: list[_Candidate] = []
     dragon_counts: dict[int, int] = {100: 0, 200: 0}
     first_tower_seen = False
+    grub_kills: list[tuple[int, int]] = []
 
     for event in ctx.events:
         event_type = str(event.get("type", ""))
@@ -382,18 +383,7 @@ def _event_candidates(ctx: TimelineContext) -> list[_Candidate]:
                     )
                 )
             elif monster == "HORDE":
-                swing = _gold_swing_in_window(ctx, killer_team, ts)
-                candidates.append(
-                    _Candidate(
-                        anchor_ms=ts,
-                        kind="grubs",
-                        headline="Void grubs secured",
-                        beneficiary_team=killer_team,
-                        impact_score=_score("grubs", swing),
-                        gold_swing=swing or None,
-                        highlight_objective="grubs",
-                    )
-                )
+                grub_kills.append((ts, killer_team))
 
         elif event_type == "BUILDING_KILL":
             building = str(event.get("buildingType", ""))
@@ -458,6 +448,34 @@ def _event_candidates(ctx: TimelineContext) -> list[_Candidate]:
                         gold_swing=swing or None,
                     )
                 )
+
+    if grub_kills:
+        grub_kills.sort(key=lambda item: item[0])
+        first_ts = grub_kills[0][0]
+        counts = {100: 0, 200: 0}
+        for _, team_id in grub_kills:
+            counts[team_id] = counts.get(team_id, 0) + 1
+        my_team = 100 if ctx.blue_side else 200
+        enemy_team = 200 if my_team == 100 else 100
+        my_secured = counts.get(my_team, 0)
+        enemy_secured = counts.get(enemy_team, 0)
+        total = len(grub_kills)
+        if my_secured == enemy_secured:
+            beneficiary_team = my_team
+        else:
+            beneficiary_team = my_team if my_secured > enemy_secured else enemy_team
+        swing = _gold_swing_in_window(ctx, beneficiary_team, first_ts)
+        candidates.append(
+            _Candidate(
+                anchor_ms=first_ts,
+                kind="grubs",
+                headline=f"Void grubs {my_secured}/{total} secured",
+                beneficiary_team=beneficiary_team,
+                impact_score=_score("grubs", swing),
+                gold_swing=swing or None,
+                highlight_objective="grubs",
+            )
+        )
 
     return candidates
 

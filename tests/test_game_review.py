@@ -94,6 +94,10 @@ def test_slice_last_five_per_queue() -> None:
     assert len(slice_recent(all_q, GAME_REVIEW_RECENT_N)) == 5
 
 
+def _dimension(score, name: str):
+    return next(dim for dim in score.dimensions if dim.name == name)
+
+
 def test_game_score_personal_baseline() -> None:
     record = _parse_record()
     row = record.to_row()
@@ -103,8 +107,113 @@ def test_game_score_personal_baseline() -> None:
     score = compute_game_score(row, baseline, role="MIDDLE")
     assert 0 <= score.overall <= 100
     assert score.tier in {"S", "A", "B", "C", "D"}
-    assert score.laning >= 50
-    assert score.survival >= 50
+    assert [dim.name for dim in score.dimensions] == [
+        "Laning",
+        "Economy",
+        "Fight",
+        "Survival",
+        "Vision",
+        "Objectives",
+    ]
+    assert _dimension(score, "Laning").score >= 50
+    assert _dimension(score, "Survival").score >= 50
+    survival = _dimension(score, "Survival")
+    assert survival.ingredients
+    assert survival.ingredients[0].column == "deaths"
+
+
+def test_game_score_role_native_support_dimensions() -> None:
+    score = compute_game_score({}, {}, role="UTILITY")
+    assert [dim.name for dim in score.dimensions] == [
+        "Setup",
+        "Utility",
+        "Economy",
+        "Fight",
+        "Survival",
+        "Vision",
+        "Objectives",
+    ]
+
+
+def test_game_score_normalizes_counts_by_duration() -> None:
+    """Same deaths/control-ward pace should score alike across short and long games."""
+    baseline = {
+        "deaths": 6.0,
+        "control_wards": 3.0,
+        "duration_min": 30.0,
+        "vspm": 1.2,
+    }
+    short = {
+        "deaths": 4.0,
+        "control_wards": 2.0,
+        "duration_min": 20.0,
+        "vspm": 1.2,
+    }
+    long = {
+        "deaths": 8.0,
+        "control_wards": 4.0,
+        "duration_min": 40.0,
+        "vspm": 1.2,
+    }
+    short_score = compute_game_score(short, baseline, role="MIDDLE")
+    long_score = compute_game_score(long, baseline, role="MIDDLE")
+    assert _dimension(short_score, "Survival").score == _dimension(long_score, "Survival").score
+    assert _dimension(short_score, "Vision").score == _dimension(long_score, "Vision").score
+
+    # Raw equal counts in a short game are a worse death pace than the baseline.
+    short_same_raw = compute_game_score(
+        {"deaths": 6.0, "duration_min": 20.0},
+        {"deaths": 6.0, "duration_min": 30.0},
+        role="MIDDLE",
+    )
+    assert _dimension(short_same_raw, "Survival").score < 50
+
+
+def test_game_score_swings_outside_mid_band() -> None:
+    """A clearly better-than-usual game should escape the muted 35–65 band."""
+    baseline = {
+        "gd10": 0.0,
+        "csd10": 0.0,
+        "deaths_pre14": 2.0,
+        "cs10": 70.0,
+        "gold_share": 0.22,
+        "avg_unspent_gold": 600.0,
+        "first_item_min": 14.0,
+        "damage_share": 0.22,
+        "kill_participation": 0.45,
+        "tf_participation": 0.50,
+        "tf_won_share": 0.45,
+        "deaths": 5.0,
+        "duration_min": 30.0,
+        "vspm": 1.0,
+        "control_wards": 1.0,
+        "objectives_present_rate": 0.50,
+        "deaths_before_neutral_objective": 0.5,
+    }
+    strong = {
+        **baseline,
+        "gd10": 350.0,
+        "csd10": 15.0,
+        "deaths_pre14": 0.0,
+        "cs10": 85.0,
+        "gold_share": 0.28,
+        "avg_unspent_gold": 200.0,
+        "first_item_min": 11.5,
+        "damage_share": 0.32,
+        "kill_participation": 0.70,
+        "tf_participation": 0.80,
+        "tf_won_share": 0.75,
+        "deaths": 1.0,
+        "vspm": 2.2,
+        "control_wards": 4.0,
+        "objectives_present_rate": 1.0,
+        "deaths_before_neutral_objective": 0.0,
+    }
+    score = compute_game_score(strong, baseline, role="MIDDLE")
+    assert score.overall > 65
+    assert _dimension(score, "Laning").score > 65
+    assert _dimension(score, "Survival").score > 65
+    assert _dimension(score, "Fight").score > 65
 
 
 def test_objectives_score_avoids_binary_extremes() -> None:
@@ -128,10 +237,14 @@ def test_objectives_score_avoids_binary_extremes() -> None:
         baseline,
         role="MIDDLE",
     )
-    assert 55 <= above.objectives <= 90
-    assert 10 <= below.objectives <= 45
-    assert above.objectives < perfect.objectives
-    assert perfect.objectives <= 100
+    above_obj = _dimension(above, "Objectives").score
+    below_obj = _dimension(below, "Objectives").score
+    perfect_obj = _dimension(perfect, "Objectives").score
+    assert 55 <= above_obj <= 90
+    assert 10 <= below_obj <= 45
+    assert above_obj < perfect_obj
+    assert perfect_obj <= 100
+    assert _dimension(above, "Objectives").ingredients
 
 
 def test_game_score_fallback_small_sample() -> None:
@@ -354,6 +467,8 @@ def test_report_has_game_review_category_tab(tmp_path: Path) -> None:
     assert 'id="game-review-data"' in html
     assert 'id="game-review-matchup"' in html
     assert 'data-tab="story"' in html
+    assert 'data-tab="key-moments"' in html
     assert 'id="game-review-panel-key-moments"' in html
+    assert 'Mistakes' not in html
     assert 'game-review-layout' in html
     assert 'report-tab--games' in html
