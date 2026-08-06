@@ -64,7 +64,7 @@ def test_riot_txt_verification(client: TestClient) -> None:
     response = client.get("/riot.txt")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/plain")
-    assert response.text.strip() == "9b5dca7f-4ae5-4831-8755-072ae2ff9318"
+    assert response.text.strip() == "71e571c1-efe7-4509-828e-f16ad603f8dd"
 
 
 def test_landing_page_lists_reports(client: TestClient) -> None:
