@@ -143,8 +143,6 @@ def _survival_tip(role: str | None, deaths: float) -> str:
 
 def _cs_tip(csd: float, role: str | None) -> str:
     key = _role_key(role)
-    if key == "UTILITY":
-        return "You're bleeding resources early — prioritize safe support timing over greedy wards."
     if key == "JUNGLE":
         return f"Down {abs(csd):.0f} CS@10 — tighten clear efficiency and avoid delayed paths."
     return f"Down {abs(csd):.0f} CS@10 — prioritize safe last-hits and cleaner recall timings."
@@ -274,16 +272,18 @@ def matchup_advice(row: Mapping[str, Any], *, role: str | None = None) -> dict[s
             )
         )
 
-    if csd10 is not None and csd10 <= -10:
-        candidates.append((7.0, "Farm", _cs_tip(csd10, role)))
-    elif csd10 is not None and csd10 <= -6 and (gd10 is None or gd10 > -200):
-        candidates.append(
-            (
-                5.5,
-                "Farm",
-                f"Soft CS bleed ({csd10:+.0f}@10) — clean up crash waves instead of forcing trades.",
+    # Supports don't farm — never tip or rank matchups on CS differentials.
+    if _role_key(role) != "UTILITY":
+        if csd10 is not None and csd10 <= -10:
+            candidates.append((7.0, "Farm", _cs_tip(csd10, role)))
+        elif csd10 is not None and csd10 <= -6 and (gd10 is None or gd10 > -200):
+            candidates.append(
+                (
+                    5.5,
+                    "Farm",
+                    f"Soft CS bleed ({csd10:+.0f}@10) — clean up crash waves instead of forcing trades.",
+                )
             )
-        )
 
     if (
         kills is not None

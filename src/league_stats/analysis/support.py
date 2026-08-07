@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from league_stats.analysis.improvement import is_meaningful_healing, is_meaningful_shielding
 from league_stats.analysis.timeline import TimelineContext
 from league_stats.core.models import RoamEvent
 
@@ -71,9 +72,13 @@ def utility_summary(matches_df) -> dict[str, Any]:
     hpm = None
     if "healing" in matches_df.columns:
         hpm = round(float((matches_df["healing"] / minutes).mean()), 1)
+        if not is_meaningful_healing(hpm):
+            hpm = None
     spm = None
     if "shielding" in matches_df.columns:
         spm = round(float((matches_df["shielding"] / minutes).mean()), 1)
+        if not is_meaningful_shielding(spm):
+            spm = None
 
     return {
         "avg_assists": mean_of("assists"),

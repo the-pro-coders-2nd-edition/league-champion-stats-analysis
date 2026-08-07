@@ -431,6 +431,7 @@ def run_analysis(
         "report_slug": champion_slug(config.champion, config.role),
         "refresh_champion": config.champion,
         "refresh_role": config.role,
+        "show_cs_stats": config.role.upper() != "UTILITY",
         "chat_report_ref": (
             f"{config.reports_group_slug}/{champion_slug(config.champion, config.role)}"
         ),

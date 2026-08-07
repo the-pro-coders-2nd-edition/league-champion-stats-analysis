@@ -99,6 +99,7 @@
   var PAGE_GENERATED_AT = {{ generated_at | default("") | tojson }};
   var REFRESH_CHAMPION = {{ refresh_champion | default("") | tojson }};
   var REFRESH_ROLE = {{ refresh_role | default("") | tojson }};
+  var SHOW_CS_STATS = {{ show_cs_stats | default(true) | tojson }};
   var REPORT_HREF = {{
     (("/out/reports/" ~ chat_report_ref ~ "/report.html") | tojson)
     if chat_report_ref else "null"
@@ -237,7 +238,6 @@
 
 <section id="overview" class="report-section report-section--summary">
   <div class="report-hero" id="report-hero">
-    <p class="report-verdict-headline" id="verdict-headline">{{ verdict_headline }}</p>
     <div class="report-hero-identity">
       {% if champion_icon %}
       <img src="{{ champion_icon }}" alt="" class="game-icon">
@@ -706,7 +706,9 @@
         <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="winrate" data-sort-type="number" title="Your win rate in this matchup">WR</button></th>
         <th aria-sort="descending"><button type="button" class="sort-btn is-sorted is-sorted-desc" data-sort-key="verdict" data-sort-type="verdict" title="Win-rate read, softer below 3 games">Verdict</button></th>
         <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="avg_gd10" data-sort-type="number" title="Average gold difference at 10 minutes">Gold@10</button></th>
+        {% if show_cs_stats %}
         <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="avg_csd10" data-sort-type="number" title="Average CS difference at 10 minutes">CS@10</button></th>
+        {% endif %}
         <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="avg_deaths_pre14" data-sort-type="number" title="Average deaths before 14 minutes">Deaths&nbsp;&lt;14</button></th>
         <th>Play plan</th>
       </tr>
@@ -719,7 +721,9 @@
       <td>{{ '%.0f' % (row.winrate * 100) }}%</td>
       <td><span class="matchup-verdict matchup-verdict--{{ row.verdict | default('even') }}">{{ row.verdict_label | default('Even') }}</span></td>
       <td>{% if row.avg_gd10 is not none %}{% if row.gd10_color %}<span class="matchup-metric" style="color: {{ row.gd10_color }}">{{ '%+.0f' % row.avg_gd10 }}</span>{% else %}{{ '%+.0f' % row.avg_gd10 }}{% endif %}{% else %}—{% endif %}</td>
+      {% if show_cs_stats %}
       <td>{% if row.avg_csd10 is not none %}{% if row.csd10_color %}<span class="matchup-metric" style="color: {{ row.csd10_color }}">{{ '%+.0f' % row.avg_csd10 }}</span>{% else %}{{ '%+.0f' % row.avg_csd10 }}{% endif %}{% else %}—{% endif %}</td>
+      {% endif %}
       <td>{% if row.avg_deaths_pre14 is not none %}{% if row.deaths_pre14_color %}<span class="matchup-metric" style="color: {{ row.deaths_pre14_color }}">{{ '%.1f' % row.avg_deaths_pre14 }}</span>{% else %}{{ '%.1f' % row.avg_deaths_pre14 }}{% endif %}{% else %}—{% endif %}</td>
       <td class="matchup-plan">{% if row.focus %}<span class="matchup-focus matchup-focus--{{ row.focus_key | default('standard') }}">{{ row.focus }}</span>{% endif %}<span class="matchup-tip">{{ row.recommendation }}</span></td>
     </tr>
@@ -747,10 +751,12 @@
       <div class="figure" id="fig-gold_diff_timeline">{{ figures.gold_diff_timeline | safe }}</div>
       <p class="figure-caption">Average gold lead over time in wins vs losses — check where your leads convert or collapse.</p>
     </div>
+    {% if show_cs_stats %}
     <div class="figure-block">
       <div class="figure" id="fig-cs10_violin">{{ figures.cs10_violin | safe }}</div>
       <p class="figure-caption">CS @10 spread across games — tighter clusters mean more consistent farming.</p>
     </div>
+    {% endif %}
   </details>
 </section>
 
@@ -1327,11 +1333,13 @@
       ? '<span class="matchup-focus matchup-focus--' + focusKey + '">' + escapeHtml(row.focus) + '</span>'
       : '';
     var tip = '<span class="matchup-tip">' + escapeHtml(row.recommendation || '') + '</span>';
+    var csCell = SHOW_CS_STATS
+      ? '<td>' + signedMetric(row.avg_csd10, row.csd10_color, 0) + '</td>'
+      : '';
     return '<tr><td>' + iconCell(row.opponent, row.opponent_icon) + '</td><td>' + row.games +
       '</td><td>' + wrHtml +
       '</td><td><span class="matchup-verdict matchup-verdict--' + verdictKey + '">' + verdict + '</span></td><td>' +
-      signedMetric(row.avg_gd10, row.gd10_color, 0) + '</td><td>' +
-      signedMetric(row.avg_csd10, row.csd10_color, 0) + '</td><td>' +
+      signedMetric(row.avg_gd10, row.gd10_color, 0) + '</td>' + csCell + '<td>' +
       deathsHtml + '</td><td class="matchup-plan">' + focus + tip + '</td></tr>';
   }
 
@@ -1355,11 +1363,6 @@
       return '<a class="hero-action" href="' + anchor + '">' +
         '<span class="hero-action-index">' + (index + 1) + '</span><span>' + escapeHtml(label) + '</span></a>';
     }).join('');
-  }
-
-  function renderVerdictHeadline(bundle) {
-    var node = document.getElementById('verdict-headline');
-    if (node) node.textContent = bundle.verdict_headline || '';
   }
 
   function renderSectionVerdicts(bundle) {
@@ -2246,7 +2249,7 @@
       '<div class="game-review-toggle-group" role="group" aria-label="Resource">' +
         metricBtn('gold', 'Gold') +
         metricBtn('xp', 'XP') +
-        metricBtn('cs', 'CS') +
+        (SHOW_CS_STATS ? metricBtn('cs', 'CS') : '') +
       '</div>' +
       '</div><div class="game-review-timeline-chart" id="game-review-timeline-chart"></div>';
   }
@@ -2332,6 +2335,9 @@
     if (!window.Plotly) {
       host.innerHTML = '<p class="sub">Chart library still loading…</p>';
       return;
+    }
+    if (!SHOW_CS_STATS && gameReviewTimelineState.metric === 'cs') {
+      gameReviewTimelineState.metric = 'gold';
     }
     var metricLabels = { gold: 'Gold', xp: 'XP', cs: 'CS' };
     var metricLabel = metricLabels[gameReviewTimelineState.metric] || 'Gold';
@@ -2680,7 +2686,6 @@
           ' games · patches ' + bundle.patch_range;
       }
       renderFlatCards(document.getElementById('overview-cards'), bundle.overview_cards);
-      renderVerdictHeadline(bundle);
       renderSectionVerdicts(bundle);
       renderWindowScopeChips(queueKey, windowKey);
       renderHeroActions(bundle);

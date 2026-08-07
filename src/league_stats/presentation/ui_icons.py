@@ -111,7 +111,6 @@ METRIC_ICONS: dict[str, str] = {
     "Gold at death": "coin",
     "Outnumbered deaths": "skull",
     "Avg death minute": "clock",
-    "Top killer": "combat",
     # Teamfights
     "Fights detected": "teamfight",
     "Participation": "kp",
@@ -223,7 +222,6 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "Gold at death": "Average gold in your inventory at the moment of death.",
     "Outnumbered deaths": "Share of deaths where nearby enemies outnumbered nearby allies.",
     "Avg death minute": "Mean game minute when you died.",
-    "Top killer": "Champion that secured the most kills on you in this window.",
     # Teamfights
     "Fights detected": (
         "Clusters of at least three kills within 25 seconds and a bit more than one screen "

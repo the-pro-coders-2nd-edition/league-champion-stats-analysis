@@ -142,6 +142,9 @@ def cards_from_specs(
     pairs: list[tuple[str, str]] = []
     for spec in specs:
         raw = resolve_metric_value(spec, summaries)
+        # Omit heal/shield cards when utility_summary dropped them as noise.
+        if raw is None and spec.key in {"avg_hpm", "avg_spm"}:
+            continue
         pairs.append((spec.label, _format_metric_value(spec, raw)))
     entries = card_entries(pairs, color_values=section != "deaths")
     return annotate_card_tiers(

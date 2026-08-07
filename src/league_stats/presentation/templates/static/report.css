@@ -1751,18 +1751,6 @@ footer { color: var(--muted); font-size: 13px; padding: 24px 0; border-top: 1px 
   .game-review-timeline-toolbar { flex-direction: column; align-items: stretch; }
 }
 
-/* --- Verdict-first summary --- */
-.report-verdict-headline {
-  grid-column: 1 / -1;
-  margin: 0 0 4px;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -.01em;
-  line-height: 1.35;
-  color: var(--text);
-}
-.report-verdict-headline:empty { display: none; }
-
 /* --- Deep Dive section pulse (score callout + biggest-fix link) --- */
 .section-pulse {
   display: grid;

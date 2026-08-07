@@ -90,6 +90,7 @@ def generate_recommendations(
         stats,
         build_label=config.build_label,
         role=config.role,
+        peer_comparison=peer_comparison,
     )
     recommendations = coach.generate()
     if peer_comparison is not None:

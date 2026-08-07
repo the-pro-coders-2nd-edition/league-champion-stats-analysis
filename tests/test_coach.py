@@ -146,3 +146,72 @@ def test_empty_data_yields_no_recommendations(tmp_path: Path) -> None:
     stats = StatisticsEngine(empty, tmp_path)
     coach = CoachEngine(empty, pd.DataFrame(), pd.DataFrame(), stats)
     assert coach.generate() == []
+
+
+def _support_low_cc_matches(n: int = 20) -> pd.DataFrame:
+    """Support games with CC well below the Gold role norm (~1.9)."""
+    return pd.DataFrame(
+        {
+            "match_id": [f"M{i}" for i in range(n)],
+            "win": [i % 2 for i in range(n)],
+            "ccpm": [0.9] * n,
+            "damage_share": [0.08] * n,
+            "vspm": [1.9] * n,
+            "kill_participation": [0.65] * n,
+            "deaths_pre20": [1] * n,
+            "control_wards": [2] * n,
+        }
+    )
+
+
+def test_low_cc_fallback_uses_role_benchmark_not_peers(tmp_path: Path) -> None:
+    """Without peers, the CC tip cites the Gold role average — not 'peers'."""
+    matches = _support_low_cc_matches()
+    stats = StatisticsEngine(matches, tmp_path, role="UTILITY")
+    coach = CoachEngine(
+        matches, pd.DataFrame(), pd.DataFrame(), stats, role="UTILITY", build_label="Thresh support"
+    )
+    rec = next(r for r in coach.generate() if "Crowd control" in r.title)
+    assert "role norms" in rec.title
+    assert "Gold support average" in rec.detail
+    assert "for peers" not in rec.detail
+    assert "1.90" in rec.detail
+
+
+def test_low_cc_defers_to_peer_comparison(tmp_path: Path) -> None:
+    """Once peer CC exists, coach skips the static-norm tip (peer tip owns it)."""
+    from league_stats.core.models import MetricComparison, PeerComparisonResult
+
+    matches = _support_low_cc_matches()
+    stats = StatisticsEngine(matches, tmp_path, role="UTILITY")
+    peer = PeerComparisonResult(
+        rank_label="Gold II",
+        tier="GOLD",
+        build_label="Thresh support",
+        source="test",
+        peer_games=40,
+        peer_players=12,
+        comparisons=[
+            MetricComparison(
+                metric="ccpm",
+                label="CC/min",
+                yours=0.9,
+                peer_avg=2.3,
+                delta=-1.4,
+                delta_pct=-60.9,
+                direction="higher",
+                verdict="below",
+            )
+        ],
+    )
+    coach = CoachEngine(
+        matches,
+        pd.DataFrame(),
+        pd.DataFrame(),
+        stats,
+        role="UTILITY",
+        build_label="Thresh support",
+        peer_comparison=peer,
+    )
+    titles = [r.title for r in coach.generate()]
+    assert not any("Crowd control trails role norms" in title for title in titles)

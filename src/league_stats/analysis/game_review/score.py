@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from league_stats.analysis.improvement import (
+    is_meaningful_healing,
+    is_meaningful_shielding,
+)
 from league_stats.analysis.statistics import feature_label
 from league_stats.core.models import (
     GameScoreBreakdown,
@@ -292,6 +296,13 @@ def _score_ingredient(
         return None
 
     baseline = baseline_means.get(metric.column)
+    # Skip incidental ally heal/shield on catch supports (Thresh, Pyke, …).
+    ref = float(baseline) if baseline is not None else game_num
+    if metric.column == "hpm" and not is_meaningful_healing(ref):
+        return None
+    if metric.column == "spm" and not is_meaningful_shielding(ref):
+        return None
+
     direction = _metric_direction(metric.column, declared=metric.direction)
     score = _component_score(
         metric.column,

@@ -323,7 +323,6 @@ def death_summary(deaths_df: pd.DataFrame) -> dict[str, Any]:
         ),
         "most_common_zone": str(deaths_df["zone"].mode().iat[0]),
         "deaths_by_zone": deaths_df["zone"].value_counts().to_dict(),
-        "most_common_killer": str(deaths_df["killer"].mode().iat[0]),
     }
 
 

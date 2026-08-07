@@ -142,6 +142,22 @@ def test_matchup_recommendation_returns_string() -> None:
     assert text
 
 
+def test_support_matchup_ignores_cs_farm_pattern() -> None:
+    """Supports must not get Farm/CS tips from CS@10 differentials."""
+    advice = matchup_advice(
+        _row(
+            avg_csd10=-14.0,
+            avg_gd10=-50.0,
+            avg_deaths_pre14=0.4,
+            winrate=0.5,
+            games=5,
+        ),
+        role="UTILITY",
+    )
+    assert advice["focus"] != "Farm"
+    assert "CS" not in advice["recommendation"]
+
+
 def test_matchup_row_display_adds_colors_and_verdict() -> None:
     display = matchup_row_display(_row(winrate=0.7, games=5, wins=4, avg_gd10=200))
     assert display["verdict_label"]

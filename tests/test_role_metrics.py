@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from league_stats.core.role_metrics import compare_metrics_for_profile, role_profile
-from league_stats.pipeline.view_models import overview_card_entries
+from league_stats.core.role_metrics import (
+    compare_metrics_for_profile,
+    resolve_metric_value,
+    role_profile,
+)
+from league_stats.pipeline.view_models import cards_from_specs, overview_card_entries
 
 
 def test_utility_profile_excludes_laning_peer_metrics() -> None:
@@ -53,3 +57,27 @@ def test_compare_metrics_for_profile_swaps_cc_on_support() -> None:
     metrics = compare_metrics_for_profile(profile)
     assert ("ccpm", "CC/min", "higher") in metrics
     assert ("dpm", "DPM", "higher") not in metrics
+
+
+def test_utility_early_metrics_resolve_from_utility_summary() -> None:
+    """Support early cards must read utility_summary, not a missing 'support' bucket."""
+    profile = role_profile("UTILITY")
+    summaries = {
+        "utility": {
+            "avg_roam_conversions": 1.5,
+            "avg_kp15": 0.55,
+            "avg_vspm10": 0.8,
+        },
+        "laning": {"avg_roams_pre15": 2.0, "avg_deaths_pre14": 1.0, "avg_lane_priority": 0.6},
+        "positioning": {"dist_bottom": 1200.0, "avg_grouped_share": 0.4},
+    }
+    by_label = {spec.label: resolve_metric_value(spec, summaries) for spec in profile.early_game}
+    assert by_label["Roam conversions"] == 1.5
+    assert by_label["Kill participation @15"] == 0.55
+    assert by_label["Vision/min @10"] == 0.8
+
+    cards = cards_from_specs(profile.early_game, summaries, section="early", role="UTILITY")
+    values = {card["label"]: card["value"] for card in cards}
+    assert values["Roam conversions"] == "1.50"
+    assert values["Kill participation @15"] == "55%"
+    assert values["Vision/min @10"] == "0.80"

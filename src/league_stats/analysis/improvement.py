@@ -14,10 +14,52 @@ from league_stats.core.role_metrics import ScoreMetricSpec, ScoreSpec
 AVG_GAME_MIN: float = 28.0
 
 # Ignore CC/heal/shield in the utility composite when output is below this
-# fraction of the role benchmark (avoids noise from incidental W passives, etc.).
+# fraction of the role benchmark. Catch/engage supports (Thresh, Pyke, …) often
+# post a little ally heal/shield that is not their job — omit that noise.
 UTILITY_CC_NOISE_RATIO: float = 0.25
-UTILITY_HEAL_NOISE_RATIO: float = 0.20
-UTILITY_SHIELD_NOISE_RATIO: float = 0.20
+UTILITY_HEAL_NOISE_RATIO: float = 0.40
+UTILITY_SHIELD_NOISE_RATIO: float = 0.40
+
+_DEFAULT_HEALING_BENCH: float = 7500.0
+_DEFAULT_SHIELDING_BENCH: float = 3500.0
+
+
+def healing_benchmark(gold: dict[str, Any] | None = None, *, per_minute: bool = False) -> float:
+    """Gold-tier ally-healing benchmark (match total or per minute)."""
+    total = float((gold or {}).get("healing", _DEFAULT_HEALING_BENCH))
+    return total / AVG_GAME_MIN if per_minute else total
+
+
+def shielding_benchmark(gold: dict[str, Any] | None = None, *, per_minute: bool = False) -> float:
+    """Gold-tier ally-shielding benchmark (match total or per minute)."""
+    total = float((gold or {}).get("shielding", _DEFAULT_SHIELDING_BENCH))
+    return total / AVG_GAME_MIN if per_minute else total
+
+
+def is_meaningful_healing(
+    value: float | None,
+    *,
+    gold: dict[str, Any] | None = None,
+    per_minute: bool = True,
+) -> bool:
+    """True when ally healing is high enough to matter for an enchanter identity."""
+    if value is None:
+        return False
+    bench = healing_benchmark(gold, per_minute=per_minute)
+    return bench > 0 and value >= bench * UTILITY_HEAL_NOISE_RATIO
+
+
+def is_meaningful_shielding(
+    value: float | None,
+    *,
+    gold: dict[str, Any] | None = None,
+    per_minute: bool = True,
+) -> bool:
+    """True when ally shielding is high enough to matter for a shield-support identity."""
+    if value is None:
+        return False
+    bench = shielding_benchmark(gold, per_minute=per_minute)
+    return bench > 0 and value >= bench * UTILITY_SHIELD_NOISE_RATIO
 
 # Role-typical gold share when peer benchmarks omit the key.
 _GOLD_SHARE_BENCH: dict[str, float] = {
@@ -123,23 +165,15 @@ def support_utility_impact(
             weighted.append((taken_score, 0.15))
 
     hpm = column_mean(matches_df, "hpm")
-    hpm_bench = float(gold.get("healing", 7500)) / AVG_GAME_MIN
-    if (
-        hpm is not None
-        and hpm_bench > 0
-        and hpm >= hpm_bench * UTILITY_HEAL_NOISE_RATIO
-    ):
+    hpm_bench = healing_benchmark(gold, per_minute=True)
+    if is_meaningful_healing(hpm, gold=gold):
         hpm_score = relative_band_score(hpm, hpm_bench, low=0.40, high=1.45)
         if hpm_score is not None:
             weighted.append((hpm_score, 0.275))
 
     spm = column_mean(matches_df, "spm")
-    spm_bench = float(gold.get("shielding", 3500)) / AVG_GAME_MIN
-    if (
-        spm is not None
-        and spm_bench > 0
-        and spm >= spm_bench * UTILITY_SHIELD_NOISE_RATIO
-    ):
+    spm_bench = shielding_benchmark(gold, per_minute=True)
+    if is_meaningful_shielding(spm, gold=gold):
         spm_score = relative_band_score(spm, spm_bench, low=0.40, high=1.45)
         if spm_score is not None:
             weighted.append((spm_score, 0.275))
@@ -153,9 +187,9 @@ def support_utility_impact(
     segments: list[str] = []
     if cc is not None and cc >= cc_bench * UTILITY_CC_NOISE_RATIO:
         segments.append(f"{cc:.2f} CC/min")
-    if hpm is not None and hpm >= hpm_bench * UTILITY_HEAL_NOISE_RATIO:
+    if is_meaningful_healing(hpm, gold=gold):
         segments.append(f"{hpm:.0f} heal/min")
-    if spm is not None and spm >= spm_bench * UTILITY_SHIELD_NOISE_RATIO:
+    if is_meaningful_shielding(spm, gold=gold):
         segments.append(f"{spm:.0f} shield/min")
     if dmg is not None:
         segments.append(f"{dmg * 100:.0f}% dmg")
@@ -312,18 +346,20 @@ def score_metric_value(
             return None
         return scored, f"{value * 100:.0f}% taken"
     if column == "hpm":
-        bench = float(gold.get("healing", 7500)) / AVG_GAME_MIN
-        if bench <= 0 or value < bench * UTILITY_HEAL_NOISE_RATIO:
+        if not is_meaningful_healing(value, gold=gold):
             return None
-        scored = relative_band_score(value, bench, low=0.40, high=1.45)
+        scored = relative_band_score(
+            value, healing_benchmark(gold, per_minute=True), low=0.40, high=1.45
+        )
         if scored is None:
             return None
         return scored, _format_metric_value(column, value)
     if column == "spm":
-        bench = float(gold.get("shielding", 3500)) / AVG_GAME_MIN
-        if bench <= 0 or value < bench * UTILITY_SHIELD_NOISE_RATIO:
+        if not is_meaningful_shielding(value, gold=gold):
             return None
-        scored = relative_band_score(value, bench, low=0.40, high=1.45)
+        scored = relative_band_score(
+            value, shielding_benchmark(gold, per_minute=True), low=0.40, high=1.45
+        )
         if scored is None:
             return None
         return scored, _format_metric_value(column, value)

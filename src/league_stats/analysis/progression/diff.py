@@ -6,6 +6,7 @@ from typing import Literal
 
 import pandas as pd
 
+from league_stats.analysis.improvement import is_meaningful_healing, is_meaningful_shielding
 from league_stats.analysis.progression.coach import generate_form_recommendations
 from league_stats.analysis.progression.form_score import compute_form_score, trend_from_score
 from league_stats.analysis.progression.metrics import (
@@ -213,6 +214,12 @@ def build_progression_comparison(
             summaries=baseline_summaries,
         )
         if recent_value is None or baseline_value is None:
+            continue
+        # Omit incidental heal/shield deltas on catch/engage supports.
+        ref = max(recent_value, baseline_value)
+        if spec.metric == "hpm" and not is_meaningful_healing(ref):
+            continue
+        if spec.metric == "spm" and not is_meaningful_shielding(ref):
             continue
         deltas.append(
             _build_metric_delta(

@@ -155,7 +155,24 @@ class StatisticsEngine:
         self._log = get_logger("statistics")
 
     def _feature_columns(self) -> tuple[str, ...]:
-        return self._role_profile.ml_features
+        features = list(self._role_profile.ml_features)
+        if self._role_profile.role == "UTILITY":
+            from league_stats.analysis.improvement import (
+                is_meaningful_healing,
+                is_meaningful_shielding,
+            )
+
+            for column, keep in (
+                ("healing", is_meaningful_healing),
+                ("shielding", is_meaningful_shielding),
+            ):
+                if column not in features or column not in self._df.columns:
+                    continue
+                series = pd.to_numeric(self._df[column], errors="coerce").dropna()
+                avg = float(series.mean()) if not series.empty else None
+                if not keep(avg, per_minute=False):
+                    features = [name for name in features if name != column]
+        return tuple(features)
 
     def _early_features(self) -> tuple[str, ...]:
         return self._role_profile.early_ml_features

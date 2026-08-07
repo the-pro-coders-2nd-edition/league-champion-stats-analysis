@@ -18,12 +18,18 @@ from league_stats.analysis.economy import (
     RECALL_GOLD_HOARDING_WARN,
     recall_gold_severity,
 )
+from league_stats.analysis.improvement import is_meaningful_healing, is_meaningful_shielding
 from league_stats.analysis.positioning import ROLE_COLUMNS
 from league_stats.analysis.statistics import StatisticsEngine
 from league_stats.core.champions import role_display
 from league_stats.core.role_metrics import role_profile
-from league_stats.core.models import Recommendation, RecommendationTone
+from league_stats.core.models import PeerComparisonResult, Recommendation, RecommendationTone
 from league_stats.utils import get_logger
+
+# Coach norm-gap rules defer to peer tips when these metrics are in the peer table.
+_PEER_OWNED_NORM_METRICS: frozenset[str] = frozenset(
+    {"ccpm", "vspm", "kill_participation"}
+)
 
 MIN_GAMES: int = 10
 SIGNIFICANT_P: float = 0.05
@@ -240,6 +246,7 @@ class CoachEngine:
         *,
         build_label: str = "Viktor mid",
         role: str = "MIDDLE",
+        peer_comparison: PeerComparisonResult | None = None,
     ) -> None:
         self._matches = matches_df
         self._deaths = deaths_df
@@ -249,7 +256,15 @@ class CoachEngine:
         self._role = role.upper()
         self._profile = role_profile(self._role)
         self._champion = build_label.split(" ", 1)[0]
+        self._peer_metrics = {
+            row.metric: float(row.peer_avg)
+            for row in (peer_comparison.comparisons if peer_comparison is not None else [])
+        }
         self._log = get_logger("coach")
+
+    def _peer_owns_norm(self, metric: str) -> bool:
+        """True when peer comparison already covers this norm-gap tip."""
+        return metric in _PEER_OWNED_NORM_METRICS and metric in self._peer_metrics
 
     def generate(self) -> list[Recommendation]:
         """Run every rule and return recommendations sorted by priority."""
@@ -318,6 +333,16 @@ class CoachEngine:
         for pick in positive[:2]:
             if pick.feature not in WIN_FEATURE_HINTS:
                 continue
+            if pick.feature in {"healing", "shielding"}:
+                series = pd.to_numeric(self._matches.get(pick.feature), errors="coerce").dropna()
+                avg = float(series.mean()) if not series.empty else None
+                meaningful = (
+                    is_meaningful_healing(avg, per_minute=False)
+                    if pick.feature == "healing"
+                    else is_meaningful_shielding(avg, per_minute=False)
+                )
+                if not meaningful:
+                    continue
             threshold = _split_threshold(self._matches, pick.feature)
             split = self._stats.winrate_split_test(pick.feature, threshold)
             if split is None or split["n_high"] < 3 or split["n_low"] < 3:
@@ -606,14 +631,14 @@ class CoachEngine:
             detail=(
                 f"You win only {split['winrate_high']:.0%} of games where you die within the "
                 f"60–10 seconds window before a dragon, elder, or baron is taken, versus "
-                f"{split['winrate_low']:.0%} otherwise. Reset 90 seconds before spawns, then "
+                f"{split['winrate_low']:.0%} otherwise. Reset 90 seconds before objectives, then "
                 "move with your team."
             ),
             evidence=(
                 f"WR {split['winrate_high']:.0%} ({split['n_high']} games) vs "
                 f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
             ),
-            action="Reset 90s before spawn, then move with your team",
+            action="Reset 90s before objectives, then move with your team",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -1147,6 +1172,9 @@ class CoachEngine:
     def _rule_low_kill_participation(self) -> Recommendation | None:
         if "kill_participation" not in self._matches.columns:
             return None
+        # Real peer KP tips live in peer_recommendations once peers land.
+        if self._peer_owns_norm("kill_participation"):
+            return None
         from league_stats.analysis.peer.benchmarks import try_role_benchmark
 
         benchmark = try_role_benchmark("GOLD", self._role) or {}
@@ -1154,11 +1182,12 @@ class CoachEngine:
         avg = float(pd.to_numeric(self._matches["kill_participation"], errors="coerce").dropna().mean())
         if avg >= target * 0.92:
             return None
+        role_label = role_display(self._role).lower()
         return Recommendation(
             category="Map impact",
             title="Kill participation trails role norms",
             detail=(
-                f"You average {avg:.0%} KP vs a ~{target:.0%} benchmark for {self._role.lower()}. "
+                f"You average {avg:.0%} KP vs a ~{target:.0%} Gold {role_label} average. "
                 "Path toward active lanes before objectives and arrive early for skirmishes."
             ),
             evidence=f"Mean KP = {avg:.1%} over {len(self._matches)} games",
@@ -1169,6 +1198,8 @@ class CoachEngine:
 
     def _rule_low_vision(self) -> Recommendation | None:
         if self._role != "UTILITY" or "vspm" not in self._matches.columns:
+            return None
+        if self._peer_owns_norm("vspm"):
             return None
         from league_stats.analysis.peer.benchmarks import try_role_benchmark
 
@@ -1181,8 +1212,8 @@ class CoachEngine:
             category="Vision",
             title="Vision score trails support norms",
             detail=(
-                f"{avg:.2f} vision/min vs ~{target:.2f} for peers. Buy control wards every recall "
-                "and sweep high-traffic river brushes before objectives."
+                f"{avg:.2f} vision/min vs ~{target:.2f} Gold support average. Buy control wards "
+                "every recall and sweep high-traffic river brushes before objectives."
             ),
             evidence=f"Mean vision/min = {avg:.2f} over {len(self._matches)} games",
             action="Buy a control ward every recall",
@@ -1192,6 +1223,9 @@ class CoachEngine:
 
     def _rule_low_cc(self) -> Recommendation | None:
         if "ccpm" not in self._matches.columns:
+            return None
+        # Prefer the peer tip ("trails rank peers") over the static Gold role fallback.
+        if self._peer_owns_norm("ccpm"):
             return None
         from league_stats.analysis.combat import prefers_cc_over_dpm
         from league_stats.analysis.peer.benchmarks import try_role_benchmark
@@ -1205,12 +1239,13 @@ class CoachEngine:
         avg = float(pd.to_numeric(self._matches["ccpm"], errors="coerce").dropna().mean())
         if avg >= target * 0.85:
             return None
+        role_label = role_display(self._role).lower()
         return Recommendation(
             category="Teamfights",
             title="Crowd control trails role norms",
             detail=(
-                f"{avg:.2f} CC/min vs ~{target:.2f} for peers. Look for flanks with hard CC "
-                "before objectives and chain CC on priority targets in fights."
+                f"{avg:.2f} CC/min vs ~{target:.2f} Gold {role_label} average. Look for flanks "
+                "with hard CC before objectives and chain CC on priority targets in fights."
             ),
             evidence=f"Mean CC/min = {avg:.2f} over {len(self._matches)} games",
             action="Land hard CC on priority targets in fights",

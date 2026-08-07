@@ -10,6 +10,7 @@ from typing import Any, Final, Literal
 
 import pandas as pd
 
+from league_stats.analysis.improvement import is_meaningful_healing, is_meaningful_shielding
 from league_stats.core.role_metrics import compare_metrics_for_profile, role_profile
 from league_stats.analysis.peer.baseline import resolve_peer_baseline
 from league_stats.analysis.peer.cache import collect_user_history_peers
@@ -155,6 +156,11 @@ def build_comparisons(
         if key not in user_avgs or key not in peer_avgs:
             continue
         yours = float(user_avgs[key])
+        # Drop ally heal/shield peer rows when the player's own output is noise.
+        if key == "healing" and not is_meaningful_healing(yours, per_minute=False):
+            continue
+        if key == "shielding" and not is_meaningful_shielding(yours, per_minute=False):
+            continue
         peer = float(peer_avgs[key])
         delta = yours - peer
         delta_pct = round(delta / peer * 100, 1) if peer else None

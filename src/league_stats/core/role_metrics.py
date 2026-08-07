@@ -207,7 +207,6 @@ def _laner_deaths() -> tuple[MetricSpec, ...]:
         MetricSpec("Gold at death", "deaths", "avg_gold_at_death", suffix="g"),
         MetricSpec("Outnumbered deaths", "deaths", "outnumbered_death_rate", pct=True),
         MetricSpec("Avg death minute", "deaths", "avg_death_minute"),
-        MetricSpec("Top killer", "deaths", "most_common_killer"),
     )
 
 
@@ -452,12 +451,12 @@ def _utility_overview() -> tuple[MetricSpec, ...]:
 def _utility_early() -> tuple[MetricSpec, ...]:
     return (
         MetricSpec("Roams pre-15", "laning", "avg_roams_pre15"),
-        MetricSpec("Roam conversions", "support", "avg_roam_conversions"),
+        MetricSpec("Roam conversions", "utility", "avg_roam_conversions"),
         MetricSpec("Dist to ADC", "positioning", "dist_bottom"),
         MetricSpec("Grouped share", "positioning", "avg_grouped_share", pct=True),
         MetricSpec("Deaths pre-14", "laning", "avg_deaths_pre14"),
-        MetricSpec("Kill participation @15", "support", "avg_kp15", pct=True),
-        MetricSpec("Vision/min @10", "support", "avg_vspm10"),
+        MetricSpec("Kill participation @15", "utility", "avg_kp15", pct=True),
+        MetricSpec("Vision/min @10", "utility", "avg_vspm10"),
         MetricSpec("Bot lane presence", "laning", "avg_lane_priority", pct=True),
     )
 

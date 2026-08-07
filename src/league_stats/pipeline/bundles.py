@@ -163,36 +163,6 @@ def _build_top_tips(bundle: dict[str, Any], *, limit: int = 3) -> list[dict[str,
     return tips
 
 
-def _soften_title(title: str) -> str:
-    """Lowercase the first letter of a tip title unless it starts an acronym."""
-    if len(title) >= 2 and title[0].isupper() and title[1].islower():
-        return title[0].lower() + title[1:]
-    return title
-
-
-def _build_verdict_headline(bundle: dict[str, Any]) -> str:
-    """One-sentence read of the report, built from the top coaching tips."""
-    positive = sorted(
-        bundle.get("positive_recommendations", []),
-        key=lambda rec: rec.get("priority", 0),
-        reverse=True,
-    )
-    negative = sorted(
-        bundle.get("negative_recommendations", []),
-        key=lambda rec: rec.get("priority", 0),
-        reverse=True,
-    )
-    top_pos = str(positive[0].get("title", "")) if positive else ""
-    top_neg = str(negative[0].get("title", "")) if negative else ""
-    if top_pos and top_neg:
-        return f"{top_pos} — but {_soften_title(top_neg)}."
-    if top_neg:
-        return f"Priority to fix: {_soften_title(top_neg)}."
-    if top_pos:
-        return f"Keep leaning on your strength: {_soften_title(top_pos)}."
-    return "Play a few more games to unlock a personalised read of your games."
-
-
 _CHIP_STRONG_SCORE = 65.0
 _CHIP_FOCUS_SCORE = 45.0
 
@@ -396,7 +366,6 @@ def bundle_to_template_context(
         "score_components": bundle["score_components"],
         "figures": bundle["figures"],
         "overview_cards": bundle.get("overview_cards", []),
-        "verdict_headline": bundle.get("verdict_headline", ""),
         "section_verdicts": bundle.get("section_verdicts", {}),
         "lane_cards": bundle["lane_cards"],
         "early_section_title": bundle.get("early_section_title", "Laning"),
@@ -445,7 +414,6 @@ def build_window_bundle(
         "queue_label": queue_label,
         "overview": {},
         "overview_cards": [],
-        "verdict_headline": "",
         "section_verdicts": {},
         "score": 0,
         "score_components": [],
@@ -530,7 +498,11 @@ def build_window_bundle(
         "gold_diff_timeline": graphs.gold_diff_timeline(series),
         "gd10_histogram": graphs.gd10_histogram(frames.matches_df),
         "deaths_box": graphs.deaths_box(frames.matches_df),
-        "cs10_violin": graphs.cs10_violin(frames.matches_df),
+        "cs10_violin": (
+            ""
+            if config.role.upper() == "UTILITY"
+            else graphs.cs10_violin(frames.matches_df)
+        ),
         "dpm_scatter": graphs.dpm_scatter(frames.matches_df),
         "vision_trend": graphs.vision_trend(frames.matches_df),
         "death_heatmap": graphs.death_heatmap(frames.deaths_df),
@@ -655,7 +627,6 @@ def build_window_bundle(
     _finalize_coaching_anchors(bundle)
     bundle["top_tips"] = _build_top_tips(bundle)
     bundle["figure_hints"] = _build_figure_hints(win_corrs, model)
-    bundle["verdict_headline"] = _build_verdict_headline(bundle)
     _annotate_score_components(bundle["score_components"])
     bundle["section_verdicts"] = _build_section_verdicts(bundle)
 
