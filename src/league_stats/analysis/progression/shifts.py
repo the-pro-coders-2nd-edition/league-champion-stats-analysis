@@ -35,8 +35,7 @@ def detect_death_shifts(recent_deaths: dict[str, Any], baseline_deaths: dict[str
         direction_word = "rose" if delta > 0 else "fell"
         shifts.append(
             f"{_rate_label(key).title()} deaths {direction_word} from "
-            f"{float(baseline_val) * 100:.0f}% to {float(recent_val) * 100:.0f}% "
-            f"({delta * 100:+.0f} pp)"
+            f"{float(baseline_val) * 100:.0f}% to {float(recent_val) * 100:.0f}%"
         )
     return shifts
 

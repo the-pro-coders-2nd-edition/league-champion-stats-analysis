@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from league_stats.presentation.metric_colors import (
-    BLUE_HEX,
+    JADE_HEX,
     LOSS_HEX,
+    MINT_HEX,
     NEUTRAL_HEX,
-    TEAL_HEX,
     WIN_HEX,
     color_winrate,
     interpolate_metric_color,
@@ -19,22 +19,22 @@ from league_stats.presentation.metric_colors import (
 
 def test_interpolate_metric_color_endpoints() -> None:
     assert interpolate_metric_color(-1.0) == LOSS_HEX
-    assert interpolate_metric_color(1.0) == BLUE_HEX
+    assert interpolate_metric_color(1.0) == JADE_HEX
 
 
 def test_interpolate_metric_color_midpoint_is_neutral() -> None:
     assert interpolate_metric_color(0.0) == NEUTRAL_HEX
 
 
-def test_interpolate_metric_color_goes_green_then_teal_then_blue() -> None:
-    """Slightly positive scores should already read green (like score bars)."""
-    from league_stats.presentation.metric_colors import _POS_GREEN, _POS_TEAL
+def test_interpolate_metric_color_goes_mint_then_teal_then_jade() -> None:
+    """Slightly positive scores should already read mint (like score bars)."""
+    from league_stats.presentation.metric_colors import _POS_MINT, _POS_TEAL
 
-    assert interpolate_metric_color(_POS_GREEN) == WIN_HEX
-    assert interpolate_metric_color(_POS_TEAL) == TEAL_HEX
-    # Mild positive is already much closer to green than gold.
-    assert _channel_closer_to(interpolate_metric_color(0.2), WIN_HEX, NEUTRAL_HEX)
-    assert _channel_closer_to(interpolate_metric_color(0.85), BLUE_HEX, WIN_HEX)
+    assert interpolate_metric_color(_POS_MINT) == MINT_HEX
+    assert interpolate_metric_color(_POS_TEAL) == WIN_HEX
+    # Mild positive is already much closer to mint than gold.
+    assert _channel_closer_to(interpolate_metric_color(0.2), MINT_HEX, NEUTRAL_HEX)
+    assert _channel_closer_to(interpolate_metric_color(0.85), JADE_HEX, WIN_HEX)
 
 
 def _hex_channels(hex_color: str) -> tuple[int, int, int]:
@@ -42,10 +42,10 @@ def _hex_channels(hex_color: str) -> tuple[int, int, int]:
     return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
 
 
-def _channel_closer_to(color: str, target: str, other: str) -> bool:
+def _channel_closer_to(color: str, target: str, base: str) -> bool:
     cr, cg, cb = _hex_channels(color)
     tr, tg, tb = _hex_channels(target)
-    or_, og, ob = _hex_channels(other)
+    or_, og, ob = _hex_channels(base)
     dist_target = (cr - tr) ** 2 + (cg - tg) ** 2 + (cb - tb) ** 2
     dist_other = (cr - or_) ** 2 + (cg - og) ** 2 + (cb - ob) ** 2
     return dist_target < dist_other

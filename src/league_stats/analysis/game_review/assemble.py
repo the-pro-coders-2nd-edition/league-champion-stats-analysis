@@ -8,10 +8,13 @@ from typing import Any
 import pandas as pd
 
 from league_stats.analysis.game_review.behaviors import evaluate_behaviors
-from league_stats.analysis.game_review.compare import compare_to_baseline
+from league_stats.analysis.game_review.compare import (
+    compare_key_stats_to_baseline,
+    compare_to_baseline,
+)
 from league_stats.analysis.game_review.hints import GAME_REVIEW_KEY_STATS
 from league_stats.analysis.game_review.score import compute_game_score
-from league_stats.analysis.timeline import timeline_dataframe_rows
+from league_stats.analysis.timeline import TIMELINE_SERIES_KEYS, timeline_dataframe_rows
 from league_stats.core.config import RANKED_FLEX_QUEUE_ID, RANKED_SOLO_QUEUE_ID
 from league_stats.core.models import (
     GameBuildInfo,
@@ -92,7 +95,11 @@ def assemble_game_detail(
     )
 
     timeline = [
-        {key: float(row[key]) for key in ("minute", "gold", "xp", "cs", "gold_diff") if key in row}
+        {
+            key: float(row[key])
+            for key in TIMELINE_SERIES_KEYS
+            if key in row and row[key] is not None
+        }
         for row in timeline_dataframe_rows(record.match_id, record.timeline)
     ]
 
@@ -102,6 +109,11 @@ def assemble_game_detail(
             zone=str(row.get("zone") or "unknown"),
             killer=str(row.get("killer")) if row.get("killer") else None,
             flags=_death_flags(row),
+            gold_given=(
+                int(row["gold_given"])
+                if row.get("gold_given") is not None and pd.notna(row.get("gold_given"))
+                else None
+            ),
         )
         for row in deaths_rows
     ]
@@ -123,6 +135,8 @@ def assemble_game_detail(
             manpower_advantage=(
                 int(row["manpower_advantage"]) if pd.notna(row.get("manpower_advantage")) else None
             ),
+            ally_champions=list(row.get("ally_champions") or []),
+            enemy_champions=list(row.get("enemy_champions") or []),
         )
         for row in (
             fights_df[fights_df["participated"].astype(bool)].to_dict("records")
@@ -157,6 +171,9 @@ def assemble_game_detail(
         keystone=record.runes.keystone,
         primary_tree=record.runes.primary_tree,
         secondary_tree=record.runes.secondary_tree,
+        primary_runes=list(record.runes.primary_runes),
+        secondary_runes=list(record.runes.secondary_runes),
+        shards=list(record.runes.shards),
         summoners=list(record.summoners),
         skill_order=record.skill_order,
         items=item_path,
@@ -180,6 +197,7 @@ def assemble_game_detail(
         behaviors_bad=bad,
         vs_baseline=compare_to_baseline(game_row, baseline_means, role=role),
         key_stats=_key_stats(game_row),
+        key_stats_vs_baseline=compare_key_stats_to_baseline(game_row, baseline_means),
         deaths=deaths,
         fights=fights,
         objectives=objectives,

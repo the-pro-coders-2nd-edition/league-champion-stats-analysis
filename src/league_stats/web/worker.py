@@ -142,6 +142,13 @@ def _build_job_services(
     ] or None
     filter_champion = str(job.get("filter_champion") or "").strip() or None
     filter_role = str(job.get("filter_role") or "").strip() or None
+    raw_min_games = job.get("min_games")
+    min_games: int | None = None
+    if raw_min_games is not None:
+        try:
+            min_games = int(raw_min_games)
+        except (TypeError, ValueError):
+            min_games = None
     config = load_config(
         riot_id=job["riot_id"],
         tagline=job["tagline"],
@@ -151,6 +158,7 @@ def _build_job_services(
         players=players,
         filter_champion=filter_champion,
         filter_role=filter_role,
+        min_games=min_games,
         # Always write under the URL the user refreshed — never a parallel folder.
         output_reports_slug=job_slug or None,
     )
@@ -282,14 +290,14 @@ def _run_stage_b(
             )
             store.update_progress(
                 job_id,
-                detail=f"Skipping peer {pool.build_label} — no new games ({index}/{total})",
+                detail=f"Skipping {pool.build_label} — no new games ({index}/{total})",
                 current=index,
                 total=total,
             )
             continue
         store.update_progress(
             job_id,
-            detail=f"Peer analysis: {pool.build_label} ({index}/{total})",
+            detail=f"Comparing {pool.build_label} to players at your rank ({index}/{total})",
             current=index,
             total=total,
         )
@@ -364,20 +372,24 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
         store.set_state(
             job_id,
             job_states.REPORT_READY,
-            detail="Report ready — running peer analysis…",
+            detail="Report ready — comparing you to players at your rank…",
         )
 
         peer_error: str | None = None
         try:
             _ensure_not_cancelled(store, job_id)
-            store.set_state(job_id, job_states.PEER_RUNNING, detail="Peer analysis starting…")
+            store.set_state(
+                job_id,
+                job_states.PEER_RUNNING,
+                detail="Comparing you to players at your rank…",
+            )
             _run_stage_b(
                 services, store, job, batch, ranked, new_match_ids
             )
         except JobCancelled:
             raise
         except Exception as exc:
-            peer_error = f"Peer analysis failed: {exc}"
+            peer_error = f"Rank comparison failed: {exc}"
             store.mark_player_peer_failed(slug)
             log.exception("Job %d: peer stage failed (base report kept)", job_id)
         if peer_error is None:

@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     players_json TEXT NOT NULL DEFAULT '[]',
     filter_champion TEXT,
     filter_role TEXT,
+    min_games INTEGER,
     state TEXT NOT NULL DEFAULT 'queued',
     stage_detail TEXT NOT NULL DEFAULT '',
     stage_current INTEGER,
@@ -165,6 +166,8 @@ class JobStore:
             self._conn.execute("ALTER TABLE jobs ADD COLUMN filter_champion TEXT")
         if "filter_role" not in job_columns:
             self._conn.execute("ALTER TABLE jobs ADD COLUMN filter_role TEXT")
+        if "min_games" not in job_columns:
+            self._conn.execute("ALTER TABLE jobs ADD COLUMN min_games INTEGER")
         self._conn.commit()
 
     # ------------------------------------------------------------------ jobs
@@ -180,11 +183,13 @@ class JobStore:
         players: list[dict[str, Any]] | None = None,
         filter_champion: str | None = None,
         filter_role: str | None = None,
+        min_games: int | None = None,
     ) -> tuple[dict[str, Any], bool]:
         """Queue a job, deduplicating against an existing active job.
 
         Optional ``filter_champion`` / ``filter_role`` scope analysis to one
-        build (used by per-champion report refresh).
+        build (used by per-champion report refresh). ``min_games`` overrides
+        the config threshold for how many ranked games a build needs.
 
         Returns:
             ``(job, created)`` — the active or newly created job row.
@@ -192,6 +197,7 @@ class JobStore:
         tracked = players or [{"riot_id": riot_id, "tagline": tagline}]
         champion = (filter_champion or "").strip() or None
         role = (filter_role or "").strip() or None
+        games_threshold = int(min_games) if min_games is not None else None
         with self._lock:
             existing = self._active_job_for(player_slug)
             if existing is not None:
@@ -201,8 +207,8 @@ class JobStore:
                 """
                 INSERT INTO jobs (kind, player_slug, riot_id, tagline, region,
                                   players_json, filter_champion, filter_role,
-                                  state, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  min_games, state, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     kind,
@@ -213,6 +219,7 @@ class JobStore:
                     encode_players(tracked),
                     champion,
                     role,
+                    games_threshold,
                     QUEUED,
                     now,
                     now,

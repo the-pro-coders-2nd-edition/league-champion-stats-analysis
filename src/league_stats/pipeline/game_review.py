@@ -9,9 +9,8 @@ from league_stats.analysis.game_review.views import game_review_to_template_cont
 from league_stats.core.config import AppConfig
 from league_stats.core.models import (
     GameBuildInfo,
-    GameDeathRow,
     GameDetail,
-    GameObjectiveRow,
+    GameFightRow,
     GameReviewPayload,
     GameReviewQueueBundle,
     KeyMoment,
@@ -20,7 +19,6 @@ from league_stats.core.models import (
 )
 from league_stats.infra.ddragon_assets import DDragonAssets
 from league_stats.pipeline.frames import AnalysisFrames
-from league_stats.presentation.graphs import GraphFactory
 
 
 def _enrich_key_moment(
@@ -74,6 +72,28 @@ def _enrich_game_detail(
         )
         for death in detail.deaths
     ]
+    fights = [
+        GameFightRow(
+            start_minute=fight.start_minute,
+            kills=fight.kills,
+            deaths=fight.deaths,
+            assists=fight.assists,
+            damage=fight.damage,
+            fight_won=fight.fight_won,
+            allies_present=fight.allies_present,
+            enemies_present=fight.enemies_present,
+            manpower_advantage=fight.manpower_advantage,
+            ally_champions=list(fight.ally_champions),
+            enemy_champions=list(fight.enemy_champions),
+            ally_icons=[
+                assets.champion_href(name, from_dir=from_dir) for name in fight.ally_champions
+            ],
+            enemy_icons=[
+                assets.champion_href(name, from_dir=from_dir) for name in fight.enemy_champions
+            ],
+        )
+        for fight in detail.fights
+    ]
     objectives = [
         objective.model_copy(
             update={
@@ -87,12 +107,22 @@ def _enrich_game_detail(
         keystone=build.keystone,
         primary_tree=build.primary_tree,
         secondary_tree=build.secondary_tree,
+        primary_runes=list(build.primary_runes),
+        secondary_runes=list(build.secondary_runes),
+        shards=list(build.shards),
         summoners=list(build.summoners),
         skill_order=build.skill_order,
         items=list(build.items),
-        keystone_icon=assets.keystone_href(build.keystone, from_dir=from_dir),
+        keystone_icon=assets.rune_href(build.keystone, from_dir=from_dir),
         primary_tree_icon=assets.rune_tree_href(build.primary_tree, from_dir=from_dir),
         secondary_tree_icon=assets.rune_tree_href(build.secondary_tree, from_dir=from_dir),
+        primary_rune_icons=[
+            assets.rune_href(name, from_dir=from_dir) for name in build.primary_runes
+        ],
+        secondary_rune_icons=[
+            assets.rune_href(name, from_dir=from_dir) for name in build.secondary_runes
+        ],
+        shard_icons=[assets.rune_href(name, from_dir=from_dir) for name in build.shards],
         summoner_icons=[
             assets.summoner_href(spell_name, from_dir=from_dir) for spell_name in build.summoners
         ],
@@ -109,6 +139,7 @@ def _enrich_game_detail(
             "champion_icon": assets.champion_href(champion, from_dir=from_dir),
             "opponent_icon": assets.champion_href(detail.opponent, from_dir=from_dir),
             "deaths": deaths,
+            "fights": fights,
             "objectives": objectives,
             "build": enriched_build,
             "key_moments": key_moments,
@@ -126,9 +157,13 @@ def build_game_review_views(
     assets: DDragonAssets | None = None,
     from_dir: Path | None = None,
 ) -> GameReviewPayload:
-    """Build game review payload with timeline figures and UI icon hrefs."""
+    """Build game review payload with UI icon hrefs.
+
+    ``graphs_dir`` is accepted for call-site compatibility; the story timeline
+    is rendered client-side from per-minute series data.
+    """
+    _ = graphs_dir
     payload = _build_payload(config, records, frames)
-    graphs = GraphFactory(graphs_dir) if graphs_dir is not None else None
 
     queues: dict[str, GameReviewQueueBundle] = {}
     for queue_key, bundle in payload.queues.items():
@@ -141,11 +176,6 @@ def build_game_review_views(
                     assets=assets,
                     from_dir=from_dir,
                     champion=config.champion,
-                )
-            if graphs is not None and enriched.timeline:
-                death_mins = [death.minute for death in enriched.deaths]
-                enriched = enriched.model_copy(
-                    update={"timeline_figure": graphs.game_gold_timeline(enriched.timeline, death_mins)}
                 )
             games.append(enriched)
         queues[queue_key] = bundle.model_copy(update={"games": games})

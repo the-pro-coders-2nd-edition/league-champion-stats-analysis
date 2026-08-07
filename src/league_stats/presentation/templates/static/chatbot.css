@@ -59,6 +59,14 @@ body.chatbot-resizing .chatbot-panel { transition: none; }
 .chatbot-bubble--loading span:nth-child(2) { animation-delay: .15s; }
 .chatbot-bubble--loading span:nth-child(3) { animation-delay: .3s; }
 @keyframes chatbot-pulse { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
+.chatbot-starters { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+.chatbot-starters-label { color: var(--muted); font-size: 12px; margin: 0 0 2px; }
+.chatbot-starter {
+  text-align: left; background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 10px; color: var(--text); padding: 10px 14px; font: inherit;
+  font-size: 13px; cursor: pointer;
+}
+.chatbot-starter:hover { border-color: var(--accent); color: var(--accent); }
 .chatbot-form { display: flex; gap: 8px; padding: 16px 20px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .chatbot-form input {
   flex: 1; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;

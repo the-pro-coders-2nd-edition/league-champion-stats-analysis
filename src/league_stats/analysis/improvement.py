@@ -187,7 +187,7 @@ def _format_metric_value(column: str, value: float) -> str:
     if column == "deaths_pre14":
         return f"{value:.1f} early deaths"
     if column == "vspm":
-        return f"{value:.2f} VS/min"
+        return f"{value:.2f} vision/min"
     if column == "control_wards":
         return f"{value:.1f} CW"
     if column == "avg_unspent_gold":

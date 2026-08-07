@@ -175,6 +175,7 @@ def extract_deaths(
                 zone=zone,
                 near_objective=near_major_objective(pos),
                 shutdown_given=int(event.get("shutdownBounty", 0)),
+                bounty_gold=int(event.get("bounty", 0)),
                 bounty_held=int(event.get("bounty", 0)) > BOUNTY_THRESHOLD_GOLD,
                 flash_available=None,  # summoner cooldowns are not exposed by the API
                 ult_available=(ult_learned_min is not None and minute >= ult_learned_min),
@@ -233,6 +234,8 @@ def deaths_dataframe(records: list[MatchRecord]) -> pd.DataFrame:
                     "zone": death.zone.value,
                     "near_objective": death.near_objective,
                     "shutdown_given": death.shutdown_given,
+                    "bounty_gold": death.bounty_gold,
+                    "gold_given": int(death.bounty_gold) + int(death.shutdown_given),
                     "bounty_held": death.bounty_held,
                     "ult_available": death.ult_available,
                     "zhonya_available": death.zhonya_available,

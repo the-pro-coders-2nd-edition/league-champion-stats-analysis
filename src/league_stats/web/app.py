@@ -28,6 +28,7 @@ from league_stats.core.config import (
     DEFAULT_TEMPLATE_DIR,
     VALID_PLATFORMS,
     VALID_REGIONS,
+    AppConfig,
     WebConfig,
     load_config,
     load_web_config,
@@ -72,6 +73,10 @@ REGION_CHOICES: tuple[tuple[str, str], ...] = (
     ("JP", "jp1"),
 )
 
+# Minimum ranked games a champion+lane needs before a report is generated.
+DEFAULT_MIN_GAMES: int = AppConfig.model_fields["min_games"].default
+MIN_GAMES_CHOICES: tuple[int, ...] = (5, 10, 15, 20, 25, 30, 50)
+
 MAX_GROUP_PLAYERS = 8
 
 
@@ -86,6 +91,7 @@ class AnalysisRequest(BaseModel):
     tagline: str = Field(default="", max_length=16)
     players: list[str] = Field(default_factory=list, max_length=MAX_GROUP_PLAYERS)
     region: str = Field(default="euw1", max_length=16)
+    min_games: int | None = Field(default=None, ge=1, le=200)
 
 
 class ChatRequest(BaseModel):
@@ -380,6 +386,7 @@ def _job_public(store: JobStore, job: dict[str, Any] | None) -> dict[str, Any] |
         "finished_at": job["finished_at"],
         "filter_champion": job.get("filter_champion") or None,
         "filter_role": job.get("filter_role") or None,
+        "min_games": job.get("min_games"),
     }
     position = store.queue_position(int(job["id"]))
     public["queue_position"] = position
@@ -697,6 +704,8 @@ def create_app(
                 **brand,
                 "groups": _report_groups(config.reports_dir, store),
                 "region_choices": REGION_CHOICES,
+                "min_games_choices": MIN_GAMES_CHOICES,
+                "default_min_games": DEFAULT_MIN_GAMES,
             },
         )
 
@@ -739,6 +748,15 @@ def create_app(
         if region not in VALID_PLATFORMS and region not in VALID_REGIONS:
             raise HTTPException(status_code=422, detail=f"Unknown region {region!r}.")
 
+        min_games = body.min_games
+        if min_games is not None and min_games not in MIN_GAMES_CHOICES:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"min_games must be one of {', '.join(str(v) for v in MIN_GAMES_CHOICES)}."
+                ),
+            )
+
         try:
             _verify_players_exist(tracked, region, config.output_dir)
         except ValueError as exc:
@@ -765,6 +783,7 @@ def create_app(
             region=region,
             player_slug=slug,
             players=tracked,
+            min_games=min_games,
         )
         return {
             "job": _job_public(store, job),

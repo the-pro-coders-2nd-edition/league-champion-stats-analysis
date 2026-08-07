@@ -259,7 +259,7 @@ def test_execute_job_peer_failure_is_soft(
 
     final = store.get(int(job["id"]))
     assert final["state"] == jobs.DONE
-    assert "Peer analysis failed" in final["error"]
+    assert "Rank comparison failed" in final["error"]
 
     player = store.get_player("test_euw")
     assert player["base_completed_at"] is not None
@@ -481,6 +481,34 @@ def test_build_job_services_pins_output_slug(
         assert services.config.filter_champion == "Viktor"
         assert services.config.filter_role == "MIDDLE"
         assert services.config.status_endpoint == "/api/players/alice_euw__bob_euw"
+    finally:
+        services.store.close()
+        services.http_cache.close()
+
+
+def test_build_job_services_applies_min_games(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RIOT_API_KEY", "RGAPI-test")
+    store.upsert_player(slug="test_euw", riot_id="Test", tagline="EUW", region="euw1")
+    job = {
+        "id": 1,
+        "player_slug": "test_euw",
+        "riot_id": "Test",
+        "tagline": "EUW",
+        "region": "euw1",
+        "players_json": '[{"riot_id":"Test","tagline":"EUW"}]',
+        "filter_champion": None,
+        "filter_role": None,
+        "min_games": 10,
+    }
+    reporter = SimpleNamespace(update=lambda *a, **k: None)
+
+    services = worker._build_job_services(
+        job, web_config, reporter, job_store=store
+    )
+    try:
+        assert services.config.min_games == 10
     finally:
         services.store.close()
         services.http_cache.close()

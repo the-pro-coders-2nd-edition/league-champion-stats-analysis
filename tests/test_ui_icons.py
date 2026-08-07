@@ -74,6 +74,15 @@ def test_tooltip_for_dist_to_role() -> None:
     tooltip = tooltip_for_label("Dist to jungle")
     assert tooltip is not None
     assert "jungle" in tooltip
+    assert "1 screen ≈ 3000" in tooltip
+    assert "Flash ≈ 400" in tooltip
+
+
+def test_tooltip_for_avg_teammate_dist_uses_landmarks() -> None:
+    tooltip = tooltip_for_label("Avg teammate dist")
+    assert tooltip is not None
+    assert "1 screen ≈ 3000" in tooltip
+    assert "Flash ≈ 400" in tooltip
 
 
 def test_tooltip_for_wards_before() -> None:

@@ -13,13 +13,47 @@ GAME_REVIEW_KEY_STATS: dict[str, tuple[str, str]] = {
     "kill_participation": ("Kill participation", "Kill participation"),
     "damage_share": ("Damage share", "Damage share"),
     "gold_share": ("Gold share", "Gold share"),
-    "vspm": ("VS/min", "VS/min"),
+    "vspm": ("Vision/min", "Vision/min"),
     "control_wards": ("Control wards", "Control wards"),
-    "objectives_present_rate": ("Obj. presence", "Obj. presence"),
+    "objectives_present_rate": ("Objective presence", "Objective presence"),
     "solo_deaths": ("Solo deaths", "Solo deaths"),
     "greed_deaths": ("Greed deaths", "Greed deaths"),
     "fights_disadvantaged": ("Disadvantaged fights", "Disadvantaged fights"),
 }
+
+# higher = more is better for the player; lower = fewer is better.
+GAME_REVIEW_KEY_STAT_DIRECTIONS: dict[str, str] = {
+    "gd10": "higher",
+    "gd15": "higher",
+    "dpm": "higher",
+    "kill_participation": "higher",
+    "damage_share": "higher",
+    "gold_share": "higher",
+    "vspm": "higher",
+    "control_wards": "higher",
+    "objectives_present_rate": "higher",
+    "deaths": "lower",
+    "deaths_pre14": "lower",
+    "solo_deaths": "lower",
+    "greed_deaths": "lower",
+    "fights_disadvantaged": "lower",
+}
+
+# Ordered groups for the Overview tab (label, iconify id, metric keys).
+GAME_REVIEW_KEY_STAT_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("Lane", "lucide:map", ("gd10", "gd15")),
+    (
+        "Combat",
+        "lucide:swords",
+        ("dpm", "kill_participation", "damage_share", "gold_share", "fights_disadvantaged"),
+    ),
+    ("Survival", "lucide:skull", ("deaths", "deaths_pre14", "solo_deaths", "greed_deaths")),
+    (
+        "Vision & objectives",
+        "lucide:eye",
+        ("vspm", "control_wards", "objectives_present_rate"),
+    ),
+)
 
 OBJECTIVE_DEAD_SETUP_LABEL = "Died in setup window (45–10s)"
 
@@ -38,7 +72,7 @@ def _tooltip(label: str) -> str | None:
     return tooltip_for_label(label) or METRIC_TOOLTIPS.get(label)
 
 
-def game_review_tooltips() -> dict[str, dict[str, str]]:
+def game_review_tooltips() -> dict[str, object]:
     """Tooltip map embedded in the report for Game Review panels."""
     score = {
         "Game score": (
@@ -57,12 +91,20 @@ def game_review_tooltips() -> dict[str, dict[str, str]]:
         "score": score,
         "key_stats": key_stats,
         "key_stats_labels": key_stats_labels,
+        "key_stats_groups": [
+            {"label": label, "iconify": iconify, "keys": list(keys)}
+            for label, iconify, keys in GAME_REVIEW_KEY_STAT_GROUPS
+        ],
         "objectives": OBJECTIVE_COLUMN_TOOLTIPS,
         "key_moments": {
             "interpolation": (
                 "Drag the scrubber to step through minute snapshots from just before "
                 "the action through just after. Riot records all ten players once per "
                 "minute. Objective icons are bright when up, dim when taken."
+            ),
+            "gold_given": (
+                "Kill bounty + shutdown gold from the Riot kill event — the gold pot "
+                "awarded for your death before assist sharing."
             ),
         },
     }

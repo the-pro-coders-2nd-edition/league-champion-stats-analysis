@@ -43,11 +43,14 @@
     <li class="job-stage" data-stage="queued">Queued</li>
     <li class="job-stage" data-stage="fetching">Download matches</li>
     <li class="job-stage" data-stage="analyzing">Analyze reports</li>
-    <li class="job-stage" data-stage="report_ready">Base report</li>
-    <li class="job-stage" data-stage="peer_running">Peer comparison</li>
+    <li class="job-stage" data-stage="report_ready">Report ready</li>
+    <li class="job-stage" data-stage="peer_running">Rank comparison</li>
   </ol>
   <div class="progress-track" id="job-progress" hidden><div class="progress-fill" id="job-progress-fill"></div></div>
   <div class="error" id="job-error"></div>
+  <div class="actions-row" id="retry-row" hidden>
+    <button class="btn-primary" id="retry-btn" type="button">Retry analysis</button>
+  </div>
 </div>
 
 <div id="builds-section" hidden>
@@ -70,8 +73,8 @@
     queued: 'Queued',
     fetching: 'Downloading matches',
     analyzing: 'Analyzing',
-    report_ready: 'Report ready — peer analysis pending',
-    peer_running: 'Peer analysis running',
+    report_ready: 'Report ready — comparing you to players at your rank',
+    peer_running: 'Comparing you to players at your rank',
     done: 'Complete',
     failed: 'Failed',
     cancelled: 'Cancelled'
@@ -98,6 +101,8 @@
   var refreshBtn = document.getElementById('refresh-btn');
   var regenerateBtn = document.getElementById('regenerate-btn');
   var cancelBtn = document.getElementById('cancel-btn');
+  var retryRow = document.getElementById('retry-row');
+  var retryBtn = document.getElementById('retry-btn');
   var refreshHint = document.getElementById('refresh-hint');
   var timer = null;
   var activeJobId = null;
@@ -147,6 +152,7 @@
     if (!job) {
       jobCard.hidden = true;
       cancelBtn.hidden = true;
+      retryRow.hidden = true;
       activeJobId = null;
       return false;
     }
@@ -159,6 +165,7 @@
     jobDot.className = 'dot' + (
       active ? ' pulse' : (job.state === 'failed' || job.state === 'cancelled') ? ' err' : ' ok'
     );
+    retryRow.hidden = !(job.state === 'failed' || job.state === 'cancelled');
     cancelBtn.hidden = !active;
     cancelBtn.disabled = cancelling;
     cancelBtn.textContent = cancelling ? 'Cancelling…' : 'Cancel run';
@@ -269,7 +276,7 @@
               : '') +
           '</div>' +
           (updated ? '<div class="build-card-updated">Updated ' + escapeHtml(updated) + '</div>' : '') +
-          (showPeerBadge ? '<span class="build-card-badge">Base ready · peers pending</span>' : '') +
+          (showPeerBadge ? '<span class="build-card-badge">Ready — rank comparison loading</span>' : '') +
         '</div>';
       buildsGrid.appendChild(tile);
     });
@@ -301,10 +308,10 @@
         if (data.has_report) {
           subtitle.textContent = active
             ? (anyPeersPending
-              ? 'Base reports are ready — peer comparison still running.'
+              ? 'Reports are ready — the comparison to players at your rank is still loading.'
               : 'Reports below update as the analysis progresses.')
             : data.peer_failed
-              ? 'Reports ready (peer analysis failed — refresh to retry).'
+              ? 'Reports ready (rank comparison failed — refresh to retry).'
               : 'Pick a champion + lane report below.';
         } else {
           subtitle.textContent = active
@@ -348,6 +355,27 @@
 
   refreshBtn.addEventListener('click', function () {
     startJob('/refresh', 'Refresh failed.');
+  });
+  retryBtn.addEventListener('click', function () {
+    retryBtn.disabled = true;
+    fetch('/api/players/' + SLUG + '/refresh', { method: 'POST' })
+      .then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok) { throw new Error(data.detail || ('HTTP ' + response.status)); }
+          return data;
+        });
+      })
+      .then(function () {
+        retryBtn.disabled = false;
+        retryRow.hidden = true;
+        if (timer) clearInterval(timer);
+        timer = setInterval(poll, 3000);
+        poll();
+      })
+      .catch(function (err) {
+        retryBtn.disabled = false;
+        jobError.textContent = err.message || 'Retry failed.';
+      });
   });
   regenerateBtn.addEventListener('click', function () {
     startJob('/regenerate', 'Regenerate failed.');

@@ -51,9 +51,10 @@ def _story_priority(delta: MetricDelta) -> float:
 
 def _format_driver(delta: MetricDelta) -> str:
     if delta.metric == "win" or delta.metric.endswith("_rate"):
+        direction = "up" if delta.delta >= 0 else "down"
         return (
             f"{delta.baseline * 100:.0f}% → {delta.recent * 100:.0f}% "
-            f"({delta.delta * 100:+.0f} pp)"
+            f"({direction} {abs(delta.delta) * 100:.0f})"
         )
     if delta.metric in _SIGNED_LANE_METRICS:
         return f"{delta.baseline:+.0f} → {delta.recent:+.0f} ({delta.delta:+.0f})"

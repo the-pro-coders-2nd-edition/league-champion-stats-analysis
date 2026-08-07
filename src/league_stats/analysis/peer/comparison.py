@@ -212,7 +212,11 @@ def peer_recommendations(
     is_laner = normalized_role in {"TOP", "MIDDLE", "BOTTOM"}
 
     def add_weakness(
-        comp: MetricComparison, title: str, detail: str, priority_boost: float = 1.0
+        comp: MetricComparison,
+        title: str,
+        detail: str,
+        action: str,
+        priority_boost: float = 1.0,
     ) -> None:
         """Queue a weakness recommendation if the gap is material."""
         if comp.verdict != "below":
@@ -228,6 +232,7 @@ def peer_recommendations(
                     category="Rank peer",
                     title=title,
                     detail=detail,
+                    action=action,
                     evidence=(
                         f"You: {comp.yours} vs {rank_label} {peer_name} avg {comp.peer_avg} "
                         f"({comp.delta_pct:+.0f}%)" if comp.delta_pct is not None else
@@ -244,9 +249,10 @@ def peer_recommendations(
         c = by_key["deaths"]
         add_weakness(
             c,
-            f"You die more than peer {peer_name} players",
+            f"Deaths run higher than peer {peer_name}",
             f"Average {c.yours:.1f} deaths vs {c.peer_avg:.1f} for {rank_label} {peer_name}. "
             "Tighten map awareness after shoves and track enemy jungle pathing before extending.",
+            "Track jungle pathing before you extend",
             priority_boost=1.3,
         )
     if "deaths_pre14" in by_key:
@@ -256,47 +262,53 @@ def peer_recommendations(
             "Early deaths lag behind rank peers",
             f"You average {c.yours:.1f} deaths before 14 min vs {c.peer_avg:.1f} for peers. "
             "Respect level 2-3 all-ins and avoid trading without minion cover.",
+            "Respect level 2-3 all-ins — trade with minion cover",
         )
     if is_laner and "cspm" in by_key:
         c = by_key["cspm"]
         add_weakness(
             c,
-            f"Farming below rank-average {peer_name}",
+            f"Farming trails rank-average {peer_name}",
             f"Your {c.yours:.1f} CS/min trails the {rank_label} {peer_name} average of "
             f"{c.peer_avg:.1f}. Catch every cannon and secure ranged minions under tower.",
+            "Catch every cannon and farm under tower",
         )
     if is_laner and "cs10" in by_key:
         c = by_key["cs10"]
         add_weakness(
             c,
-            f"CS @10 behind same-rank {peer_name}",
+            f"CS @10 trails same-rank {peer_name}",
             f"{c.yours:.0f} CS @10 vs peer average {c.peer_avg:.0f}. Prioritise wave control "
             "over roams in the first 10 minutes unless the roam is guaranteed.",
+            "Prioritise wave control over early roams",
         )
     if is_laner and "gd10" in by_key:
         c = by_key["gd10"]
         add_weakness(
             c,
-            "Laning gold deficit vs rank peers",
+            "Laning gold trails rank peers",
             f"{c.yours:+.0f} gold @10 vs peer average {c.peer_avg:+.0f}. Trade when your runes "
             "are up and avoid losing XP for bad harass.",
+            "Trade when runes are up — don't lose XP for harass",
         )
     if "vspm" in by_key:
         c = by_key["vspm"]
         add_weakness(
             c,
-            f"Vision below peer {peer_name}",
-            f"{c.yours:.2f} VS/min vs peer {c.peer_avg:.2f}. Buy a control ward every recall "
+            f"Vision trails peer {peer_name}",
+            f"{c.yours:.2f} vision/min vs peer {c.peer_avg:.2f}. Buy a control ward every recall "
             "after 14 minutes and sweep before objectives.",
+            "Buy a control ward every recall after 14",
             priority_boost=1.1,
         )
     if "control_wards" in by_key:
         c = by_key["control_wards"]
         add_weakness(
             c,
-            "Under-investing in control wards",
+            "Control ward buys trail peers",
             f"You buy {c.yours:.1f} control wards/game vs {c.peer_avg:.1f} for peers. "
             f"{peer_name.title()} wins objective fights when the pit is warded — match peer investment.",
+            "Buy a control ward on every recall",
         )
     if "dpm" in by_key:
         c = by_key["dpm"]
@@ -305,6 +317,7 @@ def peer_recommendations(
             "Damage output trails rank peers",
             f"{c.yours:.0f} DPM vs peer {c.peer_avg:.0f}. Look for more poke before fights "
             "and maximise combos in teamfights rather than holding for perfect angles.",
+            "Poke before fights and spend cooldowns",
         )
     if "ccpm" in by_key:
         c = by_key["ccpm"]
@@ -313,6 +326,7 @@ def peer_recommendations(
             "Crowd control trails rank peers",
             f"{c.yours:.2f} CC/min vs peer {c.peer_avg:.2f}. Look for picks with hard CC "
             "before objectives and layer stuns with your team in fights.",
+            "Land hard CC before objectives and in fights",
         )
     if "kill_participation" in by_key:
         c = by_key["kill_participation"]
@@ -326,26 +340,36 @@ def peer_recommendations(
             else f"{c.yours:.0%} KP vs peer {c.peer_avg:.0%}. Roam on cannon waves when you "
             "have priority and arrive before objectives with your team."
         )
+        kp_action = (
+            "Path toward active lanes before objectives"
+            if normalized_role == "JUNGLE"
+            else "Roam on cannon waves and collapse for setup"
+            if normalized_role == "UTILITY"
+            else "Roam on cannon waves when you have priority"
+        )
         add_weakness(
             c,
-            "Lower kill participation than peers",
+            "Kill participation trails peers",
             kp_detail,
+            kp_action,
         )
     if normalized_role == "JUNGLE" and "early_ganks" in by_key:
         c = by_key["early_ganks"]
         add_weakness(
             c,
-            "Early gank pressure below peers",
+            "Early gank pressure trails peers",
             f"{c.yours:.1f} early ganks vs peer {c.peer_avg:.1f}. Look for gank windows "
             "when lanes have push and track enemy jungle to punish opposite side.",
+            "Gank when lanes have push",
         )
     if normalized_role == "UTILITY" and "assists" in by_key:
         c = by_key["assists"]
         add_weakness(
             c,
-            "Fewer assists than peer supports",
+            "Assists trail peer supports",
             f"{c.yours:.1f} assists vs peer {c.peer_avg:.1f}. Follow up roams with CC and "
             "stay within fight range when your team commits.",
+            "Follow up engages and stay in fight range",
         )
 
     tips.sort(key=lambda item: item[0], reverse=True)

@@ -44,7 +44,7 @@ TEXT_COLOR = "#e8eaf2"
 MUTED_COLOR = "#9aa0b5"
 GRID_COLOR = "#2a2f40"
 FONT_FAMILY = 'Manrope, -apple-system, "Segoe UI", sans-serif'
-COLORWAY = [ACCENT, WIN_COLOR, "#4db8c4", "#e0b155", "#b48cff", "#6eb5ff"]
+COLORWAY = [ACCENT, WIN_COLOR, "#7ed4c0", "#e0b155", "#b48cff", "#2a9f7a"]
 
 # Characteristic unit for asinh-compressed bipolar % / delta bars.
 # Values near this stay roughly linear; larger outliers get compressed.
@@ -609,11 +609,21 @@ class GraphFactory:
         )
         return _div(fig)
 
-    def form_rolling_wr(self, matches_df: pd.DataFrame, *, recent_n: int) -> str:
-        """Rolling win rate with recent window highlighted and baseline band."""
+    def form_rolling_wr(
+        self,
+        matches_df: pd.DataFrame,
+        *,
+        recent_n: int,
+        baseline_m: int,
+    ) -> str:
+        """Rolling win rate for the Form Tracker window only (recent + baseline)."""
         if matches_df.empty:
             return _div(go.Figure().update_layout(title="Form win rate (unavailable)"))
         frame = matches_df.sort_values("game_creation_ms").reset_index(drop=True)
+        # Only plot the games Form Tracker compares (e.g. last 100 = 20 recent + 80 baseline).
+        span = max(0, int(recent_n) + int(baseline_m))
+        if span > 0 and len(frame) > span:
+            frame = frame.iloc[-span:].reset_index(drop=True)
         window = max(5, min(20, len(frame) // 5))
         rolling = frame["win"].rolling(window, min_periods=3).mean() * 100
         fig = go.Figure()
@@ -708,42 +718,71 @@ class GraphFactory:
     def game_gold_timeline(
         self,
         timeline_points: list[dict[str, float]],
-        death_minutes: list[float],
+        death_minutes: list[float] | None = None,
+        *,
+        metric: str = "gold",
+        mode: str = "lane",
     ) -> str:
-        """Gold, XP, and CS curves for one game with death markers."""
+        """Two-line resource timeline (ally vs enemy) for one game.
+
+        The Game Review Story tab builds this interactively in the browser;
+        this helper remains for tests / ad-hoc exports.
+        """
+        _ = death_minutes
         if not timeline_points:
             return _div(go.Figure().update_layout(title="Game timeline (unavailable)"))
+        metric_key = metric if metric in {"gold", "xp", "cs"} else "gold"
+        if mode == "team":
+            ally_key, enemy_key = f"ally_{metric_key}", f"enemy_{metric_key}"
+            mode_label = "team"
+        else:
+            ally_key, enemy_key = metric_key, f"opp_{metric_key}"
+            mode_label = "lane"
         minutes = [point.get("minute", 0) for point in timeline_points]
+        diffs = [
+            float(point.get(ally_key, 0) or 0) - float(point.get(enemy_key, 0) or 0)
+            for point in timeline_points
+        ]
+        ahead = [value if value > 0 else 0 for value in diffs]
+        behind = [value if value < 0 else 0 for value in diffs]
+        title = {
+            "gold": "Gold",
+            "xp": "XP",
+            "cs": "CS",
+        }.get(metric_key, "Gold")
         fig = go.Figure()
         fig.add_scatter(
             x=minutes,
-            y=[point.get("gold", 0) for point in timeline_points],
+            y=ahead,
             mode="lines",
-            name="Gold",
-            line=dict(color=ACCENT, width=2),
+            line=dict(width=0, color=WIN_COLOR),
+            fill="tozeroy",
+            fillcolor="rgba(63, 182, 139, 0.28)",
+            hoverinfo="skip",
+            showlegend=False,
         )
         fig.add_scatter(
             x=minutes,
-            y=[point.get("xp", 0) for point in timeline_points],
+            y=behind,
             mode="lines",
-            name="XP",
-            line=dict(color=WIN_COLOR, width=2),
-            visible="legendonly",
+            line=dict(width=0, color=LOSS_COLOR),
+            fill="tozeroy",
+            fillcolor="rgba(224, 85, 99, 0.28)",
+            hoverinfo="skip",
+            showlegend=False,
         )
         fig.add_scatter(
             x=minutes,
-            y=[point.get("cs", 0) for point in timeline_points],
+            y=diffs,
             mode="lines",
-            name="CS",
-            line=dict(color=NEUTRAL_HEX, width=2),
-            visible="legendonly",
+            name=f"{title} diff",
+            line=dict(color=TEXT_COLOR, width=2.5),
         )
-        for minute in death_minutes:
-            fig.add_vline(x=minute, line_color=LOSS_COLOR, line_dash="dot", line_width=1)
         fig.update_layout(
-            title="Gold timeline (death markers in red)",
+            title=f"{title} diff ({mode_label})",
             xaxis_title="Minute",
-            yaxis_title="Gold",
+            yaxis_title=f"{title} diff",
             height=360,
+            showlegend=False,
         )
         return _div(fig)

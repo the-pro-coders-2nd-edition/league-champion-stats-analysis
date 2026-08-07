@@ -90,32 +90,41 @@ def test_matchup_rules_disabled(coach: CoachEngine) -> None:
 
 def test_new_rules_fire(coach: CoachEngine) -> None:
     """New coaching rules surface on the synthetic dataset."""
-    titles = " | ".join(r.title for r in coach.generate())
-    assert "Win more when ahead @10" in titles
-    assert "Greed deaths are a recurring pattern" in titles
-    assert "You give away too many shutdown bounties" in titles
-    assert "You throw leads you build in lane" in titles
-    assert "Low teamfight participation is limiting your impact" in titles
-    assert "You're dead too often right before objectives" in titles
-    assert "Deaths right before epic monsters are throwing objectives" in titles
+    recommendations = coach.generate()
+    titles = " | ".join(r.title for r in recommendations)
+    assert "Gold leads at 10 line up with your wins" in titles
+    assert "Greed deaths show up in your losses" in titles
+    assert "Shutdown bounties show up in your losses" in titles
+    assert "Early leads aren't converting cleanly" in titles
+    assert "Teamfight participation has room to grow" in titles
+    assert "Death timers before objectives hurt setups" in titles
+    assert "Pre-objective deaths hurt your setups" in titles
+    assert all(r.action for r in recommendations)
 
 
 def test_merged_objective_death_rule_not_dragon_only(coach: CoachEngine) -> None:
     """Pre-objective deaths cover dragon, elder, and baron together."""
-    rec = next(r for r in coach.generate() if "epic monsters" in r.title)
+    rec = next(r for r in coach.generate() if "Pre-objective deaths" in r.title)
     assert "dragon, elder, or baron" in rec.detail
+
+
+def test_tip_titles_avoid_absolute_claims(coach: CoachEngine) -> None:
+    """Titles stay comparative — no 'biggest leak' style absolutes."""
+    joined = " | ".join(r.title.lower() for r in coach.generate())
+    for banned in ("biggest leak", "costing you games", "throwing", "hurting your win rate"):
+        assert banned not in joined
 
 
 def test_new_metric_rules_fire(coach: CoachEngine) -> None:
     """Coach rules for newer death, fight, and positioning metrics surface."""
     titles = " | ".join(r.title for r in coach.generate())
-    assert "Dying with unspent gold is costing you games" in titles
-    assert "Too much gold unspent when fights start" in titles
-    assert "Too many fights started at a numbers disadvantage" in titles
-    assert "Over-grouping is hurting your win rate" in titles
-    assert "Splitting for farm wins you more games" in titles
-    assert "Stay closer to your jungle" in titles
-    assert "Outnumbered deaths are throwing fights" in titles
+    assert "Deaths with banked gold show up in losses" in titles
+    assert "Fights start with gold still unspent" in titles
+    assert "Disadvantaged fights show up in your losses" in titles
+    assert "Over-grouping lines up with losses" in titles
+    assert "Solo farm time lines up with your wins" in titles
+    assert "Closer play with your jungle lines up with wins" in titles
+    assert "Outnumbered deaths show up in your losses" in titles
 
 
 def test_markdown_rendering(coach: CoachEngine) -> None:

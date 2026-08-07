@@ -9,10 +9,11 @@ from league_stats.pipeline.view_models import (
     form_delta_chart_value,
     form_row_display,
     form_sample_subtitle,
+    format_map_distance,
     overview_card_entries,
     priority_label,
 )
-from league_stats.core.role_metrics import role_profile
+from league_stats.core.role_metrics import MetricSpec, role_profile
 from league_stats.presentation.metric_colors import interpolate_metric_color, LOSS_HEX, score_form_delta
 
 
@@ -20,6 +21,23 @@ def test_priority_label_maps_badge_classes() -> None:
     assert priority_label("high") == "High"
     assert priority_label("medium") == "Medium"
     assert priority_label("low") == "Low"
+
+
+def test_format_map_distance_uses_screen_landmarks() -> None:
+    assert format_map_distance(None) == "—"
+    assert format_map_distance(3000) == "3k ≈ 1 screen"
+    assert format_map_distance(4800) == "4.8k ≈ 1.6 screens"
+    assert format_map_distance(9000) == "9k ≈ 3 screens"
+
+
+def test_distance_metric_spec_formats_with_landmarks() -> None:
+    cards = cards_from_specs(
+        (MetricSpec("Dist to ADC", "positioning", "dist_bottom"),),
+        {"positioning": {"dist_bottom": 4500}},
+        section="lane",
+        role="UTILITY",
+    )
+    assert cards[0]["value"] == "4.5k ≈ 1.5 screens"
 
 
 def test_annotate_card_tiers_orders_headline_metrics_first() -> None:
@@ -60,11 +78,13 @@ def test_enrich_value_semantics_colors_diff_and_win_rate() -> None:
     wr = {"label": "Lane win rate", "value": "42%", "value_class": ""}
     mid_wr = {"label": "Lane win rate", "value": "50%", "value_class": ""}
     fight_deaths = {"label": "Death rate in fights", "value": "42%", "value_class": ""}
+    deaths_game = {"label": "Deaths/game", "value": "4.2", "value_class": ""}
     enrich_value_semantics(gd)
     enrich_value_semantics(csd)
     enrich_value_semantics(wr)
     enrich_value_semantics(mid_wr)
     enrich_value_semantics(fight_deaths)
+    enrich_value_semantics(deaths_game)
     assert gd["value_class"] == "win"
     assert csd["value_class"] == "win"
     assert wr["value_class"] == "loss"
@@ -74,6 +94,26 @@ def test_enrich_value_semantics_colors_diff_and_win_rate() -> None:
     assert mid_wr["value_color"] == interpolate_metric_color(0.0)
     assert not fight_deaths.get("value_color")
     assert not fight_deaths.get("value_class")
+    assert not deaths_game.get("value_color")
+    assert not deaths_game.get("value_class")
+
+
+def test_overview_card_entries_skip_deaths_game_color() -> None:
+    cards = overview_card_entries(
+        {
+            "winrate": 0.53,
+            "avg_kda": "3.1",
+            "avg_dpm": "640",
+            "avg_cspm": "7.2",
+            "avg_damage_share": 0.24,
+            "avg_deaths": 6.5,
+            "avg_vspm": 1.1,
+            "avg_duration": 28,
+        }
+    )
+    deaths = next(card for card in cards if card["label"] == "Deaths/game")
+    assert not deaths.get("value_color")
+    assert not deaths.get("value_class")
 
 
 def test_overview_card_entries_include_tiers() -> None:

@@ -47,7 +47,7 @@ Form Tracker is **orthogonal** to the game-window toggle (Last 50/100/All) — i
 
 ## Game Review (per-match deep dive)
 
-Last **5 games** per queue filter with personal-baseline game scores, behavior bullets, and event tabs.
+Last **10 games** per queue filter (rail shows 5, with expand for 5 more) with personal-baseline game scores, behavior bullets, and event tabs.
 
 1. Score / behavior rules? `analysis/game_review/score.py`, `behaviors.py`
 2. Per-game assembly? `analysis/game_review/assemble.py`, `views.py`

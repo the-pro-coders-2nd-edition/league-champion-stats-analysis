@@ -98,7 +98,7 @@ def test_full_pipeline_generates_all_artifacts(tmp_path: Path) -> None:
     assert 'id="peer-dossier"' in html
     assert 'data-tab="gaps"' in html
     assert 'id="peer-verdict"' in html
-    assert "← New analysis" in html
+    assert "← Home" in html
     assert 'href="/"' in html
 
     expected = [
@@ -176,7 +176,7 @@ def test_web_stage_a_report_shows_peer_pending_placeholder(tmp_path: Path) -> No
     assert 'data-peer-pending="1"' in html
     assert 'id="rank-peers-pending"' in html
     assert 'peer-dossier--pending' in html
-    assert "Advanced stats" in html
+    assert "For the curious" in html
     assert 'id="report-refresh-btn"' in html
     assert 'var REFRESH_CHAMPION = "Viktor";' in html
     assert 'var REFRESH_ROLE = "MIDDLE";' in html

@@ -50,7 +50,7 @@ _SCORE_METRIC_LABELS: dict[str, str] = {
     "deaths": "Deaths/game",
     "vspm": "Vision/min",
     "control_wards": "Control wards",
-    "objectives_present_rate": "Obj. presence",
+    "objectives_present_rate": "Objective presence",
     "early_ganks": "Early ganks",
     "roams_pre15": "Roams pre-15",
     "lane_priority": "Lane priority",

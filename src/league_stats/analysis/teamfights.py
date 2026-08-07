@@ -70,6 +70,44 @@ def _centroid(kills: list[dict[str, Any]]) -> Position:
     return Position(x=sum(xs) / len(xs), y=sum(ys) / len(ys))
 
 
+def _pids_on_kill(kill: dict[str, Any]) -> set[int]:
+    """Participant ids definitively involved in a kill (killer/victim/assists/damage)."""
+    pids: set[int] = set()
+    killer = int(kill.get("killerId", 0))
+    victim = int(kill.get("victimId", 0))
+    if killer:
+        pids.add(killer)
+    if victim:
+        pids.add(victim)
+    for assist in kill.get("assistingParticipantIds", []) or []:
+        assist_id = int(assist)
+        if assist_id:
+            pids.add(assist_id)
+    for entry in kill.get("victimDamageReceived", []) or []:
+        pid = int(entry.get("participantId", 0))
+        if pid:
+            pids.add(pid)
+    return pids
+
+
+def _champions_from_pids(
+    ctx: TimelineContext, pids: set[int]
+) -> tuple[list[str], list[str]]:
+    """Split participant ids into ordered ally / enemy champion name lists."""
+    allies: list[str] = []
+    enemies: list[str] = []
+    ordered = sorted(pids, key=lambda pid: (pid != ctx.participant_id, pid))
+    for pid in ordered:
+        name = ctx.id_to_champion.get(pid)
+        if not name:
+            continue
+        if pid in ctx.team_ids:
+            allies.append(name)
+        elif pid in ctx.enemy_ids:
+            enemies.append(name)
+    return allies, enemies
+
+
 def _damage_from_player(kill: dict[str, Any], pid: int) -> int:
     """Damage the player contributed to a victim, from the kill event.
 
@@ -116,10 +154,12 @@ def detect_teamfights(ctx: TimelineContext) -> list[TeamfightRecord]:
         ally_kills = 0
         enemy_kills = 0
         involved = False
+        combatant_pids: set[int] = set()
         for kill in cluster:
             killer = int(kill.get("killerId", 0))
             victim = int(kill.get("victimId", 0))
             assists = [int(a) for a in kill.get("assistingParticipantIds", []) or []]
+            combatant_pids.update(_pids_on_kill(kill))
             if killer in ctx.team_ids:
                 ally_kills += 1
             elif killer in ctx.enemy_ids:
@@ -144,6 +184,8 @@ def detect_teamfights(ctx: TimelineContext) -> list[TeamfightRecord]:
         if not involved:
             my_pos = ctx.position_at_ms(ctx.participant_id, (start_ts + end_ts) // 2)
             involved = my_pos is not None and distance(my_pos, centroid) <= PROXIMITY_PARTICIPATION
+            if involved:
+                combatant_pids.add(ctx.participant_id)
 
         window_s = max(1.0, (end_ts - start_ts) / 1000.0)
         time_alive = ((death_ts - start_ts) / 1000.0) if died and death_ts else window_s
@@ -163,10 +205,13 @@ def detect_teamfights(ctx: TimelineContext) -> list[TeamfightRecord]:
                 )
 
         fight_pos = my_pos or centroid
+        # Manpower still uses proximity at fight start (who was nearby).
         allies_near, enemies_near = headcount_near(ctx, fight_pos, start_ts)
         allies_present = allies_near + 1
         enemies_present = enemies_near
         manpower_advantage = allies_present - enemies_present
+        # Icons use kill-feed combatants (killer/victim/assists/damage) — definitive.
+        ally_champions, enemy_champions = _champions_from_pids(ctx, combatant_pids)
         unspent_gold = current_gold_at_ms(ctx, start_ts)
         teammate_distance = avg_teammate_distance_at_ms(ctx, start_ts)
 
@@ -192,6 +237,8 @@ def detect_teamfights(ctx: TimelineContext) -> list[TeamfightRecord]:
                 enemies_present=enemies_present,
                 manpower_advantage=manpower_advantage,
                 avg_teammate_distance=teammate_distance,
+                ally_champions=ally_champions,
+                enemy_champions=enemy_champions,
             )
         )
     return fights
@@ -236,6 +283,8 @@ def teamfights_dataframe(records: list[MatchRecord]) -> pd.DataFrame:
                         if fight.avg_teammate_distance is not None
                         else None
                     ),
+                    "ally_champions": list(fight.ally_champions),
+                    "enemy_champions": list(fight.enemy_champions),
                 }
             )
     return pd.DataFrame(rows)

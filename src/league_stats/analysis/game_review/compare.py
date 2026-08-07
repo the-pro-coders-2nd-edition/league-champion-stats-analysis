@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from league_stats.analysis.game_review.hints import (
+    GAME_REVIEW_KEY_STATS,
+    GAME_REVIEW_KEY_STAT_DIRECTIONS,
+)
 from league_stats.analysis.progression.metrics import progression_metrics_for_role
 from league_stats.core.config import GAME_REVIEW_MAX_COMPARISONS
 from league_stats.core.models import GameComparisonRow
@@ -59,6 +63,7 @@ def _comparison_decimals(metric: str) -> int:
         "avg_unspent_gold",
         "solo_deaths",
         "greed_deaths",
+        "fights_disadvantaged",
     }:
         return 0
     return 1
@@ -66,6 +71,27 @@ def _comparison_decimals(metric: str) -> int:
 
 def _round_comparison(metric: str, value: float) -> float:
     return round(value, _comparison_decimals(metric))
+
+
+def _row_for_metric(
+    metric: str,
+    *,
+    label: str,
+    game_value: float,
+    baseline: float,
+    direction: str,
+) -> GameComparisonRow:
+    delta = game_value - baseline
+    verdict = _verdict(delta, direction)
+    return GameComparisonRow(
+        metric=metric,
+        label=label,
+        game_value=_round_comparison(metric, game_value),
+        benchmark_value=_round_comparison(metric, baseline),
+        delta=_round_comparison(metric, delta),
+        verdict=verdict,
+        gap_color=_gap_color(metric, delta, direction, verdict),
+    )
 
 
 def compare_to_baseline(
@@ -83,19 +109,37 @@ def compare_to_baseline(
         baseline = baseline_means.get(spec.metric)
         if game_value is None or baseline is None:
             continue
-        game_f = float(game_value)
-        base_f = float(baseline)
-        delta = game_f - base_f
-        verdict = _verdict(delta, spec.direction)
         rows.append(
-            GameComparisonRow(
-                metric=spec.metric,
+            _row_for_metric(
+                spec.metric,
                 label=spec.label,
-                game_value=_round_comparison(spec.metric, game_f),
-                benchmark_value=_round_comparison(spec.metric, base_f),
-                delta=_round_comparison(spec.metric, delta),
-                verdict=verdict,
-                gap_color=_gap_color(spec.metric, delta, spec.direction, verdict),
+                game_value=float(game_value),
+                baseline=float(baseline),
+                direction=spec.direction,
             )
         )
     return _top_rows(rows)
+
+
+def compare_key_stats_to_baseline(
+    game_row: dict[str, Any],
+    baseline_means: dict[str, float],
+) -> list[GameComparisonRow]:
+    """Baseline delta for every Game Review overview key stat."""
+    rows: list[GameComparisonRow] = []
+    for metric, (label, _) in GAME_REVIEW_KEY_STATS.items():
+        game_value = game_row.get(metric)
+        baseline = baseline_means.get(metric)
+        if game_value is None or baseline is None:
+            continue
+        direction = GAME_REVIEW_KEY_STAT_DIRECTIONS.get(metric, "higher")
+        rows.append(
+            _row_for_metric(
+                metric,
+                label=label,
+                game_value=float(game_value),
+                baseline=float(baseline),
+                direction=direction,
+            )
+        )
+    return rows

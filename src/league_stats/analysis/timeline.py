@@ -357,6 +357,39 @@ def current_gold_at_ms(ctx: TimelineContext, timestamp_ms: int) -> int | None:
     return max(0, int(pframe.get("currentGold", 0)))
 
 
+def champions_near(
+    ctx: TimelineContext,
+    pos: Position,
+    timestamp_ms: int,
+    *,
+    radius: float = NEARBY_RADIUS,
+    include_player: bool = True,
+) -> tuple[list[str], list[str]]:
+    """Return nearby ally and enemy champion names at a timestamp."""
+    from league_stats.utils import distance
+
+    allies: list[str] = []
+    enemies: list[str] = []
+    if include_player:
+        player_name = ctx.id_to_champion.get(ctx.participant_id)
+        if player_name:
+            allies.append(player_name)
+    for pid in ctx.team_ids | ctx.enemy_ids:
+        if pid == ctx.participant_id:
+            continue
+        other = ctx.position_at_ms(pid, timestamp_ms)
+        if other is None or distance(pos, other) > radius:
+            continue
+        name = ctx.id_to_champion.get(pid)
+        if not name:
+            continue
+        if pid in ctx.team_ids:
+            allies.append(name)
+        else:
+            enemies.append(name)
+    return allies, enemies
+
+
 def headcount_near(
     ctx: TimelineContext,
     pos: Position,
@@ -365,21 +398,10 @@ def headcount_near(
     radius: float = NEARBY_RADIUS,
 ) -> tuple[int, int]:
     """Count allies (excluding the player) and enemies near a position."""
-    from league_stats.utils import distance
-
-    allies = 0
-    enemies = 0
-    for pid in ctx.team_ids | ctx.enemy_ids:
-        if pid == ctx.participant_id:
-            continue
-        other = ctx.position_at_ms(pid, timestamp_ms)
-        if other is None or distance(pos, other) > radius:
-            continue
-        if pid in ctx.team_ids:
-            allies += 1
-        else:
-            enemies += 1
-    return allies, enemies
+    allies, enemies = champions_near(
+        ctx, pos, timestamp_ms, radius=radius, include_player=False
+    )
+    return len(allies), len(enemies)
 
 
 def avg_teammate_distance_at_ms(ctx: TimelineContext, timestamp_ms: int) -> float | None:
@@ -633,6 +655,23 @@ def _wave_push_ratio(ctx: TimelineContext) -> float | None:
     return pushing / total if total else None
 
 
+def _team_resource_totals(
+    ctx: TimelineContext, frame: dict[str, Any]
+) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    """Return ``((ally_gold, ally_xp, ally_cs), (enemy_gold, enemy_xp, enemy_cs))``."""
+    ally = [0, 0, 0]
+    enemy = [0, 0, 0]
+    for pid in ctx.team_ids | ctx.enemy_ids:
+        pframe = ctx.participant_frame(frame, pid)
+        if pframe is None:
+            continue
+        bucket = ally if pid in ctx.team_ids else enemy
+        bucket[0] += int(pframe.get("totalGold", 0))
+        bucket[1] += int(pframe.get("xp", 0))
+        bucket[2] += _cs_of(pframe)
+    return (ally[0], ally[1], ally[2]), (enemy[0], enemy[1], enemy[2])
+
+
 def extract_timeline_stats(ctx: TimelineContext, time_dead_s: int) -> TimelineStats:
     """Compute the full set of timeline-derived statistics.
 
@@ -647,6 +686,14 @@ def extract_timeline_stats(ctx: TimelineContext, time_dead_s: int) -> TimelineSt
     xp_series: list[int] = []
     cs_series: list[int] = []
     opp_gold_series: list[int] = []
+    opp_xp_series: list[int] = []
+    opp_cs_series: list[int] = []
+    ally_gold_series: list[int] = []
+    ally_xp_series: list[int] = []
+    ally_cs_series: list[int] = []
+    enemy_gold_series: list[int] = []
+    enemy_xp_series: list[int] = []
+    enemy_cs_series: list[int] = []
     for frame in ctx.frames:
         mine = ctx.participant_frame(frame, ctx.participant_id)
         if mine is None:
@@ -658,6 +705,17 @@ def extract_timeline_stats(ctx: TimelineContext, time_dead_s: int) -> TimelineSt
             ctx.participant_frame(frame, ctx.opponent_id) if ctx.opponent_id is not None else None
         )
         opp_gold_series.append(int(theirs.get("totalGold", 0)) if theirs else 0)
+        opp_xp_series.append(int(theirs.get("xp", 0)) if theirs else 0)
+        opp_cs_series.append(_cs_of(theirs) if theirs else 0)
+        (ally_gold, ally_xp, ally_cs), (enemy_gold, enemy_xp, enemy_cs) = _team_resource_totals(
+            ctx, frame
+        )
+        ally_gold_series.append(ally_gold)
+        ally_xp_series.append(ally_xp)
+        ally_cs_series.append(ally_cs)
+        enemy_gold_series.append(enemy_gold)
+        enemy_xp_series.append(enemy_xp)
+        enemy_cs_series.append(enemy_cs)
 
     recalls = extract_recalls(ctx)
     unspent = [r.unspent_gold for r in recalls]
@@ -674,7 +732,33 @@ def extract_timeline_stats(ctx: TimelineContext, time_dead_s: int) -> TimelineSt
         xp_series=xp_series,
         cs_series=cs_series,
         opp_gold_series=opp_gold_series,
+        opp_xp_series=opp_xp_series,
+        opp_cs_series=opp_cs_series,
+        ally_gold_series=ally_gold_series,
+        ally_xp_series=ally_xp_series,
+        ally_cs_series=ally_cs_series,
+        enemy_gold_series=enemy_gold_series,
+        enemy_xp_series=enemy_xp_series,
+        enemy_cs_series=enemy_cs_series,
     )
+
+
+TIMELINE_SERIES_KEYS: tuple[str, ...] = (
+    "minute",
+    "gold",
+    "xp",
+    "cs",
+    "gold_diff",
+    "opp_gold",
+    "opp_xp",
+    "opp_cs",
+    "ally_gold",
+    "ally_xp",
+    "ally_cs",
+    "enemy_gold",
+    "enemy_xp",
+    "enemy_cs",
+)
 
 
 def timeline_dataframe_rows(match_id: str, stats: TimelineStats) -> list[dict[str, Any]]:
@@ -692,6 +776,16 @@ def timeline_dataframe_rows(match_id: str, stats: TimelineStats) -> list[dict[st
         zip(stats.gold_series, stats.xp_series, stats.cs_series)
     ):
         opp_gold = stats.opp_gold_series[minute] if minute < len(stats.opp_gold_series) else 0
+        opp_xp = stats.opp_xp_series[minute] if minute < len(stats.opp_xp_series) else 0
+        opp_cs = stats.opp_cs_series[minute] if minute < len(stats.opp_cs_series) else 0
+        ally_gold = stats.ally_gold_series[minute] if minute < len(stats.ally_gold_series) else 0
+        ally_xp = stats.ally_xp_series[minute] if minute < len(stats.ally_xp_series) else 0
+        ally_cs = stats.ally_cs_series[minute] if minute < len(stats.ally_cs_series) else 0
+        enemy_gold = (
+            stats.enemy_gold_series[minute] if minute < len(stats.enemy_gold_series) else 0
+        )
+        enemy_xp = stats.enemy_xp_series[minute] if minute < len(stats.enemy_xp_series) else 0
+        enemy_cs = stats.enemy_cs_series[minute] if minute < len(stats.enemy_cs_series) else 0
         rows.append(
             {
                 "match_id": match_id,
@@ -700,6 +794,15 @@ def timeline_dataframe_rows(match_id: str, stats: TimelineStats) -> list[dict[st
                 "xp": xp,
                 "cs": cs,
                 "gold_diff": gold - opp_gold if opp_gold else None,
+                "opp_gold": opp_gold,
+                "opp_xp": opp_xp,
+                "opp_cs": opp_cs,
+                "ally_gold": ally_gold,
+                "ally_xp": ally_xp,
+                "ally_cs": ally_cs,
+                "enemy_gold": enemy_gold,
+                "enemy_xp": enemy_xp,
+                "enemy_cs": enemy_cs,
             }
         )
     return rows

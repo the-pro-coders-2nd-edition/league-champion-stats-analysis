@@ -133,12 +133,12 @@ class RoleMetricProfile:
     section_order: tuple[str, ...] = (
         "overview",
         "early",
-        "positioning",
-        "economy",
-        "vision",
-        "deaths",
-        "teamfights",
         "objectives",
+        "deaths",
+        "vision",
+        "economy",
+        "teamfights",
+        "positioning",
     )
 
 
@@ -151,7 +151,7 @@ def _laner_overview() -> tuple[MetricSpec, ...]:
         MetricSpec("Damage share", "overview", "avg_damage_share", pct=True),
         MetricSpec("Deaths/game", "overview", "avg_deaths"),
         MetricSpec("Vision/min", "overview", "avg_vspm"),
-        MetricSpec("Avg game", "overview", "avg_duration", suffix=" min"),
+        MetricSpec("Game length", "overview", "avg_duration", suffix=" min"),
     )
 
 
@@ -186,11 +186,11 @@ def _laner_economy() -> tuple[MetricSpec, ...]:
 def _standard_vision() -> tuple[MetricSpec, ...]:
     return (
         MetricSpec("Vision score", "vision", "avg_vision_score"),
-        MetricSpec("VS/min", "vision", "avg_vspm"),
+        MetricSpec("Vision/min", "vision", "avg_vspm"),
         MetricSpec("Control wards", "vision", "avg_control_wards"),
-        MetricSpec("CW lifetime", "vision", "avg_control_ward_lifetime_s", suffix="s"),
-        MetricSpec("VS/min in wins", "vision", "avg_vspm_wins"),
-        MetricSpec("VS/min in losses", "vision", "avg_vspm_losses"),
+        MetricSpec("Control ward lifespan", "vision", "avg_control_ward_lifetime_s", suffix="s"),
+        MetricSpec("Vision/min in wins", "vision", "avg_vspm_wins"),
+        MetricSpec("Vision/min in losses", "vision", "avg_vspm_losses"),
     )
 
 
@@ -203,7 +203,7 @@ def _laner_deaths() -> tuple[MetricSpec, ...]:
         MetricSpec("Under enemy tower (lane)", "deaths", "under_enemy_tower_laning_death_rate", pct=True),
         MetricSpec("Greed deaths", "deaths", "greed_death_rate", pct=True),
         MetricSpec("Side-lane deaths", "deaths", "side_lane_death_rate", pct=True),
-        MetricSpec("Before neutral obj.", "deaths", "death_before_neutral_objective_rate", pct=True),
+        MetricSpec("Deaths before objectives", "deaths", "death_before_neutral_objective_rate", pct=True),
         MetricSpec("Gold at death", "deaths", "avg_gold_at_death", suffix="g"),
         MetricSpec("Outnumbered deaths", "deaths", "outnumbered_death_rate", pct=True),
         MetricSpec("Avg death minute", "deaths", "avg_death_minute"),
@@ -218,7 +218,7 @@ def _standard_teamfights() -> tuple[MetricSpec, ...]:
         MetricSpec("Fight win rate", "teamfights", "fight_win_rate", pct=True),
         MetricSpec("Damage/fight", "teamfights", "avg_damage_per_fight"),
         MetricSpec("Death rate in fights", "teamfights", "death_rate_in_fights", pct=True),
-        MetricSpec("Front-to-back", "teamfights", "avg_front_to_back"),
+        MetricSpec("Forward positioning", "teamfights", "avg_front_to_back"),
         MetricSpec("Unspent gold/fight", "teamfights", "avg_unspent_gold_per_fight", suffix="g"),
         MetricSpec("Advantaged fights", "teamfights", "fights_advantaged"),
         MetricSpec("Disadvantaged fights", "teamfights", "fights_disadvantaged"),
@@ -311,11 +311,11 @@ def _jungle_overview() -> tuple[MetricSpec, ...]:
         MetricSpec("Win rate", "overview", "winrate_pct"),
         MetricSpec("KDA", "overview", "avg_kda"),
         MetricSpec("Kill participation", "overview", "avg_kill_participation", pct=True),
-        MetricSpec("Obj. presence", "overview", "avg_objectives_present_rate", pct=True),
+        MetricSpec("Objective presence", "overview", "avg_objectives_present_rate", pct=True),
         MetricSpec("Deaths/game", "overview", "avg_deaths"),
         MetricSpec("Vision/min", "overview", "avg_vspm"),
         MetricSpec("DPM", "overview", "avg_dpm"),
-        MetricSpec("Avg game", "overview", "avg_duration", suffix=" min"),
+        MetricSpec("Game length", "overview", "avg_duration", suffix=" min"),
     )
 
 
@@ -329,7 +329,7 @@ def _jungle_early() -> tuple[MetricSpec, ...]:
         MetricSpec("Roams pre-15", "laning", "avg_roams_pre15"),
         MetricSpec("Deaths pre-14", "laning", "avg_deaths_pre14"),
         MetricSpec("Solo deaths", "deaths", "solo_death_rate", pct=True),
-        MetricSpec("KP @15", "jungle", "avg_kp15", pct=True),
+        MetricSpec("Kill participation @15", "jungle", "avg_kp15", pct=True),
     )
 
 
@@ -414,7 +414,7 @@ _JUNGLE_PEER: tuple[tuple[str, str, MetricDirection], ...] = (
     ("win", "Win rate", "higher"),
     ("kda", "KDA", "higher"),
     ("kill_participation", "Kill participation", "higher"),
-    ("objectives_present_rate", "Obj. presence", "higher"),
+    ("objectives_present_rate", "Objective presence", "higher"),
     ("deaths", "Deaths/game", "lower"),
     ("vspm", "Vision/min", "higher"),
     ("control_wards", "Control wards", "higher"),
@@ -445,7 +445,7 @@ def _utility_overview() -> tuple[MetricSpec, ...]:
         MetricSpec("Vision/min", "overview", "avg_vspm"),
         MetricSpec("Control wards", "overview", "avg_control_wards"),
         MetricSpec("Deaths/game", "overview", "avg_deaths"),
-        MetricSpec("Avg game", "overview", "avg_duration", suffix=" min"),
+        MetricSpec("Game length", "overview", "avg_duration", suffix=" min"),
     )
 
 
@@ -456,8 +456,8 @@ def _utility_early() -> tuple[MetricSpec, ...]:
         MetricSpec("Dist to ADC", "positioning", "dist_bottom"),
         MetricSpec("Grouped share", "positioning", "avg_grouped_share", pct=True),
         MetricSpec("Deaths pre-14", "laning", "avg_deaths_pre14"),
-        MetricSpec("KP @15", "support", "avg_kp15", pct=True),
-        MetricSpec("VS/min @10", "support", "avg_vspm10"),
+        MetricSpec("Kill participation @15", "support", "avg_kp15", pct=True),
+        MetricSpec("Vision/min @10", "support", "avg_vspm10"),
         MetricSpec("Bot lane presence", "laning", "avg_lane_priority", pct=True),
     )
 
@@ -570,7 +570,7 @@ _UTILITY_PEER: tuple[tuple[str, str, MetricDirection], ...] = (
     ("healing", "Healing", "higher"),
     ("shielding", "Shielding", "higher"),
     ("roams_pre15", "Roams pre-15", "higher"),
-    ("objectives_present_rate", "Obj. presence", "higher"),
+    ("objectives_present_rate", "Objective presence", "higher"),
 )
 
 _UTILITY_ML: tuple[str, ...] = (
@@ -649,7 +649,7 @@ _PROFILES: dict[str, RoleMetricProfile] = {
         ml_features=_JUNGLE_ML,
         early_ml_features=_JUNGLE_EARLY_ML,
         section_order=(
-            "overview", "early", "objectives", "positioning", "economy", "vision", "deaths", "teamfights",
+            "overview", "early", "objectives", "deaths", "vision", "economy", "teamfights", "positioning",
         ),
     ),
     "UTILITY": RoleMetricProfile(
@@ -657,7 +657,7 @@ _PROFILES: dict[str, RoleMetricProfile] = {
         early_section_title="Early game",
         overview=_utility_overview(),
         early_game=_utility_early(),
-        early_headlines=("Roams pre-15", "Dist to ADC", "KP @15"),
+        early_headlines=("Roams pre-15", "Dist to ADC", "Kill participation @15"),
         economy=_utility_economy(),
         vision=_standard_vision(),
         deaths=_utility_deaths(),
@@ -668,7 +668,7 @@ _PROFILES: dict[str, RoleMetricProfile] = {
         ml_features=_UTILITY_ML,
         early_ml_features=_UTILITY_EARLY_ML,
         section_order=(
-            "overview", "early", "vision", "positioning", "economy", "deaths", "teamfights", "objectives",
+            "overview", "early", "objectives", "deaths", "vision", "economy", "teamfights", "positioning",
         ),
     ),
 }

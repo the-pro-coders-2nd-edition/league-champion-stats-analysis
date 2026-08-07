@@ -37,6 +37,7 @@ def test_enqueue_and_get(store: JobStore) -> None:
     assert loaded["riot_id"] == "Test"
     assert loaded.get("filter_champion") is None
     assert loaded.get("filter_role") is None
+    assert loaded.get("min_games") is None
     assert store.get(9999) is None
 
 
@@ -57,6 +58,22 @@ def test_enqueue_stores_build_filter(store: JobStore) -> None:
     assert loaded is not None
     assert loaded["filter_champion"] == "Fiora"
     assert loaded["filter_role"] == "TOP"
+
+
+def test_enqueue_stores_min_games(store: JobStore) -> None:
+    job, created = store.enqueue(
+        kind=jobs.JOB_KIND_ANALYZE,
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        player_slug="test_euw",
+        min_games=10,
+    )
+    assert created
+    assert job["min_games"] == 10
+    loaded = store.get(int(job["id"]))
+    assert loaded is not None
+    assert loaded["min_games"] == 10
 
 
 def test_enqueue_dedups_active_jobs(store: JobStore) -> None:

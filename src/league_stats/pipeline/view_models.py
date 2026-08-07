@@ -21,7 +21,6 @@ from league_stats.presentation.metric_colors import (
     color_winrate,
     interpolate_metric_color,
     score_death_share,
-    score_deaths_per_game,
     score_form_delta,
     score_lane_diff,
     score_peer_gap,
@@ -37,9 +36,47 @@ _RATE_METRICS = frozenset(
         "objectives_present_rate",
     }
 )
+_DISTANCE_METRIC_KEYS = frozenset(
+    {
+        "avg_teammate_distance",
+        "dist_top",
+        "dist_jungle",
+        "dist_middle",
+        "dist_bottom",
+        "dist_support",
+    }
+)
+# Landmark used in player-facing copy; matches positioning GROUPED_RADIUS.
+SCREEN_MAP_UNITS: float = 3_000.0
+
 from league_stats.presentation.ui_icons import icon_fields_for_label, with_icons
 
 PRIORITY_LABELS: dict[str, str] = {"high": "High", "medium": "Medium", "low": "Low"}
+
+
+def format_map_distance(value: Any) -> str:
+    """Format Riot map units as compact LoL landmarks (e.g. ``4.8k ≈ 1.6 screens``)."""
+    if value is None:
+        return "—"
+    try:
+        units = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if not math.isfinite(units):
+        return "—"
+    thousands = units / 1000.0
+    if abs(thousands - round(thousands)) < 0.05:
+        compact = f"{int(round(thousands))}k"
+    else:
+        compact = f"{thousands:.1f}k"
+    screens = units / SCREEN_MAP_UNITS
+    if abs(screens - 1.0) < 0.05:
+        note = "≈ 1 screen"
+    elif abs(screens - round(screens)) < 0.05:
+        note = f"≈ {int(round(screens))} screens"
+    else:
+        note = f"≈ {screens:.1f} screens"
+    return f"{compact} {note}"
 
 
 @dataclass(frozen=True)
@@ -84,6 +121,8 @@ def _format_metric_value(spec: MetricSpec, raw: Any) -> str:
         return f"{float(raw) * 100:.0f}%"
     if spec.key == "winrate_pct":
         return f"{float(raw):.0f}%"
+    if spec.key in _DISTANCE_METRIC_KEYS or spec.key.startswith("dist_"):
+        return format_map_distance(raw)
     if isinstance(raw, float):
         if raw == int(raw):
             return f"{int(raw)}{spec.suffix}"
@@ -176,17 +215,13 @@ def enrich_value_semantics(entry: dict[str, Any]) -> None:
             _apply_value_color(entry, score_winrate(pct_value))
         return
 
-    if "death rate in fights" in lower:
+    if "death rate in fights" in lower or "deaths/game" in lower:
         return
 
     if "deaths" in lower or "death rate" in lower:
         pct_value = _parse_percent(value)
         if pct_value is not None:
             _apply_value_color(entry, score_death_share(pct_value))
-            return
-        number = _parse_signed_number(value)
-        if number is not None and "game" in lower:
-            _apply_value_color(entry, score_deaths_per_game(number))
 
 
 def annotate_card_tiers(
@@ -242,10 +277,6 @@ def overview_card_entries(
                 entry["value_class"] = "win"
             elif winrate <= 0.47:
                 entry["value_class"] = "loss"
-        if entry.get("label") == "Deaths/game":
-            avg_deaths = overview.get("avg_deaths")
-            if avg_deaths is not None:
-                _apply_value_color(entry, score_deaths_per_game(float(avg_deaths)))
     return entries
 
 
@@ -472,10 +503,6 @@ def matchup_row_display(row: dict[str, Any], *, role: str | None = None) -> dict
 
     item.update(matchup_advice(item, role=role))
 
-    winrate = item.get("winrate")
-    if winrate is not None:
-        item["winrate_color"] = color_winrate(float(winrate))
-
     gd10 = item.get("avg_gd10")
     if gd10 is not None:
         item["gd10_color"] = interpolate_metric_color(score_lane_diff(float(gd10)))
@@ -495,10 +522,31 @@ def matchup_row_display(row: dict[str, Any], *, role: str | None = None) -> dict
     return item
 
 
+_MATCHUP_VERDICT_RANK = {
+    "unfavorable": 0,
+    "lean_unfavorable": 1,
+    "even": 2,
+    "lean_favorable": 3,
+    "favorable": 4,
+}
+
+
 def annotate_matchup_rows(
     rows: list[dict[str, Any]],
     *,
     role: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Annotate matchup table rows with advice and display colors."""
-    return [matchup_row_display(row, role=role) for row in rows]
+    """Annotate matchup table rows with advice and display colors.
+
+    Rows are sorted by verdict descending (favorable first); thin samples
+    sort last, then by games and opponent name.
+    """
+    annotated = [matchup_row_display(row, role=role) for row in rows]
+    return sorted(
+        annotated,
+        key=lambda row: (
+            -_MATCHUP_VERDICT_RANK.get(str(row.get("verdict")), -1),
+            -int(row.get("games") or 0),
+            str(row.get("opponent") or "").lower(),
+        ),
+    )

@@ -127,27 +127,50 @@ WIN_FEATURE_HINTS: dict[str, tuple[str, str]] = {
     ),
 }
 
-# Short, specific titles for hero actions and coaching cards.
+# Soft diagnostic titles for coaching cards (avoid absolute "biggest/costing" claims).
 WIN_FEATURE_TITLES: dict[str, str] = {
-    "gd10": "Win more when ahead @10",
-    "gd15": "Protect your @15 gold lead",
-    "xpd10": "Press your level lead @10",
-    "cs10": "Farm stronger @10 to win",
-    "csd10": "CS lead @10 wins your games",
-    "kill_participation": "Join more fights to win",
-    "damage_share": "Carry more teamfight damage",
-    "dpm": "Deal more damage to win",
-    "ccpm": "Land more CC to win",
-    "vspm": "Vision wins your games",
-    "control_wards": "Buy more control wards",
-    "lane_priority": "Push for lane priority",
-    "roams_pre15": "Roam earlier to snowball",
-    "first_item_min": "Rush your first item timing",
-    "healing": "Heal more to win",
-    "shielding": "Shield more to win",
-    "objectives_present_rate": "Show for objectives",
-    "tf_participation": "Join more teamfights",
-    "assists": "Set up more kills",
+    "gd10": "Gold leads at 10 line up with your wins",
+    "gd15": "Gold leads at 15 line up with your wins",
+    "xpd10": "XP leads at 10 line up with your wins",
+    "cs10": "Strong CS at 10 lines up with your wins",
+    "csd10": "CS leads at 10 line up with your wins",
+    "kill_participation": "Higher kill participation lines up with wins",
+    "damage_share": "Higher damage share lines up with wins",
+    "dpm": "Higher damage/min lines up with wins",
+    "ccpm": "Higher CC output lines up with wins",
+    "vspm": "Stronger vision lines up with your wins",
+    "control_wards": "Control wards line up with your wins",
+    "lane_priority": "Lane priority lines up with your wins",
+    "roams_pre15": "Early roams line up with your wins",
+    "first_item_min": "Faster first items line up with your wins",
+    "healing": "Higher healing lines up with your wins",
+    "shielding": "Stronger shielding lines up with your wins",
+    "objectives_present_rate": "Objective presence lines up with wins",
+    "tf_participation": "Teamfight presence lines up with wins",
+    "assists": "Higher assists line up with your wins",
+}
+
+# Short imperatives for the overview "Focus next game" list.
+WIN_FEATURE_ACTIONS: dict[str, str] = {
+    "gd10": "Convert early leads — don't force 50/50 fights",
+    "gd15": "Protect your @15 lead with vision and objectives",
+    "xpd10": "Press level spikes with short, safe trades",
+    "cs10": "Catch cannons and farm under tower",
+    "csd10": "Freeze or slow-push when ahead to deny farm",
+    "kill_participation": "Arrive early for skirmishes and objectives",
+    "damage_share": "Take more winnable fights instead of passing",
+    "dpm": "Poke before fights and spend cooldowns",
+    "ccpm": "Land CC on priority targets in fights",
+    "vspm": "Buy a control ward every recall after 14",
+    "control_wards": "Buy a control ward on every recall",
+    "lane_priority": "Push before rotating and roam off the shove",
+    "roams_pre15": "Roam on cannon waves when you have push",
+    "first_item_min": "Tighten early resets for a faster first item",
+    "healing": "Stay in range to weave heals in fights",
+    "shielding": "Pre-shield allies before major cooldowns",
+    "objectives_present_rate": "Path to the pit 60s before spawn",
+    "tf_participation": "Collapse with your team when fights start",
+    "assists": "Layer CC and follow up on engages",
 }
 
 
@@ -323,9 +346,14 @@ class CoachEngine:
 
         return Recommendation(
             category="Win condition",
-            title=WIN_FEATURE_TITLES.get(primary_feature or "", "Your clearest path to wins"),
+            title=WIN_FEATURE_TITLES.get(
+                primary_feature or "", "One pattern keeps showing up in your wins"
+            ),
             detail=" ".join(segments),
             evidence="; ".join(evidence_parts),
+            action=WIN_FEATURE_ACTIONS.get(
+                primary_feature or "", "Lean into the habit that shows up in your wins"
+            ),
             tone=RecommendationTone.POSITIVE,
             p_value=best_p,
             effect_size=round(best_delta, 3),
@@ -342,7 +370,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Deaths",
-            title="Dying early is costing you games",
+            title="Early deaths show up in your losses",
             detail=(
                 f"You lose {round((1 - split['winrate_high']) * 100)}% of games where you die "
                 f"2+ times before 20 minutes, versus "
@@ -353,6 +381,7 @@ class CoachEngine:
                 f"WR {split['winrate_high']:.0%} ({split['n_high']} games with 2+ early deaths) "
                 f"vs {split['winrate_low']:.0%} ({split['n_low']} games)"
             ),
+            action="Track the jungler — don't contest without priority",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -369,7 +398,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Economy",
-            title="Too much gold sitting unspent",
+            title="Unspent gold is stacking up on recalls",
             detail=(
                 f"You average {avg:.0f} gold banked before each recall — above the "
                 f"~{RECALL_GOLD_COMPONENT_MAX}g component-back norm. Coaches flag "
@@ -380,6 +409,7 @@ class CoachEngine:
                 f"Mean banked gold before recall: {avg:.0f}g over {len(series)} games "
                 f"(healthy component backs: ~800–{RECALL_GOLD_COMPONENT_MAX}g)"
             ),
+            action="Reset when you can buy a meaningful spike",
             p_value=None,
             effect_size=round(severity, 3),
             priority=_priority(severity, None, len(series)),
@@ -401,7 +431,7 @@ class CoachEngine:
             if delta >= MIN_WINRATE_DELTA:
                 return Recommendation(
                     category="Teamfights",
-                    title="Too much gold unspent when fights start",
+                    title="Fights start with gold still unspent",
                     detail=(
                         f"When you enter fights with {threshold:.0f}g+ banked your win rate is "
                         f"{split['winrate_high']:.0%} versus {split['winrate_low']:.0%} otherwise "
@@ -412,6 +442,7 @@ class CoachEngine:
                         f"WR {split['winrate_high']:.0%} ({split['n_high']} high-bank games) vs "
                         f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
                     ),
+                    action="Spend on the reset before you scrim",
                     p_value=split["p_value"],
                     effect_size=round(delta, 3),
                     priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -422,7 +453,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Teamfights",
-            title="You walk into fights with too much gold unspent",
+            title="Fights start with gold still unspent",
             detail=(
                 f"You average {avg:.0f}g banked at fight start — above the "
                 f"~{RECALL_GOLD_COMPONENT_MAX}g component norm. Reset for a spike before "
@@ -432,6 +463,7 @@ class CoachEngine:
                 f"Mean unspent gold per fight: {avg:.0f}g over {len(series)} games "
                 f"(healthy backs: ~800–{RECALL_GOLD_COMPONENT_MAX}g)"
             ),
+            action="Reset for a spike before objective fights",
             p_value=None,
             effect_size=round(severity, 3),
             priority=_priority(severity, None, len(series)),
@@ -455,7 +487,7 @@ class CoachEngine:
         avg_high = float(series[series >= threshold].mean())
         return Recommendation(
             category="Deaths",
-            title="Dying with unspent gold is costing you games",
+            title="Deaths with banked gold show up in losses",
             detail=(
                 f"When you die with {threshold:.0f}g+ banked on average your win rate drops to "
                 f"{split['winrate_high']:.0%} versus {split['winrate_low']:.0%} otherwise "
@@ -466,6 +498,7 @@ class CoachEngine:
                 f"WR {split['winrate_high']:.0%} ({split['n_high']} games) vs "
                 f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
             ),
+            action="Shop before you die — reset for components",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -487,7 +520,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Items",
-            title="Slow first item completions correlate with losses",
+            title="First item timing is slower in losses",
             detail=(
                 f"Your first item lands {gap:.1f} minutes later in losses "
                 f"({losses.mean():.1f} min) than in wins ({wins.mean():.1f} min). "
@@ -497,6 +530,7 @@ class CoachEngine:
                 f"First item at {wins.mean():.1f} min in wins vs {losses.mean():.1f} min in "
                 f"losses (Mann-Whitney p={stat_result.pvalue:.3f})"
             ),
+            action="Tighten your first two resets",
             p_value=round(float(stat_result.pvalue), 5),
             effect_size=round(min(1.0, gap / 4), 3),
             priority=_priority(min(1.0, gap / 4), float(stat_result.pvalue), len(frame)),
@@ -515,13 +549,14 @@ class CoachEngine:
         losses_avg = frame[frame["win"] == 0]["control_wards"].mean()
         return Recommendation(
             category="Vision",
-            title="Control wards are winning you games",
+            title="Control wards line up with your wins",
             detail=(
                 f"You buy {wins_avg:.1f} control wards in wins but only {losses_avg:.1f} in "
                 "losses, and the correlation with winning is positive. Make the control ward "
                 "part of every recall after the laning phase."
             ),
             evidence=f"Point-biserial r={corr:.2f}, p={p_value:.3f}, n={len(frame)}",
+            action="Buy a control ward every recall after laning",
             tone=RecommendationTone.POSITIVE,
             p_value=round(float(p_value), 5),
             effect_size=round(float(corr), 3),
@@ -540,7 +575,7 @@ class CoachEngine:
         loss_share = float((side["win"] == 0).mean()) if len(side) else 0.0
         return Recommendation(
             category="Macro",
-            title="You die too often pushing side lanes",
+            title="Side-lane pushes are getting you killed",
             detail=(
                 f"{len(side)} deaths came from side-lane pushes ({len(late)} after 22 min), and "
                 f"{loss_share:.0%} of them happened in games you lost. After 22 minutes, only "
@@ -548,6 +583,7 @@ class CoachEngine:
                 "group and play around your team's win condition."
             ),
             evidence=f"{len(side)} side-lane deaths across {games} games",
+            action="Only take side waves with vision and tempo",
             p_value=None,
             effect_size=round(min(1.0, len(side) / games / 2), 3),
             priority=_priority(min(1.0, len(side) / games / 2), None, len(side)),
@@ -566,7 +602,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Objectives",
-            title="Deaths right before epic monsters are throwing objectives",
+            title="Pre-objective deaths hurt your setups",
             detail=(
                 f"You win only {split['winrate_high']:.0%} of games where you die within the "
                 f"60–10 seconds window before a dragon, elder, or baron is taken, versus "
@@ -577,6 +613,7 @@ class CoachEngine:
                 f"WR {split['winrate_high']:.0%} ({split['n_high']} games) vs "
                 f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
             ),
+            action="Reset 90s before spawn, then move with your team",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -591,13 +628,14 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Objectives",
-            title="You miss too many objective fights",
+            title="Objective presence has room to grow",
             detail=(
                 f"You were near the pit for only {presence:.0%} of epic monster takes. "
                 "Being present for objectives matters more than your average game shows — push "
                 "your assigned lane before rotating to the pit, and arrive first, not last."
             ),
             evidence=f"Present at {presence:.0%} of {len(self._objectives)} objective takes",
+            action="Arrive at the pit before the fight starts",
             p_value=None,
             effect_size=round(0.6 - presence, 3),
             priority=_priority(0.6 - presence, None, len(self._objectives)),
@@ -613,7 +651,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Deaths",
-            title="Solo deaths are your biggest leak",
+            title="Solo deaths show up in your losses",
             detail=(
                 f"With 2+ solo deaths your win rate drops to {split['winrate_high']:.0%} "
                 f"(vs {split['winrate_low']:.0%}). Most were with little recent team vision — "
@@ -623,6 +661,7 @@ class CoachEngine:
                 f"WR {split['winrate_high']:.0%} ({split['n_high']} games) vs "
                 f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
             ),
+            action="Don't cross the river without a ward and a reason",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -640,7 +679,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Deaths",
-            title="Outnumbered deaths are throwing fights",
+            title="Outnumbered deaths show up in your losses",
             detail=(
                 f"With 2+ outnumbered deaths your win rate falls to {split['winrate_high']:.0%} "
                 f"(vs {split['winrate_low']:.0%}). Track enemy numbers before committing — "
@@ -650,6 +689,7 @@ class CoachEngine:
                 f"WR {split['winrate_high']:.0%} ({split['n_high']} games) vs "
                 f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
             ),
+            action="Count bodies before you commit",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -667,7 +707,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Deaths",
-            title="Greed deaths are a recurring pattern",
+            title="Greed deaths show up in your losses",
             detail=(
                 f"Games with 2+ greed deaths win only {split['winrate_high']:.0%} "
                 f"(vs {split['winrate_low']:.0%}). These are deaths after overextending "
@@ -677,6 +717,7 @@ class CoachEngine:
                 f"WR {split['winrate_high']:.0%} ({split['n_high']} games) vs "
                 f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
             ),
+            action="Back off when vision is thin or numbers are even",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -694,7 +735,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Laning",
-            title="Gank deaths in lane are a pattern",
+            title="Gank deaths in laning hurt your games",
             detail=(
                 f"Games with a gank death before 14 minutes win only {split['winrate_high']:.0%} "
                 f"(vs {split['winrate_low']:.0%}). Track the jungler, respect river wards, and "
@@ -704,6 +745,7 @@ class CoachEngine:
                 f"WR {split['winrate_high']:.0%} ({split['n_high']} games) vs "
                 f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
             ),
+            action="Track the jungler before you push",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -721,7 +763,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Laning",
-            title="You're dying under your own tower in lane",
+            title="Own-tower deaths in lane hurt your games",
             detail=(
                 f"When you die under your own tower before 14 minutes your win rate is only "
                 f"{split['winrate_high']:.0%} (vs {split['winrate_low']:.0%}). Respect dive "
@@ -732,6 +774,7 @@ class CoachEngine:
                 f"WR {split['winrate_high']:.0%} ({split['n_high']} games) vs "
                 f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
             ),
+            action="Keep health above dive thresholds and ping help early",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -749,7 +792,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Laning",
-            title="Your tower dives in lane are costing games",
+            title="Tower dives in lane hurt your games",
             detail=(
                 f"When you die under an enemy tower before 14 minutes your win rate is only "
                 f"{split['winrate_high']:.0%} (vs {split['winrate_low']:.0%}). Only dive with "
@@ -760,6 +803,7 @@ class CoachEngine:
                 f"WR {split['winrate_high']:.0%} ({split['n_high']} games) vs "
                 f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
             ),
+            action="Only dive with kill pressure and jungle cover",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -784,7 +828,7 @@ class CoachEngine:
             )
         return Recommendation(
             category="Deaths",
-            title="You give away too many shutdown bounties",
+            title="Shutdown bounties show up in your losses",
             detail=(
                 f"Games where you give 200+ shutdown gold win only {split['winrate_high']:.0%} "
                 f"(vs {split['winrate_low']:.0%}). You average {avg:.0f} shutdown gold given per "
@@ -796,6 +840,7 @@ class CoachEngine:
                 f"{split['winrate_low']:.0%} ({split['n_low']} games)"
                 + (f"; {bounty_deaths} bounty deaths logged" if bounty_deaths else "")
             ),
+            action="Play safe in fights when you're ahead",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -818,7 +863,7 @@ class CoachEngine:
         throw_rate = len(throws) / len(frame)
         return Recommendation(
             category="Macro",
-            title="You throw leads you build in lane",
+            title="Early leads aren't converting cleanly",
             detail=(
                 f"You win only {ahead_wr:.0%} of games where you're 750+ gold ahead at 15 "
                 f"minutes ({len(throws)} throws in {len(ahead)} ahead games). Convert leads "
@@ -829,6 +874,7 @@ class CoachEngine:
                 f"{ahead_wr:.0%} WR when ahead at 15 ({len(ahead)} games); "
                 f"{throw_rate:.0%} of all games are thrown leads"
             ),
+            action="Convert leads with objectives and vision, not greed",
             p_value=None,
             effect_size=round(0.62 - ahead_wr, 3),
             priority=_priority(0.62 - ahead_wr, None, len(ahead)),
@@ -851,7 +897,7 @@ class CoachEngine:
         low_avg = float(frame[frame["tf_participation"] < 0.65]["tf_participation"].mean())
         return Recommendation(
             category="Teamfights",
-            title="Low teamfight participation is limiting your impact",
+            title="Teamfight participation has room to grow",
             detail=(
                 f"When you show up to fewer than 65% of detected teamfights your win rate is "
                 f"{split['winrate_low']:.0%} versus {split['winrate_high']:.0%} otherwise "
@@ -862,6 +908,7 @@ class CoachEngine:
                 f"WR {split['winrate_low']:.0%} ({split['n_low']} low-participation games) vs "
                 f"{split['winrate_high']:.0%} ({split['n_high']} games), p={split['p_value']:.3f}"
             ),
+            action="Group before objectives and track fight timers",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -879,7 +926,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Teamfights",
-            title="Too many fights started at a numbers disadvantage",
+            title="Disadvantaged fights show up in your losses",
             detail=(
                 f"In games where you take 2+ disadvantaged fights your win rate drops to "
                 f"{split['winrate_high']:.0%} versus {split['winrate_low']:.0%} otherwise. "
@@ -891,6 +938,7 @@ class CoachEngine:
                 f"fights) vs {split['winrate_low']:.0%} ({split['n_low']} games), "
                 f"p={split['p_value']:.3f}"
             ),
+            action="Only commit when numbers are even or better",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -911,7 +959,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Positioning",
-            title="Over-grouping is hurting your win rate",
+            title="Over-grouping lines up with losses",
             detail=(
                 f"When you're grouped with teammates {threshold:.0%}+ of the mid/late game "
                 f"your win rate is {split['winrate_high']:.0%} versus {split['winrate_low']:.0%} "
@@ -922,6 +970,7 @@ class CoachEngine:
                 f"WR {split['winrate_high']:.0%} ({split['n_high']} high-group games) vs "
                 f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
             ),
+            action="Catch side waves between fights",
             p_value=split["p_value"],
             effect_size=round(delta, 3),
             priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -942,7 +991,7 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Positioning",
-            title="Splitting for farm wins you more games",
+            title="Solo farm time lines up with your wins",
             detail=(
                 f"When you spend {threshold:.0%}+ of the mid/late game alone on the map "
                 f"you win {split['winrate_high']:.0%} versus {split['winrate_low']:.0%} "
@@ -953,6 +1002,7 @@ class CoachEngine:
                 f"WR {split['winrate_high']:.0%} ({split['n_high']} high-solo games) vs "
                 f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
             ),
+            action="Collect side resources when the team doesn't need you",
             tone=RecommendationTone.POSITIVE,
             p_value=split["p_value"],
             effect_size=round(delta, 3),
@@ -979,7 +1029,7 @@ class CoachEngine:
                 delta = wr_close - wr_far
                 rec = Recommendation(
                     category="Positioning",
-                    title=f"Stay closer to your {label}",
+                    title=f"Closer play with your {label} lines up with wins",
                     detail=(
                         f"You win {wr_close:.0%} of games when you play closer to your {label} "
                         f"versus {wr_far:.0%} when farther away. Path near them before objectives "
@@ -989,6 +1039,7 @@ class CoachEngine:
                         f"WR {wr_close:.0%} ({split['n_low']} close games) vs "
                         f"{wr_far:.0%} ({split['n_high']} far games), p={split['p_value']:.3f}"
                     ),
+                    action=f"Path near your {label} before objectives",
                     tone=RecommendationTone.POSITIVE,
                     p_value=split["p_value"],
                     effect_size=round(delta, 3),
@@ -999,7 +1050,7 @@ class CoachEngine:
                 delta = wr_far - wr_close
                 rec = Recommendation(
                     category="Positioning",
-                    title=f"Don't over-group on your {label}",
+                    title=f"Over-grouping on your {label} lines up with losses",
                     detail=(
                         f"You win {wr_far:.0%} of games when you play farther from your {label} "
                         f"versus {wr_close:.0%} when glued to that lane. Take nearby farm and "
@@ -1009,6 +1060,7 @@ class CoachEngine:
                         f"WR {wr_far:.0%} ({split['n_high']} far games) vs "
                         f"{wr_close:.0%} ({split['n_low']} close games), p={split['p_value']:.3f}"
                     ),
+                    action=f"Farm nearby without shadowing your {label} every rotation",
                     p_value=split["p_value"],
                     effect_size=round(delta, 3),
                     priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
@@ -1030,13 +1082,14 @@ class CoachEngine:
         worst_kind = str(by_kind.index[0]) if not by_kind.empty else "objective"
         return Recommendation(
             category="Objectives",
-            title="You're dead too often right before objectives",
+            title="Death timers before objectives hurt setups",
             detail=(
                 f"You were on death timer for {dead_rate:.0%} of epic monster takes "
                 f"({worst_kind} is the worst). Start your reset earlier and path toward "
                 "the pit 60–90 seconds before spawn so you're alive and in position."
             ),
             evidence=f"Dead before {dead_rate:.0%} of {len(self._objectives)} objective takes",
+            action="Reset earlier and path to the pit 60–90s before spawn",
             p_value=None,
             effect_size=round(dead_rate, 3),
             priority=_priority(dead_rate, None, len(self._objectives)),
@@ -1052,13 +1105,14 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Laning",
-            title="Your CS at 10 minutes has room to grow",
+            title="CS at 10 has room to grow",
             detail=(
                 f"You average {avg:.0f} CS at 10. Your power spikes are gold-bound: pushing this "
                 "to 75+ is roughly a free half-item by mid game. Prioritise catching every "
                 "cannon and securing ranged minions under tower."
             ),
             evidence=f"Mean CS@10 = {avg:.1f} over {len(frame)} games",
+            action="Catch every cannon and farm under tower",
             p_value=None,
             effect_size=round(min(1.0, (75 - avg) / 30), 3),
             priority=_priority(min(1.0, (75 - avg) / 30), None, len(frame)),
@@ -1075,13 +1129,14 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Laning",
-            title="Lane priority translates directly into wins for you",
+            title="Lane priority lines up with your wins",
             detail=(
                 "Games where you hold wave priority in lane are significantly more likely to "
                 "be wins. Keep the wave pushed before every objective spawn and roam off the "
                 "shove."
             ),
             evidence=f"Point-biserial r={corr:.2f}, p={p_value:.3f}, n={len(frame)}",
+            action="Push before objectives and roam off the shove",
             tone=RecommendationTone.POSITIVE,
             p_value=round(float(p_value), 5),
             effect_size=round(float(corr), 3),
@@ -1101,12 +1156,13 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Map impact",
-            title="Kill participation is below role expectations",
+            title="Kill participation trails role norms",
             detail=(
                 f"You average {avg:.0%} KP vs a ~{target:.0%} benchmark for {self._role.lower()}. "
                 "Path toward active lanes before objectives and arrive early for skirmishes."
             ),
             evidence=f"Mean KP = {avg:.1%} over {len(self._matches)} games",
+            action="Path toward active lanes before objectives",
             priority=_priority(target - avg, None, len(self._matches)),
             sample_size=len(self._matches),
         )
@@ -1123,12 +1179,13 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Vision",
-            title="Vision score trails support benchmarks",
+            title="Vision score trails support norms",
             detail=(
-                f"{avg:.2f} VS/min vs ~{target:.2f} for peers. Buy control wards every recall "
+                f"{avg:.2f} vision/min vs ~{target:.2f} for peers. Buy control wards every recall "
                 "and sweep high-traffic river brushes before objectives."
             ),
-            evidence=f"Mean VS/min = {avg:.2f} over {len(self._matches)} games",
+            evidence=f"Mean vision/min = {avg:.2f} over {len(self._matches)} games",
+            action="Buy a control ward every recall",
             priority=_priority(target - avg, None, len(self._matches)),
             sample_size=len(self._matches),
         )
@@ -1150,12 +1207,13 @@ class CoachEngine:
             return None
         return Recommendation(
             category="Teamfights",
-            title="Crowd control output is below benchmark",
+            title="Crowd control trails role norms",
             detail=(
                 f"{avg:.2f} CC/min vs ~{target:.2f} for peers. Look for flanks with hard CC "
                 "before objectives and chain CC on priority targets in fights."
             ),
             evidence=f"Mean CC/min = {avg:.2f} over {len(self._matches)} games",
+            action="Land hard CC on priority targets in fights",
             priority=_priority(target - avg, None, len(self._matches)),
             sample_size=len(self._matches),
         )
@@ -1174,6 +1232,8 @@ def recommendations_markdown(
         lines.append("")
         lines.append(rec.detail)
         lines.append("")
+        if rec.action:
+            lines.append(f"- **Action:** {rec.action}")
         lines.append(f"- **Evidence:** {rec.evidence}")
         if rec.p_value is not None:
             lines.append(f"- **p-value:** {rec.p_value:.4f}")

@@ -22,6 +22,19 @@ from league_stats.utils import get_logger
 KEYSTONE_ID_MIN: int = 8000
 KEYSTONE_ID_MAX: int = 10_000
 
+# Stat shard icons are not listed in runesReforged.json.
+STAT_SHARD_ICON_PATHS: dict[int, str] = {
+    5001: "perk-images/StatMods/StatModsHealthScalingIcon.png",
+    5002: "perk-images/StatMods/StatModsArmorIcon.png",
+    5003: "perk-images/StatMods/StatModsMagicResIcon.png",
+    5005: "perk-images/StatMods/StatModsAttackSpeedIcon.png",
+    5007: "perk-images/StatMods/StatModsCDRScalingIcon.png",
+    5008: "perk-images/StatMods/StatModsAdaptiveForceIcon.png",
+    5010: "perk-images/StatMods/StatModsMovementSpeedIcon.png",
+    5011: "perk-images/StatMods/StatModsHealthPlusIcon.png",
+    5013: "perk-images/StatMods/StatModsTenacityIcon.png",
+}
+
 COMMUNITY_DRAGON_BASE = "https://raw.communitydragon.org/latest"
 ROLE_ICON_FILES: dict[str, str] = {
     "TOP": "icon-position-top.png",
@@ -252,6 +265,7 @@ class DDragonAssets:
                 self._load_item_names(manifest)
             self._ensure_summoner_icons(force=summoner_map_stale)
             self._ensure_rune_tree_icons(force=False)
+            self._ensure_rune_icons(force=False)
             if item_map_stale or summoner_map_stale:
                 self._write_manifest(
                     version,
@@ -264,7 +278,7 @@ class DDragonAssets:
 
         try:
             champions = self._fetch_champions(version)
-            rune_icons = self._fetch_keystone_icons(version)
+            rune_icons = self._fetch_rune_icons(version)
             items = self._fetch_items(version)
         except requests.RequestException as exc:
             self._log.warning("Could not download Data Dragon assets: %s", exc)
@@ -366,13 +380,17 @@ class DDragonAssets:
         path = self._champions_dir / f"{champion_icon_id(champion)}.png"
         return path if path.is_file() else None
 
-    def keystone_icon_path(self, keystone_name: str) -> Path | None:
-        """Return the on-disk keystone icon path when it exists."""
-        perk_id = self._perk_name_to_id.get(keystone_name)
+    def rune_icon_path(self, rune_name: str) -> Path | None:
+        """Return the on-disk rune / keystone / shard icon path when it exists."""
+        perk_id = self._perk_name_to_id.get(rune_name)
         if perk_id is None:
             return None
         path = self._runes_dir / f"{perk_id}.png"
         return path if path.is_file() else None
+
+    def keystone_icon_path(self, keystone_name: str) -> Path | None:
+        """Return the on-disk keystone icon path when it exists."""
+        return self.rune_icon_path(keystone_name)
 
     def rune_tree_icon_path(self, tree_name: str) -> Path | None:
         """Return the on-disk rune style tree icon path when it exists."""
@@ -575,12 +593,16 @@ class DDragonAssets:
             return None
         return _relative_href(from_dir, path)
 
-    def keystone_href(self, keystone_name: str, *, from_dir: Path) -> str | None:
-        """Relative URL from an HTML directory to a keystone icon."""
-        path = self.keystone_icon_path(keystone_name)
+    def rune_href(self, rune_name: str, *, from_dir: Path) -> str | None:
+        """Relative URL from an HTML directory to a rune / keystone / shard icon."""
+        path = self.rune_icon_path(rune_name)
         if path is None:
             return None
         return _relative_href(from_dir, path)
+
+    def keystone_href(self, keystone_name: str, *, from_dir: Path) -> str | None:
+        """Relative URL from an HTML directory to a keystone icon."""
+        return self.rune_href(keystone_name, from_dir=from_dir)
 
     def rune_tree_href(self, tree_name: str, *, from_dir: Path) -> str | None:
         """Relative URL from an HTML directory to a rune style tree icon."""
@@ -651,22 +673,30 @@ class DDragonAssets:
         response.raise_for_status()
         return dict(response.json()["data"])
 
-    def _fetch_keystone_icons(self, version: str) -> dict[int, str]:
+    def _fetch_rune_icons(self, version: str) -> dict[int, str]:
+        """All style-tree rune icons plus known stat shard icons."""
         response = self._session.get(
             f"{DDRAGON_BASE}/cdn/{version}/data/en_US/runesReforged.json",
             timeout=15,
         )
         response.raise_for_status()
-        icons: dict[int, str] = {}
+        icons: dict[int, str] = dict(STAT_SHARD_ICON_PATHS)
         for style in response.json():
-            slots = style.get("slots") or []
-            if not slots:
-                continue
-            for rune in slots[0].get("runes") or []:
-                rune_id = int(rune["id"])
-                if KEYSTONE_ID_MIN <= rune_id < KEYSTONE_ID_MAX:
-                    icons[rune_id] = str(rune["icon"])
+            for slot in style.get("slots") or []:
+                for rune in slot.get("runes") or []:
+                    rune_id = int(rune["id"])
+                    icon_path = rune.get("icon")
+                    if icon_path:
+                        icons[rune_id] = str(icon_path)
         return icons
+
+    def _fetch_keystone_icons(self, version: str) -> dict[int, str]:
+        """Backward-compatible alias that returns only keystone icons."""
+        return {
+            perk_id: icon
+            for perk_id, icon in self._fetch_rune_icons(version).items()
+            if KEYSTONE_ID_MIN <= perk_id < KEYSTONE_ID_MAX
+        }
 
     def _fetch_rune_tree_icons(self, version: str) -> dict[str, str]:
         response = self._session.get(
@@ -722,7 +752,7 @@ class DDragonAssets:
         *,
         force: bool,
     ) -> None:
-        for perk_id, icon_path in tqdm(rune_icons.items(), desc="Keystone icons", unit="icon"):
+        for perk_id, icon_path in tqdm(rune_icons.items(), desc="Rune icons", unit="icon"):
             destination = self._runes_dir / f"{perk_id}.png"
             if destination.is_file() and not force:
                 continue
@@ -870,6 +900,25 @@ class DDragonAssets:
             self._log.warning("Could not download rune tree icons: %s", exc)
             return
         self._download_rune_tree_icons(version, tree_icons, force=force)
+
+    def _full_runes_cached(self) -> bool:
+        """True when minor runes / shards are present (not only keystones)."""
+        if not self._runes_dir.is_dir():
+            return False
+        return sum(1 for _ in self._runes_dir.glob("*.png")) >= 40
+
+    def _ensure_rune_icons(self, *, force: bool = False) -> None:
+        if self._full_runes_cached() and not force:
+            return
+        version = self._resolve_asset_version()
+        if not version:
+            return
+        try:
+            rune_icons = self._fetch_rune_icons(version)
+        except requests.RequestException as exc:
+            self._log.warning("Could not download rune icons: %s", exc)
+            return
+        self._download_rune_icons(version, rune_icons, force=force)
 
     def _resolve_asset_version(self) -> str:
         if self._version:

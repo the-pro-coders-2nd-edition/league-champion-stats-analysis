@@ -1,19 +1,20 @@
 """Gradient metric colors matching ``--score-fill-gradient`` in report.css.
 
-Stops: loss (red) -> neutral (gold) -> win (green early) -> teal -> blue.
+Stops: loss (red) -> neutral (gold) -> mint -> teal -> jade.
+Richer teal/jade means better on the positive side; keeps luminosity on dark UI.
 """
 
 from __future__ import annotations
 
 LOSS_HEX = "#e05563"
 NEUTRAL_HEX = "#e0b155"
+MINT_HEX = "#7ed4c0"
 WIN_HEX = "#3fb68b"
-TEAL_HEX = "#4db8c4"
-BLUE_HEX = "#5b9cf5"
+JADE_HEX = "#2a9f7a"
 
-# Positive-side stop positions mirror the bar fill's gold(16%) → green(38%) →
-# teal(68%) → blue(100%) spacing, remapped onto score [0, 1].
-_POS_GREEN = (38 - 16) / (100 - 16)
+# Positive-side stop positions mirror the bar fill's gold(16%) → mint(38%) →
+# teal(68%) → jade(100%) spacing, remapped onto score [0, 1].
+_POS_MINT = (38 - 16) / (100 - 16)
 _POS_TEAL = (68 - 16) / (100 - 16)
 
 _WINRATE_MID = 50.0
@@ -89,18 +90,18 @@ def _rgb_to_hex(r: int, g: int, b: int) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
-# score → hex; same palette / pacing as CSS score bars (green early, then teal/blue).
+# score → hex; same palette / pacing as CSS score bars (mint → teal → jade).
 _METRIC_COLOR_STOPS: list[tuple[float, str]] = [
     (-1.0, LOSS_HEX),
     (0.0, NEUTRAL_HEX),
-    (_POS_GREEN, WIN_HEX),
-    (_POS_TEAL, TEAL_HEX),
-    (1.0, BLUE_HEX),
+    (_POS_MINT, MINT_HEX),
+    (_POS_TEAL, WIN_HEX),
+    (1.0, JADE_HEX),
 ]
 
 
 def interpolate_metric_color(score: float) -> str:
-    """Map ``score`` in [-1, 1] along the shared red→gold→green→teal→blue ramp."""
+    """Map ``score`` in [-1, 1] along the shared red→gold→mint→teal→jade ramp."""
     score = _clamp(score)
     for index in range(1, len(_METRIC_COLOR_STOPS)):
         left_score, left_hex = _METRIC_COLOR_STOPS[index - 1]
@@ -115,7 +116,7 @@ def interpolate_metric_color(score: float) -> str:
                 round(_lerp(g1, g2, t)),
                 round(_lerp(b1, b2, t)),
             )
-    return BLUE_HEX
+    return JADE_HEX
 
 
 def score_winrate(pct: float) -> float:
@@ -127,7 +128,7 @@ def score_lane_diff(value: float, *, span: float | None = None) -> float:
     """Signed lane differential where positive is better.
 
     Defaults to the gold/XP span (±300). Pass ``span=CS_DIFF_SPAN`` for CS /
-    CS-diff metrics so modest leads already read green.
+    CS-diff metrics so modest leads already read teal.
     """
     return _clamp(value / (span if span is not None else _LANE_DIFF_SPAN))
 

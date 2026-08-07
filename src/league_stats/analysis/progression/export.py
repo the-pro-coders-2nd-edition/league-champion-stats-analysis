@@ -18,7 +18,7 @@ def progression_to_markdown(comparison: ProgressionComparison) -> str:
         "",
         f"- Form score: **{snap.form_score:+.1f}** ({snap.trend}, {snap.confidence} confidence)",
         f"- Win rate: {snap.recent_winrate * 100:.0f}% vs baseline {snap.baseline_winrate * 100:.0f}% "
-        f"({snap.winrate_delta_pp:+.1f} pp)",
+        f"({snap.winrate_delta_pp:+.1f} percentage points)",
         f"- Streak: {snap.current_streak or '—'}",
         f"- {snap.headline}",
         "",

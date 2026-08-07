@@ -19,10 +19,17 @@
           <option value="{{ value }}">{{ label }}</option>
           {% endfor %}
         </select>
+        <select name="min_games" aria-label="Minimum games for a report">
+          {% for value in min_games_choices %}
+          <option value="{{ value }}"{% if value == default_min_games %} selected{% endif %}>
+            {{ value }} games
+          </option>
+          {% endfor %}
+        </select>
         <button type="submit" class="btn-primary" id="analyze-submit">Analyze</button>
       </div>
     </div>
-    <p class="hint">Same region applies to every account in the group.</p>
+    <p class="hint">Same region for every account. The games menu sets the minimum ranked games a champion and lane need before a report is created.</p>
     <div class="error" id="analyze-error"></div>
   </form>
 </div>
@@ -87,8 +94,8 @@
       {% if group.job_state == 'queued' %}Queued
       {% elif group.job_state == 'fetching' %}Downloading matches
       {% elif group.job_state == 'analyzing' %}Analyzing
-      {% elif group.job_state == 'report_ready' %}Report ready — peers pending
-      {% elif group.job_state == 'peer_running' %}Peer analysis running
+      {% elif group.job_state == 'report_ready' %}Report ready — rank comparison loading
+      {% elif group.job_state == 'peer_running' %}Comparing to players at your rank
       {% else %}Analysis in progress
       {% endif %}
     </div>
@@ -115,8 +122,8 @@
     queued: 'Queued',
     fetching: 'Downloading matches',
     analyzing: 'Analyzing',
-    report_ready: 'Report ready — peers pending',
-    peer_running: 'Peer analysis running'
+    report_ready: 'Report ready — rank comparison loading',
+    peer_running: 'Comparing to players at your rank'
   };
 
   function syncRemoveButtons() {
@@ -171,6 +178,7 @@
     var payload = {
       players: players,
       region: form.elements.region.value,
+      min_games: parseInt(form.elements.min_games.value, 10),
     };
     fetch('/api/analyses', {
       method: 'POST',

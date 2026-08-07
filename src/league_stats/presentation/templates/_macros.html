@@ -78,10 +78,13 @@
 {%- endif -%}
 {%- endmacro %}
 
-{% macro section_title(label, icon=none, tone='accent', iconify_id=none, icon_href=none, category=none) -%}
+{% macro section_title(label, icon=none, tone='accent', iconify_id=none, icon_href=none, category=none, scope=none, scope_kind=none) -%}
 <h2 class="section-title{% if category %} section-title--{{ category }}{% endif %}">
   {{ metric_icon(icon, tone, iconify_id, icon_href) }}
   <span>{{ label }}</span>
+  {%- if scope %}
+  <span class="scope-chip{% if scope_kind %} scope-chip--{{ scope_kind }}{% endif %}">{{ scope }}</span>
+  {%- endif %}
 </h2>
 {%- endmacro %}
 
@@ -122,6 +125,9 @@
 <div class="card{% if card.tier == 'headline' %} card--headline{% endif %}">
   <div class="label">{{ metric_card_label(card.label, card.icon, card.icon_tone, iconify_id=card.iconify, icon_href=card.icon_href, role_icon_href=card.role_icon_href, tooltip=card.tooltip) }}</div>
   <div class="value{% if card.value_class %} {{ card.value_class }}{% endif %}"{% if card.value_color %} style="color: {{ card.value_color }}"{% endif %}>{{ card.value }}</div>
+  {%- if card.benchmark %}
+  <div class="card-benchmark card-benchmark--{{ card.benchmark_tone | default('inline') }}"{% if card.benchmark_color %} style="color: {{ card.benchmark_color }}"{% endif %}>{{ card.benchmark }}</div>
+  {%- endif %}
 </div>
 {%- endmacro %}
 
@@ -163,8 +169,38 @@
   <p>{{ rec.detail }}</p>
   <details class="rec-evidence">
     <summary>Why this?</summary>
-    <p class="meta">Evidence: {{ rec.evidence }}{% if rec.p_value is not none %} · p = {{ '%.4f' % rec.p_value }}{% endif %}{% if rec.sample_size %} · {{ rec.sample_size }} games{% endif %}</p>
+    {% if rec.evidence_summary %}<p class="rec-evidence-summary">{{ rec.evidence_summary }}</p>{% endif %}
+    <p class="meta">Stats: {{ rec.evidence }}{% if rec.p_value is not none %} · p = {{ '%.4f' % rec.p_value }}{% endif %}{% if rec.sample_size %} · {{ rec.sample_size }} games{% endif %}</p>
   </details>
+</div>
+{%- endmacro %}
+
+{% macro section_pulse(section_id, verdict=none) -%}
+{% set v = verdict or {} %}
+<div class="section-pulse{% if v.tone %} section-pulse--{{ v.tone }}{% endif %}" data-section-verdict="{{ section_id }}"{% if not v.text %} hidden{% endif %}>
+  <div class="section-pulse-callout">
+    <span class="section-pulse-label">{{ v.label or 'Score' }}</span>
+    <div class="section-pulse-head">
+      <strong class="section-pulse-title">{{ v.text or '' }}</strong>
+      {% if v.score is defined and v.score is not none %}
+      <span class="section-pulse-score">{{ v.score }}</span>
+      {% endif %}
+    </div>
+    {% if v.score is defined and v.score is not none %}
+    <div class="section-pulse-bar" aria-hidden="true"><i style="width: {{ v.score }}%"></i></div>
+    {% endif %}
+    {% if v.hint %}
+    <p class="section-pulse-hint">{{ v.hint }}</p>
+    {% elif v.value %}
+    <p class="section-pulse-hint">{{ v.value }}</p>
+    {% endif %}
+  </div>
+  {% if v.fix and v.fix.title %}
+  <a class="section-pulse-fix" href="#{{ v.fix.anchor or 'coaching' }}">
+    <span class="section-pulse-fix-kicker">Try this</span>
+    <span class="section-pulse-fix-title">{{ v.fix.title }}</span>
+  </a>
+  {% endif %}
 </div>
 {%- endmacro %}
 

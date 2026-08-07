@@ -19,7 +19,7 @@ def test_jungle_profile_emphasizes_map_impact() -> None:
     profile = role_profile("JUNGLE")
     overview_labels = [spec.label for spec in profile.overview]
     assert "Kill participation" in overview_labels
-    assert "Obj. presence" in overview_labels
+    assert "Objective presence" in overview_labels
     assert profile.early_section_title == "Early game"
     assert "_rule_cs10" not in profile.coach_rule_ids
 

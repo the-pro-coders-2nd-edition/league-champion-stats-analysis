@@ -72,6 +72,7 @@ def _serialize_comparison(
     graphs: GraphFactory,
     all_records: list[MatchRecord],
     recent_n: int,
+    baseline_m: int,
 ) -> dict[str, Any]:
     """Convert a comparison to a JSON-friendly preset bundle."""
     sample_subtitle = _sample_subtitle(comparison)
@@ -100,7 +101,11 @@ def _serialize_comparison(
 
     frames = build_analysis_frames(all_records)
     figures = {
-        "form_rolling_wr": graphs.form_rolling_wr(frames.matches_df, recent_n=recent_n),
+        "form_rolling_wr": graphs.form_rolling_wr(
+            frames.matches_df,
+            recent_n=recent_n,
+            baseline_m=baseline_m,
+        ),
         "form_metric_delta_bar": graphs.form_metric_delta_bar(comparison.deltas),
     }
 
@@ -161,6 +166,7 @@ def build_progression_views(
                 graphs=graphs,
                 all_records=queue_records,
                 recent_n=recent_n,
+                baseline_m=baseline_m,
             )
 
         views[queue_key] = {

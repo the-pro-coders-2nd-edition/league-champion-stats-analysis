@@ -48,17 +48,17 @@ METRIC_ICONS: dict[str, str] = {
     "Damage share": "flame",
     "Deaths/game": "skull",
     "Vision/min": "eye",
-    "Avg game": "clock",
+    "Game length": "clock",
     "Kill participation": "kp",
-    "Obj. presence": "target",
+    "Objective presence": "target",
     "Gold @10": "coin",
     "Early ganks": "roam",
     "Gank assists": "teamfight",
-    "KP @15": "kp",
+    "Kill participation @15": "kp",
     "Roam conversions": "roam",
     "Dist to ADC": "lane",
     "Grouped share": "teamfight",
-    "VS/min @10": "eye",
+    "Vision/min @10": "eye",
     "Bot lane presence": "lane",
     "Assists/game": "teamfight",
     "Healing/min": "teamfight",
@@ -98,17 +98,16 @@ METRIC_ICONS: dict[str, str] = {
     "Time dead/game": "clock",
     # Vision
     "Vision score": "eye",
-    "VS/min": "eye",
     "Control wards": "ward",
-    "CW lifetime": "ward",
-    "VS/min in wins": "eye",
-    "VS/min in losses": "eye",
+    "Control ward lifespan": "ward",
+    "Vision/min in wins": "eye",
+    "Vision/min in losses": "eye",
     # Deaths
     "Total deaths": "skull",
     "Solo deaths": "skull",
     "Greed deaths": "skull",
     "Side-lane deaths": "skull",
-    "Before neutral obj.": "target",
+    "Deaths before objectives": "target",
     "Gold at death": "coin",
     "Outnumbered deaths": "skull",
     "Avg death minute": "clock",
@@ -119,14 +118,14 @@ METRIC_ICONS: dict[str, str] = {
     "Fight win rate": "trophy",
     "Damage/fight": "flame",
     "Death rate in fights": "skull",
-    "Front-to-back": "teamfight",
+    "Forward positioning": "teamfight",
     "Unspent gold/fight": "coin",
     "Advantaged fights": "kp",
     "Disadvantaged fights": "skull",
     "WR advantaged fights": "trophy",
     "WR disadvantaged fights": "trophy",
     # Peer / score categories
-    "Laning": "coin",
+    "Laning": "lane",
     "Early game": "roam",
     "Setup": "roam",
     "Economy": "coin",
@@ -157,7 +156,7 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "Damage share": "Average share of your team's total damage to champions each game.",
     "Deaths/game": "Average deaths per game in the window.",
     "Vision/min": "Average vision score per minute (Riot vision score ÷ game length).",
-    "Avg game": "Average match duration in minutes.",
+    "Game length": "Average match duration in minutes.",
     # Lane
     "Gold diff @10": "Your total gold minus your lane opponent's at the 10-minute timeline frame, averaged across games.",
     "CS diff @10": "Your CS minus your lane opponent's at minute 10 (lane + jungle minions).",
@@ -171,11 +170,21 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "Under enemy tower (lane)": "Deaths during the laning phase while near the enemy lane tower.",
     "Roams pre-15": "Average roams detected before minute 15 (timeline position shifts away from your lane).",
     # Positioning
-    "Grouped with team": "Share of mid/late frames (after 14 min, excluding base) where at least two allies are within 3000 map units.",
-    "Solo on map": "Share of those frames with no allies within 3000 map units.",
+    "Grouped with team": (
+        "Share of mid/late frames (after 14 min, excluding base) where at least two allies "
+        "are within about one screen (≈3000, or ~7–8 flashes)."
+    ),
+    "Solo on map": (
+        "Share of those frames with no allies within about one screen (≈3000, or ~7–8 flashes)."
+    ),
     "Side-lane time": "Share of mid/late frames spent in a side lane (top or bot, not mid).",
-    "Allies nearby": "Average number of allies within 3000 map units per mid/late frame.",
-    "Avg teammate dist": "Mean distance to all teammates per frame during mid/late game, in map units. Lower means closer.",
+    "Allies nearby": (
+        "Average number of allies within about one screen (≈3000) per mid/late frame."
+    ),
+    "Avg teammate dist": (
+        "Mean distance to all teammates per mid/late frame. Shown as X.Xk with screen "
+        "landmarks (1 screen ≈ 3000, Flash ≈ 400). Lower means closer."
+    ),
     # Economy
     "GPM": "Gold per minute: total gold earned ÷ game length.",
     "Gold share": "Your gold as a share of team total gold each game.",
@@ -185,11 +194,10 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "Time dead/game": "Average seconds spent on death timers per game.",
     # Vision
     "Vision score": "Average Riot vision score per game.",
-    "VS/min": "Vision score per minute.",
     "Control wards": "Average control wards bought per game.",
-    "CW lifetime": "Average seconds each control ward stayed alive until cleared or game end.",
-    "VS/min in wins": "Vision score per minute averaged over wins only.",
-    "VS/min in losses": "Vision score per minute averaged over losses only.",
+    "Control ward lifespan": "Average seconds each control ward stayed alive until cleared or game end.",
+    "Vision/min in wins": "Vision score per minute averaged over wins only.",
+    "Vision/min in losses": "Vision score per minute averaged over losses only.",
     # Objectives
     "Died in setup window (45–10s)": (
         "Share of epic objectives where you died in the 45–10s setup window before the take "
@@ -198,14 +206,17 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "Wards before": "Average wards you placed in the 2 minutes before each objective take. Any ward type counts; map location is not filtered.",
     # Deaths
     "Total deaths": "Total death count across all games in the window (not an average).",
-    "Solo deaths": "Share of deaths with no allies within 2200 map units.",
+    "Solo deaths": (
+        "Share of deaths with no allies within roughly three-quarters of a screen "
+        "(≈2200, or ~5–6 flashes)."
+    ),
     "Greed deaths": "Share of deaths shortly after deep side-lane pushing without nearby allies.",
     "Side-lane deaths": "Share of deaths while isolated in a side lane after minute 14.",
     "Before dragon": (
         "Share of deaths in the 60–10s setup window before a dragon take "
         "(excludes the last 10s, which are usually the objective fight)."
     ),
-    "Before neutral obj.": (
+    "Deaths before objectives": (
         "Share of deaths in the 60–10s setup window before a dragon, elder, or baron take "
         "(excludes the last 10s, which are usually the objective fight)."
     ),
@@ -214,12 +225,18 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "Avg death minute": "Mean game minute when you died.",
     "Top killer": "Champion that secured the most kills on you in this window.",
     # Teamfights
-    "Fights detected": "Clusters of at least three kills within 25 seconds and 4000 map units of each other.",
-    "Participation": "Share of detected fights where you killed, assisted, died, or were within 3000 units of the fight.",
+    "Fights detected": (
+        "Clusters of at least three kills within 25 seconds and a bit more than one screen "
+        "(≈4000) of each other."
+    ),
+    "Participation": (
+        "Share of detected fights where you killed, assisted, died, or were within about "
+        "one screen (≈3000) of the fight."
+    ),
     "Fight win rate": "Share of joined fights your team won (more ally than enemy kills in the cluster).",
     "Damage/fight": "Average damage to champions you dealt in fights you joined.",
     "Death rate in fights": "Share of joined fights where you died.",
-    "Front-to-back": "Your map push depth minus allies' average at fight start; positive means you were further forward.",
+    "Forward positioning": "How far forward you stand when fights start compared with your teammates; positive means you're in front.",
     "Unspent gold/fight": "Average gold in your inventory when a joined fight started.",
     "Advantaged fights": "Joined fights where your team had more nearby champions than the enemy.",
     "Disadvantaged fights": "Joined fights where the enemy had more nearby champions.",
@@ -262,12 +279,16 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "Clear @10": "0–100 score from jungle CS @10 vs role clear-speed benchmarks.",
     "Early ganks": "0–100 score from successful early ganks before minute 15.",
     "CC impact": "0–100 score from crowd control time per minute.",
+    "Kill participation @15": "Share of your team's kills and assists before minute 15 that you took part in.",
+    "Vision/min @10": "Vision score per minute over the first 10 minutes.",
+    "Objective presence": "Share of epic monster takes (dragon, herald, baron) where you were near the pit.",
     "Game score": "Personal performance vs your baseline for this single game (0–100, letter tier). Independent of win/loss.",
 }
 
 DIST_TO_TOOLTIP = (
     "Average distance to your {role} teammate during mid/late game (after 14 min), "
-    "from 60-second timeline frames. Lower means you stay closer."
+    "from 60-second timeline frames. Shown as X.Xk (1 screen ≈ 3000, Flash ≈ 400). "
+    "Lower means you stay closer."
 )
 
 SECTION_ICONS: dict[str, str] = {

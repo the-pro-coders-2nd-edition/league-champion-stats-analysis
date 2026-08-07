@@ -72,6 +72,10 @@ def test_landing_page_lists_reports(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert "Test#EUW" in response.text
+    assert 'name="min_games"' in response.text
+    assert "20 games" in response.text
+    assert 'value="20" selected' in response.text
+    assert "minimum ranked games" in response.text.lower()
 
 
 def test_landing_page_shows_profile_icons(client: TestClient) -> None:
@@ -136,6 +140,7 @@ def test_submit_analysis_creates_job_and_dedups(client: TestClient) -> None:
     assert body["created"] is True
     assert body["player_slug"] == "test_euw"
     assert body["job"]["state"] == jobs.QUEUED
+    assert body["job"]["min_games"] is None
     assert body["has_report"] is False
 
     duplicate = client.post(
@@ -145,11 +150,31 @@ def test_submit_analysis_creates_job_and_dedups(client: TestClient) -> None:
     assert duplicate["job"]["id"] == body["job"]["id"]
 
 
+def test_submit_analysis_stores_min_games(client: TestClient) -> None:
+    response = client.post(
+        "/api/analyses",
+        json={"riot_id": "Test#EUW", "region": "euw1", "min_games": 10},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job"]["min_games"] == 10
+    stored = client.job_store.get(int(body["job"]["id"]))
+    assert stored is not None
+    assert stored["min_games"] == 10
+
+
 def test_submit_analysis_validates_input(client: TestClient) -> None:
     assert client.post("/api/analyses", json={"riot_id": "NoTagline"}).status_code == 422
     assert (
         client.post(
             "/api/analyses", json={"riot_id": "A#B", "region": "narnia"}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/api/analyses",
+            json={"riot_id": "A#B", "region": "euw1", "min_games": 7},
         ).status_code
         == 422
     )

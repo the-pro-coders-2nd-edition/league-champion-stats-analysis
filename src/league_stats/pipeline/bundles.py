@@ -39,6 +39,7 @@ from league_stats.pipeline.view_models import (
     card,
     card_entries,
     cards_from_specs,
+    format_map_distance,
     overview_card_entries,
     peer_row_display,
     peer_subtitle,
@@ -108,6 +109,22 @@ def game_window_options(total_games: int) -> list[dict[str, Any]]:
     return options
 
 
+def _evidence_summary(rec: Any) -> str:
+    """Plain-language confidence sentence for a recommendation."""
+    sample = int(rec.sample_size or 0)
+    p_value = rec.p_value
+    if p_value is not None and p_value <= 0.01:
+        strength = "a very strong pattern"
+    elif p_value is not None and p_value <= 0.05:
+        strength = "a strong pattern"
+    elif p_value is not None:
+        strength = "an early signal"
+    else:
+        strength = "a consistent pattern"
+    games = f"across {sample} of your games" if sample else "in your games"
+    return f"This is {strength} {games}."
+
+
 def _recommendation_payload(rec: Any) -> dict[str, Any]:
     """Serialize one coaching recommendation for HTML/JSON views."""
     badge = score_badge(rec)
@@ -116,6 +133,7 @@ def _recommendation_payload(rec: Any) -> dict[str, Any]:
         "badge": badge,
         "priority_label": priority_label(badge),
         "tone": rec.tone.value,
+        "evidence_summary": _evidence_summary(rec),
     }
 
 
@@ -131,12 +149,181 @@ def _finalize_coaching_anchors(bundle: dict[str, Any]) -> None:
 
 
 def _build_top_tips(bundle: dict[str, Any], *, limit: int = 3) -> list[dict[str, Any]]:
-    """Return the highest-priority recommendations for the overview hero."""
-    recs = [
-        *bundle.get("positive_recommendations", []),
-        *bundle.get("negative_recommendations", []),
-    ]
-    return sorted(recs, key=lambda rec: rec.get("priority", 0), reverse=True)[:limit]
+    """Return next-game focus tips for the overview hero.
+
+    Prefers fix tips (negative tone). Falls back to strengths only when there
+    aren't enough weaknesses. Hero copy uses ``action`` when present.
+    """
+    key = lambda rec: rec.get("priority", 0)
+    negatives = sorted(bundle.get("negative_recommendations", []), key=key, reverse=True)
+    positives = sorted(bundle.get("positive_recommendations", []), key=key, reverse=True)
+    tips = list(negatives[:limit])
+    if len(tips) < limit:
+        tips.extend(positives[: limit - len(tips)])
+    return tips
+
+
+def _soften_title(title: str) -> str:
+    """Lowercase the first letter of a tip title unless it starts an acronym."""
+    if len(title) >= 2 and title[0].isupper() and title[1].islower():
+        return title[0].lower() + title[1:]
+    return title
+
+
+def _build_verdict_headline(bundle: dict[str, Any]) -> str:
+    """One-sentence read of the report, built from the top coaching tips."""
+    positive = sorted(
+        bundle.get("positive_recommendations", []),
+        key=lambda rec: rec.get("priority", 0),
+        reverse=True,
+    )
+    negative = sorted(
+        bundle.get("negative_recommendations", []),
+        key=lambda rec: rec.get("priority", 0),
+        reverse=True,
+    )
+    top_pos = str(positive[0].get("title", "")) if positive else ""
+    top_neg = str(negative[0].get("title", "")) if negative else ""
+    if top_pos and top_neg:
+        return f"{top_pos} — but {_soften_title(top_neg)}."
+    if top_neg:
+        return f"Priority to fix: {_soften_title(top_neg)}."
+    if top_pos:
+        return f"Keep leaning on your strength: {_soften_title(top_pos)}."
+    return "Play a few more games to unlock a personalised read of your games."
+
+
+_CHIP_STRONG_SCORE = 65.0
+_CHIP_FOCUS_SCORE = 45.0
+
+
+def _chip_tone(score: float) -> tuple[str, str]:
+    if score >= _CHIP_STRONG_SCORE:
+        return "strong", "Strength"
+    if score < _CHIP_FOCUS_SCORE:
+        return "focus", "Focus"
+    return "solid", "Solid"
+
+
+def _annotate_score_components(
+    score_components: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Attach Strength / Solid / Focus tone + label to each score category card."""
+    for comp in score_components:
+        tone, verdict = _chip_tone(float(comp.get("score", 0.0)))
+        comp["tone"] = tone
+        comp["verdict"] = verdict
+    return score_components
+
+
+# Deep Dive section id -> improvement-score category names (first match wins).
+_SECTION_SCORE_CATEGORIES: dict[str, tuple[str, ...]] = {
+    "lane": ("Laning", "Early game", "Setup"),
+    "objectives": ("Objectives",),
+    "deaths": ("Survival",),
+    "vision": ("Vision",),
+    "economy": ("Economy",),
+    "teamfights": ("Fight", "Utility"),
+}
+
+# Coaching categories -> Deep Dive section id, for verdict enrichment.
+_REC_CATEGORY_SECTIONS: dict[str, str] = {
+    "Laning": "lane",
+    "Economy": "economy",
+    "Items": "economy",
+    "Vision": "vision",
+    "Deaths": "deaths",
+    "Teamfights": "teamfights",
+    "Objectives": "objectives",
+    "Macro": "deaths",
+    "Positioning": "teamfights",
+}
+
+
+def _score_verdict_sentence(
+    name: str, score: float, *, is_biggest_gap: bool
+) -> tuple[str, str, str]:
+    """Base verdict sentence, tone, and short label for one section score."""
+    if score >= _CHIP_STRONG_SCORE:
+        return f"{name} is a clear strength.", "strong", "Strength"
+    if score >= _CHIP_FOCUS_SCORE:
+        return f"{name} is solid.", "solid", "Solid"
+    if is_biggest_gap:
+        return f"{name} is your biggest room to improve.", "focus", "Focus"
+    return f"{name} needs work.", "focus", "Focus"
+
+
+def _build_section_verdicts(bundle: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Score callout + optional coaching-link fix per Deep Dive section."""
+    components = {
+        str(comp.get("name", "")): comp for comp in bundle.get("score_components", [])
+    }
+    top_fix_by_section: dict[str, dict[str, Any]] = {}
+    for rec in bundle.get("negative_recommendations", []):
+        section = _REC_CATEGORY_SECTIONS.get(str(rec.get("category", "")))
+        if not section:
+            continue
+        current = top_fix_by_section.get(section)
+        if current is None or rec.get("priority", 0) > current.get("priority", 0):
+            top_fix_by_section[section] = rec
+
+    section_comps: list[tuple[str, dict[str, Any], float]] = []
+    for section, names in _SECTION_SCORE_CATEGORIES.items():
+        comp = next((components[name] for name in names if name in components), None)
+        if comp is None:
+            continue
+        section_comps.append((section, comp, float(comp.get("score", 0.0))))
+
+    # Only the single weakest section gets "biggest room to improve".
+    biggest_gap_section = ""
+    if section_comps:
+        biggest_gap_section = min(section_comps, key=lambda item: item[2])[0]
+
+    verdicts: dict[str, dict[str, Any]] = {}
+    for section, comp, score in section_comps:
+        text, tone, label = _score_verdict_sentence(
+            str(comp.get("name", "")),
+            score,
+            is_biggest_gap=(section == biggest_gap_section),
+        )
+        payload: dict[str, Any] = {
+            "text": text,
+            "tone": tone,
+            "label": label,
+            "score": round(score),
+            "name": str(comp.get("name", "")),
+            "hint": str(comp.get("hint") or ""),
+            "value": str(comp.get("value") or ""),
+        }
+        fix = top_fix_by_section.get(section)
+        if fix is not None and (fix.get("action") or fix.get("title")):
+            payload["fix"] = {
+                "title": str(fix.get("action") or fix.get("title") or ""),
+                "anchor": str(fix.get("anchor") or "coaching"),
+            }
+        verdicts[section] = payload
+    return verdicts
+
+
+def _attach_peer_benchmarks(
+    card_lists: list[list[dict[str, Any]]], peer_payload: dict[str, Any]
+) -> None:
+    """Add 'vs peers' benchmark sub-lines to metric cards that have a peer row."""
+    rows_by_label = {
+        str(row.get("label", "")): row for row in peer_payload.get("rows", [])
+    }
+    if not rows_by_label:
+        return
+    tier = str(peer_payload.get("tier") or "").strip()
+    peers_label = f"{tier.title()} peers" if tier else "rank peers"
+    for entries in card_lists:
+        for entry in entries:
+            row = rows_by_label.get(str(entry.get("label", "")))
+            if row is None:
+                continue
+            entry["benchmark"] = f"{row['gap']} vs {peers_label}"
+            entry["benchmark_tone"] = row.get("verdict", "inline")
+            entry["benchmark_color"] = row.get("gap_color", "")
 
 
 def _build_figure_hints(
@@ -169,12 +356,14 @@ def _build_positioning_cards(
         ("Solo on map", card(pct(positioning.get("avg_solo_share")))),
         ("Side-lane time", card(pct(positioning.get("avg_side_lane_share")))),
         ("Allies nearby", card(positioning.get("avg_allies_nearby"))),
-        ("Avg teammate dist", card(positioning.get("avg_teammate_distance"))),
+        ("Avg teammate dist", format_map_distance(positioning.get("avg_teammate_distance"))),
     ]
     for role, column in ROLE_COLUMNS.items():
         if role == player_role:
             continue
-        pairs.append((f"Dist to {role_display(role)}", card(positioning.get(column))))
+        pairs.append(
+            (f"Dist to {role_display(role)}", format_map_distance(positioning.get(column)))
+        )
     entries = card_entries(pairs)
     if assets is not None and from_dir is not None:
         role_by_label = {
@@ -207,6 +396,8 @@ def bundle_to_template_context(
         "score_components": bundle["score_components"],
         "figures": bundle["figures"],
         "overview_cards": bundle.get("overview_cards", []),
+        "verdict_headline": bundle.get("verdict_headline", ""),
+        "section_verdicts": bundle.get("section_verdicts", {}),
         "lane_cards": bundle["lane_cards"],
         "early_section_title": bundle.get("early_section_title", "Laning"),
         "section_order": bundle.get("section_order", []),
@@ -254,6 +445,8 @@ def build_window_bundle(
         "queue_label": queue_label,
         "overview": {},
         "overview_cards": [],
+        "verdict_headline": "",
+        "section_verdicts": {},
         "score": 0,
         "score_components": [],
         "lane_cards": [],
@@ -462,6 +655,9 @@ def build_window_bundle(
     _finalize_coaching_anchors(bundle)
     bundle["top_tips"] = _build_top_tips(bundle)
     bundle["figure_hints"] = _build_figure_hints(win_corrs, model)
+    bundle["verdict_headline"] = _build_verdict_headline(bundle)
+    _annotate_score_components(bundle["score_components"])
+    bundle["section_verdicts"] = _build_section_verdicts(bundle)
 
     if window_peer is not None:
         figures["peer_comparison"] = graphs.peer_comparison_chart(
@@ -491,6 +687,18 @@ def build_window_bundle(
         bundle["peer"] = peer_payload
         bundle["figures"]["peer_comparison"] = figures["peer_comparison"]
         bundle["_peer_result"] = window_peer
+        _attach_peer_benchmarks(
+            [
+                bundle["overview_cards"],
+                bundle["lane_cards"],
+                bundle["economy_cards"],
+                bundle["vision_cards"],
+                bundle["death_cards"],
+                bundle["positioning_cards"],
+                bundle["teamfight_cards"],
+            ],
+            peer_payload,
+        )
 
     if assets is not None:
         from_dir = graphs_dir.parent

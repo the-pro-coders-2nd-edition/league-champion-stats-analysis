@@ -20,8 +20,9 @@ def _rule_winrate_improved(delta: MetricDelta) -> Recommendation | None:
         detail="Stay with the habits that are converting more games — don't shake up your build yet.",
         evidence=(
             f"Win rate moved from {delta.baseline * 100:.0f}% to {delta.recent * 100:.0f}% "
-            f"({delta.delta * 100:+.0f} pp, p={delta.p_value:.3f})."
+            f"(p={delta.p_value:.3f})."
         ),
+        action="Keep the habits that are converting — don't shake the build yet",
         tone=RecommendationTone.POSITIVE,
         p_value=delta.p_value,
         effect_size=delta.effect_size,
@@ -39,8 +40,9 @@ def _rule_winrate_regressed(delta: MetricDelta) -> Recommendation | None:
         detail="Review laning and death timing in recent losses before changing your build.",
         evidence=(
             f"Win rate dropped from {delta.baseline * 100:.0f}% to {delta.recent * 100:.0f}% "
-            f"({delta.delta * 100:+.0f} pp, p={delta.p_value:.3f})."
+            f"(p={delta.p_value:.3f})."
         ),
+        action="Review laning and death timing in recent losses",
         tone=RecommendationTone.NEGATIVE,
         p_value=delta.p_value,
         effect_size=delta.effect_size,
@@ -60,6 +62,7 @@ def _rule_deaths_regressed(delta: MetricDelta) -> Recommendation | None:
             f"Deaths/game rose from {delta.baseline:.1f} to {delta.recent:.1f} "
             f"(d={delta.effect_size:.2f}, p={delta.p_value:.3f})."
         ),
+        action="Reset after plates and kills — don't stay for one more wave",
         tone=RecommendationTone.NEGATIVE,
         p_value=delta.p_value,
         effect_size=delta.effect_size,
@@ -79,6 +82,7 @@ def _rule_laning_improved(delta: MetricDelta) -> Recommendation | None:
             f"{delta.label} moved from {delta.baseline:+.0f} to {delta.recent:+.0f} "
             f"(p={delta.p_value:.3f})."
         ),
+        action="Keep the early trading and wave control that built this lead",
         tone=RecommendationTone.POSITIVE,
         p_value=delta.p_value,
         effect_size=delta.effect_size,
@@ -99,6 +103,7 @@ def _rule_greed_deaths(delta: MetricDelta) -> Recommendation | None:
         evidence=(
             f"Greed death rate rose from {delta.baseline * 100:.0f}% to {delta.recent * 100:.0f}%."
         ),
+        action="After plates or a kill, reset before river",
         tone=RecommendationTone.NEGATIVE,
         p_value=delta.p_value,
         effect_size=delta.effect_size,
@@ -114,7 +119,8 @@ def _rule_vision_improved(delta: MetricDelta) -> Recommendation | None:
         category="Form",
         title="Vision trending up",
         detail="Keep buying control wards and placing them before objectives.",
-        evidence=f"VS/min rose from {delta.baseline:.2f} to {delta.recent:.2f}.",
+        evidence=f"Vision/min rose from {delta.baseline:.2f} to {delta.recent:.2f}.",
+        action="Keep buying control wards before objectives",
         tone=RecommendationTone.POSITIVE,
         p_value=delta.p_value,
         effect_size=delta.effect_size,
@@ -130,7 +136,8 @@ def _rule_vision_regressed(delta: MetricDelta) -> Recommendation | None:
         category="Form",
         title="Vision dropped recently",
         detail="Buy more control wards and place them before major objectives.",
-        evidence=f"VS/min fell from {delta.baseline:.2f} to {delta.recent:.2f}.",
+        evidence=f"Vision/min fell from {delta.baseline:.2f} to {delta.recent:.2f}.",
+        action="Buy more control wards before major objectives",
         tone=RecommendationTone.NEGATIVE,
         p_value=delta.p_value,
         effect_size=delta.effect_size,
@@ -149,6 +156,7 @@ def _rule_generic_regression(delta: MetricDelta) -> Recommendation | None:
         title=f"{delta.label} slipped",
         detail=f"Pick one recent game where {delta.label.lower()} hurt you and change one habit next game.",
         evidence=f"Baseline {delta.baseline:.2f} → recent {delta.recent:.2f}.",
+        action=f"Change one habit tied to {delta.label.lower()} next game",
         tone=RecommendationTone.NEGATIVE,
         p_value=delta.p_value,
         effect_size=delta.effect_size,

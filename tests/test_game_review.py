@@ -82,16 +82,16 @@ def _make_records(n: int, **kwargs: object) -> list[MatchRecord]:
     return sorted(records, key=lambda record: record.game_creation_ms, reverse=True)
 
 
-def test_slice_last_five_per_queue() -> None:
-    records = _make_records(12)
+def test_slice_last_ten_per_queue() -> None:
+    records = _make_records(14)
     records[0] = _parse_record(match_id="EUW1_flex", queue_id=RANKED_FLEX_QUEUE_ID, game_creation_ms=1_800_000_000_000)
     records = sorted(records, key=lambda record: record.game_creation_ms, reverse=True)
     solo = filter_records_by_queue(records, "solo")
     flex = filter_records_by_queue(records, "flex")
     all_q = filter_records_by_queue(records, "all")
-    assert len(slice_recent(solo, GAME_REVIEW_RECENT_N)) == 5
+    assert len(slice_recent(solo, GAME_REVIEW_RECENT_N)) == 10
     assert len(slice_recent(flex, GAME_REVIEW_RECENT_N)) == 1
-    assert len(slice_recent(all_q, GAME_REVIEW_RECENT_N)) == 5
+    assert len(slice_recent(all_q, GAME_REVIEW_RECENT_N)) == 10
 
 
 def _dimension(score, name: str):
@@ -346,6 +346,69 @@ def test_death_flags_use_readable_labels() -> None:
             assert "_" not in flag
 
 
+def test_game_review_timeline_includes_lane_and_team_series() -> None:
+    records = _make_records(2)
+    frames = build_analysis_frames(records)
+    detail = build_game_review_views(_make_config(), records, frames).queues["all"].games[0]
+    assert detail.timeline
+    point = detail.timeline[0]
+    for key in (
+        "gold",
+        "xp",
+        "cs",
+        "opp_gold",
+        "opp_xp",
+        "opp_cs",
+        "ally_gold",
+        "ally_xp",
+        "ally_cs",
+        "enemy_gold",
+        "enemy_xp",
+        "enemy_cs",
+    ):
+        assert key in point
+
+
+def test_game_review_build_includes_full_rune_page() -> None:
+    records = _make_records(1)
+    frames = build_analysis_frames(records)
+    detail = build_game_review_views(_make_config(), records, frames).queues["all"].games[0]
+    assert detail.build.keystone
+    assert detail.build.primary_runes
+    assert detail.build.secondary_runes
+    assert detail.build.shards
+
+
+def test_game_review_deaths_include_gold_given() -> None:
+    records = _make_records(1)
+    frames = build_analysis_frames(records)
+    detail = build_game_review_views(_make_config(), records, frames).queues["all"].games[0]
+    assert detail.deaths
+    assert any(death.gold_given and death.gold_given > 0 for death in detail.deaths)
+
+
+def test_game_review_key_stats_vs_baseline_covers_overview_metrics() -> None:
+    records = _make_records(8)
+    frames = build_analysis_frames(records)
+    detail = build_game_review_views(_make_config(), records, frames).queues["all"].games[0]
+    compared = {row.metric for row in detail.key_stats_vs_baseline}
+    for key, value in detail.key_stats.items():
+        if value is None:
+            continue
+        assert key in compared
+
+
+def test_game_review_fights_use_kill_feed_champions() -> None:
+    records = _make_records(1)
+    frames = build_analysis_frames(records)
+    detail = build_game_review_views(_make_config(), records, frames).queues["all"].games[0]
+    assert detail.fights
+    fight = detail.fights[0]
+    assert fight.ally_champions
+    assert fight.enemy_champions
+    assert "Viktor" in fight.ally_champions
+
+
 def test_game_review_includes_account_name() -> None:
     records = _make_records(3)
     frames = build_analysis_frames(records)
@@ -354,17 +417,17 @@ def test_game_review_includes_account_name() -> None:
 
 
 def test_build_game_review_views_serializes() -> None:
-    records = _make_records(8)
+    records = _make_records(12)
     frames = build_analysis_frames(records)
     payload = build_game_review_views(_make_config(), records, frames)
     dumped = payload.model_dump()
     assert dumped["recent_n"] == GAME_REVIEW_RECENT_N
-    assert len(dumped["queues"]["all"]["games"]) == 5
+    assert len(dumped["queues"]["all"]["games"]) == 10
     assert dumped["queues"]["all"]["games"][0]["match_id"]
 
 
 def test_build_export_summary_includes_recent_games(tmp_path: Path) -> None:
-    records = _make_records(8)
+    records = _make_records(12)
     frames = build_analysis_frames(records)
     stats = compute_report_stats(frames, tmp_path)
     game_review = build_game_review_views(_make_config(), records, frames)
@@ -380,7 +443,7 @@ def test_build_export_summary_includes_recent_games(tmp_path: Path) -> None:
     )
     assert "recent_games" in summary
     assert summary["recent_games"]["n"] == GAME_REVIEW_RECENT_N
-    assert len(summary["recent_games"]["games"]) == 5
+    assert len(summary["recent_games"]["games"]) == 10
     assert "events_summary" in summary["recent_games"]["games"][0]
 
 
@@ -471,27 +534,30 @@ def test_report_has_game_review_category_tab(tmp_path: Path) -> None:
     assert 'id="game-review-panel-key-moments"' in html
     assert 'Mistakes' not in html
     assert 'game-review-layout' in html
+    assert 'Last 10 games' in html
+    assert 'GAME_REVIEW_VISIBLE_N' in html
     assert 'report-tab--games' in html
     assert 'report-tab--summary' in html
     assert 'report-tab--performance' in html
     assert 'report-tab--deepdive' in html
-    assert 'report-tab--advanced' in html
+    # Advanced merged into Deep Dive: no dedicated tab or panel remains.
+    assert 'report-tab--advanced' not in html
     assert 'id="category-summary"' in html
     assert 'id="category-performance"' in html
     assert 'id="category-deepdive"' in html
-    assert 'id="category-advanced"' in html
+    assert 'id="category-advanced"' not in html
+    assert 'id="graphs"' in html
     assert 'id="form-tracker"' in html
     assert 'id="fig-winrate_trend"' not in html
     assert 'graphs-details' not in html
     assert 'id="category-laning"' not in html
     assert 'id="category-impact"' not in html
     assert 'id="category-analysis"' not in html
-    # Tab order: Summary → Performance → Game Review → Champion → Deep Dive → Advanced
+    # Tab order: Summary → Performance → Game Review → Champion → Deep Dive
     assert html.index('id="tab-summary"') < html.index('id="tab-performance"')
     assert html.index('id="tab-performance"') < html.index('id="tab-games"')
     assert html.index('id="tab-games"') < html.index('id="tab-champion"')
     assert html.index('id="tab-champion"') < html.index('id="tab-deepdive"')
-    assert html.index('id="tab-deepdive"') < html.index('id="tab-advanced"')
     assert html.index('id="category-performance"') < html.index('id="form-tracker"')
     assert html.index('id="form-tracker"') < html.index('id="category-games"')
     assert html.index('id="category-champion"') < html.index('id="category-deepdive"')

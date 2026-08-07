@@ -165,7 +165,8 @@ def test_peer_recommendations_flag_weaknesses() -> None:
         comparisons, "Gold II", peer_games=20, build_label="Viktor mid"
     )
     titles = " | ".join(r.title for r in recs)
-    assert "die more" in titles.lower() or "farming" in titles.lower()
+    assert "deaths run higher" in titles.lower() or "farming trails" in titles.lower()
+    assert all(r.action for r in recs)
 
 
 def test_comparisons_dataframe_from_result() -> None:

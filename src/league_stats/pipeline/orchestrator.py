@@ -424,6 +424,10 @@ def run_analysis(
         # peer-analysis completion; local CLI reports embed the key directly.
         "chat_endpoint": config.chat_endpoint,
         "status_endpoint": config.status_endpoint,
+        # Web-served reports get a "Player page" link in the nav.
+        "player_page_href": (
+            f"/players/{config.reports_group_slug}" if config.status_endpoint else None
+        ),
         "report_slug": champion_slug(config.champion, config.role),
         "refresh_champion": config.champion,
         "refresh_role": config.role,

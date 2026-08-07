@@ -145,7 +145,7 @@ def test_matchup_recommendation_returns_string() -> None:
 def test_matchup_row_display_adds_colors_and_verdict() -> None:
     display = matchup_row_display(_row(winrate=0.7, games=5, wins=4, avg_gd10=200))
     assert display["verdict_label"]
-    assert display["winrate_color"].startswith("#")
+    assert "winrate_color" not in display
     assert display["gd10_color"].startswith("#")
     rows = annotate_matchup_rows([_row()], role="TOP")
     assert rows[0]["recommendation"]

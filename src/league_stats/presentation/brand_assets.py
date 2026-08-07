@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -127,7 +128,21 @@ def refresh_saved_report_branding(output_dir: Path) -> int:
         # Old global index page is gone; send nav-back to the web home page.
         text = text.replace(
             '<a href="../../../index.html">← All players</a>',
+            '<a href="/">← Home</a>',
+        )
+        text = text.replace(
             '<a href="/">← New analysis</a>',
+            '<a href="/">← Home</a>',
+        )
+        text = re.sub(
+            r'(<a href="/players/[^"]+">)← Back to [^<]+(</a>)',
+            r"\1← Player page\2",
+            text,
+        )
+        text = re.sub(
+            r'\s*<a href="/" class="nav-back-secondary">New analysis</a>',
+            "",
+            text,
         )
 
         if text != original:

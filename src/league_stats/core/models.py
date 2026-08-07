@@ -138,6 +138,14 @@ class TimelineStats(BaseModel):
     xp_series: list[int] = Field(default_factory=list)
     cs_series: list[int] = Field(default_factory=list)
     opp_gold_series: list[int] = Field(default_factory=list)
+    opp_xp_series: list[int] = Field(default_factory=list)
+    opp_cs_series: list[int] = Field(default_factory=list)
+    ally_gold_series: list[int] = Field(default_factory=list)
+    ally_xp_series: list[int] = Field(default_factory=list)
+    ally_cs_series: list[int] = Field(default_factory=list)
+    enemy_gold_series: list[int] = Field(default_factory=list)
+    enemy_xp_series: list[int] = Field(default_factory=list)
+    enemy_cs_series: list[int] = Field(default_factory=list)
     grouped_share: float | None = None
     solo_share: float | None = None
     side_lane_share: float | None = None
@@ -165,6 +173,7 @@ class DeathEvent(BaseModel):
     zone: Zone
     near_objective: bool = False
     shutdown_given: int = 0
+    bounty_gold: int = 0
     bounty_held: bool = False
     flash_available: bool | None = None
     ult_available: bool | None = None
@@ -217,6 +226,8 @@ class TeamfightRecord(BaseModel):
     enemies_present: int | None = None
     manpower_advantage: int | None = None
     avg_teammate_distance: float | None = None
+    ally_champions: list[str] = Field(default_factory=list)
+    enemy_champions: list[str] = Field(default_factory=list)
 
 
 class ObjectiveRecord(BaseModel):
@@ -527,6 +538,7 @@ class Recommendation(BaseModel):
     title: str
     detail: str
     evidence: str
+    action: str = ""
     tone: RecommendationTone = RecommendationTone.NEGATIVE
     p_value: float | None = None
     effect_size: float | None = None
@@ -752,6 +764,7 @@ class GameDeathRow(BaseModel):
     killer: str | None
     killer_icon: str | None = None
     flags: list[str] = Field(default_factory=list)
+    gold_given: int | None = None
 
 
 class GameFightRow(BaseModel):
@@ -766,6 +779,10 @@ class GameFightRow(BaseModel):
     allies_present: int | None = None
     enemies_present: int | None = None
     manpower_advantage: int | None = None
+    ally_champions: list[str] = Field(default_factory=list)
+    enemy_champions: list[str] = Field(default_factory=list)
+    ally_icons: list[str | None] = Field(default_factory=list)
+    enemy_icons: list[str | None] = Field(default_factory=list)
 
 
 class GameObjectiveRow(BaseModel):
@@ -788,12 +805,18 @@ class GameBuildInfo(BaseModel):
     keystone: str
     primary_tree: str = ""
     secondary_tree: str
+    primary_runes: list[str] = Field(default_factory=list)
+    secondary_runes: list[str] = Field(default_factory=list)
+    shards: list[str] = Field(default_factory=list)
     summoners: list[str] = Field(default_factory=list)
     skill_order: str = ""
     items: list[str] = Field(default_factory=list)
     keystone_icon: str | None = None
     primary_tree_icon: str | None = None
     secondary_tree_icon: str | None = None
+    primary_rune_icons: list[str | None] = Field(default_factory=list)
+    secondary_rune_icons: list[str | None] = Field(default_factory=list)
+    shard_icons: list[str | None] = Field(default_factory=list)
     summoner_icons: list[str | None] = Field(default_factory=list)
     item_icons: list[str | None] = Field(default_factory=list)
 
@@ -867,6 +890,7 @@ class GameDetail(BaseModel):
     behaviors_bad: list[GameBehavior] = Field(default_factory=list)
     vs_baseline: list[GameComparisonRow] = Field(default_factory=list)
     key_stats: dict[str, float | int | None] = Field(default_factory=dict)
+    key_stats_vs_baseline: list[GameComparisonRow] = Field(default_factory=list)
     deaths: list[GameDeathRow] = Field(default_factory=list)
     fights: list[GameFightRow] = Field(default_factory=list)
     objectives: list[GameObjectiveRow] = Field(default_factory=list)
@@ -889,7 +913,7 @@ class GameReviewQueueBundle(BaseModel):
 class GameReviewPayload(BaseModel):
     """Per-queue game review bundles embedded in the report."""
 
-    recent_n: int = 5
+    recent_n: int = 10
     baseline_m: int = 80
     scoring: Literal["personal"] = "personal"
     queues: dict[str, GameReviewQueueBundle] = Field(default_factory=dict)
