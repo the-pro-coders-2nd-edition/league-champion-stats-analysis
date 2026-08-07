@@ -99,7 +99,6 @@
   var PAGE_GENERATED_AT = {{ generated_at | default("") | tojson }};
   var REFRESH_CHAMPION = {{ refresh_champion | default("") | tojson }};
   var REFRESH_ROLE = {{ refresh_role | default("") | tojson }};
-  var SHOW_CS_STATS = {{ show_cs_stats | default(true) | tojson }};
   var REPORT_HREF = {{
     (("/out/reports/" ~ chat_report_ref ~ "/report.html") | tojson)
     if chat_report_ref else "null"
@@ -943,6 +942,7 @@
 
   var currentQueue = {{ queue_filter_default | tojson }};
   var currentWindow = {{ game_window_default | tojson }};
+  var SHOW_CS_STATS = {{ show_cs_stats | default(true) | tojson }};
   var matchupSort = { key: 'verdict', dir: 'desc', type: 'verdict' };
 
   function pct(value) {
