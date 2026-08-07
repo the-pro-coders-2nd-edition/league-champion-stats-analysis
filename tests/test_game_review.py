@@ -472,3 +472,26 @@ def test_report_has_game_review_category_tab(tmp_path: Path) -> None:
     assert 'Mistakes' not in html
     assert 'game-review-layout' in html
     assert 'report-tab--games' in html
+    assert 'report-tab--summary' in html
+    assert 'report-tab--performance' in html
+    assert 'report-tab--deepdive' in html
+    assert 'report-tab--advanced' in html
+    assert 'id="category-summary"' in html
+    assert 'id="category-performance"' in html
+    assert 'id="category-deepdive"' in html
+    assert 'id="category-advanced"' in html
+    assert 'id="form-tracker"' in html
+    assert 'id="fig-winrate_trend"' not in html
+    assert 'graphs-details' not in html
+    assert 'id="category-laning"' not in html
+    assert 'id="category-impact"' not in html
+    assert 'id="category-analysis"' not in html
+    # Tab order: Summary → Performance → Game Review → Champion → Deep Dive → Advanced
+    assert html.index('id="tab-summary"') < html.index('id="tab-performance"')
+    assert html.index('id="tab-performance"') < html.index('id="tab-games"')
+    assert html.index('id="tab-games"') < html.index('id="tab-champion"')
+    assert html.index('id="tab-champion"') < html.index('id="tab-deepdive"')
+    assert html.index('id="tab-deepdive"') < html.index('id="tab-advanced"')
+    assert html.index('id="category-performance"') < html.index('id="form-tracker"')
+    assert html.index('id="form-tracker"') < html.index('id="category-games"')
+    assert html.index('id="category-champion"') < html.index('id="category-deepdive"')

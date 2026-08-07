@@ -36,8 +36,6 @@ MIN_WINRATE_DELTA_SOFT: float = 0.10
 MIN_WIN_CORRELATION: float = 0.20
 MIN_FEATURE_CORRELATION: float = 0.18
 MIN_LANE_PRIORITY_CORRELATION: float = 0.22
-BEST_MATCHUP_WINRATE: float = 0.58
-WORST_MATCHUP_WINRATE: float = 0.42
 MIN_SIDE_LANE_DEATHS_PER_GAME: float = 0.6
 MIN_OBJECTIVE_PRESENCE: float = 0.50
 MIN_DEAD_BEFORE_OBJECTIVE_RATE: float = 0.22
@@ -214,7 +212,6 @@ class CoachEngine:
         self,
         matches_df: pd.DataFrame,
         deaths_df: pd.DataFrame,
-        matchups_df: pd.DataFrame,
         objectives_df: pd.DataFrame,
         stats_engine: StatisticsEngine,
         *,
@@ -223,7 +220,6 @@ class CoachEngine:
     ) -> None:
         self._matches = matches_df
         self._deaths = deaths_df
-        self._matchups = matchups_df
         self._objectives = objectives_df
         self._stats = stats_engine
         self._build_label = build_label
@@ -245,8 +241,6 @@ class CoachEngine:
             self._rule_first_item_timing,
             self._rule_control_wards,
             self._rule_side_lane_deaths,
-            self._rule_best_matchup,
-            self._rule_worst_matchup,
             self._rule_deaths_before_objectives,
             self._rule_objective_presence,
             self._rule_solo_deaths,
@@ -558,66 +552,6 @@ class CoachEngine:
             effect_size=round(min(1.0, len(side) / games / 2), 3),
             priority=_priority(min(1.0, len(side) / games / 2), None, len(side)),
             sample_size=len(side),
-        )
-
-    def _rule_best_matchup(self) -> Recommendation | None:
-        from league_stats.analysis.matchups import matchup_summary
-
-        summary = matchup_summary(self._matchups)
-        if not summary or summary["best_matchup_winrate"] < BEST_MATCHUP_WINRATE:
-            return None
-        return Recommendation(
-            category="Matchups",
-            title=f"Your strongest matchup is {summary['best_matchup']}",
-            detail=(
-                f"You win {summary['best_matchup_winrate']:.0%} of {summary['best_matchup_games']} "
-                f"games against {summary['best_matchup']}. Look for it in champ select and play "
-                "it aggressively for early leads."
-            ),
-            evidence=(
-                f"{summary['best_matchup_winrate']:.0%} WR over "
-                f"{summary['best_matchup_games']} games"
-            ),
-            tone=RecommendationTone.POSITIVE,
-            p_value=None,
-            effect_size=round(summary["best_matchup_winrate"] - 0.5, 3),
-            priority=_priority(
-                summary["best_matchup_winrate"] - 0.5, None, summary["best_matchup_games"]
-            ),
-            sample_size=summary["best_matchup_games"],
-        )
-
-    def _rule_worst_matchup(self) -> Recommendation | None:
-        from league_stats.analysis.matchups import matchup_summary
-
-        summary = matchup_summary(self._matchups)
-        if not summary or summary["worst_matchup_winrate"] > WORST_MATCHUP_WINRATE:
-            return None
-        cause = ""
-        deaths_pre14 = summary.get("worst_matchup_deaths_pre14")
-        if deaths_pre14 is not None and deaths_pre14 >= 1.5:
-            cause = (
-                f" You average {deaths_pre14:.1f} deaths before 14 minutes in this lane — the "
-                "games are lost in the laning phase, not later."
-            )
-        return Recommendation(
-            category="Matchups",
-            title=f"You struggle most against {summary['worst_matchup']}",
-            detail=(
-                f"You win only {summary['worst_matchup_winrate']:.0%} of "
-                f"{summary['worst_matchup_games']} games against {summary['worst_matchup']}."
-                f"{cause} Consider a defensive rune page or banning it."
-            ),
-            evidence=(
-                f"{summary['worst_matchup_winrate']:.0%} WR over "
-                f"{summary['worst_matchup_games']} games"
-            ),
-            p_value=None,
-            effect_size=round(0.5 - summary["worst_matchup_winrate"], 3),
-            priority=_priority(
-                0.5 - summary["worst_matchup_winrate"], None, summary["worst_matchup_games"]
-            ),
-            sample_size=summary["worst_matchup_games"],
         )
 
     def _rule_deaths_before_objectives(self) -> Recommendation | None:

@@ -21,8 +21,6 @@ ALL_COACH_RULES: Final[frozenset[str]] = frozenset(
         "_rule_first_item_timing",
         "_rule_control_wards",
         "_rule_side_lane_deaths",
-        "_rule_best_matchup",
-        "_rule_worst_matchup",
         "_rule_deaths_before_objectives",
         "_rule_objective_presence",
         "_rule_solo_deaths",

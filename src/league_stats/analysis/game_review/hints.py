@@ -60,9 +60,9 @@ def game_review_tooltips() -> dict[str, dict[str, str]]:
         "objectives": OBJECTIVE_COLUMN_TOOLTIPS,
         "key_moments": {
             "interpolation": (
-                "Minute snapshots from just before the action through just after, "
-                "including any minute marks in between. Riot records all ten players "
-                "once per minute. Objective icons are bright when up, dim when taken."
+                "Drag the scrubber to step through minute snapshots from just before "
+                "the action through just after. Riot records all ten players once per "
+                "minute. Objective icons are bright when up, dim when taken."
             ),
         },
     }

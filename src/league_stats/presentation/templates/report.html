@@ -80,12 +80,12 @@
     {% endif %}
   </div>
   <div class="report-category-tabs" id="report-category-tabs" role="tablist" aria-label="Report categories">
-    <button type="button" class="report-tab report-tab--performance is-active" data-category="performance" role="tab" aria-selected="true" aria-controls="category-performance" id="tab-performance">Performance</button>
+    <button type="button" class="report-tab report-tab--summary is-active" data-category="summary" role="tab" aria-selected="true" aria-controls="category-summary" id="tab-summary">Summary</button>
+    <button type="button" class="report-tab report-tab--performance" data-category="performance" role="tab" aria-selected="false" aria-controls="category-performance" id="tab-performance">Performance</button>
     <button type="button" class="report-tab report-tab--games" data-category="games" role="tab" aria-selected="false" aria-controls="category-games" id="tab-games">Game Review</button>
-    <button type="button" class="report-tab report-tab--laning" data-category="laning" role="tab" aria-selected="false" aria-controls="category-laning" id="tab-laning">{{ early_section_title | default('Laning') }}</button>
-    <button type="button" class="report-tab report-tab--impact" data-category="impact" role="tab" aria-selected="false" aria-controls="category-impact" id="tab-impact">Game impact</button>
     <button type="button" class="report-tab report-tab--champion" data-category="champion" role="tab" aria-selected="false" aria-controls="category-champion" id="tab-champion">Champion</button>
-    <button type="button" class="report-tab report-tab--analysis" data-category="analysis" role="tab" aria-selected="false" aria-controls="category-analysis" id="tab-analysis">Analysis</button>
+    <button type="button" class="report-tab report-tab--deepdive" data-category="deepdive" role="tab" aria-selected="false" aria-controls="category-deepdive" id="tab-deepdive">Deep Dive</button>
+    <button type="button" class="report-tab report-tab--advanced" data-category="advanced" role="tab" aria-selected="false" aria-controls="category-advanced" id="tab-advanced">Advanced</button>
   </div>
 </div>
 {% if status_endpoint %}
@@ -225,9 +225,9 @@
 </script>
 {% endif %}
 
-<div class="report-category-panel is-active" id="category-performance" data-category="performance" role="tabpanel" aria-labelledby="tab-performance">
+<div class="report-category-panel is-active" id="category-summary" data-category="summary" role="tabpanel" aria-labelledby="tab-summary">
 
-<section id="overview" class="report-section report-section--performance">
+<section id="overview" class="report-section report-section--summary">
   <div class="report-hero" id="report-hero">
     <div class="report-hero-identity">
       {% if champion_icon %}
@@ -286,14 +286,10 @@
     </div>
   </div>
   <div id="overview-cards">{{ tiered_cards(overview_cards, 'More overview stats') }}</div>
-  <div class="figure-block">
-    <div class="figure" id="fig-winrate_trend">{{ figures.winrate_trend | safe }}</div>
-    <p class="figure-caption">Rolling win rate over your last games — look for upward trends after patch changes or build adjustments.</p>
-  </div>
 </section>
 
-<section id="coaching" class="report-section report-section--performance">
-  {{ section_title("Coaching", "bulb", "win", category='performance') }}
+<section id="coaching" class="report-section report-section--summary">
+  {{ section_title("Coaching", "bulb", "win", category='summary') }}
   <p class="sub sub--lead">Strengths on the left, areas to improve on the right — ranked by what matters most for your next games.</p>
   <div class="rec-columns" id="recommendations-root">
     <div class="rec-column rec-column-positive" id="rec-positive-column">
@@ -338,6 +334,10 @@
     </div>
   </div>
 </section>
+
+</div>
+
+<div class="report-category-panel" id="category-performance" data-category="performance" role="tabpanel" aria-labelledby="tab-performance" hidden>
 
 <section id="form-tracker" class="report-section report-section--performance">
   {{ section_title("Form tracker", "trending-up", "win", category='performance') }}
@@ -461,235 +461,9 @@
   </div>
 </section>
 
-</div>
-
-<div class="report-category-panel" id="category-games" data-category="games" role="tabpanel" aria-labelledby="tab-games" hidden>
-
-<section id="game-review" class="report-section report-section--games">
-  {{ section_title("Game Review", "layout-list", "win", category='games') }}
-  <p class="sub sub--lead" id="game-review-subtitle">{{ game_review_subtitle or 'Last 5 games' }} — follows queue filter.</p>
-  <div id="game-review-unavailable" class="form-empty"{% if game_review_available | default(false) %} style="display:none"{% endif %}>
-    <p>No ranked games in this queue for Game Review.</p>
-  </div>
-  <div id="game-review-content"{% if not game_review_available | default(false) %} style="display:none"{% endif %}>
-    <div class="game-review-layout">
-      <aside class="game-review-rail" aria-label="Recent games">
-        <div class="game-review-list" id="game-review-list"></div>
-      </aside>
-      <div class="game-review-detail" id="game-review-detail" hidden>
-        <div class="game-review-stage" id="game-review-matchup"></div>
-        <div class="game-review-verdict" id="game-review-verdict"></div>
-        <div class="game-review-scoreboard" id="game-review-score-hero"></div>
-        <div class="game-review-tabs" id="game-review-tabs" role="tablist">
-          <button type="button" class="game-review-tab is-active" data-tab="overview" role="tab" aria-selected="true">Overview</button>
-          <button type="button" class="game-review-tab" data-tab="story" role="tab" aria-selected="false">Story</button>
-          <button type="button" class="game-review-tab" data-tab="key-moments" role="tab" aria-selected="false">Key Moments</button>
-          <button type="button" class="game-review-tab" data-tab="loadout" role="tab" aria-selected="false">Loadout</button>
-        </div>
-        <div class="game-review-panel" id="game-review-panel-overview" role="tabpanel"></div>
-        <div class="game-review-panel" id="game-review-panel-story" role="tabpanel" hidden>
-          <div class="game-review-story-block figure-block" id="game-review-panel-timeline"></div>
-          <div class="game-review-story-block" id="game-review-key-moments-viewer"></div>
-        </div>
-        <div class="game-review-panel" id="game-review-panel-key-moments" role="tabpanel" hidden></div>
-        <div class="game-review-panel" id="game-review-panel-loadout" role="tabpanel" hidden></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-</div>
-
-<div class="report-category-panel" id="category-laning" data-category="laning" role="tabpanel" aria-labelledby="tab-laning" hidden>
-
-<section id="lane" class="report-section report-section--laning">
-  {{ section_title(early_section_title | default('Lane'), "lane", "accent", category='laning') }}
-  <div id="lane-cards">{{ tiered_cards(lane_cards, 'More ' ~ (early_section_title | default('lane') | lower) ~ ' stats') }}</div>
-  <div class="figure-block">
-    <div class="figure" id="fig-gd10_histogram">{{ figures.gd10_histogram | safe }}</div>
-    <p class="figure-caption">Gold diff @10 distribution — a right-skewed shape means you often win lane; left-skewed means you fall behind early.</p>
-  </div>
-  <div class="figure-block">
-    <div class="figure" id="fig-gold_diff_timeline">{{ figures.gold_diff_timeline | safe }}</div>
-    <p class="figure-caption">Average gold lead over time in wins vs losses — check where your leads convert or collapse.</p>
-  </div>
-  <div class="figure-block">
-    <div class="figure" id="fig-cs10_violin">{{ figures.cs10_violin | safe }}</div>
-    <p class="figure-caption">CS @10 spread across games — tighter clusters mean more consistent farming.</p>
-  </div>
-</section>
-
-<section id="economy" class="report-section report-section--laning">
-  {{ section_title("Economy", "coin", "gold", category='laning') }}
-  <div id="economy-cards">{{ tiered_cards(economy_cards, 'More economy stats') }}</div>
-  <div class="figure-block">
-    <div class="figure" id="fig-dpm_scatter">{{ figures.dpm_scatter | safe }}</div>
-    <p class="figure-caption">Damage vs gold income per game — dots above the trend line punch above their gold weight.</p>
-  </div>
-</section>
-
-</div>
-
-<div class="report-category-panel" id="category-impact" data-category="impact" role="tabpanel" aria-labelledby="tab-impact" hidden>
-
-<section id="vision" class="report-section report-section--impact">
-  {{ section_title("Vision", "eye", "blue", category='impact') }}
-  <div id="vision-cards">{{ tiered_cards(vision_cards, 'More vision stats') }}</div>
-  <div class="figure-block">
-    <div class="figure" id="fig-vision_trend">{{ figures.vision_trend | safe }}</div>
-    <p class="figure-caption">Vision score per minute over time — compare win and loss trajectories to spot when vision drops off.</p>
-  </div>
-</section>
-
-<section id="deaths" class="report-section report-section--impact">
-  {{ section_title("Deaths", "skull", "danger", category='impact') }}
-  <div id="death-cards">{{ tiered_cards(death_cards, 'More death stats') }}</div>
-  <div class="figure-block">
-    <div class="figure" id="fig-death_heatmap">{{ figures.death_heatmap | safe }}</div>
-    <p class="figure-caption">Where you die on the map — red-side games are mirrored across the river (perpendicular to mid) so bot-lane deaths stay on the bottom edge. Hot zones without nearby team vision are prime gank or face-check risks.</p>
-  </div>
-  <div class="figure-block">
-    <div class="figure" id="fig-deaths_box">{{ figures.deaths_box | safe }}</div>
-    <p class="figure-caption">Deaths per game spread — a high median with a long upper tail means volatile survival.</p>
-  </div>
-  <div id="blind-spots-block"{% if not blind_spots %} style="display:none"{% endif %}>
-  <h3>{{ metric_label("Most dangerous zones (solo deaths without recent team vision)", "skull", "danger") }}</h3>
-  <div class="table-scroll">
-  <table><thead><tr><th>Zone</th><th>{{ metric_label("Deaths", "skull", "danger") }}</th></tr></thead>
-  <tbody id="blind-spots-body">
-  {% for spot in blind_spots %}<tr><td>{{ spot.zone }}</td><td>{{ spot.deaths }}</td></tr>{% endfor %}
-  </tbody></table>
-  </div>
-  </div>
-</section>
-
-<section id="positioning" class="report-section report-section--impact">
-  {{ section_title("Positioning", "roam", "accent", category='impact') }}
-  <p class="sub">Mid/late game map habits from timeline frames (post 14 min). Distances are map units — lower means closer.</p>
-  {% if positioning_hints %}
-  <div class="positioning-hints" id="positioning-hints">
-    {% for hint in positioning_hints %}
-    <p class="positioning-hint positioning-hint--{{ hint.tone }}">{{ hint.text }}</p>
-    {% endfor %}
-  </div>
-  {% else %}
-  <div class="positioning-hints" id="positioning-hints" style="display:none"></div>
-  {% endif %}
-  <div id="positioning-cards">{{ tiered_cards(positioning_cards, 'More positioning stats') }}</div>
-</section>
-
-<section id="teamfights" class="report-section report-section--impact">
-  {{ section_title("Teamfights", "teamfight", "accent", category='impact') }}
-  <div id="teamfight-cards">{{ tiered_cards(teamfight_cards, 'More teamfight stats') }}</div>
-</section>
-
-<section id="objectives" class="report-section report-section--impact">
-  {{ section_title("Objectives", "target", "gold", category='impact') }}
-  <div class="table-scroll">
-  <table>
-    <thead>
-    <tr><th>Objective</th><th>Count</th><th>Taken</th><th>Present</th><th>Arrived early</th><th>{{ metric_label("Died in setup window (45–10s)", tooltip=metric_tooltip("Died in setup window (45–10s)")) }}</th><th>{{ metric_label("Wards before", tooltip=metric_tooltip("Wards before")) }}</th></tr>
-    </thead>
-    <tbody id="objective-table-body">
-    {% for row in objective_rows %}
-    <tr><td>{{ icon_cell(row.kind|title, row.objective_icon) }}</td><td>{{ row.count }}</td><td>{{ '%.0f' % (row.taken_rate * 100) }}%</td><td>{{ '%.0f' % (row.presence_rate * 100) }}%</td><td>{{ '%.0f' % (row.early_rate * 100) }}%</td><td>{{ '%.0f' % (row.dead_before_rate * 100) }}%</td><td>{{ row.avg_wards_before }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
-  <div class="figure-block">
-    <div class="figure" id="fig-objective_timing">{{ figures.objective_timing | safe }}</div>
-    <p class="figure-caption">When objectives are taken — early arrivals and ward placement before spawn improve take rates.</p>
-  </div>
-</section>
-
-</div>
-
-<div class="report-category-panel" id="category-champion" data-category="champion" role="tabpanel" aria-labelledby="tab-champion" hidden>
-
-<section id="items" class="report-section report-section--champion">
-  {{ section_title("Items", "items", "gold", category='champion') }}
-  <div class="figure-block">
-    <div class="figure" id="fig-item_winrate_bar">{{ figures.item_winrate_bar | safe }}</div>
-    <p class="figure-caption">Win rate by completed item — favor items with enough sample size and a clear WR edge.</p>
-  </div>
-  <h3>Two-item cores</h3>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Core</th><th>Games</th><th>Win rate</th><th>{{ metric_label("Avg DPM", "flame", "orange") }}</th><th>{{ metric_label("Avg deaths", "skull", "danger") }}</th></tr></thead>
-    <tbody id="build-paths-body">
-    {% for row in build_paths %}
-    <tr><td>{{ core_cell(row.first_item, row.second_item, row.first_item_icon, row.second_item_icon, row.core) }}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td>{{ row.avg_dpm }}</td><td>{{ row.avg_deaths }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</section>
-
-<section id="runes" class="report-section report-section--champion">
-  {{ section_title("Runes", "rune", "accent", category='champion') }}
-  <div class="figure-block">
-    <div class="figure" id="fig-rune_winrate_bar">{{ figures.rune_winrate_bar | safe }}</div>
-    <p class="figure-caption">Win rate by keystone — compare rune setups with similar game counts before switching.</p>
-  </div>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Keystone</th><th>Games</th><th>Win rate</th><th>{{ metric_label("Avg DPM", "flame", "orange") }}</th><th>{{ metric_label("Avg deaths", "skull", "danger") }}</th></tr></thead>
-    <tbody id="rune-rows-body">
-    {% for row in rune_rows %}
-    <tr><td>{% if row.keystone_icon %}<span class="icon-cell"><img src="{{ row.keystone_icon }}" alt="" class="game-icon game-icon--sm"><span>{{ row.keystone }}</span></span>{% else %}{{ row.keystone }}{% endif %}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td>{{ row.avg_dpm }}</td><td>{{ row.avg_deaths }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</section>
-
-<section id="matchups" class="report-section report-section--champion">
-  {{ section_title("Matchups", "combat", "accent", category='champion') }}
-  <p class="sub sub--lead">Lane opponents you've faced most. <strong>Verdict</strong> is your win rate read; <strong>Play plan</strong> is the single biggest pattern in those games.</p>
-  <div class="figure-block">
-    <div class="figure" id="fig-matchup_bar">{{ figures.matchup_bar | safe }}</div>
-    <p class="figure-caption">Win rate vs lane opponents — bar length shows sample size; color shows above/below 50% WR.</p>
-  </div>
-  <div class="table-scroll">
-  <table class="sortable-table matchup-table" id="matchup-table" data-sortable="matchups">
-    <thead>
-      <tr>
-        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="opponent" data-sort-type="string">Opponent</button></th>
-        <th aria-sort="descending"><button type="button" class="sort-btn is-sorted is-sorted-desc" data-sort-key="games" data-sort-type="number">Games</button></th>
-        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="winrate" data-sort-type="number" title="Your win rate in this matchup">WR</button></th>
-        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="verdict" data-sort-type="verdict" title="Win-rate read, softer below 3 games">Verdict</button></th>
-        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="avg_gd10" data-sort-type="number" title="Average gold difference at 10 minutes">Gold@10</button></th>
-        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="avg_csd10" data-sort-type="number" title="Average CS difference at 10 minutes">CS@10</button></th>
-        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="avg_deaths_pre14" data-sort-type="number" title="Average deaths before 14 minutes">Deaths&nbsp;&lt;14</button></th>
-        <th>Play plan</th>
-      </tr>
-    </thead>
-    <tbody id="matchup-rows-body">
-    {% for row in matchup_rows %}
-    <tr>
-      <td>{% if row.opponent_icon %}<span class="icon-cell"><img src="{{ row.opponent_icon }}" alt="" class="game-icon game-icon--sm"><span>{{ row.opponent }}</span></span>{% else %}{{ row.opponent }}{% endif %}</td>
-      <td>{{ row.games }}</td>
-      <td>{% if row.winrate_color %}<span class="matchup-metric" style="color: {{ row.winrate_color }}">{{ '%.0f' % (row.winrate * 100) }}%</span>{% else %}{{ '%.0f' % (row.winrate * 100) }}%{% endif %}</td>
-      <td><span class="matchup-verdict matchup-verdict--{{ row.verdict | default('even') }}">{{ row.verdict_label | default('Even') }}</span></td>
-      <td>{% if row.avg_gd10 is not none %}{% if row.gd10_color %}<span class="matchup-metric" style="color: {{ row.gd10_color }}">{{ '%+.0f' % row.avg_gd10 }}</span>{% else %}{{ '%+.0f' % row.avg_gd10 }}{% endif %}{% else %}—{% endif %}</td>
-      <td>{% if row.avg_csd10 is not none %}{% if row.csd10_color %}<span class="matchup-metric" style="color: {{ row.csd10_color }}">{{ '%+.0f' % row.avg_csd10 }}</span>{% else %}{{ '%+.0f' % row.avg_csd10 }}{% endif %}{% else %}—{% endif %}</td>
-      <td>{% if row.avg_deaths_pre14 is not none %}{% if row.deaths_pre14_color %}<span class="matchup-metric" style="color: {{ row.deaths_pre14_color }}">{{ '%.1f' % row.avg_deaths_pre14 }}</span>{% else %}{{ '%.1f' % row.avg_deaths_pre14 }}{% endif %}{% else %}—{% endif %}</td>
-      <td class="matchup-plan">{% if row.focus %}<span class="matchup-focus matchup-focus--{{ row.focus_key | default('standard') }}">{{ row.focus }}</span>{% endif %}<span class="matchup-tip">{{ row.recommendation }}</span></td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</section>
-
-</div>
-
-<div class="report-category-panel" id="category-analysis" data-category="analysis" role="tabpanel" aria-labelledby="tab-analysis" hidden>
-
 {% if has_peer_comparison %}
-<section id="rank-peers" class="report-section report-section--analysis">
-  {{ section_title("Rank peer comparison", "chart", "accent", category='analysis') }}
+<section id="rank-peers" class="report-section report-section--performance">
+  {{ section_title("Rank peer comparison", "chart", "accent", category='performance') }}
   <p class="sub sub--lead" id="peer-subtitle">Your averages vs {{ build_label }} at <strong>{{ peer_comparison.rank_label }}</strong> · {{ peer_comparison.peer_games }} peer games ({{ peer_comparison.peer_players }} players, {{ peer_comparison.confidence }} confidence)</p>
   {% set peer_above = peer_rows | selectattr('verdict', 'equalto', 'above') | list %}
   {% set peer_below = peer_rows | selectattr('verdict', 'equalto', 'below') | list %}
@@ -808,8 +582,8 @@
   </div>
 </section>
 {% elif status_endpoint %}
-<section id="rank-peers" class="report-section report-section--analysis" data-peer-pending="1">
-  {{ section_title("Rank peer comparison", "chart", "accent", category='analysis') }}
+<section id="rank-peers" class="report-section report-section--performance" data-peer-pending="1">
+  {{ section_title("Rank peer comparison", "chart", "accent", category='performance') }}
   <div class="peer-dossier peer-dossier--pending">
     <div class="peer-pending" role="status" aria-live="polite">
       <p class="sub" id="rank-peers-pending">Peer comparison is still running — this section updates when it finishes.</p>
@@ -818,56 +592,274 @@
 </section>
 {% endif %}
 
-<section id="graphs" class="report-section report-section--analysis">
-  {{ section_title("Advanced stats", "chart", "accent", category='analysis') }}
-  <p class="sub">Correlations and game archetypes for deeper analysis — expand only when you want the full statistical picture.</p>
-  <details class="graphs-details" id="graphs-details">
-    <summary>Show advanced charts</summary>
-    <div class="graphs-details-body">
-      <div class="figure-block">
-        <div class="figure" id="fig-correlation_heatmap">{{ figures.correlation_heatmap | safe }}</div>
-        <p class="figure-caption">How stats move together — strong red/blue pairs mean two metrics rise or fall in tandem across your games.</p>
-      </div>
-      <div class="figure-block">
-        <p class="figure-header" id="hint-win_correlation_bar"{% if not figure_hints.win_correlation_bar %} style="display:none"{% endif %}>{% if figure_hints.win_correlation_bar %}{{ figure_hints.win_correlation_bar }}{% endif %}</p>
-        <div class="figure" id="fig-win_correlation_bar">{{ figures.win_correlation_bar | safe }}</div>
-        <p class="figure-caption">Which stats most align with winning — longer bars (positive or negative) matter more for your results.</p>
-      </div>
-      <div class="figure-block">
-        <p class="figure-header" id="hint-feature_importance"{% if not figure_hints.feature_importance %} style="display:none"{% endif %}>{% if figure_hints.feature_importance %}{{ figure_hints.feature_importance }}{% endif %}</p>
-        <div class="figure" id="fig-feature_importance">{{ figures.feature_importance | safe }}</div>
-        <p class="figure-caption">What the early-game win model weighs most — focus practice on the top features when sample size is sufficient.</p>
-      </div>
-      <div class="figure-block">
-        <div class="figure figure--with-help">
-          <button type="button" class="figure-info-btn" aria-expanded="false" aria-controls="archetype-help" title="How to read this chart">?</button>
-          <div class="figure-info-panel" id="archetype-help" role="region" aria-label="Game archetypes guide">
-            <strong>How to read this chart</strong>
-            <ul>
-              <li>Each dot is one game. <em>Color</em> = archetype. <em>Shape</em> = win or loss.</li>
-              <li>Games with similar stats (gold @10/@15, deaths, damage, vision, length) sit near each other.</li>
-              <li>The axes are a compressed view — they don't map to a single stat. Focus on color, shape, and clusters.</li>
-            </ul>
-            <strong style="display:block;margin-top:10px;">Archetype labels</strong>
-            <ul>
-              <li><em>Lane stomp win</em> — ahead ≥1k gold @15</li>
-              <li><em>Comeback win</em> — behind ≥750 @15, still won</li>
-              <li><em>Scaling win</em> — 32+ minutes</li>
-              <li><em>Clean win</em> — other wins</li>
-              <li><em>Throw</em> — ahead ≥750 @15, lost</li>
-              <li><em>One-sided loss</em> — behind ≥1k @15</li>
-              <li><em>Close loss</em> — other losses</li>
-            </ul>
-          </div>
-          <div id="fig-cluster_scatter">{{ figures.cluster_scatter | safe }}</div>
+</div>
+
+<div class="report-category-panel" id="category-games" data-category="games" role="tabpanel" aria-labelledby="tab-games" hidden>
+
+<section id="game-review" class="report-section report-section--games">
+  {{ section_title("Game Review", "layout-list", "win", category='games') }}
+  <p class="sub sub--lead" id="game-review-subtitle">{{ game_review_subtitle or 'Last 5 games' }} — follows queue filter.</p>
+  <div id="game-review-unavailable" class="form-empty"{% if game_review_available | default(false) %} style="display:none"{% endif %}>
+    <p>No ranked games in this queue for Game Review.</p>
+  </div>
+  <div id="game-review-content"{% if not game_review_available | default(false) %} style="display:none"{% endif %}>
+    <div class="game-review-layout">
+      <aside class="game-review-rail" aria-label="Recent games">
+        <div class="game-review-list" id="game-review-list"></div>
+      </aside>
+      <div class="game-review-detail" id="game-review-detail" hidden>
+        <div class="game-review-stage" id="game-review-matchup"></div>
+        <div class="game-review-verdict" id="game-review-verdict"></div>
+        <div class="game-review-scoreboard" id="game-review-score-hero"></div>
+        <div class="game-review-tabs" id="game-review-tabs" role="tablist">
+          <button type="button" class="game-review-tab is-active" data-tab="overview" role="tab" aria-selected="true">Overview</button>
+          <button type="button" class="game-review-tab" data-tab="story" role="tab" aria-selected="false">Story</button>
+          <button type="button" class="game-review-tab" data-tab="key-moments" role="tab" aria-selected="false">Key Moments</button>
+          <button type="button" class="game-review-tab" data-tab="loadout" role="tab" aria-selected="false">Loadout</button>
         </div>
-        <p class="figure-caption">Game archetypes in a compressed stat space — look for clusters of throws or comeback wins to spot patterns.</p>
+        <div class="game-review-panel" id="game-review-panel-overview" role="tabpanel"></div>
+        <div class="game-review-panel" id="game-review-panel-story" role="tabpanel" hidden>
+          <div class="game-review-story-block figure-block" id="game-review-panel-timeline"></div>
+          <div class="game-review-story-block" id="game-review-key-moments-viewer"></div>
+        </div>
+        <div class="game-review-panel" id="game-review-panel-key-moments" role="tabpanel" hidden></div>
+        <div class="game-review-panel" id="game-review-panel-loadout" role="tabpanel" hidden></div>
       </div>
     </div>
-  </details>
+  </div>
 </section>
 
 </div>
+
+<div class="report-category-panel" id="category-champion" data-category="champion" role="tabpanel" aria-labelledby="tab-champion" hidden>
+
+<section id="items" class="report-section report-section--champion">
+  {{ section_title("Items", "items", "gold", category='champion') }}
+  <div class="figure-block">
+    <div class="figure" id="fig-item_winrate_bar">{{ figures.item_winrate_bar | safe }}</div>
+    <p class="figure-caption">Win rate by completed item — favor items with enough sample size and a clear WR edge.</p>
+  </div>
+  <h3>Two-item cores</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Core</th><th>Games</th><th>Win rate</th><th>{{ metric_label("Avg DPM", "flame", "orange") }}</th><th>{{ metric_label("Avg deaths", "skull", "danger") }}</th></tr></thead>
+    <tbody id="build-paths-body">
+    {% for row in build_paths %}
+    <tr><td>{{ core_cell(row.first_item, row.second_item, row.first_item_icon, row.second_item_icon, row.core) }}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td>{{ row.avg_dpm }}</td><td>{{ row.avg_deaths }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="runes" class="report-section report-section--champion">
+  {{ section_title("Runes", "rune", "accent", category='champion') }}
+  <div class="figure-block">
+    <div class="figure" id="fig-rune_winrate_bar">{{ figures.rune_winrate_bar | safe }}</div>
+    <p class="figure-caption">Win rate by keystone — compare rune setups with similar game counts before switching.</p>
+  </div>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Keystone</th><th>Games</th><th>Win rate</th><th>{{ metric_label("Avg DPM", "flame", "orange") }}</th><th>{{ metric_label("Avg deaths", "skull", "danger") }}</th></tr></thead>
+    <tbody id="rune-rows-body">
+    {% for row in rune_rows %}
+    <tr><td>{% if row.keystone_icon %}<span class="icon-cell"><img src="{{ row.keystone_icon }}" alt="" class="game-icon game-icon--sm"><span>{{ row.keystone }}</span></span>{% else %}{{ row.keystone }}{% endif %}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td>{{ row.avg_dpm }}</td><td>{{ row.avg_deaths }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="matchups" class="report-section report-section--champion">
+  {{ section_title("Matchups", "combat", "accent", category='champion') }}
+  <p class="sub sub--lead">Lane opponents you've faced most. <strong>Verdict</strong> is your win rate read; <strong>Play plan</strong> is the single biggest pattern in those games.</p>
+  <div class="figure-block">
+    <div class="figure" id="fig-matchup_bar">{{ figures.matchup_bar | safe }}</div>
+    <p class="figure-caption">Win rate vs lane opponents — bar length shows sample size; color shows above/below 50% WR.</p>
+  </div>
+  <div class="table-scroll">
+  <table class="sortable-table matchup-table" id="matchup-table" data-sortable="matchups">
+    <thead>
+      <tr>
+        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="opponent" data-sort-type="string">Opponent</button></th>
+        <th aria-sort="descending"><button type="button" class="sort-btn is-sorted is-sorted-desc" data-sort-key="games" data-sort-type="number">Games</button></th>
+        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="winrate" data-sort-type="number" title="Your win rate in this matchup">WR</button></th>
+        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="verdict" data-sort-type="verdict" title="Win-rate read, softer below 3 games">Verdict</button></th>
+        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="avg_gd10" data-sort-type="number" title="Average gold difference at 10 minutes">Gold@10</button></th>
+        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="avg_csd10" data-sort-type="number" title="Average CS difference at 10 minutes">CS@10</button></th>
+        <th aria-sort="none"><button type="button" class="sort-btn" data-sort-key="avg_deaths_pre14" data-sort-type="number" title="Average deaths before 14 minutes">Deaths&nbsp;&lt;14</button></th>
+        <th>Play plan</th>
+      </tr>
+    </thead>
+    <tbody id="matchup-rows-body">
+    {% for row in matchup_rows %}
+    <tr>
+      <td>{% if row.opponent_icon %}<span class="icon-cell"><img src="{{ row.opponent_icon }}" alt="" class="game-icon game-icon--sm"><span>{{ row.opponent }}</span></span>{% else %}{{ row.opponent }}{% endif %}</td>
+      <td>{{ row.games }}</td>
+      <td>{% if row.winrate_color %}<span class="matchup-metric" style="color: {{ row.winrate_color }}">{{ '%.0f' % (row.winrate * 100) }}%</span>{% else %}{{ '%.0f' % (row.winrate * 100) }}%{% endif %}</td>
+      <td><span class="matchup-verdict matchup-verdict--{{ row.verdict | default('even') }}">{{ row.verdict_label | default('Even') }}</span></td>
+      <td>{% if row.avg_gd10 is not none %}{% if row.gd10_color %}<span class="matchup-metric" style="color: {{ row.gd10_color }}">{{ '%+.0f' % row.avg_gd10 }}</span>{% else %}{{ '%+.0f' % row.avg_gd10 }}{% endif %}{% else %}—{% endif %}</td>
+      <td>{% if row.avg_csd10 is not none %}{% if row.csd10_color %}<span class="matchup-metric" style="color: {{ row.csd10_color }}">{{ '%+.0f' % row.avg_csd10 }}</span>{% else %}{{ '%+.0f' % row.avg_csd10 }}{% endif %}{% else %}—{% endif %}</td>
+      <td>{% if row.avg_deaths_pre14 is not none %}{% if row.deaths_pre14_color %}<span class="matchup-metric" style="color: {{ row.deaths_pre14_color }}">{{ '%.1f' % row.avg_deaths_pre14 }}</span>{% else %}{{ '%.1f' % row.avg_deaths_pre14 }}{% endif %}{% else %}—{% endif %}</td>
+      <td class="matchup-plan">{% if row.focus %}<span class="matchup-focus matchup-focus--{{ row.focus_key | default('standard') }}">{{ row.focus }}</span>{% endif %}<span class="matchup-tip">{{ row.recommendation }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+</div>
+
+<div class="report-category-panel" id="category-deepdive" data-category="deepdive" role="tabpanel" aria-labelledby="tab-deepdive" hidden>
+
+<section id="lane" class="report-section report-section--deepdive">
+  {{ section_title(early_section_title | default('Lane'), "lane", "accent", category='deepdive') }}
+  <div id="lane-cards">{{ tiered_cards(lane_cards, 'More ' ~ (early_section_title | default('lane') | lower) ~ ' stats') }}</div>
+  <div class="figure-block">
+    <div class="figure" id="fig-gd10_histogram">{{ figures.gd10_histogram | safe }}</div>
+    <p class="figure-caption">Gold diff @10 distribution — a right-skewed shape means you often win lane; left-skewed means you fall behind early.</p>
+  </div>
+  <div class="figure-block">
+    <div class="figure" id="fig-gold_diff_timeline">{{ figures.gold_diff_timeline | safe }}</div>
+    <p class="figure-caption">Average gold lead over time in wins vs losses — check where your leads convert or collapse.</p>
+  </div>
+  <div class="figure-block">
+    <div class="figure" id="fig-cs10_violin">{{ figures.cs10_violin | safe }}</div>
+    <p class="figure-caption">CS @10 spread across games — tighter clusters mean more consistent farming.</p>
+  </div>
+</section>
+
+<section id="economy" class="report-section report-section--deepdive">
+  {{ section_title("Economy", "coin", "gold", category='deepdive') }}
+  <div id="economy-cards">{{ tiered_cards(economy_cards, 'More economy stats') }}</div>
+  <div class="figure-block">
+    <div class="figure" id="fig-dpm_scatter">{{ figures.dpm_scatter | safe }}</div>
+    <p class="figure-caption">Damage vs gold income per game — dots above the trend line punch above their gold weight.</p>
+  </div>
+</section>
+
+<section id="vision" class="report-section report-section--deepdive">
+  {{ section_title("Vision", "eye", "blue", category='deepdive') }}
+  <div id="vision-cards">{{ tiered_cards(vision_cards, 'More vision stats') }}</div>
+  <div class="figure-block">
+    <div class="figure" id="fig-vision_trend">{{ figures.vision_trend | safe }}</div>
+    <p class="figure-caption">Vision score per minute over time — compare win and loss trajectories to spot when vision drops off.</p>
+  </div>
+</section>
+
+<section id="deaths" class="report-section report-section--deepdive">
+  {{ section_title("Deaths", "skull", "danger", category='deepdive') }}
+  <div id="death-cards">{{ tiered_cards(death_cards, 'More death stats') }}</div>
+  <div class="figure-block">
+    <div class="figure" id="fig-death_heatmap">{{ figures.death_heatmap | safe }}</div>
+    <p class="figure-caption">Where you die on the map — red-side games are mirrored across the river (perpendicular to mid) so bot-lane deaths stay on the bottom edge. Hot zones without nearby team vision are prime gank or face-check risks.</p>
+  </div>
+  <div class="figure-block">
+    <div class="figure" id="fig-deaths_box">{{ figures.deaths_box | safe }}</div>
+    <p class="figure-caption">Deaths per game spread — a high median with a long upper tail means volatile survival.</p>
+  </div>
+  <div id="blind-spots-block"{% if not blind_spots %} style="display:none"{% endif %}>
+  <h3>{{ metric_label("Most dangerous zones (solo deaths without recent team vision)", "skull", "danger") }}</h3>
+  <div class="table-scroll">
+  <table><thead><tr><th>Zone</th><th>{{ metric_label("Deaths", "skull", "danger") }}</th></tr></thead>
+  <tbody id="blind-spots-body">
+  {% for spot in blind_spots %}<tr><td>{{ spot.zone }}</td><td>{{ spot.deaths }}</td></tr>{% endfor %}
+  </tbody></table>
+  </div>
+  </div>
+</section>
+
+<section id="positioning" class="report-section report-section--deepdive">
+  {{ section_title("Positioning", "roam", "accent", category='deepdive') }}
+  <p class="sub">Mid/late game map habits from timeline frames (post 14 min). Distances are map units — lower means closer.</p>
+  {% if positioning_hints %}
+  <div class="positioning-hints" id="positioning-hints">
+    {% for hint in positioning_hints %}
+    <p class="positioning-hint positioning-hint--{{ hint.tone }}">{{ hint.text }}</p>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="positioning-hints" id="positioning-hints" style="display:none"></div>
+  {% endif %}
+  <div id="positioning-cards">{{ tiered_cards(positioning_cards, 'More positioning stats') }}</div>
+</section>
+
+<section id="teamfights" class="report-section report-section--deepdive">
+  {{ section_title("Teamfights", "teamfight", "accent", category='deepdive') }}
+  <div id="teamfight-cards">{{ tiered_cards(teamfight_cards, 'More teamfight stats') }}</div>
+</section>
+
+<section id="objectives" class="report-section report-section--deepdive">
+  {{ section_title("Objectives", "target", "gold", category='deepdive') }}
+  <div class="table-scroll">
+  <table>
+    <thead>
+    <tr><th>Objective</th><th>Count</th><th>Taken</th><th>Present</th><th>Arrived early</th><th>{{ metric_label("Died in setup window (45–10s)", tooltip=metric_tooltip("Died in setup window (45–10s)")) }}</th><th>{{ metric_label("Wards before", tooltip=metric_tooltip("Wards before")) }}</th></tr>
+    </thead>
+    <tbody id="objective-table-body">
+    {% for row in objective_rows %}
+    <tr><td>{{ icon_cell(row.kind|title, row.objective_icon) }}</td><td>{{ row.count }}</td><td>{{ '%.0f' % (row.taken_rate * 100) }}%</td><td>{{ '%.0f' % (row.presence_rate * 100) }}%</td><td>{{ '%.0f' % (row.early_rate * 100) }}%</td><td>{{ '%.0f' % (row.dead_before_rate * 100) }}%</td><td>{{ row.avg_wards_before }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="figure-block">
+    <div class="figure" id="fig-objective_timing">{{ figures.objective_timing | safe }}</div>
+    <p class="figure-caption">When objectives are taken — early arrivals and ward placement before spawn improve take rates.</p>
+  </div>
+</section>
+
+</div>
+
+<div class="report-category-panel" id="category-advanced" data-category="advanced" role="tabpanel" aria-labelledby="tab-advanced" hidden>
+
+<section id="graphs" class="report-section report-section--advanced">
+  {{ section_title("Advanced", "chart", "accent", category='advanced') }}
+  <p class="sub">Correlations and game archetypes for deeper analysis.</p>
+  <div class="figure-block">
+    <div class="figure" id="fig-correlation_heatmap">{{ figures.correlation_heatmap | safe }}</div>
+    <p class="figure-caption">How stats move together — strong red/blue pairs mean two metrics rise or fall in tandem across your games.</p>
+  </div>
+  <div class="figure-block">
+    <p class="figure-header" id="hint-win_correlation_bar"{% if not figure_hints.win_correlation_bar %} style="display:none"{% endif %}>{% if figure_hints.win_correlation_bar %}{{ figure_hints.win_correlation_bar }}{% endif %}</p>
+    <div class="figure" id="fig-win_correlation_bar">{{ figures.win_correlation_bar | safe }}</div>
+    <p class="figure-caption">Which stats most align with winning — longer bars (positive or negative) matter more for your results.</p>
+  </div>
+  <div class="figure-block">
+    <p class="figure-header" id="hint-feature_importance"{% if not figure_hints.feature_importance %} style="display:none"{% endif %}>{% if figure_hints.feature_importance %}{{ figure_hints.feature_importance }}{% endif %}</p>
+    <div class="figure" id="fig-feature_importance">{{ figures.feature_importance | safe }}</div>
+    <p class="figure-caption">What the early-game win model weighs most — focus practice on the top features when sample size is sufficient.</p>
+  </div>
+  <div class="figure-block">
+    <div class="figure figure--with-help">
+      <button type="button" class="figure-info-btn" aria-expanded="false" aria-controls="archetype-help" title="How to read this chart">?</button>
+      <div class="figure-info-panel" id="archetype-help" role="region" aria-label="Game archetypes guide">
+        <strong>How to read this chart</strong>
+        <ul>
+          <li>Each dot is one game. <em>Color</em> = archetype. <em>Shape</em> = win or loss.</li>
+          <li>Games with similar stats (gold @10/@15, deaths, damage, vision, length) sit near each other.</li>
+          <li>The axes are a compressed view — they don't map to a single stat. Focus on color, shape, and clusters.</li>
+        </ul>
+        <strong style="display:block;margin-top:10px;">Archetype labels</strong>
+        <ul>
+          <li><em>Lane stomp win</em> — ahead ≥1k gold @15</li>
+          <li><em>Comeback win</em> — behind ≥750 @15, still won</li>
+          <li><em>Scaling win</em> — 32+ minutes</li>
+          <li><em>Clean win</em> — other wins</li>
+          <li><em>Throw</em> — ahead ≥750 @15, lost</li>
+          <li><em>One-sided loss</em> — behind ≥1k @15</li>
+          <li><em>Close loss</em> — other losses</li>
+        </ul>
+      </div>
+      <div id="fig-cluster_scatter">{{ figures.cluster_scatter | safe }}</div>
+    </div>
+    <p class="figure-caption">Game archetypes in a compressed stat space — look for clusters of throws or comeback wins to spot patterns.</p>
+  </div>
+</section>
+
+</div>
+
 <script type="application/json" id="report-views-data">{{ report_views_json | safe }}</script>
 <script type="application/json" id="progression-views-data">{{ progression_views_json | safe }}</script>
 <script type="application/json" id="game-review-data">{{ game_review_json | default('{}') | safe }}</script>
@@ -1006,9 +998,13 @@
     var scoreNode = document.getElementById('score-value');
     var compsNode = document.getElementById('score-comps');
     if (scoreNode) {
+      // Always sync data-score so a later entrance animation (or peer reload
+      // restore) cannot re-animate the server-default window's score.
+      scoreNode.setAttribute('data-score', String(bundle.score));
       if (window.reportAnimateScore) {
         window.reportAnimateScore(scoreNode, bundle.score);
       } else {
+        scoreNode.setAttribute('data-display', String(bundle.score));
         scoreNode.innerHTML = String(bundle.score) + '<span>/100</span>';
       }
     }
@@ -1700,25 +1696,12 @@
   }
 
   var MAP_SIZE = 14870;
-  var KEY_MOMENT_PLAY_MS = 2000;
-  var keyMomentPlayback = {
-    timer: null,
-    playing: false,
+  var keyMomentState = {
     game: null,
     momentIndex: 0,
     frameIndex: 0
   };
   var selectedKeyMomentIndex = 0;
-
-  function stopKeyMomentScrubber() {
-    if (keyMomentPlayback.timer) {
-      clearInterval(keyMomentPlayback.timer);
-      keyMomentPlayback.timer = null;
-    }
-    keyMomentPlayback.playing = false;
-    var playBtn = document.getElementById('key-moment-play-btn');
-    if (playBtn) playBtn.textContent = 'Play';
-  }
 
   function mapCoordToPct(x, y) {
     return {
@@ -1777,7 +1760,7 @@
     var moment = (game.key_moments || [])[momentIndex];
     if (!moment || !moment.frames || !moment.frames.length) return;
     frameIndex = Math.max(0, Math.min(moment.frames.length - 1, frameIndex));
-    keyMomentPlayback.frameIndex = frameIndex;
+    keyMomentState.frameIndex = frameIndex;
     var frame = moment.frames[frameIndex];
     applyKeyMomentFrame(game, frame);
     var scrubber = document.getElementById('key-moment-scrubber');
@@ -1791,46 +1774,12 @@
       timeReadout.textContent = (frameIndex + 1) + '/' + moment.frames.length +
         ' · ' + formatGameTime(frame.timestamp_ms / 60000) + label;
     }
-    var playBtn = document.getElementById('key-moment-play-btn');
-    if (playBtn) playBtn.textContent = keyMomentPlayback.playing ? 'Pause' : 'Play';
-  }
-
-  function tickKeyMomentPlayback() {
-    if (!keyMomentPlayback.playing || !keyMomentPlayback.game) return;
-    var moment = (keyMomentPlayback.game.key_moments || [])[keyMomentPlayback.momentIndex];
-    var frames = moment && moment.frames ? moment.frames : [];
-    if (frames.length < 2) {
-      stopKeyMomentScrubber();
-      return;
-    }
-    var nextIndex = keyMomentPlayback.frameIndex + 1;
-    if (nextIndex >= frames.length) {
-      showKeyMomentFrame(keyMomentPlayback.game, keyMomentPlayback.momentIndex, frames.length - 1);
-      stopKeyMomentScrubber();
-      return;
-    }
-    showKeyMomentFrame(keyMomentPlayback.game, keyMomentPlayback.momentIndex, nextIndex);
-  }
-
-  function startKeyMomentPlayback(game, momentIndex) {
-    var moment = game.key_moments && game.key_moments[momentIndex];
-    if (!moment || !moment.frames || moment.frames.length < 2) return;
-    keyMomentPlayback.game = game;
-    keyMomentPlayback.momentIndex = momentIndex;
-    var scrubber = document.getElementById('key-moment-scrubber');
-    var frameIndex = parseInt(scrubber && scrubber.value, 10) || 0;
-    if (frameIndex >= moment.frames.length - 1) frameIndex = 0;
-    keyMomentPlayback.frameIndex = frameIndex;
-    keyMomentPlayback.playing = true;
-    showKeyMomentFrame(game, momentIndex, frameIndex);
-    keyMomentPlayback.timer = setInterval(tickKeyMomentPlayback, KEY_MOMENT_PLAY_MS);
   }
 
   function bindKeyMomentScrubber(game, momentIndex) {
-    stopKeyMomentScrubber();
-    keyMomentPlayback.game = game;
-    keyMomentPlayback.momentIndex = momentIndex;
-    keyMomentPlayback.frameIndex = 0;
+    keyMomentState.game = game;
+    keyMomentState.momentIndex = momentIndex;
+    keyMomentState.frameIndex = 0;
     var moment = game.key_moments && game.key_moments[momentIndex];
     if (!moment || !moment.frames || !moment.frames.length) return;
     buildKeyMomentMapShell(game, moment.frames[0]);
@@ -1838,18 +1787,7 @@
     var scrubber = document.getElementById('key-moment-scrubber');
     if (scrubber) {
       scrubber.oninput = function () {
-        stopKeyMomentScrubber();
         showKeyMomentFrame(game, momentIndex, parseInt(scrubber.value, 10) || 0);
-      };
-    }
-    var playBtn = document.getElementById('key-moment-play-btn');
-    if (playBtn) {
-      playBtn.onclick = function () {
-        if (keyMomentPlayback.playing) {
-          stopKeyMomentScrubber();
-          return;
-        }
-        startKeyMomentPlayback(game, momentIndex);
       };
     }
   }
@@ -1879,7 +1817,6 @@
   function renderGameReviewKeyMoments(game) {
     var panel = document.getElementById('game-review-key-moments-viewer');
     if (!panel) return;
-    stopKeyMomentScrubber();
     var moments = game.key_moments || [];
     var hints = gameReviewTooltips.key_moments || {};
     if (!moments.length) {
@@ -1887,7 +1824,7 @@
       return;
     }
     selectedKeyMomentIndex = 0;
-    keyMomentPlayback.game = game;
+    keyMomentState.game = game;
     var listHtml = moments.map(function (moment, index) {
       var badgeClass = moment.beneficiary === 'ally' ? 'key-moment-badge--ally' : 'key-moment-badge--enemy';
       var subtitle = keyMomentReason(moment);
@@ -1902,8 +1839,10 @@
       '">' + escapeHtml(hints.interpolation || 'Positions update on kills, wards, and minute snapshots.') +
       '</p><div class="key-moment-layout"><div class="key-moment-list">' + listHtml +
       '</div><div class="key-moment-viewer"><div id="key-moment-map-host"></div>' +
-      '<div class="key-moment-controls"><button type="button" id="key-moment-play-btn" class="key-moment-play">Play</button>' +
-      '<input type="range" id="key-moment-scrubber" class="key-moment-scrubber" min="0" max="0" value="0" />' +
+      '<div class="key-moment-controls">' +
+      '<label class="key-moment-scrub-label" for="key-moment-scrubber">Drag to scrub minutes</label>' +
+      '<input type="range" id="key-moment-scrubber" class="key-moment-scrubber" min="0" max="0" value="0" ' +
+      'aria-label="Drag to scrub minute snapshots" />' +
       '<span id="key-moment-time-readout" class="key-moment-time-readout">0:00</span></div></div></div>';
     panel.querySelectorAll('.key-moment-card').forEach(function (card) {
       card.addEventListener('click', function () {
@@ -2192,11 +2131,9 @@
       document.querySelectorAll('.game-review-panel').forEach(function (panel) {
         panel.hidden = panel.id !== 'game-review-panel-' + name;
       });
-      if (name !== 'story') {
-        stopKeyMomentScrubber();
-      } else if (keyMomentPlayback.game && keyMomentPlayback.game.key_moments &&
-          keyMomentPlayback.game.key_moments.length) {
-        bindKeyMomentScrubber(keyMomentPlayback.game, selectedKeyMomentIndex);
+      if (name === 'story' && keyMomentState.game && keyMomentState.game.key_moments &&
+          keyMomentState.game.key_moments.length) {
+        bindKeyMomentScrubber(keyMomentState.game, selectedKeyMomentIndex);
         requestAnimationFrame(function () {
           var panel = document.getElementById('game-review-panel-timeline');
           if (!panel || !window.Plotly || !window.Plotly.Plots) return;
@@ -2381,6 +2318,10 @@
     var start = Number(node.getAttribute('data-display'));
     if (!isFinite(start)) start = 0;
     node.setAttribute('data-score', String(end));
+    if (node._scoreRaf) {
+      cancelAnimationFrame(node._scoreRaf);
+      node._scoreRaf = null;
+    }
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       node.setAttribute('data-display', String(end));
       node.innerHTML = String(end) + '<span>/100</span>';
@@ -2395,13 +2336,19 @@
       var value = Math.round(start + (end - start) * eased);
       node.setAttribute('data-display', String(value));
       node.innerHTML = String(value) + '<span>/100</span>';
-      if (p < 1) requestAnimationFrame(frame);
+      if (p < 1) {
+        node._scoreRaf = requestAnimationFrame(frame);
+      } else {
+        node._scoreRaf = null;
+      }
     }
-    requestAnimationFrame(frame);
+    node._scoreRaf = requestAnimationFrame(frame);
   }
   window.reportAnimateScore = animateScore;
   var scoreNode = document.getElementById('score-value');
   if (scoreNode) {
+    // Prefer data-score: applyView may have already restored a non-default
+    // game window (e.g. Last 50 after a peer-stage reload) before this runs.
     var initial = scoreNode.getAttribute('data-score') || scoreNode.textContent;
     scoreNode.setAttribute('data-display', '0');
     scoreNode.innerHTML = '0<span>/100</span>';
@@ -2412,29 +2359,35 @@
 <script>
 (function () {
   var sectionCategory = {
-    overview: 'performance',
-    coaching: 'performance',
+    overview: 'summary',
+    coaching: 'summary',
     'form-tracker': 'performance',
     'game-review': 'games',
-    lane: 'laning',
-    economy: 'laning',
-    vision: 'impact',
-    deaths: 'impact',
-    positioning: 'impact',
-    teamfights: 'impact',
-    objectives: 'impact',
+    lane: 'deepdive',
+    economy: 'deepdive',
+    vision: 'deepdive',
+    deaths: 'deepdive',
+    positioning: 'deepdive',
+    teamfights: 'deepdive',
+    objectives: 'deepdive',
     items: 'champion',
     runes: 'champion',
     matchups: 'champion',
-    'rank-peers': 'analysis',
-    graphs: 'analysis',
+    'rank-peers': 'performance',
+    graphs: 'advanced',
+  };
+
+  var legacyCategoryMap = {
+    laning: 'deepdive',
+    impact: 'deepdive',
+    analysis: 'advanced',
   };
 
   var tabs = Array.prototype.slice.call(document.querySelectorAll('.report-tab[data-category]'));
   var panels = Array.prototype.slice.call(document.querySelectorAll('.report-category-panel[data-category]'));
   if (!tabs.length || !panels.length) return;
 
-  var activeCategory = 'performance';
+  var activeCategory = 'summary';
 
   function categoryForSection(id) {
     if (!id) return null;
@@ -2486,37 +2439,33 @@
   });
 
   var savedCategory = null;
+  var categoryStorageVersion = null;
   try {
     savedCategory = localStorage.getItem('reportActiveCategory');
+    categoryStorageVersion = localStorage.getItem('reportActiveCategoryVersion');
   } catch (e) {}
-  // Stage-A web reports omit peers; restoring the Analysis tab then looks like
-  // the whole report is only "Advanced stats". Prefer Performance until peers exist.
-  if (savedCategory === 'analysis' && !document.getElementById('rank-peers')) {
-    savedCategory = null;
+  if (categoryStorageVersion !== '2') {
+    // v1 stored the old landing as "performance"; map once to Summary.
+    if (savedCategory === 'performance') {
+      savedCategory = 'summary';
+    }
+    try {
+      localStorage.setItem('reportActiveCategoryVersion', '2');
+      if (savedCategory) {
+        localStorage.setItem('reportActiveCategory', savedCategory);
+      }
+    } catch (e) {}
+  }
+  if (savedCategory && legacyCategoryMap[savedCategory]) {
+    savedCategory = legacyCategoryMap[savedCategory];
   }
   var initialCategory = (savedCategory && tabs.some(function (tab) {
     return tab.getAttribute('data-category') === savedCategory;
-  })) ? savedCategory : 'performance';
+  })) ? savedCategory : 'summary';
   setActiveCategory(initialCategory, { persist: false, scrollTop: false });
 
   window.reportSetCategory = setActiveCategory;
   window.reportCategoryForSection = categoryForSection;
-})();
-</script>
-<script>
-(function () {
-  var graphsDetails = document.getElementById('graphs-details');
-  if (!graphsDetails) return;
-  try {
-    if (localStorage.getItem('reportGraphsOpen') === '1') {
-      graphsDetails.open = true;
-    }
-  } catch (e) {}
-  graphsDetails.addEventListener('toggle', function () {
-    try {
-      localStorage.setItem('reportGraphsOpen', graphsDetails.open ? '1' : '0');
-    } catch (e) {}
-  });
 })();
 </script>
 <script>

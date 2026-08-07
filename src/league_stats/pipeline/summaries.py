@@ -86,7 +86,6 @@ def generate_recommendations(
     coach = CoachEngine(
         frames.matches_df,
         frames.deaths_df,
-        frames.matchups_df,
         frames.objectives_df,
         stats,
         build_label=config.build_label,

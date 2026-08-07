@@ -70,6 +70,9 @@ def test_report_contains_game_window_toggle(tmp_path: Path) -> None:
     assert "Last 50" in html
     assert "Last 100" in html
     assert 'data-window="all"' in html
+    # Restoring a saved Last-50 window must update data-score before the
+    # entrance animation runs, or a peer-stage reload reverts to Last 100.
+    assert "scoreNode.setAttribute('data-score', String(bundle.score))" in html
 
     match = re.search(
         r'<script type="application/json" id="report-views-data">(.*?)</script>',

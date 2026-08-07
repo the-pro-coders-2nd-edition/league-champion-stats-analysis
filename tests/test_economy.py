@@ -42,7 +42,7 @@ def test_unspent_gold_rule_skips_healthy_average(tmp_path: Path) -> None:
         }
     )
     stats = StatisticsEngine(matches, tmp_path)
-    coach = CoachEngine(matches, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), stats)
+    coach = CoachEngine(matches, pd.DataFrame(), pd.DataFrame(), stats)
     titles = [r.title for r in coach.generate()]
     assert "Too much gold sitting unspent" not in titles
 
@@ -57,7 +57,7 @@ def test_unspent_gold_rule_fires_for_hoarding(tmp_path: Path) -> None:
         }
     )
     stats = StatisticsEngine(matches, tmp_path)
-    coach = CoachEngine(matches, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), stats)
+    coach = CoachEngine(matches, pd.DataFrame(), pd.DataFrame(), stats)
     rec = next(r for r in coach.generate() if r.title == "Too much gold sitting unspent")
     assert rec.effect_size == pytest.approx(0.429, abs=0.01)
     assert "1300" in rec.evidence

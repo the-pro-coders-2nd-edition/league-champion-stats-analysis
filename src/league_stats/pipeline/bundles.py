@@ -334,7 +334,6 @@ def build_window_bundle(
     graphs = GraphFactory(graphs_dir, icon_resolver=icon_resolver)
     series = [(r.win, r.timeline.gold_series, r.timeline.opp_gold_series) for r in records]
     figures = {
-        "winrate_trend": graphs.winrate_trend(frames.matches_df),
         "gold_diff_timeline": graphs.gold_diff_timeline(series),
         "gd10_histogram": graphs.gd10_histogram(frames.matches_df),
         "deaths_box": graphs.deaths_box(frames.matches_df),

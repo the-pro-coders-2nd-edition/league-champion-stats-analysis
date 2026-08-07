@@ -13,7 +13,6 @@ from league_stats.analysis.coach.engine import (
     VISIBLE_RECOMMENDATIONS,
     recommendations_markdown,
 )
-from league_stats.analysis.matchups import matchups_dataframe
 from league_stats.analysis.statistics import StatisticsEngine
 from tests.test_statistics import _synthetic_matches
 
@@ -23,7 +22,7 @@ def coach(tmp_path: Path) -> CoachEngine:
     """A coach over synthetic data with a strong early-deaths signal."""
     matches = _synthetic_matches()
     matches["opponent"] = (["Syndra"] * 20 + ["Orianna"] * 20 + ["Akali"] * 20)
-    # Make Akali a clear counter and Orianna a clear win.
+    # Keep a clear win-rate split for non-matchup rules that use these rows.
     matches.loc[matches["opponent"] == "Akali", "win"] = 0
     matches.loc[matches["opponent"] == "Orianna", "win"] = 1
     matches["gd10"] = np.where(matches["win"] == 1, 650, -450)
@@ -66,7 +65,6 @@ def coach(tmp_path: Path) -> CoachEngine:
     return CoachEngine(
         matches_df=matches,
         deaths_df=deaths,
-        matchups_df=matchups_dataframe(matches),
         objectives_df=objectives,
         stats_engine=stats,
         role="MIDDLE",
@@ -81,11 +79,13 @@ def test_recommendations_generated_and_sorted(coach: CoachEngine) -> None:
     assert priorities == sorted(priorities, reverse=True)
 
 
-def test_matchup_rules_fire(coach: CoachEngine) -> None:
-    """Best (Orianna) and worst (Akali) matchups are both reported."""
+def test_matchup_rules_disabled(coach: CoachEngine) -> None:
+    """Matchup tips stay in the matchup table, not the coaching section."""
     titles = " | ".join(r.title for r in coach.generate())
-    assert "Orianna" in titles
-    assert "Akali" in titles
+    assert "Orianna" not in titles
+    assert "Akali" not in titles
+    assert "strongest matchup" not in titles.lower()
+    assert "struggle most against" not in titles.lower()
 
 
 def test_new_rules_fire(coach: CoachEngine) -> None:
@@ -135,5 +135,5 @@ def test_empty_data_yields_no_recommendations(tmp_path: Path) -> None:
     """A near-empty dataset produces no recommendations."""
     empty = pd.DataFrame({"match_id": ["M0"], "win": [1]})
     stats = StatisticsEngine(empty, tmp_path)
-    coach = CoachEngine(empty, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), stats)
+    coach = CoachEngine(empty, pd.DataFrame(), pd.DataFrame(), stats)
     assert coach.generate() == []

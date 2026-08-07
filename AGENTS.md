@@ -39,7 +39,7 @@ Compares **recent form** (default last 20 games) vs a **personal baseline** (def
 2. Behavioral shifts? `analysis/progression/shifts.py`
 3. Diff coaching tips? `analysis/progression/coach.py`
 4. Pipeline wiring? `pipeline/progression.py` → `build_progression_views()`; orchestrator embeds `progression_views_json`
-5. Dashboard section? `presentation/templates/report.html` `#form-tracker` + `renderFormProgression()` JS
+5. Dashboard section? `presentation/templates/report.html` `#form-tracker` (Performance tab) + `renderFormProgression()` JS
 6. Charts? `presentation/graphs.py` → `form_rolling_wr`, `form_metric_delta_bar`
 7. Config? `core/config.py` `[progression]` table in `config.toml` or `progression_*` on `AppConfig`
 

@@ -254,17 +254,6 @@ class GraphFactory:
 
     # -------------------------------------------------------------- Trends
 
-    def winrate_trend(self, matches_df: pd.DataFrame) -> str:
-        """Rolling win rate over the game history (chronological)."""
-        frame = matches_df.sort_values("game_creation_ms").reset_index(drop=True)
-        window = max(5, min(20, len(frame) // 5))
-        rolling = frame["win"].rolling(window, min_periods=3).mean()
-        fig = go.Figure()
-        fig.add_scatter(y=rolling * 100, mode="lines", name=f"WR ({window}-game rolling)", line=dict(color=ACCENT, width=3))
-        fig.add_hline(y=50, line_dash="dot", line_color="#888")
-        fig.update_layout(title="Win rate trend", xaxis_title="Game #", yaxis_title="Win rate %")
-        return _div(fig)
-
     def gold_diff_timeline(self, records_series: list[tuple[bool, list[int], list[int]]]) -> str:
         """Average gold differential per minute in wins vs losses.
 
