@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ app_title }} — {{ player_name }}</title>
-{% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, tiered_cards, rec_card, metric_card, section_pulse, score_card, ui_chip, generated_at_time, format_generated_at_script, peer_callout, form_story, data_table with context %}
+{% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, tiered_cards, rec_card, metric_card, section_pulse, generated_at_time, format_generated_at_script, form_story, data_table with context %}
 {{ favicon_links(favicon_href) }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -419,8 +419,8 @@
             <div class="label">Form score</div>
             <div class="form-score-value form-score-value--{{ form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable' }}" id="form-score-value">{{ '%+.0f' % form_snapshot.form_score if form_snapshot and form_snapshot.form_score is defined else '0' }}</div>
             <div class="form-meta">
-              {{ ui_chip(form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable', form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable', id='form-trend-badge') }}
-              {{ ui_chip((form_snapshot.confidence if form_snapshot and form_snapshot.confidence else 'insufficient') ~ ' confidence', 'confidence', id='form-confidence-badge') }}
+              {% include "generated/ui_chip_badge_trend.html" %}
+              {% include "generated/ui_chip_badge_confidence.html" %}
             </div>
           </div>
           <div class="form-stage-wr">

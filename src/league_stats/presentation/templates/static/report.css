@@ -412,27 +412,6 @@ h3 { font-size: 17px; margin: 24px 0 12px; color: var(--muted); }
 .peer-balance { display: flex; flex-wrap: wrap; gap: 8px; }
 .peer-meta-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 
-.peer-verdict { margin-bottom: 14px; }
-.peer-verdict-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 10px;
-}
-.peer-callout {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border);
-  background: var(--panel-2);
-}
-.peer-callout--keep {
-  border-color: rgba(63, 182, 139, 0.35);
-  background: linear-gradient(180deg, rgba(63, 182, 139, 0.10), var(--panel-2));
-}
-.peer-callout--fix {
-  border-color: rgba(224, 85, 99, 0.35);
-  background: linear-gradient(180deg, rgba(224, 85, 99, 0.10), var(--panel-2));
-}
-.peer-verdict-empty { margin: 0; }
-
 .peer-drivers {
   display: grid;
   grid-template-columns: 1fr 1fr;

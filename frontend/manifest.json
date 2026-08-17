@@ -1,4 +1,25 @@
 {
+  "ui_chip_badge": {
+    "component": "src/components/UiChipBadge.svelte",
+    "outputs": [
+      {
+        "file": "ui_chip_badge_trend.html",
+        "props": {
+          "tone": "{{ form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable' }}",
+          "label": "{{ form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable' }}",
+          "id": "form-trend-badge"
+        }
+      },
+      {
+        "file": "ui_chip_badge_confidence.html",
+        "props": {
+          "tone": "confidence",
+          "label": "{{ (form_snapshot.confidence if form_snapshot and form_snapshot.confidence else 'insufficient') }} confidence",
+          "id": "form-confidence-badge"
+        }
+      }
+    ]
+  },
   "pill": {
     "component": "src/components/Pill.svelte",
     "outputs": [
@@ -256,25 +277,12 @@
       }
     ]
   },
-  "callout_head": {
-    "component": "src/components/CalloutHead.svelte",
+  "form_story_head": {
+    "component": "src/components/FormStoryHead.svelte",
     "outputs": [
       {
-        "file": "callout_head_peer.html",
-        "props": { "prefix": "peer-callout", "label": "{{ 'Fix' if kind == 'fix' else 'Keep' }}", "title": "{{ parts[0] }}" }
-      },
-      {
-        "file": "callout_head_story.html",
-        "props": { "prefix": "form-story", "label": "{{ 'Keep' if story.tone == 'keep' else 'Fix' }}", "title": "{{ story.title }}" }
-      }
-    ]
-  },
-  "callout_detail": {
-    "component": "src/components/CalloutDetail.svelte",
-    "outputs": [
-      {
-        "file": "callout_detail.html",
-        "props": { "detail": "{{ parts[1:] | join(': ') }}" }
+        "file": "form_story_head.html",
+        "props": { "label": "{{ 'Keep' if story.tone == 'keep' else 'Fix' }}", "title": "{{ story.title }}" }
       }
     ]
   },
@@ -408,19 +416,6 @@
           "tabs": [
             { "value": "pulse", "label": "Pulse", "active": true },
             { "value": "evidence", "label": "Evidence", "active": false }
-          ]
-        }
-      },
-      {
-        "file": "tab_bar_peer.html",
-        "props": {
-          "containerId": "peer-tabs",
-          "buttonClass": "peer-tab",
-          "dataAttr": "data-tab",
-          "tabs": [
-            { "value": "gaps", "label": "Gaps", "active": true },
-            { "value": "drivers", "label": "Drivers", "active": false },
-            { "value": "details", "label": "Details", "active": false }
           ]
         }
       },

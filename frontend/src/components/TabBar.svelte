@@ -56,7 +56,7 @@
   .report-tab--deepdive.is-active { border-bottom-color: var(--cat-deepdive); }
   .report-tab--advanced.is-active { border-bottom-color: var(--cat-advanced); }
 
-  .form-tabs, .peer-tabs, .game-review-tabs {
+  .form-tabs, .game-review-tabs {
     position: sticky;
     top: var(--report-sticky-offset);
     z-index: 2;
@@ -64,11 +64,11 @@
     margin: 0 0 14px; padding: 8px 0;
     background: transparent;
   }
-  .form-tab, .peer-tab, .game-review-tab {
+  .form-tab, .game-review-tab {
     border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
     border-radius: 999px; padding: 8px 14px; cursor: pointer; font-size: 13px; font-weight: 600;
   }
-  .form-tab.is-active, .peer-tab.is-active, .game-review-tab.is-active {
+  .form-tab.is-active, .game-review-tab.is-active {
     border-color: var(--accent); color: #fff; background: var(--accent);
   }
 </style>

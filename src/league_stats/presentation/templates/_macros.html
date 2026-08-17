@@ -61,47 +61,6 @@
 {%- endif -%}
 {%- endmacro %}
 
-{% macro ui_chip(label, tone=none, title=none, class=none, id=none) -%}
-<span class="ui-chip{% if tone %} ui-chip--{{ tone }}{% endif %}{% if class %} {{ class }}{% endif %}"{% if id %} id="{{ id }}"{% endif %}{% if title %} title="{{ title }}"{% endif %}>{{ label }}</span>
-{%- endmacro %}
-
-{% macro ui_chip_row(chips, class=none) -%}
-<div class="ui-chip-row{% if class %} {{ class }}{% endif %}">
-  {%- for chip in chips -%}
-  {{ ui_chip(chip.label, chip.tone, chip.title, chip.class) }}
-  {%- endfor -%}
-</div>
-{%- endmacro %}
-
-{% macro score_card(name, score, verdict=none, tone='solid', value=none, hint=none, class=none) -%}
-{%- set card_tone = tone or 'solid' -%}
-{%- set card_verdict = verdict or 'Solid' -%}
-{%- set card_score = '%.0f' % score if score is not none else '0' -%}
-<div class="comp comp--{{ card_tone }}{% if class %} {{ class }}{% endif %}"{% if hint %} title="{{ hint }}"{% endif %}>
-  <span class="comp-verdict">{{ card_verdict }}</span>
-  <div class="comp-head">
-    <span class="comp-name">{{ name }}</span>
-    <span class="comp-score">{{ card_score }}</span>
-  </div>
-  {%- if value %}
-  <div class="comp-value">{{ value }}</div>
-  {%- endif %}
-  <div class="bar" aria-hidden="true"><i style="width: {{ card_score }}%"></i></div>
-</div>
-{%- endmacro %}
-
-{% macro score_card_row(section_id=none, name='', score=none, verdict=none, tone='solid', value=none, hint=none, fix=none, hidden=false) -%}
-<div class="score-card-row{% if fix and fix.title %} score-card-row--with-fix{% endif %}"{% if section_id %} data-section-verdict="{{ section_id }}"{% endif %}{% if hidden %} hidden{% endif %}>
-  {{ score_card(name, score, verdict, tone, value, hint) }}
-  {%- if fix and fix.title %}
-  <a class="score-card-fix" href="#{{ fix.anchor or 'coaching' }}">
-    <span class="score-card-fix-kicker">Try this</span>
-    <span class="score-card-fix-title">{{ fix.title }}</span>
-  </a>
-  {%- endif %}
-</div>
-{%- endmacro %}
-
 {% macro section_title(label, icon=none, tone='accent', iconify_id=none, icon_href=none, category=none, scope=none, scope_kind=none) -%}
 <h2 class="section-title{% if category %} section-title--{{ category }}{% endif %}">
   {{ metric_icon(icon, tone, iconify_id, icon_href) }}
@@ -228,19 +187,9 @@
 </div>
 {%- endmacro %}
 
-{% macro peer_callout(kind, item) -%}
-{% set parts = item.split(': ') %}
-<div class="peer-callout peer-callout--{{ kind }}">
-  {% include "generated/callout_head_peer.html" %}
-  {% if parts|length > 1 %}
-  {% include "generated/callout_detail.html" %}
-  {% endif %}
-</div>
-{%- endmacro %}
-
 {% macro form_story(story) -%}
 <article class="form-story form-story--{{ story.tone }}">
-  {% include "generated/callout_head_story.html" %}
+  {% include "generated/form_story_head.html" %}
   {% include "generated/form_story_line_driver.html" %}
   {% if story.habit %}
   {% include "generated/form_story_line_habit.html" %}
