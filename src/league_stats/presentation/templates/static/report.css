@@ -362,19 +362,6 @@ h3 { font-size: 17px; margin: 24px 0 12px; color: var(--muted); }
   color: var(--accent); margin-bottom: 12px;
 }
 .hero-actions { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; justify-content: center; }
-.hero-action {
-  display: flex; align-items: flex-start; gap: 10px; padding: 11px 12px;
-  background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
-  color: var(--text); text-decoration: none; font-size: 13px; line-height: 1.4;
-  transition: border-color .15s, transform .15s, background .15s;
-}
-.hero-action:hover { border-color: var(--accent); background: rgba(124, 108, 240, 0.08); transform: translateX(2px); }
-.hero-action-index {
-  flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 700; background: var(--panel); color: var(--muted);
-}
-.hero-action-empty { color: var(--muted); font-size: 13px; margin: 0; }
 .score-breakdown {
   margin: 0 0 22px; padding: 18px 20px;
   background: var(--panel); border: 1px solid var(--border);
@@ -420,10 +407,7 @@ h3 { font-size: 17px; margin: 24px 0 12px; color: var(--muted); }
   font-size: 32px; font-weight: 800; color: var(--accent);
   line-height: 1.1; margin: 6px 0; letter-spacing: -.02em;
 }
-.peer-rank-icon {
-  width: 48px; height: 48px; object-fit: contain; flex: none;
-}
-.peer-rank-label { min-width: 0; }
+/* .peer-rank-icon, .peer-rank-label moved to frontend/src/components/PeerRankValue.svelte */
 .peer-stage-build { font-size: 13px; color: var(--muted); }
 .peer-stage-meta {
   display: flex; flex-direction: column; justify-content: center; gap: 10px; min-width: 0;
@@ -465,28 +449,7 @@ h3 { font-size: 17px; margin: 24px 0 12px; color: var(--muted); }
   color: var(--muted); margin: 0 0 8px;
 }
 .peer-driver-feed { display: flex; flex-direction: column; gap: 8px; }
-.peer-driver {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
-  gap: 8px 12px;
-  align-items: center;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  border-left-width: 3px;
-  background: var(--panel-2);
-}
-.peer-driver--above {
-  border-left-color: var(--win);
-  background: rgba(63, 182, 139, 0.06);
-}
-.peer-driver--below {
-  border-left-color: var(--loss);
-  background: rgba(224, 85, 99, 0.06);
-}
-.peer-driver-label { font-size: 13px; font-weight: 600; min-width: 0; }
-.peer-driver-values { font-size: 12px; color: var(--muted); }
-.peer-driver-gap { font-size: 14px; font-weight: 700; white-space: nowrap; }
+/* .peer-driver, .peer-driver--*, .peer-driver-label/-values/-gap moved to frontend/src/components/PeerDriverRow.svelte */
 
 .peer-pending {
   margin: 0;
@@ -590,12 +553,7 @@ img.metric-icon--asset { width: 14px; height: 14px; object-fit: contain; flex-sh
 .top-tip--negative { border-color: rgba(224, 85, 99, 0.35); }
 .top-tip .badge { margin: 0; font-size: 10px; }
 .positioning-hints { display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; }
-.positioning-hint {
-  margin: 0; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.45;
-  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
-}
-.positioning-hint--positive { border-color: rgba(63, 182, 139, 0.35); }
-.positioning-hint--negative { border-color: rgba(224, 85, 99, 0.35); }
+/* .positioning-hint, .positioning-hint--* moved to frontend/src/components/PositioningHint.svelte */
 .figure--with-help { position: relative; }
 .figure-info-btn {
   position: absolute; top: 12px; right: 12px; z-index: 2;
@@ -1071,15 +1029,7 @@ footer { color: var(--muted); font-size: 13px; padding: 24px 0; border-top: 1px 
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 10px;
   margin: 6px 0 8px; font-weight: 700;
 }
-.form-wr-from { font-size: 22px; color: var(--muted); }
-.form-wr-arrow { color: var(--muted); font-size: 16px; }
-.form-wr-to { font-size: 28px; color: var(--text); letter-spacing: -.02em; }
-.form-wr-delta {
-  font-size: 13px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
-  background: var(--panel); color: var(--muted);
-}
-.form-wr-delta--up { color: var(--win); background: rgba(63, 182, 139, 0.12); }
-.form-wr-delta--down { color: var(--loss); background: rgba(224, 85, 99, 0.12); }
+/* .form-wr-from/-arrow/-to/-delta moved to frontend/src/components/FormWrBridge.svelte */
 .form-headline { font-size: 14px; color: var(--muted); margin: 0; line-height: 1.45; }
 
 /* .form-tabs, .form-tab moved to frontend/src/components/TabBar.svelte */

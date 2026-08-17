@@ -336,10 +336,8 @@
       <div class="hero-actions" id="hero-actions">
         {% if top_tips %}
         {% for tip in top_tips %}
-        <a class="hero-action" href="#{{ tip.anchor }}">
-          <span class="hero-action-index">{{ loop.index }}</span>
-          <span>{{ tip.action or tip.title }}</span>
-        </a>
+        {% set tip_index = loop.index %}
+        {% include "generated/hero_action.html" %}
         {% endfor %}
         {% else %}
         <p class="hero-action-empty">Play a few more games to unlock personalised coaching tips.</p>
@@ -435,12 +433,7 @@
             <div class="label">Win rate</div>
             <div class="form-wr-bridge" id="form-wr-shift">
               {% if form_snapshot %}
-              <span class="form-wr-from">{{ '%.0f' % (form_snapshot.baseline_winrate * 100) }}%</span>
-              <span class="form-wr-arrow" aria-hidden="true">→</span>
-              <span class="form-wr-to">{{ '%.0f' % (form_snapshot.recent_winrate * 100) }}%</span>
-              <span class="form-wr-delta{% if form_snapshot.winrate_delta_pp > 0 %} form-wr-delta--up{% elif form_snapshot.winrate_delta_pp < 0 %} form-wr-delta--down{% endif %}">
-                {%- if form_snapshot.winrate_delta_pp > 0 %}up {{ '%.0f' % form_snapshot.winrate_delta_pp }}{% elif form_snapshot.winrate_delta_pp < 0 %}down {{ '%.0f' % (-form_snapshot.winrate_delta_pp) }}{% else %}no change{% endif -%}
-              </span>
+              {% include "generated/form_wr_bridge.html" %}
               {% else %}—{% endif %}
             </div>
             <p class="form-headline" id="form-headline">{{ form_snapshot.headline if form_snapshot else '' }}</p>
@@ -513,9 +506,10 @@
           <div class="label">Rank peers</div>
           <div class="peer-rank-value" id="peer-rank-value">
             {% if peer_rank_icon %}
-            <img class="peer-rank-icon" src="{{ peer_rank_icon }}" alt="" width="48" height="48">
+            {% include "generated/peer_rank_value.html" %}
+            {% else %}
+            {% include "generated/peer_rank_value_no_icon.html" %}
             {% endif %}
-            <span class="peer-rank-label" id="peer-rank-label">{{ peer_comparison.rank_label }}</span>
           </div>
         </div>
         <div class="peer-stage-meta">
@@ -536,11 +530,7 @@
         <h4 class="peer-feed-title">Above peers</h4>
         <div class="peer-driver-feed" id="peer-above-list">
           {% for row in peer_above[:6] %}
-          <div class="peer-driver peer-driver--above">
-            <span class="peer-driver-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
-            <span class="peer-driver-values">{{ row.yours }} vs {{ row.peer_avg }}</span>
-            <span class="peer-driver-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
-          </div>
+          {% include "generated/peer_driver_row_above.html" %}
           {% else %}
           <p class="sub">No above-peer metrics.</p>
           {% endfor %}
@@ -550,11 +540,7 @@
         <h4 class="peer-feed-title">Below peers</h4>
         <div class="peer-driver-feed" id="peer-below-list">
           {% for row in peer_below[:6] %}
-          <div class="peer-driver peer-driver--below">
-            <span class="peer-driver-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
-            <span class="peer-driver-values">{{ row.yours }} vs {{ row.peer_avg }}</span>
-            <span class="peer-driver-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
-          </div>
+          {% include "generated/peer_driver_row_below.html" %}
           {% else %}
           <p class="sub">No below-peer metrics.</p>
           {% endfor %}
@@ -768,7 +754,7 @@
   {% if positioning_hints %}
   <div class="positioning-hints" id="positioning-hints">
     {% for hint in positioning_hints %}
-    <p class="positioning-hint positioning-hint--{{ hint.tone }}">{{ hint.text }}</p>
+    {% include "generated/positioning_hint.html" %}
     {% endfor %}
   </div>
   {% else %}

@@ -12,6 +12,76 @@
       }
     ]
   },
+  "peer_driver_row": {
+    "component": "src/components/PeerDriverRow.svelte",
+    "outputs": [
+      {
+        "file": "peer_driver_row_above.html",
+        "props": {
+          "tone": "above",
+          "label": "{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}",
+          "values": "{{ row.yours }} vs {{ row.peer_avg }}",
+          "gap": "{{ row.gap }}",
+          "gapColor": "{{ row.gap_color }}"
+        }
+      },
+      {
+        "file": "peer_driver_row_below.html",
+        "props": {
+          "tone": "below",
+          "label": "{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}",
+          "values": "{{ row.yours }} vs {{ row.peer_avg }}",
+          "gap": "{{ row.gap }}",
+          "gapColor": "{{ row.gap_color }}"
+        }
+      }
+    ]
+  },
+  "hero_action": {
+    "component": "src/components/HeroAction.svelte",
+    "outputs": [
+      {
+        "file": "hero_action.html",
+        "props": { "anchor": "{{ tip.anchor }}", "index": "{{ tip_index }}", "label": "{{ tip.action or tip.title }}" }
+      }
+    ]
+  },
+  "positioning_hint": {
+    "component": "src/components/PositioningHint.svelte",
+    "outputs": [
+      {
+        "file": "positioning_hint.html",
+        "props": { "tone": "{{ hint.tone }}", "text": "{{ hint.text }}" }
+      }
+    ]
+  },
+  "form_wr_bridge": {
+    "component": "src/components/FormWrBridge.svelte",
+    "outputs": [
+      {
+        "file": "form_wr_bridge.html",
+        "props": {
+          "from": "{{ '%.0f' % (form_snapshot.baseline_winrate * 100) }}%",
+          "to": "{{ '%.0f' % (form_snapshot.recent_winrate * 100) }}%",
+          "deltaClass": "{% if form_snapshot.winrate_delta_pp > 0 %}form-wr-delta--up{% elif 0 > form_snapshot.winrate_delta_pp %}form-wr-delta--down{% endif %}",
+          "deltaText": "{%- if form_snapshot.winrate_delta_pp > 0 %}up {{ '%.0f' % form_snapshot.winrate_delta_pp }}{% elif 0 > form_snapshot.winrate_delta_pp %}down {{ '%.0f' % (-form_snapshot.winrate_delta_pp) }}{% else %}no change{% endif -%}"
+        }
+      }
+    ]
+  },
+  "peer_rank_value": {
+    "component": "src/components/PeerRankValue.svelte",
+    "outputs": [
+      {
+        "file": "peer_rank_value.html",
+        "props": { "icon": "{{ peer_rank_icon }}", "label": "{{ peer_comparison.rank_label }}" }
+      },
+      {
+        "file": "peer_rank_value_no_icon.html",
+        "props": { "label": "{{ peer_comparison.rank_label }}" }
+      }
+    ]
+  },
   "metric_value": {
     "component": "src/components/MetricValue.svelte",
     "outputs": [
