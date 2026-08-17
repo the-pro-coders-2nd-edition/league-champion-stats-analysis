@@ -1,17 +1,13 @@
-<script>
-  const TONES = ['good', 'warn', 'bad', 'flat', 'accent'];
-  const VARIANTS = ['soft', 'outline'];
-  const EXTRA_CLASSES = ['', 'scope-chip--window'];
+<script lang="ts">
+  type Tone = 'good' | 'warn' | 'bad' | 'flat' | 'accent';
+  type Variant = 'soft' | 'outline';
+  type ExtraClass = '' | 'scope-chip--window';
 
-  export let tone = 'flat';
-  export let label;
-  export let dot = true;
-  export let variant = 'soft';
-  export let extraClass = '';
-
-  if (!TONES.includes(tone)) throw new Error(`Pill: invalid tone "${tone}"`);
-  if (!VARIANTS.includes(variant)) throw new Error(`Pill: invalid variant "${variant}"`);
-  if (!EXTRA_CLASSES.includes(extraClass)) throw new Error(`Pill: invalid extraClass "${extraClass}"`);
+  export let tone: Tone = 'flat';
+  export let label: string;
+  export let dot: boolean = true;
+  export let variant: Variant = 'soft';
+  export let extraClass: ExtraClass = '';
 </script>
 
 <span class="pill pill--{tone} pill--{variant} {extraClass}">

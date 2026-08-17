@@ -29,13 +29,14 @@ produces — catching this locally is faster than waiting on CI.
   computation). That logic lives once, in Python
   (`src/league_stats/presentation/tones.py`), and is passed in as an
   already-resolved prop (e.g. `tone="good"`) via a Jinja token at generation time.
-- Props with a closed vocabulary (tone, variant, prefix, ...) must validate
-  against it in `<script>` and throw on generation if invalid — but only when
-  the manifest passes a literal (e.g. `"tone": "flat"`). A prop fed by a Jinja
-  token (e.g. `"badge": "{{ rec.badge }}"`) is real per-instance report data;
-  the generator only ever sees the literal token text, never the resolved
-  value, so it can't be validated here — the closed vocabulary is enforced by
-  whatever Python code produces that value instead.
+- Every component uses `<script lang="ts">`. Props with a closed vocabulary
+  get a `type` alias (e.g. `type Tone = 'good' | 'warn' | 'bad' | 'flat' |
+  'accent'`) instead of a comment. This documents the contract but does not
+  validate it at generation time: `generate.js` reads `manifest.json` as
+  untyped JSON and calls the compiled component directly, so a bad literal in
+  the manifest (or a bad value produced by the Python code behind a Jinja
+  token prop) is not caught by TypeScript — types are erased before that call
+  happens. There is deliberately no runtime `.includes()`/throw check either.
 - CSS lives in the component's own `<style>` block, not in `report.css`. Any
   class also rebuilt by a client-side JS re-render function (grep `report.html`
   for the class name) must be wrapped in `:global(...)` — Svelte's scoping

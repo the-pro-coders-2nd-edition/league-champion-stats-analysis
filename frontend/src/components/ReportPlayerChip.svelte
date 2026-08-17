@@ -1,9 +1,6 @@
-<script>
-  // icon presence is chosen by which manifest output is included (icon token
-  // vs. omitted), not by a per-token {#if} -- icon is always truthy at
-  // generation time when it's a Jinja token, same reasoning as MetricBenchmark.
-  export let icon = '';
-  export let label;
+<script lang="ts">
+  export let icon: string = '';
+  export let label: string;
 </script>
 
 <span class="report-player-chip">

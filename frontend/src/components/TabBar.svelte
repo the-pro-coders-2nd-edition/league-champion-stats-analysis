@@ -1,16 +1,19 @@
-<script>
-  const DATA_ATTRS = ['data-category', 'data-tab'];
+<script lang="ts">
+  type DataAttr = 'data-category' | 'data-tab';
+  type Tab = {
+    value: string;
+    label: string;
+    active: boolean;
+    modifierClass?: string;
+    ariaControls?: string;
+    id?: string;
+  };
 
-  // tabs: {value, label, active, modifierClass?, ariaControls?, id?}[] -- a
-  // real array, known at generation time (every tab bar in this report is a
-  // fixed, hand-authored set of tabs, not per-report data).
-  export let containerId;
-  export let ariaLabel = '';
-  export let buttonClass;
-  export let dataAttr;
-  export let tabs;
-
-  if (!DATA_ATTRS.includes(dataAttr)) throw new Error(`TabBar: invalid dataAttr "${dataAttr}"`);
+  export let containerId: string;
+  export let ariaLabel: string = '';
+  export let buttonClass: string;
+  export let dataAttr: DataAttr;
+  export let tabs: Tab[];
 </script>
 
 <div class="{containerId}" id="{containerId}" role="tablist" aria-label={ariaLabel || null}>

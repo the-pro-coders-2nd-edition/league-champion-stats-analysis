@@ -1,16 +1,11 @@
-<script>
-  const TONES = ['improved', 'regressed'];
+<script lang="ts">
+  type Tone = 'improved' | 'regressed';
 
-  // gapColor (#rrggbb|'') is per-instance report data (a Jinja token here,
-  // not a literal) -- vocabulary enforced by interpolate_metric_color() in
-  // view_models.py, same reasoning as MetricValue's valueColor.
-  export let tone;
-  export let label;
-  export let values;
-  export let gap;
-  export let gapColor = '';
-
-  if (!TONES.includes(tone)) throw new Error(`MoverRow: invalid tone "${tone}"`);
+  export let tone: Tone;
+  export let label: string;
+  export let values: string;
+  export let gap: string;
+  export let gapColor: `#${string}` | '' = '';
 </script>
 
 <div class="form-mover form-mover--{tone}">

@@ -1,6 +1,6 @@
-<script>
-  export let anchor;
-  export let title;
+<script lang="ts">
+  export let anchor: string;
+  export let title: string;
 </script>
 
 <a class="section-pulse-fix" href="#{anchor}">

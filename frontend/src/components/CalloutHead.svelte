@@ -1,13 +1,10 @@
-<script>
-  const PREFIXES = ['peer-callout', 'form-story'];
+<script lang="ts">
+  type Prefix = 'peer-callout' | 'form-story';
+  type Label = 'Fix' | 'Keep';
 
-  // label ('Fix'|'Keep') is a Jinja conditional expression at generation
-  // time, not a literal, so it can't be validated here.
-  export let prefix;
-  export let label;
-  export let title;
-
-  if (!PREFIXES.includes(prefix)) throw new Error(`CalloutHead: invalid prefix "${prefix}"`);
+  export let prefix: Prefix;
+  export let label: Label;
+  export let title: string;
 </script>
 
 <span class="{prefix}-label">{label}</span>

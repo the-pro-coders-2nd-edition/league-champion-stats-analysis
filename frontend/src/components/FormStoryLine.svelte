@@ -1,10 +1,11 @@
-<script>
-  const KICKERS = { driver: 'Driver', habit: 'Habit', action: 'Action' };
+<script lang="ts">
+  type Variant = 'driver' | 'habit' | 'action';
 
-  export let variant;
-  export let value;
+  const KICKERS: Record<Variant, string> = { driver: 'Driver', habit: 'Habit', action: 'Action' };
 
-  if (!(variant in KICKERS)) throw new Error(`FormStoryLine: invalid variant "${variant}"`);
+  export let variant: Variant;
+  export let value: string;
+
   const kicker = KICKERS[variant];
 </script>
 

@@ -1,11 +1,9 @@
-<script>
-  // valueClass ('win'|'loss'|'') and valueColor (#rrggbb|'') are per-instance
-  // report data (Jinja tokens at generation time, not literals here) -- their
-  // vocabulary is enforced by the Python producer (view_models.py), not
-  // validatable at generation time.
-  export let value;
-  export let valueClass = '';
-  export let valueColor = '';
+<script lang="ts">
+  type ValueClass = 'win' | 'loss' | '';
+
+  export let value: string;
+  export let valueClass: ValueClass = '';
+  export let valueColor: `#${string}` | '' = '';
 </script>
 
 <div class="value {valueClass}" style="color: {valueColor}">{value}</div>

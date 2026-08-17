@@ -1,11 +1,11 @@
-<script>
-  // badge ('high'|'medium'|'low') is per-instance report data (a Jinja token
-  // here, not a literal) -- vocabulary enforced by score_badge() in report.py.
-  export let badge;
-  export let priorityLabel;
-  export let category;
-  export let title;
-  export let detail;
+<script lang="ts">
+  type Badge = 'high' | 'medium' | 'low';
+
+  export let badge: Badge;
+  export let priorityLabel: string;
+  export let category: string;
+  export let title: string;
+  export let detail: string;
 </script>
 
 <div class="rec-head">

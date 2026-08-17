@@ -1,10 +1,9 @@
-<script>
-  // benchmarkTone ('above'|'below'|'inline') and benchmarkColor (#rrggbb|'')
-  // are per-instance report data (Jinja tokens here, not literals) -- vocabulary
-  // enforced by the Python producer (bundles.py/peer/comparison.py).
-  export let benchmark;
-  export let benchmarkTone = 'inline';
-  export let benchmarkColor = '';
+<script lang="ts">
+  type BenchmarkTone = 'above' | 'below' | 'inline';
+
+  export let benchmark: string;
+  export let benchmarkTone: BenchmarkTone = 'inline';
+  export let benchmarkColor: `#${string}` | '' = '';
 </script>
 
 <div class="card-benchmark card-benchmark--{benchmarkTone}" style="color: {benchmarkColor}">{benchmark}</div>

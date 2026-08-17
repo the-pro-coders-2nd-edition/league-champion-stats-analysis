@@ -1,5 +1,5 @@
-<script>
-  export let detail;
+<script lang="ts">
+  export let detail: string;
 </script>
 
 <span class="peer-callout-detail">{detail}</span>

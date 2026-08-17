@@ -1,7 +1,10 @@
-import { compile } from 'svelte/compiler';
+import { compile, preprocess } from 'svelte/compiler';
+import sveltePreprocess from 'svelte-preprocess';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+const tsPreprocessor = sveltePreprocess.typescript();
 
 /**
  * Compile a .svelte file to an SSR module and render it once with the given props.
@@ -16,7 +19,8 @@ import { pathToFileURL } from 'node:url';
  */
 export async function renderComponent(svelteFile, props) {
   const absPath = path.resolve(svelteFile);
-  const source = fs.readFileSync(absPath, 'utf-8');
+  const rawSource = fs.readFileSync(absPath, 'utf-8');
+  const { code: source } = await preprocess(rawSource, tsPreprocessor, { filename: absPath });
   const { js } = compile(source, { generate: 'ssr', filename: absPath });
 
   const tmpFile = `${absPath}.ssr.${Date.now()}.mjs`;

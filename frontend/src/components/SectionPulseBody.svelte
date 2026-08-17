@@ -1,7 +1,7 @@
-<script>
-  export let label;
-  export let title;
-  export let score;
+<script lang="ts">
+  export let label: string;
+  export let title: string;
+  export let score: number;
 </script>
 
 <span class="section-pulse-label">{label}</span>

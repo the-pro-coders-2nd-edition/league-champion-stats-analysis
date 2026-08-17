@@ -1,14 +1,13 @@
-<script>
-  // tone ('strong'|'focus'|'solid') and verdict are per-instance report data
-  // (Jinja tokens here, not literals) -- vocabulary enforced by the Python
-  // producer, same reasoning as RecCardHead's badge.
-  export let name;
-  export let scoreLabel;
-  export let scoreValue;
-  export let value;
-  export let tone;
-  export let verdict;
-  export let hint;
+<script lang="ts">
+  type Tone = 'strong' | 'focus' | 'solid';
+
+  export let name: string;
+  export let scoreLabel: string;
+  export let scoreValue: number;
+  export let value: string;
+  export let tone: Tone;
+  export let verdict: string;
+  export let hint: string;
 </script>
 
 <div class="comp comp--{tone}" title="{hint}">

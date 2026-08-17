@@ -1,12 +1,10 @@
-<script>
-  const MODIFIERS = ['above', 'below'];
+<script lang="ts">
+  type Modifier = 'above' | 'below';
 
-  export let modifier;
-  export let countId;
-  export let count;
-  export let label;
-
-  if (!MODIFIERS.includes(modifier)) throw new Error(`PeerBalanceChip: invalid modifier "${modifier}"`);
+  export let modifier: Modifier;
+  export let countId: string;
+  export let count: number;
+  export let label: Modifier;
 </script>
 
 <span class="peer-balance-chip peer-balance-chip--{modifier}">

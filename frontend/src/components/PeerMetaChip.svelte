@@ -1,10 +1,8 @@
-<script>
-  const MODIFIERS = ['', 'confidence'];
+<script lang="ts">
+  type Modifier = '' | 'confidence';
 
-  export let modifier = '';
-  export let text;
-
-  if (!MODIFIERS.includes(modifier)) throw new Error(`PeerMetaChip: invalid modifier "${modifier}"`);
+  export let modifier: Modifier = '';
+  export let text: string;
 </script>
 
 <span class="peer-meta-chip{modifier ? ' peer-meta-chip--' + modifier : ''}">{text}</span>

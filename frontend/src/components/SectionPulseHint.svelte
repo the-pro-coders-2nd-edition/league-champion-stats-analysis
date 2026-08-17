@@ -1,5 +1,5 @@
-<script>
-  export let text;
+<script lang="ts">
+  export let text: string;
 </script>
 
 <p class="section-pulse-hint">{text}</p>
