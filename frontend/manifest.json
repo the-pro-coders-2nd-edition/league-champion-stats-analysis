@@ -1,4 +1,18 @@
 {
+  "hero_chip": {
+    "component": "src/components/HeroChip.svelte",
+    "outputs": [
+      {
+        "file": "hero_chip.html",
+        "props": {
+          "tone": "{% if card.value_class == 'win' %}good{% elif card.value_class == 'loss' %}bad{% else %}stat{% endif %}",
+          "label": "{{ card.label }}",
+          "value": "{{ card.value }}",
+          "valueColor": "{{ card.value_color }}"
+        }
+      }
+    ]
+  },
   "ui_chip_badge": {
     "component": "src/components/UiChipBadge.svelte",
     "outputs": [

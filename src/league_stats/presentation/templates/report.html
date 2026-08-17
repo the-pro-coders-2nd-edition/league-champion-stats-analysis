@@ -313,10 +313,7 @@
           {% if overview_cards %}
           <div class="report-hero-chips ui-chip-row" id="hero-chips">
             {% for card in overview_cards[:4] %}
-            <span class="ui-chip ui-chip--{% if card.value_class == 'win' %}good{% elif card.value_class == 'loss' %}bad{% else %}stat{% endif %} hero-chip">
-              <span class="hero-chip-label">{{ card.label }}</span>
-              <strong class="hero-chip-value"{% if card.value_color %} style="color: {{ card.value_color }}"{% endif %}>{{ card.value }}</strong>
-            </span>
+            {% include "generated/hero_chip.html" %}
             {% endfor %}
           </div>
           {% else %}

@@ -329,12 +329,6 @@ h3 { font-size: 17px; margin: 24px 0 12px; color: var(--muted); }
 .report-hero-identity .game-icon { width: 72px; height: 72px; border-radius: 14px; flex-shrink: 0; }
 .report-hero-meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
 .report-hero-chips { margin-top: 12px; }
-.hero-chip {
-  display: inline-flex; align-items: baseline; gap: 6px;
-  letter-spacing: normal; text-transform: none; font-weight: 500;
-}
-.hero-chip-label { color: var(--muted); font-size: 11px; font-weight: 600; }
-.hero-chip-value { font-size: 13px; font-weight: 700; color: var(--text); }
 .hero-score-panel {
   display: flex; flex-direction: row; align-items: center; gap: 16px;
   flex: 1; min-height: 0;

@@ -1,0 +1,1 @@
+<span class="ui-chip ui-chip--{% if card.value_class == 'win' %}good{% elif card.value_class == 'loss' %}bad{% else %}stat{% endif %} hero-chip"><span class="hero-chip-label">{{ card.label }}</span> <strong class="hero-chip-value" style="color: {{ card.value_color }}">{{ card.value }}</strong> </span>
