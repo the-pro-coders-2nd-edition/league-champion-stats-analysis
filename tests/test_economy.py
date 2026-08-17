@@ -58,7 +58,7 @@ def test_unspent_gold_rule_fires_for_hoarding(tmp_path: Path) -> None:
     )
     stats = StatisticsEngine(matches, tmp_path)
     coach = CoachEngine(matches, pd.DataFrame(), pd.DataFrame(), stats)
-    rec = next(r for r in coach.generate() if r.title == "Too much gold sitting unspent")
+    rec = next(r for r in coach.generate() if r.title == "Unspent gold is stacking up on recalls")
     assert rec.effect_size == pytest.approx(0.429, abs=0.01)
     assert "1300" in rec.evidence
 
