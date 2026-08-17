@@ -13,6 +13,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const TEMPLATES_DIR = path.resolve(ROOT, '../src/league_stats/presentation/templates');
 const GENERATED_DIR = path.join(TEMPLATES_DIR, 'generated');
+// components.css is a runtime-served asset (linked via <link rel="stylesheet">),
+// unlike the generated/ HTML partials which get inlined at Jinja-compile time --
+// it belongs in static/ alongside report.css/chatbot.css/design-tokens.css.
+const STATIC_DIR = path.join(TEMPLATES_DIR, 'static');
 const MANIFEST_PATH = path.join(ROOT, 'manifest.json');
 
 async function main() {
@@ -38,8 +42,9 @@ async function main() {
   }
 
   if (cssBlocks.size > 0) {
+    fs.mkdirSync(STATIC_DIR, { recursive: true });
     const combinedCss = Array.from(cssBlocks).join('\n\n');
-    fs.writeFileSync(path.join(GENERATED_DIR, 'components.css'), combinedCss);
+    fs.writeFileSync(path.join(STATIC_DIR, 'components.css'), combinedCss);
   }
 
   console.log(`done: ${fileCount} template(s), ${cssBlocks.size} unique CSS block(s)`);

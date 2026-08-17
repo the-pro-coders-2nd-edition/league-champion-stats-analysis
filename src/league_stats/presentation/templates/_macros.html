@@ -125,7 +125,11 @@
   {{ metric_icon(icon, tone, iconify_id, icon_href) }}
   <span>{{ label }}</span>
   {%- if scope %}
-  {{ ui_chip(scope, class='ui-chip--scope' ~ (' ui-chip--' ~ scope_kind if scope_kind else '')) }}
+  {% if scope_kind == 'window' %}
+  {% include "generated/pill_scope_chip_window.html" %}
+  {% else %}
+  {% include "generated/pill_scope_chip.html" %}
+  {% endif %}
   {%- endif %}
 </h2>
 {%- endmacro %}

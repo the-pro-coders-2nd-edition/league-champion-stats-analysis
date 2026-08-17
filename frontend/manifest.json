@@ -1,1 +1,15 @@
-{}
+{
+  "pill": {
+    "component": "src/components/Pill.svelte",
+    "outputs": [
+      {
+        "file": "pill_scope_chip.html",
+        "props": { "tone": "flat", "label": "{{ scope }}", "dot": false, "variant": "outline" }
+      },
+      {
+        "file": "pill_scope_chip_window.html",
+        "props": { "tone": "flat", "label": "{{ scope }}", "dot": false, "variant": "outline", "extraClass": "scope-chip--window" }
+      }
+    ]
+  }
+}
