@@ -10,6 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 {# Styles before blocking CDN scripts so buttons never paint unstyled. #}
+<link rel="stylesheet" href="{{ design_tokens_css_href | default('static/design-tokens.css') }}">
 <link rel="stylesheet" href="{{ report_css_href | default('static/report.css') }}">
 <link rel="stylesheet" href="{{ chatbot_css_href | default('static/chatbot.css') }}">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>

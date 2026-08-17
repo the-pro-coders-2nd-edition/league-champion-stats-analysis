@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 REPORT_UI_DIRNAME = "report-ui"
-REPORT_STATIC_FILES = ("report.css", "chatbot.css", "index.css")
+REPORT_STATIC_FILES = ("report.css", "chatbot.css", "index.css", "design-tokens.css")
 
 
 def _static_src(template_dir: Path) -> Path:
@@ -123,6 +123,7 @@ def report_stylesheet_hrefs(
     for name, key in (
         ("report.css", "report_css_href"),
         ("chatbot.css", "chatbot_css_href"),
+        ("design-tokens.css", "design_tokens_css_href"),
     ):
         shared_path = shared / name
         if shared_path.is_file():
