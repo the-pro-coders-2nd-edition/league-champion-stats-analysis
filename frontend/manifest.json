@@ -12,6 +12,55 @@
       }
     ]
   },
+  "filter_button": {
+    "component": "src/components/FilterButton.svelte",
+    "outputs": [
+      {
+        "file": "queue_filter_button_enabled.html",
+        "props": {
+          "dataAttr": "data-queue",
+          "buttonClass": "queue-filter-btn game-window-btn",
+          "value": "{{ option.key }}",
+          "label": "{{ option.label }}",
+          "activeClass": "{% if option.key == queue_filter_default %}is-active{% endif %}",
+          "disabled": false
+        }
+      },
+      {
+        "file": "queue_filter_button_disabled.html",
+        "props": {
+          "dataAttr": "data-queue",
+          "buttonClass": "queue-filter-btn game-window-btn",
+          "value": "{{ option.key }}",
+          "label": "{{ option.label }}",
+          "activeClass": "{% if option.key == queue_filter_default %}is-active{% endif %}",
+          "disabled": true
+        }
+      },
+      {
+        "file": "game_window_button_enabled.html",
+        "props": {
+          "dataAttr": "data-window",
+          "buttonClass": "game-window-btn",
+          "value": "{{ option.key }}",
+          "label": "{{ option.label }}",
+          "activeClass": "{% if option.key == game_window_default %}is-active{% endif %}",
+          "disabled": false
+        }
+      },
+      {
+        "file": "game_window_button_disabled.html",
+        "props": {
+          "dataAttr": "data-window",
+          "buttonClass": "game-window-btn",
+          "value": "{{ option.key }}",
+          "label": "{{ option.label }}",
+          "activeClass": "{% if option.key == game_window_default %}is-active{% endif %}",
+          "disabled": true
+        }
+      }
+    ]
+  },
   "rec_extend_button": {
     "component": "src/components/RecExtendButton.svelte",
     "outputs": [

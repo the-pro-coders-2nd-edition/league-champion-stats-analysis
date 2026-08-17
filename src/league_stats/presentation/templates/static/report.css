@@ -788,13 +788,6 @@ footer { color: var(--muted); font-size: 13px; padding: 24px 0; border-top: 1px 
 .filter-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .filter-group--actions { margin-left: auto; }
 .game-window-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
-.game-window-btn {
-  border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
-  border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; cursor: pointer;
-}
-.game-window-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.game-window-btn.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
-.game-window-btn:disabled { opacity: .45; cursor: not-allowed; }
 /* --- Account filter (group reports, left nav) --- */
 .nav-accounts {
   display: flex; flex-direction: column; gap: 6px;
@@ -2064,7 +2057,7 @@ footer { color: var(--muted); font-size: 13px; padding: 24px 0; border-top: 1px 
 /* .card-benchmark* moved to frontend/src/components/MetricBenchmark.svelte */
 
 .filter-group.is-muted { opacity: .4; }
-.filter-group.is-muted .game-window-btn { cursor: not-allowed; }
+/* .filter-group.is-muted .game-window-btn moved to frontend/src/components/FilterButton.svelte */
 
 /* .rec-evidence-summary moved to frontend/src/components/RecEvidenceSummary.svelte */
 

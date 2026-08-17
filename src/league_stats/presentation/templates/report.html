@@ -110,23 +110,21 @@
     <div class="filter-group" id="queue-filter-bar">
       <span class="game-window-label">Queue</span>
       {% for option in queue_filter_options %}
-      <button
-        type="button"
-        class="queue-filter-btn game-window-btn{% if option.key == queue_filter_default %} is-active{% endif %}"
-        data-queue="{{ option.key }}"
-        {% if not option.enabled %}disabled{% endif %}
-      >{{ option.label }}</button>
+      {% if option.enabled %}
+      {% include "generated/queue_filter_button_enabled.html" %}
+      {% else %}
+      {% include "generated/queue_filter_button_disabled.html" %}
+      {% endif %}
       {% endfor %}
     </div>
     <div class="filter-group" id="game-window-bar">
       <span class="game-window-label">Games</span>
       {% for option in game_window_options %}
-      <button
-        type="button"
-        class="game-window-btn{% if option.key == game_window_default %} is-active{% endif %}"
-        data-window="{{ option.key }}"
-        {% if not option.enabled %}disabled{% endif %}
-      >{{ option.label }}</button>
+      {% if option.enabled %}
+      {% include "generated/game_window_button_enabled.html" %}
+      {% else %}
+      {% include "generated/game_window_button_disabled.html" %}
+      {% endif %}
       {% endfor %}
     </div>
     {% if status_endpoint and refresh_champion and refresh_role %}
