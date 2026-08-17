@@ -43,39 +43,21 @@
 
 {% macro metric_card_label(label, icon=none, tone='muted', iconify_id=none, icon_href=none, role_icon_href=none, tooltip=none) -%}
 <div class="metric-card-label">
-  <span class="metric-label">
-    {%- if role_icon_href -%}
-    <img src="{{ role_icon_href }}" alt="" class="role-icon role-icon--sm">
-    {%- endif -%}
-    {{ metric_icon(icon, tone, iconify_id, icon_href) }}
-    <span>{{ label }}</span>
-  </span>
-  {%- if tooltip -%}
-  <span class="metric-tooltip-wrap">
-    <button type="button" class="metric-tooltip-btn" aria-label="How {{ label }} is calculated" aria-expanded="false">?</button>
-    <span class="metric-tooltip-panel" role="tooltip">{{ tooltip }}</span>
-  </span>
-  {%- endif -%}
+  {% include "generated/metric_label_span_with_role.html" %}
+  {%- if tooltip %}
+  {% include "generated/metric_tooltip.html" %}
+  {%- endif %}
 </div>
 {%- endmacro %}
 
 {% macro metric_label(label, icon=none, tone='muted', iconify_id=none, icon_href=none, tooltip=none) -%}
 {%- if tooltip -%}
 <span class="metric-label-with-tooltip">
-  <span class="metric-label">
-    {{ metric_icon(icon, tone, iconify_id, icon_href) }}
-    <span>{{ label }}</span>
-  </span>
-  <span class="metric-tooltip-wrap">
-    <button type="button" class="metric-tooltip-btn" aria-label="How {{ label }} is calculated" aria-expanded="false">?</button>
-    <span class="metric-tooltip-panel" role="tooltip">{{ tooltip }}</span>
-  </span>
+  {% include "generated/metric_label_span.html" %}
+  {% include "generated/metric_tooltip.html" %}
 </span>
 {%- else -%}
-<span class="metric-label">
-  {{ metric_icon(icon, tone, iconify_id, icon_href) }}
-  <span>{{ label }}</span>
-</span>
+{% include "generated/metric_label_span.html" %}
 {%- endif -%}
 {%- endmacro %}
 

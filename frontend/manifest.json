@@ -12,6 +12,35 @@
       }
     ]
   },
+  "metric_label_span": {
+    "component": "src/components/MetricLabelSpan.svelte",
+    "outputs": [
+      {
+        "file": "metric_label_span.html",
+        "props": {
+          "iconHtml": "{{ metric_icon(icon, tone, iconify_id, icon_href) }}",
+          "label": "{{ label }}"
+        }
+      },
+      {
+        "file": "metric_label_span_with_role.html",
+        "props": {
+          "roleIconHtml": "{{ role_icon(role_icon_href) }}",
+          "iconHtml": "{{ metric_icon(icon, tone, iconify_id, icon_href) }}",
+          "label": "{{ label }}"
+        }
+      }
+    ]
+  },
+  "metric_tooltip": {
+    "component": "src/components/MetricTooltip.svelte",
+    "outputs": [
+      {
+        "file": "metric_tooltip.html",
+        "props": { "label": "{{ label }}", "tooltip": "{{ tooltip }}" }
+      }
+    ]
+  },
   "peer_driver_row": {
     "component": "src/components/PeerDriverRow.svelte",
     "outputs": [

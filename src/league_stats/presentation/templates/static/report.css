@@ -491,24 +491,8 @@ main.is-filter-loading .score-breakdown {
 .card .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 .metric-card-label { display: inline-flex; align-items: flex-start; gap: 6px; max-width: 100%; }
 .metric-label-with-tooltip { display: inline-flex; align-items: flex-start; gap: 6px; max-width: 100%; }
-.metric-card-label .metric-label { min-width: 0; }
-.metric-tooltip-wrap { position: relative; flex-shrink: 0; margin-top: -1px; }
-.metric-tooltip-btn {
-  width: 16px; height: 16px; border-radius: 50%;
-  border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
-  font: inherit; font-size: 10px; font-weight: 600; line-height: 1; cursor: pointer; padding: 0;
-}
-.metric-tooltip-btn:hover, .metric-tooltip-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
-.metric-tooltip-panel {
-  display: none; position: absolute; top: calc(100% + 6px); right: 0; z-index: 4;
-  width: max-content; max-width: min(280px, 70vw); background: var(--panel-2);
-  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
-  font-size: 12px; line-height: 1.45; color: var(--muted); text-transform: none;
-  letter-spacing: normal; box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
-}
-.metric-tooltip-wrap.is-open .metric-tooltip-panel,
-.metric-tooltip-wrap:hover .metric-tooltip-panel { display: block; }
-.metric-label { display: inline-flex; align-items: center; gap: 6px; }
+/* .metric-card-label .metric-label, .metric-label moved to frontend/src/components/MetricLabelSpan.svelte */
+/* .metric-tooltip-* moved to frontend/src/components/MetricTooltip.svelte */
 iconify-icon.metric-icon { width: 14px; height: 14px; flex-shrink: 0; display: inline-block; vertical-align: middle; }
 img.metric-icon--asset { width: 14px; height: 14px; object-fit: contain; flex-shrink: 0; vertical-align: middle; }
 .metric-icon--gold { color: #e0b155; }
