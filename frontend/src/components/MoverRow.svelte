@@ -27,11 +27,11 @@
     background: var(--color-surface-2);
   }
   :global(.form-mover--improved) {
-    border-left-color: var(--color-good-line);
+    border-left-color: var(--tone-good-line);
     background: rgba(63, 182, 139, 0.06);
   }
   :global(.form-mover--regressed) {
-    border-left-color: var(--color-bad-line);
+    border-left-color: var(--tone-bad-line);
     background: rgba(224, 85, 99, 0.06);
   }
   :global(.form-mover-label) { font-size: 13px; font-weight: 600; min-width: 0; }

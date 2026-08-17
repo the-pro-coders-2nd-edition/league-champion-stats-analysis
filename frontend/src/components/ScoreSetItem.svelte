@@ -45,11 +45,11 @@
     background: var(--color-surface); color: var(--color-neutral-400); border: 1px solid var(--color-divider);
   }
   :global(.comp--strong .comp-verdict) {
-    color: var(--color-good); background: rgba(63, 182, 139, 0.14);
+    color: var(--tone-good-fg); background: rgba(63, 182, 139, 0.14);
     border-color: rgba(63, 182, 139, 0.35);
   }
   :global(.comp--focus .comp-verdict) {
-    color: var(--color-bad); background: rgba(224, 85, 99, 0.14);
+    color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.14);
     border-color: rgba(224, 85, 99, 0.35);
   }
   :global(.comp--solid .comp-verdict) {

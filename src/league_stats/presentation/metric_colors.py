@@ -9,7 +9,7 @@ from __future__ import annotations
 LOSS_HEX = "#e05563"
 NEUTRAL_HEX = "#e0b155"
 MINT_HEX = "#7ed4c0"
-WIN_HEX = "#3fb68b"
+WIN_HEX = "#41b78c"  # --color-accent / --tone-good-line
 JADE_HEX = "#2a9f7a"
 
 # Positive-side stop positions mirror the bar fill's gold(16%) → mint(38%) →

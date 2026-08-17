@@ -10,7 +10,7 @@
 
 <style>
   :global(.card .value) { font-size: 28px; font-weight: 700; margin-top: 6px; letter-spacing: -.02em; }
-  :global(.card .value.win) { color: var(--color-good); }
-  :global(.card .value.loss) { color: var(--color-bad); }
+  :global(.card .value.win) { color: var(--tone-good-fg); }
+  :global(.card .value.loss) { color: var(--tone-bad-fg); }
   :global(.card--headline .value) { font-size: 32px; }
 </style>

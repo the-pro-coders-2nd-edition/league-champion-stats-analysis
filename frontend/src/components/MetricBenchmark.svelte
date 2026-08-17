@@ -10,6 +10,6 @@
 
 <style>
   :global(.card-benchmark) { margin-top: 6px; font-size: 11.5px; font-weight: 600; color: var(--color-neutral-400); }
-  :global(.card-benchmark--above) { color: var(--color-good); }
-  :global(.card-benchmark--below) { color: var(--color-bad); }
+  :global(.card-benchmark--above) { color: var(--tone-good-fg); }
+  :global(.card-benchmark--below) { color: var(--tone-bad-fg); }
 </style>

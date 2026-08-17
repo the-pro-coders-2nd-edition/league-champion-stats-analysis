@@ -287,25 +287,6 @@
 
 <div class="report-category-panel is-active" id="category-summary" data-category="summary" role="tabpanel" aria-labelledby="tab-summary">
 
-{% if report_players and report_players|length > 1 %}
-<div style="background: var(--color-surface); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); overflow: hidden; margin-bottom: 24px">
-  <div style="display: flex; align-items: center; gap: 12px; padding: 16px 24px">
-    <span style="font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-neutral-500)">Accounts in this pool</span>
-  </div>
-  {% for member in report_players %}
-    <div style="display: grid; grid-template-columns: 26px minmax(0, 1fr) 96px; gap: 16px; align-items: center; padding: 12px 24px; border-top: 1px solid var(--color-divider)">
-      {% if member.profile_icon %}
-      <img src="{{ member.profile_icon }}" alt="" style="width: 26px; height: 26px; border-radius: var(--radius-sm); object-fit: cover">
-      {% else %}
-      <span style="width: 26px; height: 26px; border-radius: var(--radius-sm); background: var(--color-neutral-800); display: block"></span>
-      {% endif %}
-      <span style="font-size: 13px">{{ member.label }}</span>
-      <span style="text-align: right; font-size: 12px; color: var(--color-neutral-400)">{{ member.solo_rank_label or "Unranked" }}</span>
-    </div>
-  {% endfor %}
-</div>
-{% endif %}
-
 <section id="overview" class="report-section report-section--summary">
   <div class="report-hero" id="report-hero">
     <div class="report-hero-main">
@@ -340,14 +321,6 @@
           {% endif %}
         </div>
       </div>
-      <div class="hero-score-panel">
-        <div class="hero-score-label">Improvement score</div>
-        <div class="hero-score-value" id="score-value" data-score="{{ score }}">{{ score }}<span>/100</span></div>
-        <div style="position: relative; height: 6px; border-radius: 3px; background: var(--color-neutral-800); margin-top: 8px">
-          <i style="position: absolute; inset: 0 auto 0 0; width: {{ score }}%; border-radius: 3px; background: var(--color-accent); display: block"></i>
-          <i style="position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: var(--color-neutral-400); display: block"></i>
-        </div>
-      </div>
     </div>
     <div class="hero-actions-block">
       <div class="hero-actions-title">Focus next game</div>
@@ -363,14 +336,51 @@
       </div>
     </div>
   </div>
-  <div class="score-breakdown" id="score-breakdown">
-    <div class="score-breakdown-title">Score breakdown</div>
-    <div class="score-comps" id="score-comps">
-      {% for comp in score_components %}
-      {% include "generated/score_set_item.html" %}
-      {% endfor %}
+
+  <div class="summary-grid">
+    <div class="summary-grid-main">
+      {% if report_players and report_players|length > 1 %}
+      <div class="accounts-panel">
+        <div class="accounts-panel-head">
+          <span class="accounts-panel-label">Accounts in this pool</span>
+          <span class="accounts-panel-count">{{ report_players|length }} accounts</span>
+        </div>
+        {% for member in report_players %}
+        <div class="accounts-panel-row">
+          {% if member.profile_icon %}
+          <img src="{{ member.profile_icon }}" alt="" class="accounts-panel-icon">
+          {% else %}
+          <span class="accounts-panel-icon accounts-panel-icon--placeholder"></span>
+          {% endif %}
+          <span class="accounts-panel-name">{{ member.label }}</span>
+          <span class="accounts-panel-rank">{{ member.solo_rank_label or "Unranked" }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="score-breakdown" id="score-breakdown">
+        <div class="score-breakdown-title">Score breakdown</div>
+        <div class="score-comps" id="score-comps">
+          {% for comp in score_components %}
+          {% include "generated/score_set_item.html" %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="summary-grid-side">
+      <div class="hero-score-panel" id="improvement-score-card">
+        <div class="hero-score-label">Improvement score</div>
+        <div class="hero-score-value" id="score-value" data-score="{{ score }}">{{ score }}<span>/100</span></div>
+        <div style="position: relative; height: 6px; border-radius: 3px; background: var(--color-neutral-800); margin-top: 8px">
+          <i style="position: absolute; inset: 0 auto 0 0; width: {{ score }}%; border-radius: 3px; background: var(--color-accent); display: block"></i>
+          <i style="position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: var(--color-neutral-400); display: block"></i>
+        </div>
+      </div>
     </div>
   </div>
+
   <div id="overview-cards" class="cards">
     {% for card in overview_cards %}
     {{ metric_card(card) }}

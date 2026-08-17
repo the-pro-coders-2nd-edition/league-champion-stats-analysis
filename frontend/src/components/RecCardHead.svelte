@@ -24,7 +24,7 @@
     text-transform: uppercase; letter-spacing: .05em;
   }
   :global(.badge--priority) { font-weight: 700; }
-  :global(.badge--high) { color: var(--color-bad); background: rgba(224, 85, 99, 0.12); }
+  :global(.badge--high) { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.12); }
   :global(.badge--medium) { color: #e0b155; background: rgba(224, 177, 85, 0.12); }
   :global(.badge--low) { color: var(--color-neutral-400); }
 </style>

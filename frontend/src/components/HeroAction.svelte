@@ -16,7 +16,7 @@
     color: var(--color-text); text-decoration: none; font-size: 13px; line-height: 1.4;
     transition: border-color .15s, transform .15s, background .15s;
   }
-  :global(.hero-action:hover) { border-color: var(--color-accent); background: rgba(124, 108, 240, 0.08); transform: translateX(2px); }
+  :global(.hero-action:hover) { border-color: var(--color-accent); background: rgba(65, 183, 140, 0.08); transform: translateX(2px); }
   :global(.hero-action-index) {
     flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
     display: inline-flex; align-items: center; justify-content: center;

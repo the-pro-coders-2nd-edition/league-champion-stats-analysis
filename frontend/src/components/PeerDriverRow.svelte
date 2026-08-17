@@ -27,11 +27,11 @@
     background: var(--color-surface-2);
   }
   :global(.peer-driver--above) {
-    border-left-color: var(--color-good-line);
+    border-left-color: var(--tone-good-line);
     background: rgba(63, 182, 139, 0.06);
   }
   :global(.peer-driver--below) {
-    border-left-color: var(--color-bad-line);
+    border-left-color: var(--tone-bad-line);
     background: rgba(224, 85, 99, 0.06);
   }
   :global(.peer-driver-label) { font-size: 13px; font-weight: 600; min-width: 0; }

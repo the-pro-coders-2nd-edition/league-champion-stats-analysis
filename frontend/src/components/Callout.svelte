@@ -30,9 +30,9 @@
     text-transform: uppercase;
     font-weight: 700;
   }
-  .callout--keep .callout-label { color: var(--color-good); }
-  .callout--fix .callout-label { color: var(--color-bad); }
-  .callout--watch .callout-label { color: var(--color-warn); }
+  .callout--keep .callout-label { color: var(--tone-good-fg); }
+  .callout--fix .callout-label { color: var(--tone-bad-fg); }
+  .callout--watch .callout-label { color: var(--tone-warn-fg); }
   .callout-title {
     font-size: 14px;
   }

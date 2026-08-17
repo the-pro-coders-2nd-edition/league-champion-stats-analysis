@@ -12,14 +12,14 @@
   :global(.section-pulse-fix) {
     display: flex; flex-direction: column; gap: 6px;
     padding: 12px 14px; border-radius: 12px;
-    border: 1px solid rgba(124, 108, 240, 0.28);
-    background: linear-gradient(180deg, rgba(124, 108, 240, 0.10), rgba(30, 34, 48, 0.35));
+    border: 1px solid rgba(65, 183, 140, 0.28);
+    background: linear-gradient(180deg, rgba(65, 183, 140, 0.10), rgba(30, 34, 48, 0.35));
     color: var(--color-text); text-decoration: none;
     transition: border-color .15s, transform .15s, background .15s;
   }
   :global(.section-pulse-fix:hover) {
     border-color: var(--color-accent);
-    background: rgba(124, 108, 240, 0.12);
+    background: rgba(65, 183, 140, 0.12);
     transform: translateX(2px);
   }
   :global(.section-pulse-fix-kicker) {

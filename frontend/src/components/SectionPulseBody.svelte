@@ -15,8 +15,8 @@
   :global(.section-pulse-label) {
     font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--color-neutral-400);
   }
-  :global(.section-pulse--strong .section-pulse-label) { color: var(--color-good); }
-  :global(.section-pulse--focus .section-pulse-label) { color: var(--color-bad); }
+  :global(.section-pulse--strong .section-pulse-label) { color: var(--tone-good-fg); }
+  :global(.section-pulse--focus .section-pulse-label) { color: var(--tone-bad-fg); }
   :global(.section-pulse--solid .section-pulse-label) { color: #b0b6c9; }
   :global(.section-pulse-head) {
     display: flex; align-items: baseline; justify-content: space-between; gap: 10px;

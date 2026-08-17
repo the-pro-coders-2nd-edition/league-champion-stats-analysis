@@ -18,6 +18,6 @@
     background: var(--color-surface); color: var(--color-neutral-400);
   }
   .peer-balance-chip strong { font-size: 16px; font-weight: 800; }
-  .peer-balance-chip--above { color: var(--color-good); background: rgba(63, 182, 139, 0.12); }
-  .peer-balance-chip--below { color: var(--color-bad); background: rgba(224, 85, 99, 0.12); }
+  .peer-balance-chip--above { color: var(--tone-good-fg); background: rgba(63, 182, 139, 0.12); }
+  .peer-balance-chip--below { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.12); }
 </style>
