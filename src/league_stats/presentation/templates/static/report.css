@@ -381,13 +381,7 @@ h3 { font-size: 17px; margin: 24px 0 12px; color: var(--muted); }
   font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
   color: var(--muted); margin-bottom: 12px;
 }
-.comp-head {
-  display: flex; align-items: baseline; gap: 8px;
-  padding-right: 78px;
-}
-.comp-name { font-size: 13px; font-weight: 600; color: var(--text); min-width: 0; }
-.comp-score { font-size: 13px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
-.comp-value { font-size: 12px; color: var(--muted); line-height: 1.35; margin-top: 4px; }
+/* .comp-head, .comp-name, .comp-score, .comp-value moved to frontend/src/components/ScoreSetItem.svelte */
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 14px 0; border-radius: 10px; }
 .table-scroll table { margin: 0; min-width: 640px; }
 /* .rec-head, .badge, .badge--* moved to frontend/src/components/RecCardHead.svelte */
@@ -629,6 +623,10 @@ img.metric-icon--asset { width: 14px; height: 14px; object-fit: contain; flex-sh
 .score-ring { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; margin: 18px 0; }
 .score-big { font-size: 64px; font-weight: 700; color: var(--accent); }
 .score-comps { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+/* .comp/.comp--*/.comp-verdict/.comp .bar are also self-styled in
+   frontend/src/components/ScoreSetItem.svelte, but stay defined here too --
+   .comp--expandable/.comp-details/.comp-ingredient-* below are game-review's
+   own JS-built markup on the same base classes, not routed through Svelte. */
 .comp {
   position: relative;
   background: var(--panel-2); border: 1px solid var(--border);
@@ -704,39 +702,6 @@ img.metric-icon--asset { width: 14px; height: 14px; object-fit: contain; flex-sh
 .comp-ingredient-score { color: var(--accent); }
 .comp-ingredient-meta {
   font-size: 10px; color: var(--muted); margin: 2px 0 4px; line-height: 1.3;
-}
-.score-card-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
-  margin: 10px 0 14px;
-}
-.score-card-row--with-fix {
-  grid-template-columns: minmax(0, 1.2fr) minmax(180px, 1fr);
-}
-.score-card-fix {
-  display: flex; flex-direction: column; gap: 6px;
-  padding: 12px 14px; border-radius: 12px;
-  border: 1px solid rgba(124, 108, 240, 0.28);
-  background: linear-gradient(180deg, rgba(124, 108, 240, 0.10), rgba(30, 34, 48, 0.35));
-  color: var(--text); text-decoration: none;
-  transition: border-color .15s, transform .15s, background .15s;
-}
-.score-card-fix:hover {
-  border-color: var(--accent);
-  background: rgba(124, 108, 240, 0.12);
-  transform: translateX(2px);
-}
-.score-card-fix-kicker {
-  font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--accent);
-}
-.score-card-fix-title { font-size: 13px; font-weight: 600; line-height: 1.4; }
-@media (max-width: 720px) {
-  .score-card-row,
-  .score-card-row--with-fix {
-    grid-template-columns: 1fr;
-  }
 }
 table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 14px; margin: 14px 0; }
 th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); }

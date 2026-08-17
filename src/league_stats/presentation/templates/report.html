@@ -347,7 +347,7 @@
     <div class="score-breakdown-title">Score breakdown</div>
     <div class="score-comps" id="score-comps">
       {% for comp in score_components %}
-      {{ score_card(comp.name, comp.score, comp.verdict, comp.tone, comp.value, comp.hint) }}
+      {% include "generated/score_set_item.html" %}
       {% endfor %}
     </div>
   </div>
@@ -1481,28 +1481,44 @@
   function renderSectionVerdicts(bundle) {
     var verdicts = bundle.section_verdicts || {};
     document.querySelectorAll('[data-section-verdict]').forEach(function (node) {
-      var sectionId = node.getAttribute('data-section-verdict');
-      var verdict = verdicts[sectionId];
-      if (!verdict || (!verdict.name && !verdict.text)) {
+      var verdict = verdicts[node.getAttribute('data-section-verdict')];
+      if (!verdict || !verdict.text) {
         node.hidden = true;
-        node.className = 'score-card-row';
+        node.className = 'section-pulse';
         node.innerHTML = '';
         return;
       }
+      var tone = verdict.tone || 'solid';
+      var scoreHtml = '';
+      var barHtml = '';
+      if (verdict.score != null) {
+        scoreHtml = '<span class="section-pulse-score">' + escapeHtml(String(verdict.score)) + '</span>';
+        barHtml = '<div class="section-pulse-bar" aria-hidden="true"><i style="width:' +
+          Number(verdict.score) + '%"></i></div>';
+      }
+      var hintText = verdict.hint || verdict.value || '';
+      var hintHtml = hintText
+        ? '<p class="section-pulse-hint">' + escapeHtml(hintText) + '</p>'
+        : '';
+      var fix = '';
+      if (verdict.fix && verdict.fix.title) {
+        var href = '#' + (verdict.fix.anchor || 'coaching');
+        fix = '<a class="section-pulse-fix" href="' + href + '">' +
+          '<span class="section-pulse-fix-kicker">Try this</span>' +
+          '<span class="section-pulse-fix-title">' + escapeHtml(verdict.fix.title) + '</span></a>';
+      }
       node.hidden = false;
-      node.className = 'score-card-row' + (verdict.fix && verdict.fix.title ? ' score-card-row--with-fix' : '');
-      node.innerHTML = renderScoreCard({
-        name: verdict.name || '',
-        score: verdict.score,
-        verdict: verdict.label || 'Solid',
-        tone: verdict.tone || 'solid',
-        value: verdict.hint || verdict.value || verdict.text || '',
-        hint: verdict.hint || ''
-      }) + (verdict.fix && verdict.fix.title
-        ? '<a class="score-card-fix" href="#' + (verdict.fix.anchor || 'coaching') + '">' +
-            '<span class="score-card-fix-kicker">Try this</span>' +
-            '<span class="score-card-fix-title">' + escapeHtml(verdict.fix.title) + '</span></a>'
-        : '');
+      node.className = 'section-pulse section-pulse--' + tone;
+      node.innerHTML =
+        '<div class="section-pulse-callout">' +
+          '<span class="section-pulse-label">' + escapeHtml(verdict.label || 'Score') + '</span>' +
+          '<div class="section-pulse-head">' +
+            '<strong class="section-pulse-title">' + escapeHtml(verdict.text) + '</strong>' +
+            scoreHtml +
+          '</div>' +
+          barHtml +
+          hintHtml +
+        '</div>' + fix;
     });
   }
 
