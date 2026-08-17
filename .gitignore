@@ -8,6 +8,7 @@ output/
 graphs/*.png
 graphs/*.html
 .cache/
+preview-cache/
 *.sqlite
 *.db
 config.toml
