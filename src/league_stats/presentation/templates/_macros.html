@@ -220,17 +220,17 @@
 
 {% macro section_pulse(section_id, verdict=none) -%}
 {% set v = verdict or {} %}
-{{ score_card_row(
-  section_id,
-  v.name or '',
-  v.score if v.score is defined and v.score is not none else none,
-  v.label,
-  v.tone or 'solid',
-  v.hint or v.value or v.text or '',
-  v.hint,
-  v.fix if v.fix is defined else none,
-  hidden=(not v.name and not v.text)
-) }}
+<div class="section-pulse{% if v.tone %} section-pulse--{{ v.tone }}{% endif %}" data-section-verdict="{{ section_id }}"{% if not v.text %} hidden{% endif %}>
+  <div class="section-pulse-callout">
+    {% include "generated/section_pulse_body.html" %}
+    {% if v.hint or v.value %}
+    {% include "generated/section_pulse_hint.html" %}
+    {% endif %}
+  </div>
+  {% if v.fix and v.fix.title %}
+  {% include "generated/section_pulse_fix.html" %}
+  {% endif %}
+</div>
 {%- endmacro %}
 
 {% macro app_brand(title, logo_href=none, variant='page', home_href='/') -%}

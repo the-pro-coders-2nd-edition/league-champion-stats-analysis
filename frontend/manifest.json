@@ -61,5 +61,32 @@
         "props": { "text": "{{ rec.evidence_summary }}" }
       }
     ]
+  },
+  "section_pulse_body": {
+    "component": "src/components/SectionPulseBody.svelte",
+    "outputs": [
+      {
+        "file": "section_pulse_body.html",
+        "props": { "label": "{{ v.label or 'Score' }}", "title": "{{ v.text or '' }}", "score": "{{ v.score }}" }
+      }
+    ]
+  },
+  "section_pulse_hint": {
+    "component": "src/components/SectionPulseHint.svelte",
+    "outputs": [
+      {
+        "file": "section_pulse_hint.html",
+        "props": { "text": "{{ v.hint or v.value }}" }
+      }
+    ]
+  },
+  "section_pulse_fix": {
+    "component": "src/components/SectionPulseFix.svelte",
+    "outputs": [
+      {
+        "file": "section_pulse_fix.html",
+        "props": { "anchor": "{{ v.fix.anchor or 'coaching' }}", "title": "{{ v.fix.title }}" }
+      }
+    ]
   }
 }
