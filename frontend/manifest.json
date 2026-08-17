@@ -213,6 +213,66 @@
       }
     ]
   },
+  "tab_bar": {
+    "component": "src/components/TabBar.svelte",
+    "outputs": [
+      {
+        "file": "tab_bar_report_category.html",
+        "props": {
+          "containerId": "report-category-tabs",
+          "ariaLabel": "Report categories",
+          "buttonClass": "report-tab",
+          "dataAttr": "data-category",
+          "tabs": [
+            { "value": "summary", "label": "Summary", "active": true, "modifierClass": "summary", "ariaControls": "category-summary", "id": "tab-summary" },
+            { "value": "performance", "label": "Performance", "active": false, "modifierClass": "performance", "ariaControls": "category-performance", "id": "tab-performance" },
+            { "value": "games", "label": "Game Review", "active": false, "modifierClass": "games", "ariaControls": "category-games", "id": "tab-games" },
+            { "value": "champion", "label": "Champion", "active": false, "modifierClass": "champion", "ariaControls": "category-champion", "id": "tab-champion" },
+            { "value": "deepdive", "label": "Deep Dive", "active": false, "modifierClass": "deepdive", "ariaControls": "category-deepdive", "id": "tab-deepdive" }
+          ]
+        }
+      },
+      {
+        "file": "tab_bar_form.html",
+        "props": {
+          "containerId": "form-tabs",
+          "buttonClass": "form-tab",
+          "dataAttr": "data-tab",
+          "tabs": [
+            { "value": "pulse", "label": "Pulse", "active": true },
+            { "value": "evidence", "label": "Evidence", "active": false }
+          ]
+        }
+      },
+      {
+        "file": "tab_bar_peer.html",
+        "props": {
+          "containerId": "peer-tabs",
+          "buttonClass": "peer-tab",
+          "dataAttr": "data-tab",
+          "tabs": [
+            { "value": "gaps", "label": "Gaps", "active": true },
+            { "value": "drivers", "label": "Drivers", "active": false },
+            { "value": "details", "label": "Details", "active": false }
+          ]
+        }
+      },
+      {
+        "file": "tab_bar_game_review.html",
+        "props": {
+          "containerId": "game-review-tabs",
+          "buttonClass": "game-review-tab",
+          "dataAttr": "data-tab",
+          "tabs": [
+            { "value": "overview", "label": "Overview", "active": true },
+            { "value": "story", "label": "Story", "active": false },
+            { "value": "key-moments", "label": "Key Moments", "active": false },
+            { "value": "loadout", "label": "Loadout", "active": false }
+          ]
+        }
+      }
+    ]
+  },
   "score_set_item": {
     "component": "src/components/ScoreSetItem.svelte",
     "outputs": [

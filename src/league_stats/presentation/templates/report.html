@@ -143,13 +143,7 @@
     </div>
     {% endif %}
   </div>
-  <div class="report-category-tabs" id="report-category-tabs" role="tablist" aria-label="Report categories">
-    <button type="button" class="report-tab report-tab--summary is-active" data-category="summary" role="tab" aria-selected="true" aria-controls="category-summary" id="tab-summary">Summary</button>
-    <button type="button" class="report-tab report-tab--performance" data-category="performance" role="tab" aria-selected="false" aria-controls="category-performance" id="tab-performance">Performance</button>
-    <button type="button" class="report-tab report-tab--games" data-category="games" role="tab" aria-selected="false" aria-controls="category-games" id="tab-games">Game Review</button>
-    <button type="button" class="report-tab report-tab--champion" data-category="champion" role="tab" aria-selected="false" aria-controls="category-champion" id="tab-champion">Champion</button>
-    <button type="button" class="report-tab report-tab--deepdive" data-category="deepdive" role="tab" aria-selected="false" aria-controls="category-deepdive" id="tab-deepdive">Deep Dive</button>
-  </div>
+  {% include "generated/tab_bar_report_category.html" %}
 </div>
 {% if status_endpoint %}
 <script>
@@ -443,10 +437,7 @@
           </div>
         </div>
       </div>
-      <div class="form-tabs" id="form-tabs" role="tablist">
-        <button type="button" class="form-tab is-active" data-tab="pulse" role="tab" aria-selected="true">Pulse</button>
-        <button type="button" class="form-tab" data-tab="evidence" role="tab" aria-selected="false">Evidence</button>
-      </div>
+      {% include "generated/tab_bar_form.html" %}
       <div class="form-panel" id="form-panel-pulse" role="tabpanel">
         <div class="form-stories" id="form-stories">
           {% if form_stories %}
@@ -604,12 +595,7 @@
         <div class="game-review-stage" id="game-review-matchup"></div>
         <div class="game-review-verdict" id="game-review-verdict"></div>
         <div class="game-review-scoreboard" id="game-review-score-hero"></div>
-        <div class="game-review-tabs" id="game-review-tabs" role="tablist">
-          <button type="button" class="game-review-tab is-active" data-tab="overview" role="tab" aria-selected="true">Overview</button>
-          <button type="button" class="game-review-tab" data-tab="story" role="tab" aria-selected="false">Story</button>
-          <button type="button" class="game-review-tab" data-tab="key-moments" role="tab" aria-selected="false">Key Moments</button>
-          <button type="button" class="game-review-tab" data-tab="loadout" role="tab" aria-selected="false">Loadout</button>
-        </div>
+        {% include "generated/tab_bar_game_review.html" %}
         <div class="game-review-panel" id="game-review-panel-overview" role="tabpanel"></div>
         <div class="game-review-panel" id="game-review-panel-story" role="tabpanel" hidden>
           <div class="game-review-story-block" id="game-review-key-moments-viewer"></div>
