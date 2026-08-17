@@ -273,6 +273,31 @@
       }
     ]
   },
+  "mover_row": {
+    "component": "src/components/MoverRow.svelte",
+    "outputs": [
+      {
+        "file": "mover_row_improved.html",
+        "props": {
+          "tone": "improved",
+          "label": "{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}",
+          "values": "{{ row.baseline }} → {{ row.recent }}",
+          "gap": "{{ row.gap }}",
+          "gapColor": "{{ row.gap_color }}"
+        }
+      },
+      {
+        "file": "mover_row_regressed.html",
+        "props": {
+          "tone": "regressed",
+          "label": "{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}",
+          "values": "{{ row.baseline }} → {{ row.recent }}",
+          "gap": "{{ row.gap }}",
+          "gapColor": "{{ row.gap_color }}"
+        }
+      }
+    ]
+  },
   "score_set_item": {
     "component": "src/components/ScoreSetItem.svelte",
     "outputs": [

@@ -1139,28 +1139,7 @@ footer { color: var(--muted); font-size: 13px; padding: 24px 0; border-top: 1px 
   color: var(--muted); margin: 0 0 8px;
 }
 .form-mover-feed { display: flex; flex-direction: column; gap: 8px; }
-.form-mover {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
-  gap: 8px 12px;
-  align-items: center;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  border-left-width: 3px;
-  background: var(--panel-2);
-}
-.form-mover--improved {
-  border-left-color: var(--win);
-  background: rgba(63, 182, 139, 0.06);
-}
-.form-mover--regressed {
-  border-left-color: var(--loss);
-  background: rgba(224, 85, 99, 0.06);
-}
-.form-mover-label { font-size: 13px; font-weight: 600; min-width: 0; }
-.form-mover-values { font-size: 12px; color: var(--muted); }
-.form-mover-gap { font-size: 14px; font-weight: 700; white-space: nowrap; }
+/* .form-mover, .form-mover--*, .form-mover-label/-values/-gap moved to frontend/src/components/MoverRow.svelte */
 
 .form-all-metrics,
 .peer-all-metrics {

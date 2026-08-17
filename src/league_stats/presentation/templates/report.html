@@ -459,11 +459,7 @@
             <h4 class="form-feed-title">Top improvements</h4>
             <div class="form-mover-feed" id="form-improved-list">
               {% for row in form_top_improved %}
-              <div class="form-mover form-mover--improved">
-                <span class="form-mover-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
-                <span class="form-mover-values">{{ row.baseline }} → {{ row.recent }}</span>
-                <span class="form-mover-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
-              </div>
+              {% include "generated/mover_row_improved.html" %}
               {% else %}
               <p class="sub">No standout improvements.</p>
               {% endfor %}
@@ -473,11 +469,7 @@
             <h4 class="form-feed-title">Regressions</h4>
             <div class="form-mover-feed" id="form-regressed-list">
               {% for row in form_top_regressed %}
-              <div class="form-mover form-mover--regressed">
-                <span class="form-mover-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
-                <span class="form-mover-values">{{ row.baseline }} → {{ row.recent }}</span>
-                <span class="form-mover-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
-              </div>
+              {% include "generated/mover_row_regressed.html" %}
               {% else %}
               <p class="sub">No standout regressions.</p>
               {% endfor %}
