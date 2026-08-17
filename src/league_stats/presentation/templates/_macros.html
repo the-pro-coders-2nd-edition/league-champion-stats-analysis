@@ -233,6 +233,27 @@
 </div>
 {%- endmacro %}
 
+{% macro peer_callout(kind, item) -%}
+{% set parts = item.split(': ') %}
+<div class="peer-callout peer-callout--{{ kind }}">
+  {% include "generated/callout_head_peer.html" %}
+  {% if parts|length > 1 %}
+  {% include "generated/callout_detail.html" %}
+  {% endif %}
+</div>
+{%- endmacro %}
+
+{% macro form_story(story) -%}
+<article class="form-story form-story--{{ story.tone }}">
+  {% include "generated/callout_head_story.html" %}
+  {% include "generated/form_story_line_driver.html" %}
+  {% if story.habit %}
+  {% include "generated/form_story_line_habit.html" %}
+  {% endif %}
+  {% include "generated/form_story_line_action.html" %}
+</article>
+{%- endmacro %}
+
 {% macro app_brand(title, logo_href=none, variant='page', home_href='/') -%}
 <a class="app-brand app-brand--{{ variant }}" href="{{ home_href }}" title="Home">
   {%- if logo_href -%}

@@ -88,5 +88,44 @@
         "props": { "anchor": "{{ v.fix.anchor or 'coaching' }}", "title": "{{ v.fix.title }}" }
       }
     ]
+  },
+  "callout_head": {
+    "component": "src/components/CalloutHead.svelte",
+    "outputs": [
+      {
+        "file": "callout_head_peer.html",
+        "props": { "prefix": "peer-callout", "label": "{{ 'Fix' if kind == 'fix' else 'Keep' }}", "title": "{{ parts[0] }}" }
+      },
+      {
+        "file": "callout_head_story.html",
+        "props": { "prefix": "form-story", "label": "{{ 'Keep' if story.tone == 'keep' else 'Fix' }}", "title": "{{ story.title }}" }
+      }
+    ]
+  },
+  "callout_detail": {
+    "component": "src/components/CalloutDetail.svelte",
+    "outputs": [
+      {
+        "file": "callout_detail.html",
+        "props": { "detail": "{{ parts[1:] | join(': ') }}" }
+      }
+    ]
+  },
+  "form_story_line": {
+    "component": "src/components/FormStoryLine.svelte",
+    "outputs": [
+      {
+        "file": "form_story_line_driver.html",
+        "props": { "variant": "driver", "kicker": "Driver", "value": "{{ story.driver }}" }
+      },
+      {
+        "file": "form_story_line_habit.html",
+        "props": { "variant": "habit", "kicker": "Habit", "value": "{{ story.habit }}" }
+      },
+      {
+        "file": "form_story_line_action.html",
+        "props": { "variant": "action", "kicker": "Action", "value": "{{ story.action }}" }
+      }
+    ]
   }
 }

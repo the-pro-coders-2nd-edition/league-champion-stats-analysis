@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ app_title }} — {{ player_name }}</title>
-{% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, tiered_cards, rec_card, metric_card, section_pulse, score_card, ui_chip, generated_at_time, format_generated_at_script %}
+{% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, tiered_cards, rec_card, metric_card, section_pulse, score_card, ui_chip, generated_at_time, format_generated_at_script, peer_callout, form_story %}
 {{ favicon_links(favicon_href) }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -451,15 +451,7 @@
         <div class="form-stories" id="form-stories">
           {% if form_stories %}
           {% for story in form_stories %}
-          <article class="form-story form-story--{{ story.tone }}">
-            <span class="form-story-label">{{ 'Keep' if story.tone == 'keep' else 'Fix' }}</span>
-            <strong class="form-story-title">{{ story.title }}</strong>
-            <p class="form-story-driver"><span class="form-story-kicker">Driver</span> {{ story.driver }}</p>
-            {% if story.habit %}
-            <p class="form-story-habit"><span class="form-story-kicker">Habit</span> {{ story.habit }}</p>
-            {% endif %}
-            <p class="form-story-action"><span class="form-story-kicker">Action</span> {{ story.action }}</p>
-          </article>
+          {{ form_story(story) }}
           {% endfor %}
           {% else %}
           <p class="sub form-stories-empty" id="form-stories-empty">No standout form stories for this window.</p>
