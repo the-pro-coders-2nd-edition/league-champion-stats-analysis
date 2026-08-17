@@ -169,6 +169,14 @@
           { "html": "{{ metric_label(\"Avg DPM\", \"flame\", \"orange\") }}" },
           { "html": "{{ metric_label(\"Avg deaths\", \"skull\", \"danger\") }}" }
         ] }
+      },
+      {
+        "file": "data_table_head_objectives.html",
+        "props": { "columns": [
+          { "html": "Objective" }, { "html": "Count" }, { "html": "Taken" }, { "html": "Present" }, { "html": "Arrived early" },
+          { "html": "{{ metric_label(\"Died in setup window (45–10s)\", tooltip=metric_tooltip(\"Died in setup window (45–10s)\")) }}" },
+          { "html": "{{ metric_label(\"Wards before\", tooltip=metric_tooltip(\"Wards before\")) }}" }
+        ] }
       }
     ]
   },
@@ -194,6 +202,14 @@
       {
         "file": "data_table_row_runes.html",
         "props": { "cellsHtml": "<td>{% if row.keystone_icon %}<span class=\"icon-cell\"><img src=\"{{ row.keystone_icon }}\" alt=\"\" class=\"game-icon game-icon--sm\"><span>{{ row.keystone }}</span></span>{% else %}{{ row.keystone }}{% endif %}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td>{{ row.avg_dpm }}</td><td>{{ row.avg_deaths }}</td>" }
+      },
+      {
+        "file": "data_table_row_objectives.html",
+        "props": { "cellsHtml": "<td>{{ icon_cell(row.kind|title, row.objective_icon) }}</td><td>{{ row.count }}</td><td>{{ '%.0f' % (row.taken_rate * 100) }}%</td><td>{{ '%.0f' % (row.presence_rate * 100) }}%</td><td>{{ '%.0f' % (row.early_rate * 100) }}%</td><td>{{ '%.0f' % (row.dead_before_rate * 100) }}%</td><td>{{ row.avg_wards_before }}</td>" }
+      },
+      {
+        "file": "data_table_row_matchups.html",
+        "props": { "cellsHtml": "<td>{% if row.opponent_icon %}<span class=\"icon-cell\"><img src=\"{{ row.opponent_icon }}\" alt=\"\" class=\"game-icon game-icon--sm\"><span>{{ row.opponent }}</span></span>{% else %}{{ row.opponent }}{% endif %}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td><span class=\"matchup-verdict matchup-verdict--{{ row.verdict | default('even') }}\">{{ row.verdict_label | default('Even') }}</span></td><td>{% if row.avg_gd10 is not none %}{% if row.gd10_color %}<span class=\"matchup-metric\" style=\"color: {{ row.gd10_color }}\">{{ '%+.0f' % row.avg_gd10 }}</span>{% else %}{{ '%+.0f' % row.avg_gd10 }}{% endif %}{% else %}—{% endif %}</td>{% if show_cs_stats %}<td>{% if row.avg_csd10 is not none %}{% if row.csd10_color %}<span class=\"matchup-metric\" style=\"color: {{ row.csd10_color }}\">{{ '%+.0f' % row.avg_csd10 }}</span>{% else %}{{ '%+.0f' % row.avg_csd10 }}{% endif %}{% else %}—{% endif %}</td>{% endif %}<td>{% if row.avg_deaths_pre14 is not none %}{% if row.deaths_pre14_color %}<span class=\"matchup-metric\" style=\"color: {{ row.deaths_pre14_color }}\">{{ '%.1f' % row.avg_deaths_pre14 }}</span>{% else %}{{ '%.1f' % row.avg_deaths_pre14 }}{% endif %}{% else %}—{% endif %}</td><td class=\"matchup-plan\">{% if row.focus %}<span class=\"matchup-focus matchup-focus--{{ row.focus_key | default('standard') }}\">{{ row.focus }}</span>{% endif %}<span class=\"matchup-tip\">{{ row.recommendation }}</span></td>" }
       }
     ]
   }
