@@ -1,15 +1,4 @@
 <script>
-  // Covers the label + title + score chip + score bar, which are always set
-  // together whenever a verdict exists (confirmed in
-  // src/league_stats/pipeline/bundles.py's _build_section_verdicts: score,
-  // text and label are populated in the same branch, never independently).
-  // The outer .section-pulse wrapper (tone class, hidden attribute) and the
-  // hint paragraph / fix link (genuinely independent per-instance optionals)
-  // stay as Jinja in _macros.html's section_pulse macro.
-  // Deliberately does NOT include the .section-pulse-callout wrapper -- the
-  // optional hint paragraph (SectionPulseHint.svelte) is a sibling that has
-  // to land *inside* that same div, so the wrapper's open/close tags stay in
-  // the Jinja macro, same as every other "outer wrapper" in this port.
   export let label;
   export let title;
   export let score;
@@ -21,3 +10,29 @@
   <span class="section-pulse-score">{score}</span>
 </div>
 <div class="section-pulse-bar" aria-hidden="true"><i style="width: {score}%"></i></div>
+
+<style>
+  :global(.section-pulse-label) {
+    font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+  }
+  :global(.section-pulse--strong .section-pulse-label) { color: var(--win); }
+  :global(.section-pulse--focus .section-pulse-label) { color: var(--loss); }
+  :global(.section-pulse--solid .section-pulse-label) { color: #b0b6c9; }
+  :global(.section-pulse-head) {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  }
+  :global(.section-pulse-title) { font-size: 14px; font-weight: 700; line-height: 1.3; min-width: 0; }
+  :global(.section-pulse-score) {
+    flex-shrink: 0; font-size: 15px; font-weight: 800; letter-spacing: -.02em; color: var(--text);
+  }
+  :global(.section-pulse-bar) {
+    height: 6px; background: rgba(0, 0, 0, 0.28); border-radius: 3px;
+    margin-top: 2px; overflow: hidden; container-type: inline-size;
+  }
+  :global(.section-pulse-bar i) {
+    display: block; height: 100%;
+    background-image: var(--score-fill-gradient);
+    background-size: 100cqw 100%;
+    background-repeat: no-repeat;
+  }
+</style>

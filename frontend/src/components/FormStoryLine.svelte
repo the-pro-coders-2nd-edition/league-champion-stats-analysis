@@ -1,12 +1,27 @@
 <script>
-  // Driver/Habit/Action are the same "kicker label + value" shape, just three
-  // instances -- variant is static per generated output, not per-instance
-  // data. Habit's presence is conditional on real data (story.habit), so its
-  // {% if %} wrap stays in the Jinja macro, same as every other component's
-  // per-instance-optional pieces.
-  export let variant; // 'driver' | 'habit' | 'action'
-  export let kicker; // 'Driver' | 'Habit' | 'Action'
+  const KICKERS = { driver: 'Driver', habit: 'Habit', action: 'Action' };
+
+  export let variant;
   export let value;
+
+  if (!(variant in KICKERS)) throw new Error(`FormStoryLine: invalid variant "${variant}"`);
+  const kicker = KICKERS[variant];
 </script>
 
 <p class="form-story-{variant}"><span class="form-story-kicker">{kicker}</span> {value}</p>
+
+<style>
+  :global(.form-story-driver),
+  :global(.form-story-habit),
+  :global(.form-story-action) {
+    margin: 0; font-size: 13px; line-height: 1.45; color: var(--text);
+  }
+  :global(.form-story-habit),
+  :global(.form-story-driver) { color: var(--muted); }
+  :global(.form-story-kicker) {
+    display: inline-block; min-width: 3.6em; margin-right: 6px;
+    font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  :global(.form-story-action .form-story-kicker) { color: var(--accent); }
+</style>

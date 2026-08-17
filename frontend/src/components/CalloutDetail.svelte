@@ -1,7 +1,9 @@
 <script>
-  // Presence conditional on real data (parts|length > 1 in the Jinja macro),
-  // stays wrapped there -- see MetricBenchmark.svelte for the reasoning.
   export let detail;
 </script>
 
 <span class="peer-callout-detail">{detail}</span>
+
+<style>
+  :global(.peer-callout-detail) { font-size: 12px; color: var(--muted); line-height: 1.4; }
+</style>

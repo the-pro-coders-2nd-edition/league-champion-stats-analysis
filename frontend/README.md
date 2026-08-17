@@ -29,3 +29,15 @@ produces — catching this locally is faster than waiting on CI.
   computation). That logic lives once, in Python
   (`src/league_stats/presentation/tones.py`), and is passed in as an
   already-resolved prop (e.g. `tone="good"`) via a Jinja token at generation time.
+- Props with a closed vocabulary (tone, variant, prefix, ...) must validate
+  against it in `<script>` and throw on generation if invalid — but only when
+  the manifest passes a literal (e.g. `"tone": "flat"`). A prop fed by a Jinja
+  token (e.g. `"badge": "{{ rec.badge }}"`) is real per-instance report data;
+  the generator only ever sees the literal token text, never the resolved
+  value, so it can't be validated here — the closed vocabulary is enforced by
+  whatever Python code produces that value instead.
+- CSS lives in the component's own `<style>` block, not in `report.css`. Any
+  class also rebuilt by a client-side JS re-render function (grep `report.html`
+  for the class name) must be wrapped in `:global(...)` — Svelte's scoping
+  attribute is only added to elements the compiler renders, so JS-injected
+  markup would silently fall outside a scoped rule.

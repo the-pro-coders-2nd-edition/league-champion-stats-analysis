@@ -1,13 +1,17 @@
 <script>
-  // No spread attributes, no <svelte:element>, no contenteditable bindings --
-  // see frontend/README.md's component-authoring rules.
+  const TONES = ['good', 'warn', 'bad', 'flat', 'accent'];
+  const VARIANTS = ['soft', 'outline'];
+  const EXTRA_CLASSES = ['', 'scope-chip--window'];
+
   export let tone = 'flat';
   export let label;
   export let dot = true;
   export let variant = 'soft';
-  // Static per-call-site hook class (e.g. for existing client-side JS that
-  // targets a stable selector) -- never per-instance report data.
   export let extraClass = '';
+
+  if (!TONES.includes(tone)) throw new Error(`Pill: invalid tone "${tone}"`);
+  if (!VARIANTS.includes(variant)) throw new Error(`Pill: invalid variant "${variant}"`);
+  if (!EXTRA_CLASSES.includes(extraClass)) throw new Error(`Pill: invalid extraClass "${extraClass}"`);
 </script>
 
 <span class="pill pill--{tone} pill--{variant} {extraClass}">

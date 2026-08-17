@@ -1,9 +1,6 @@
 <script>
-  // Always-present structure only -- the outer .rec wrapper (with its
-  // conditional anchor id) and the evidence <details> block stay as existing
-  // Jinja in _macros.html's rec_card macro, same pattern as MetricCard's
-  // outer .card wrapper. badge is the existing priority-badge vocabulary
-  // ('high'|'medium'|'low'), not the design system's tone names.
+  // badge ('high'|'medium'|'low') is per-instance report data (a Jinja token
+  // here, not a literal) -- vocabulary enforced by score_badge() in report.py.
   export let badge;
   export let priorityLabel;
   export let category;
@@ -17,3 +14,17 @@
   <strong>{title}</strong>
 </div>
 <p>{detail}</p>
+
+<style>
+  :global(.rec-head) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+  :global(.rec-head strong) { flex: 1 1 100%; font-size: 15px; }
+  :global(.badge) {
+    display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    background: var(--panel-2); color: var(--muted); margin-right: 8px;
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  :global(.badge--priority) { font-weight: 700; }
+  :global(.badge--high) { color: var(--loss); background: rgba(224, 85, 99, 0.12); }
+  :global(.badge--medium) { color: #e0b155; background: rgba(224, 177, 85, 0.12); }
+  :global(.badge--low) { color: var(--muted); }
+</style>

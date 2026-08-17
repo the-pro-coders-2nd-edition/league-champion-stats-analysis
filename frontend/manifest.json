@@ -116,15 +116,15 @@
     "outputs": [
       {
         "file": "form_story_line_driver.html",
-        "props": { "variant": "driver", "kicker": "Driver", "value": "{{ story.driver }}" }
+        "props": { "variant": "driver", "value": "{{ story.driver }}" }
       },
       {
         "file": "form_story_line_habit.html",
-        "props": { "variant": "habit", "kicker": "Habit", "value": "{{ story.habit }}" }
+        "props": { "variant": "habit", "value": "{{ story.habit }}" }
       },
       {
         "file": "form_story_line_action.html",
-        "props": { "variant": "action", "kicker": "Action", "value": "{{ story.action }}" }
+        "props": { "variant": "action", "value": "{{ story.action }}" }
       }
     ]
   },
