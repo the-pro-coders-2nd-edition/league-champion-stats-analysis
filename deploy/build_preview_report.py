@@ -113,6 +113,12 @@ def build_preview(output_dir: Path) -> Path:
     )
     if hub is None:
         raise RuntimeError("expected a report hub page after building preview reports")
+
+    hub_relative_url = hub.relative_to(output_dir).as_posix()
+    (output_dir / "index.html").write_text(
+        f'<meta http-equiv="refresh" content="0; url={hub_relative_url}">',
+        encoding="utf-8",
+    )
     return hub
 
 
