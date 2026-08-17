@@ -261,6 +261,11 @@ class AppConfig(BaseModel):
         return self.cache_dir / "matches.sqlite"
 
     @property
+    def career_db_path(self) -> Path:
+        """Path of the SQLite Career mode store."""
+        return self.cache_dir / "career.sqlite"
+
+    @property
     def http_cache_dir(self) -> Path:
         """Directory of the diskcache HTTP cache."""
         return self.cache_dir / "http"
