@@ -233,6 +233,19 @@
 </div>
 {%- endmacro %}
 
+{% macro data_table(head_template, row_template, rows, tbody_id=none) -%}
+<div class="table-scroll">
+<table>
+  {% include head_template %}
+  <tbody{% if tbody_id %} id="{{ tbody_id }}"{% endif %}>
+  {% for row in rows %}
+  {% include row_template %}
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{%- endmacro %}
+
 {% macro peer_callout(kind, item) -%}
 {% set parts = item.split(': ') %}
 <div class="peer-callout peer-callout--{{ kind }}">

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ app_title }} — {{ player_name }}</title>
-{% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, tiered_cards, rec_card, metric_card, section_pulse, score_card, ui_chip, generated_at_time, format_generated_at_script, peer_callout, form_story %}
+{% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, tiered_cards, rec_card, metric_card, section_pulse, score_card, ui_chip, generated_at_time, format_generated_at_script, peer_callout, form_story, data_table with context %}
 {{ favicon_links(favicon_href) }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -499,24 +499,7 @@
         </div>
         <details class="form-all-metrics">
           <summary>All metrics</summary>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr><th>Metric</th><th>Recent</th><th>Baseline</th><th>Change</th><th>Verdict</th></tr>
-              </thead>
-              <tbody id="form-table-body">
-                {% for row in form_delta_rows %}
-                <tr>
-                  <td>{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</td>
-                  <td>{{ row.recent }}</td>
-                  <td>{{ row.baseline }}</td>
-                  <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</td>
-                  <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.verdict }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+          {{ data_table("generated/data_table_head_form_delta.html", "generated/data_table_row_form_delta.html", form_delta_rows, tbody_id="form-table-body") }}
         </details>
       </div>
     </div>
@@ -587,24 +570,7 @@
     </div>
     <details class="peer-all-metrics">
       <summary>All metrics</summary>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr><th>Metric</th><th>You</th><th id="peer-table-peer-header">{{ peer_comparison.tier|title }} {{ build_label }} avg</th><th>Gap</th><th>Verdict</th></tr>
-          </thead>
-          <tbody id="peer-table-body">
-          {% for row in peer_rows %}
-          <tr>
-            <td>{{ metric_label(row.label, row.iconify or row.icon, row.icon_tone, icon_href=row.icon_href) }}</td>
-            <td>{{ row.yours }}</td>
-            <td>{{ row.peer_avg }}</td>
-            <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</td>
-            <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.verdict }}</td>
-          </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
+      {{ data_table("generated/data_table_head_peer_details.html", "generated/data_table_row_peer_details.html", peer_rows, tbody_id="peer-table-body") }}
     </details>
   </div>
 </section>
@@ -668,16 +634,7 @@
     <p class="figure-caption">Win rate by completed item — favor items with enough sample size and a clear WR edge.</p>
   </div>
   <h3>Two-item cores</h3>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Core</th><th>Games</th><th>Win rate</th><th>{{ metric_label("Avg DPM", "flame", "orange") }}</th><th>{{ metric_label("Avg deaths", "skull", "danger") }}</th></tr></thead>
-    <tbody id="build-paths-body">
-    {% for row in build_paths %}
-    <tr><td>{{ core_cell(row.first_item, row.second_item, row.first_item_icon, row.second_item_icon, row.core) }}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td>{{ row.avg_dpm }}</td><td>{{ row.avg_deaths }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
+  {{ data_table("generated/data_table_head_items_cores.html", "generated/data_table_row_items_cores.html", build_paths, tbody_id="build-paths-body") }}
 </section>
 
 <section id="runes" class="report-section report-section--champion">
@@ -686,16 +643,7 @@
     <div class="figure" id="fig-rune_winrate_bar">{{ figures.rune_winrate_bar | safe }}</div>
     <p class="figure-caption">Win rate by keystone — compare rune setups with similar game counts before switching.</p>
   </div>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Keystone</th><th>Games</th><th>Win rate</th><th>{{ metric_label("Avg DPM", "flame", "orange") }}</th><th>{{ metric_label("Avg deaths", "skull", "danger") }}</th></tr></thead>
-    <tbody id="rune-rows-body">
-    {% for row in rune_rows %}
-    <tr><td>{% if row.keystone_icon %}<span class="icon-cell"><img src="{{ row.keystone_icon }}" alt="" class="game-icon game-icon--sm"><span>{{ row.keystone }}</span></span>{% else %}{{ row.keystone }}{% endif %}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td>{{ row.avg_dpm }}</td><td>{{ row.avg_deaths }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
+  {{ data_table("generated/data_table_head_runes.html", "generated/data_table_row_runes.html", rune_rows, tbody_id="rune-rows-body") }}
 </section>
 
 <section id="matchups" class="report-section report-section--champion">
@@ -811,12 +759,7 @@
     </div>
     <div id="blind-spots-block"{% if not blind_spots %} style="display:none"{% endif %}>
     <h3>{{ metric_label("Most dangerous zones (solo deaths without recent team vision)", "skull", "danger") }}</h3>
-    <div class="table-scroll">
-    <table><thead><tr><th>Zone</th><th>{{ metric_label("Deaths", "skull", "danger") }}</th></tr></thead>
-    <tbody id="blind-spots-body">
-    {% for spot in blind_spots %}<tr><td>{{ spot.zone }}</td><td>{{ spot.deaths }}</td></tr>{% endfor %}
-    </tbody></table>
-    </div>
+    {{ data_table("generated/data_table_head_blind_spots.html", "generated/data_table_row_blind_spots.html", blind_spots, tbody_id="blind-spots-body") }}
     </div>
   </details>
 </section>

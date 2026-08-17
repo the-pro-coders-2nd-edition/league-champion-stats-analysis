@@ -127,5 +127,74 @@
         "props": { "variant": "action", "kicker": "Action", "value": "{{ story.action }}" }
       }
     ]
+  },
+  "data_table_head": {
+    "component": "src/components/DataTableHead.svelte",
+    "outputs": [
+      {
+        "file": "data_table_head_blind_spots.html",
+        "props": { "columns": [
+          { "html": "Zone" },
+          { "html": "{{ metric_label(\"Deaths\", \"skull\", \"danger\") }}" }
+        ] }
+      },
+      {
+        "file": "data_table_head_form_delta.html",
+        "props": { "columns": [
+          { "html": "Metric" }, { "html": "Recent" }, { "html": "Baseline" }, { "html": "Change" }, { "html": "Verdict" }
+        ] }
+      },
+      {
+        "file": "data_table_head_peer_details.html",
+        "props": { "columns": [
+          { "html": "Metric" },
+          { "html": "You" },
+          { "html": "{{ peer_comparison.tier|title }} {{ build_label }} avg", "id": "peer-table-peer-header" },
+          { "html": "Gap" },
+          { "html": "Verdict" }
+        ] }
+      },
+      {
+        "file": "data_table_head_items_cores.html",
+        "props": { "columns": [
+          { "html": "Core" }, { "html": "Games" }, { "html": "Win rate" },
+          { "html": "{{ metric_label(\"Avg DPM\", \"flame\", \"orange\") }}" },
+          { "html": "{{ metric_label(\"Avg deaths\", \"skull\", \"danger\") }}" }
+        ] }
+      },
+      {
+        "file": "data_table_head_runes.html",
+        "props": { "columns": [
+          { "html": "Keystone" }, { "html": "Games" }, { "html": "Win rate" },
+          { "html": "{{ metric_label(\"Avg DPM\", \"flame\", \"orange\") }}" },
+          { "html": "{{ metric_label(\"Avg deaths\", \"skull\", \"danger\") }}" }
+        ] }
+      }
+    ]
+  },
+  "data_table_row": {
+    "component": "src/components/DataTableRow.svelte",
+    "outputs": [
+      {
+        "file": "data_table_row_blind_spots.html",
+        "props": { "cellsHtml": "<td>{{ row.zone }}</td><td>{{ row.deaths }}</td>" }
+      },
+      {
+        "file": "data_table_row_form_delta.html",
+        "props": { "cellsHtml": "<td>{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</td><td>{{ row.recent }}</td><td>{{ row.baseline }}</td><td class=\"delta-{{ row.verdict }}\"{% if row.gap_color %} style=\"color: {{ row.gap_color }}\"{% endif %}>{{ row.gap }}</td><td class=\"delta-{{ row.verdict }}\"{% if row.gap_color %} style=\"color: {{ row.gap_color }}\"{% endif %}>{{ row.verdict }}</td>" }
+      },
+      {
+        "file": "data_table_row_peer_details.html",
+        "props": { "cellsHtml": "<td>{{ metric_label(row.label, row.iconify or row.icon, row.icon_tone, icon_href=row.icon_href) }}</td><td>{{ row.yours }}</td><td>{{ row.peer_avg }}</td><td class=\"delta-{{ row.verdict }}\"{% if row.gap_color %} style=\"color: {{ row.gap_color }}\"{% endif %}>{{ row.gap }}</td><td class=\"delta-{{ row.verdict }}\"{% if row.gap_color %} style=\"color: {{ row.gap_color }}\"{% endif %}>{{ row.verdict }}</td>" }
+      },
+      {
+        "file": "data_table_row_items_cores.html",
+        "props": { "cellsHtml": "<td>{{ core_cell(row.first_item, row.second_item, row.first_item_icon, row.second_item_icon, row.core) }}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td>{{ row.avg_dpm }}</td><td>{{ row.avg_deaths }}</td>" }
+      },
+      {
+        "file": "data_table_row_runes.html",
+        "props": { "cellsHtml": "<td>{% if row.keystone_icon %}<span class=\"icon-cell\"><img src=\"{{ row.keystone_icon }}\" alt=\"\" class=\"game-icon game-icon--sm\"><span>{{ row.keystone }}</span></span>{% else %}{{ row.keystone }}{% endif %}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td>{{ row.avg_dpm }}</td><td>{{ row.avg_deaths }}</td>" }
+      }
+    ]
   }
 }
