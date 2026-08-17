@@ -273,6 +273,49 @@
       }
     ]
   },
+  "report_player_chip": {
+    "component": "src/components/ReportPlayerChip.svelte",
+    "outputs": [
+      {
+        "file": "report_player_chip.html",
+        "props": { "icon": "{{ member.profile_icon }}", "label": "{{ member.label }}" }
+      },
+      {
+        "file": "report_player_chip_no_icon.html",
+        "props": { "label": "{{ member.label }}" }
+      }
+    ]
+  },
+  "peer_balance_chip": {
+    "component": "src/components/PeerBalanceChip.svelte",
+    "outputs": [
+      {
+        "file": "peer_balance_chip_above.html",
+        "props": { "modifier": "above", "countId": "peer-above-count", "count": "{{ peer_above|length }}", "label": "above" }
+      },
+      {
+        "file": "peer_balance_chip_below.html",
+        "props": { "modifier": "below", "countId": "peer-below-count", "count": "{{ peer_below|length }}", "label": "below" }
+      }
+    ]
+  },
+  "peer_meta_chip": {
+    "component": "src/components/PeerMetaChip.svelte",
+    "outputs": [
+      {
+        "file": "peer_meta_chip_games.html",
+        "props": { "text": "{{ peer_comparison.peer_games }} peer games" }
+      },
+      {
+        "file": "peer_meta_chip_players.html",
+        "props": { "text": "{{ peer_comparison.peer_players }} players" }
+      },
+      {
+        "file": "peer_meta_chip_confidence.html",
+        "props": { "modifier": "confidence", "text": "{{ peer_comparison.confidence }} confidence" }
+      }
+    ]
+  },
   "mover_row": {
     "component": "src/components/MoverRow.svelte",
     "outputs": [

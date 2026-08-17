@@ -298,7 +298,17 @@
         {% endif %}
         <div class="report-hero-copy">
           <h1 class="report-page-title">{{ build_heading(champion, role_icon_href, role_display) }}</h1>
-          {% if not report_players or report_players|length <= 1 %}
+          {% if report_players and report_players|length > 1 %}
+          <div class="report-players">
+            {% for member in report_players %}
+            {% if member.profile_icon %}
+            {% include "generated/report_player_chip.html" %}
+            {% else %}
+            {% include "generated/report_player_chip_no_icon.html" %}
+            {% endif %}
+            {% endfor %}
+          </div>
+          {% else %}
           <div class="report-player-name">{{ player_name }}</div>
           {% endif %}
           <div class="report-hero-meta" id="overview-subtitle">{{ total_games }} {{ queue_label }} games · patches {{ patch_range }}</div>
@@ -510,13 +520,13 @@
         </div>
         <div class="peer-stage-meta">
           <div class="peer-balance" id="peer-balance">
-            <span class="peer-balance-chip peer-balance-chip--above"><strong id="peer-above-count">{{ peer_above|length }}</strong> above</span>
-            <span class="peer-balance-chip peer-balance-chip--below"><strong id="peer-below-count">{{ peer_below|length }}</strong> below</span>
+            {% include "generated/peer_balance_chip_above.html" %}
+            {% include "generated/peer_balance_chip_below.html" %}
           </div>
           <div class="peer-meta-chips" id="peer-meta-chips">
-            {{ ui_chip(peer_comparison.peer_games ~ ' peer games', 'meta') }}
-            {{ ui_chip(peer_comparison.peer_players ~ ' players', 'meta') }}
-            {{ ui_chip(peer_comparison.confidence ~ ' confidence', 'confidence') }}
+            {% include "generated/peer_meta_chip_games.html" %}
+            {% include "generated/peer_meta_chip_players.html" %}
+            {% include "generated/peer_meta_chip_confidence.html" %}
           </div>
         </div>
       </div>

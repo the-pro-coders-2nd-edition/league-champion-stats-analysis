@@ -226,6 +226,9 @@ section { margin-bottom: 64px; scroll-margin-top: var(--report-sticky-offset); }
 h2 { font-size: 20px; margin-bottom: 6px; }
 .report-page-title { font-size: 30px; font-weight: 700; line-height: 1.15; margin: 0; }
 .report-player-name { color: var(--muted); font-size: 14px; margin-top: 4px; }
+.report-players {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;
+}
 h3 { font-size: 17px; margin: 24px 0 12px; color: var(--muted); }
 .sub { color: var(--muted); margin-bottom: 20px; }
 .sub--lead { color: var(--text); font-size: 15px; margin-bottom: 16px; }
@@ -426,14 +429,7 @@ h3 { font-size: 17px; margin: 24px 0 12px; color: var(--muted); }
   display: flex; flex-direction: column; justify-content: center; gap: 10px; min-width: 0;
 }
 .peer-balance { display: flex; flex-wrap: wrap; gap: 8px; }
-.peer-balance-chip {
-  display: inline-flex; align-items: baseline; gap: 6px;
-  font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 999px;
-  background: var(--panel); color: var(--muted);
-}
-.peer-balance-chip strong { font-size: 16px; font-weight: 800; }
-.peer-balance-chip--above { color: var(--win); background: rgba(63, 182, 139, 0.12); }
-.peer-balance-chip--below { color: var(--loss); background: rgba(224, 85, 99, 0.12); }
+/* .peer-balance-chip, .peer-balance-chip--* moved to frontend/src/components/PeerBalanceChip.svelte */
 .peer-meta-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .peer-verdict { margin-bottom: 14px; }
