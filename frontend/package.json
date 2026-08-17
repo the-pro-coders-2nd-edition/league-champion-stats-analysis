@@ -1,0 +1,14 @@
+{
+  "name": "league-stats-report-components",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Svelte component library compiled into the Jinja templates used to render League Champion Analysis reports.",
+  "scripts": {
+    "generate": "node scripts/generate.js"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "svelte": "^4.2.20"
+  }
+}
