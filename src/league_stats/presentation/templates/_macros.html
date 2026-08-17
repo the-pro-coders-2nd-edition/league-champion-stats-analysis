@@ -207,15 +207,12 @@
 
 {% macro rec_card(rec) -%}
 <div class="rec {{ rec.badge }}"{% if rec.anchor %} id="{{ rec.anchor }}"{% endif %}>
-  <div class="rec-head">
-    <span class="badge badge--priority badge--{{ rec.badge }}">{{ rec.priority_label }}</span>
-    <span class="badge">{{ rec.category }}</span>
-    <strong>{{ rec.title }}</strong>
-  </div>
-  <p>{{ rec.detail }}</p>
+  {% include "generated/rec_card_head.html" %}
   <details class="rec-evidence">
     <summary>Why this?</summary>
-    {% if rec.evidence_summary %}<p class="rec-evidence-summary">{{ rec.evidence_summary }}</p>{% endif %}
+    {% if rec.evidence_summary %}
+    {% include "generated/rec_evidence_summary.html" %}
+    {% endif %}
     <p class="meta">Stats: {{ rec.evidence }}{% if rec.p_value is not none %} · p = {{ '%.4f' % rec.p_value }}{% endif %}{% if rec.sample_size %} · {{ rec.sample_size }} games{% endif %}</p>
   </details>
 </div>

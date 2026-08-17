@@ -37,5 +37,29 @@
         }
       }
     ]
+  },
+  "rec_card_head": {
+    "component": "src/components/RecCardHead.svelte",
+    "outputs": [
+      {
+        "file": "rec_card_head.html",
+        "props": {
+          "badge": "{{ rec.badge }}",
+          "priorityLabel": "{{ rec.priority_label }}",
+          "category": "{{ rec.category }}",
+          "title": "{{ rec.title }}",
+          "detail": "{{ rec.detail }}"
+        }
+      }
+    ]
+  },
+  "rec_evidence_summary": {
+    "component": "src/components/RecEvidenceSummary.svelte",
+    "outputs": [
+      {
+        "file": "rec_evidence_summary.html",
+        "props": { "text": "{{ rec.evidence_summary }}" }
+      }
+    ]
   }
 }
