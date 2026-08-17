@@ -115,3 +115,22 @@ uv run pytest
 ## Tests
 
 Synthetic fixtures in `tests/fixtures.py`. One module per area: `tests/test_<module>.py`.
+
+## Netlify preview build
+
+`deploy/build_preview_report.py` (invoked by `deploy/build_preview.sh` via `netlify.toml`)
+renders a synthetic multi-report set so every PR gets a live Deploy Preview, with no
+Riot API key or secrets involved. It mirrors `tests/test_reports.py`'s `_make_records`/
+`_peer`/`_config` helpers and reuses `tests/fixtures.py` directly.
+
+**Update this mock whenever:**
+- `MatchRecord`, `PeerComparisonResult`, `RankedEntry`, or `AppConfig` gain/rename fields
+- `tests/fixtures.py` changes shape (`make_match`, `make_timeline`, `FAKE_ITEMS`, `MY_PUUID`)
+- A report section starts expecting a new peer metric — add the key to `_PEER_METRICS`
+  in `deploy/build_preview_report.py`, or that section renders with placeholder/missing data
+  in every preview without any test failing (the existing tests only check that a report
+  and hub page are produced, not that every metric is populated)
+
+`tests/test_build_preview_report.py` only catches structural breaks (missing hub page,
+wrong report count) — it will not catch stale/incomplete mock data, so keep the mock's
+shape intentionally in sync rather than relying on that test to flag drift.
