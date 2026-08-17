@@ -12,6 +12,25 @@
       }
     ]
   },
+  "rec_extend_button": {
+    "component": "src/components/RecExtendButton.svelte",
+    "outputs": [
+      {
+        "file": "rec_extend_button_positive.html",
+        "props": {
+          "targetId": "rec-more-positive",
+          "label": "Show {{ positive_recommendations|length - recommendation_visible_count }} more strength{{ 's' if positive_recommendations|length - recommendation_visible_count != 1 else '' }}"
+        }
+      },
+      {
+        "file": "rec_extend_button_negative.html",
+        "props": {
+          "targetId": "rec-more-negative",
+          "label": "Show {{ negative_recommendations|length - recommendation_visible_count }} more area{{ 's' if negative_recommendations|length - recommendation_visible_count != 1 else '' }} to improve"
+        }
+      }
+    ]
+  },
   "metric_label_span": {
     "component": "src/components/MetricLabelSpan.svelte",
     "outputs": [

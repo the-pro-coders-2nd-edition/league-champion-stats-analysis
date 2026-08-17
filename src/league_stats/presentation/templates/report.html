@@ -376,9 +376,7 @@
         {{ rec_card(rec) }}
         {% endfor %}
       </div>
-      <button type="button" class="rec-extend" data-target="rec-more-positive" data-more-label="Show {{ positive_recommendations|length - recommendation_visible_count }} more strength{{ 's' if positive_recommendations|length - recommendation_visible_count != 1 else '' }}" aria-expanded="false" aria-controls="rec-more-positive">
-        Show {{ positive_recommendations|length - recommendation_visible_count }} more strength{{ 's' if positive_recommendations|length - recommendation_visible_count != 1 else '' }}
-      </button>
+      {% include "generated/rec_extend_button_positive.html" %}
       {% endif %}
       {% else %}
       <p class="rec-empty">No clear strengths surfaced yet — keep playing more games.</p>
@@ -396,9 +394,7 @@
         {{ rec_card(rec) }}
         {% endfor %}
       </div>
-      <button type="button" class="rec-extend" data-target="rec-more-negative" data-more-label="Show {{ negative_recommendations|length - recommendation_visible_count }} more area{{ 's' if negative_recommendations|length - recommendation_visible_count != 1 else '' }} to improve" aria-expanded="false" aria-controls="rec-more-negative">
-        Show {{ negative_recommendations|length - recommendation_visible_count }} more area{{ 's' if negative_recommendations|length - recommendation_visible_count != 1 else '' }} to improve
-      </button>
+      {% include "generated/rec_extend_button_negative.html" %}
       {% endif %}
       {% else %}
       <p class="rec-empty">Nothing critical flagged — solid performance overall.</p>

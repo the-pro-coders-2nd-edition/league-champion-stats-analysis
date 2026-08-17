@@ -681,13 +681,6 @@ tr:last-child td { border-bottom: none; }
 .rec .meta { color: var(--muted); font-size: 13px; margin-top: 8px; }
 .rec-more { display: none; }
 .rec-more.is-open { display: block; }
-.rec-extend {
-  display: block; margin: 16px auto 0; padding: 10px 20px; border: 1px solid var(--border);
-  border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit;
-  cursor: pointer;
-}
-.rec-extend:hover { border-color: var(--accent); color: var(--accent); }
-.rec-extend.is-expanded { margin-top: 8px; }
 .delta-above { color: var(--win); } .delta-below { color: var(--loss); } .delta-inline, .delta-on_par { color: var(--muted); }
 .delta-improved { color: var(--win); } .delta-regressed { color: var(--loss); }
 .matchup-table td { vertical-align: top; }
