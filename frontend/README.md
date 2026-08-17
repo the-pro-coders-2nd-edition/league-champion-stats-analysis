@@ -1,9 +1,7 @@
 # Report component library
 
 Svelte components that get compiled into the Jinja templates used by
-`src/league_stats/presentation`. See
-`~/.claude/docs/league-champion-stats-analysis/superpowers/plans/2026-08-svelte-design-system-migration.md`
-for the full design and rollout plan.
+`src/league_stats/presentation`.
 
 ## Workflow
 

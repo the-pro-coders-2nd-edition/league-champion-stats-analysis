@@ -11,5 +11,31 @@
         "props": { "tone": "flat", "label": "{{ scope }}", "dot": false, "variant": "outline", "extraClass": "scope-chip--window" }
       }
     ]
+  },
+  "metric_value": {
+    "component": "src/components/MetricValue.svelte",
+    "outputs": [
+      {
+        "file": "metric_value.html",
+        "props": {
+          "value": "{{ card.value }}",
+          "valueClass": "{{ card.value_class }}",
+          "valueColor": "{{ card.value_color }}"
+        }
+      }
+    ]
+  },
+  "metric_benchmark": {
+    "component": "src/components/MetricBenchmark.svelte",
+    "outputs": [
+      {
+        "file": "metric_benchmark.html",
+        "props": {
+          "benchmark": "{{ card.benchmark }}",
+          "benchmarkTone": "{{ card.benchmark_tone | default('inline') }}",
+          "benchmarkColor": "{{ card.benchmark_color }}"
+        }
+      }
+    ]
   }
 }
