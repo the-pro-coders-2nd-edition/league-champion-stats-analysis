@@ -412,6 +412,7 @@ def bundle_to_template_context(
         "matchup_rows": bundle["matchup_rows"],
         "positive_recommendations": bundle["positive_recommendations"],
         "negative_recommendations": bundle["negative_recommendations"],
+        "weak_recommendations": bundle.get("weak_recommendations", []),
         "top_tips": bundle.get("top_tips", []),
         "figure_hints": bundle.get("figure_hints", {}),
         "has_peer_comparison": peer_comparison is not None,
@@ -462,6 +463,7 @@ def build_window_bundle(
         "matchup_rows": [],
         "positive_recommendations": [],
         "negative_recommendations": [],
+        "weak_recommendations": [],
         "top_tips": [],
         "figure_hints": {},
         "figures": {},
@@ -655,18 +657,22 @@ def build_window_bundle(
         "build_paths": build_path_stats(frames.matches_df).head(10).to_dict("records"),
         "rune_rows": rune_setup_stats(frames.runes_df).to_dict("records"),
         "matchup_rows": matchup_rows,
-        "positive_recommendations": [
-            _recommendation_payload(rec)
-            for rec in recommendations
-            if rec.tone.value == "positive"
-        ],
-        "negative_recommendations": [
-            _recommendation_payload(rec)
-            for rec in recommendations
-            if rec.tone.value == "negative"
-        ],
         "figures": figures,
     }
+    recommendation_payloads = [_recommendation_payload(rec) for rec in recommendations]
+    bundle["weak_recommendations"] = [
+        payload for payload in recommendation_payloads if payload["badge"] == "low"
+    ]
+    bundle["positive_recommendations"] = [
+        payload
+        for payload in recommendation_payloads
+        if payload["badge"] != "low" and payload["tone"] == "positive"
+    ]
+    bundle["negative_recommendations"] = [
+        payload
+        for payload in recommendation_payloads
+        if payload["badge"] != "low" and payload["tone"] == "negative"
+    ]
     _finalize_coaching_anchors(bundle)
     bundle["top_tips"] = _build_top_tips(bundle)
     bundle["figure_hints"] = _build_figure_hints(win_corrs, model)

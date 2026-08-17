@@ -15,14 +15,14 @@
   :global(.form-story-driver),
   :global(.form-story-habit),
   :global(.form-story-action) {
-    margin: 0; font-size: 13px; line-height: 1.45; color: var(--text);
+    margin: 0; font-size: 13px; line-height: 1.45; color: var(--color-text);
   }
   :global(.form-story-habit),
-  :global(.form-story-driver) { color: var(--muted); }
+  :global(.form-story-driver) { color: var(--color-neutral-400); }
   :global(.form-story-kicker) {
     display: inline-block; min-width: 3.6em; margin-right: 6px;
     font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-    color: var(--muted);
+    color: var(--color-neutral-400);
   }
-  :global(.form-story-action .form-story-kicker) { color: var(--accent); }
+  :global(.form-story-action .form-story-kicker) { color: var(--color-accent); }
 </style>

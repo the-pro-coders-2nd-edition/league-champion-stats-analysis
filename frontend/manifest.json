@@ -533,5 +533,30 @@
         }
       }
     ]
+  },
+  "callout": {
+    "component": "src/components/Callout.svelte",
+    "outputs": [
+      {
+        "file": "callout.html",
+        "props": {
+          "kind": "{{ kind }}",
+          "label": "{{ resolved_label }}",
+          "title": "{{ title }}",
+          "text": "{{ text }}",
+          "meta": "{{ meta }}"
+        }
+      },
+      {
+        "file": "callout_no_meta.html",
+        "props": {
+          "kind": "{{ kind }}",
+          "label": "{{ resolved_label }}",
+          "title": "{{ title }}",
+          "text": "{{ text }}",
+          "meta": ""
+        }
+      }
+    ]
   }
 }

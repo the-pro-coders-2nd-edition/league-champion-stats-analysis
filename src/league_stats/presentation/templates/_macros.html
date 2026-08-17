@@ -174,6 +174,16 @@
 </div>
 {%- endmacro %}
 
+{% macro callout(kind, title, text, meta=none, label=none) -%}
+{% set default_labels = {'keep': 'Keep', 'fix': 'Fix', 'watch': 'Watch'} %}
+{% set resolved_label = label or default_labels.get(kind, kind) %}
+{% if meta %}
+{% include "generated/callout.html" %}
+{% else %}
+{% include "generated/callout_no_meta.html" %}
+{% endif %}
+{%- endmacro %}
+
 {% macro data_table(head_template, row_template, rows, tbody_id=none) -%}
 <div class="table-scroll">
 <table>

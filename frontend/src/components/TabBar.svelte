@@ -38,16 +38,16 @@
   }
   .report-tab {
     flex: 1 1 auto; min-width: 0;
-    border: 1px solid var(--border); border-bottom-width: 3px;
-    background: var(--panel-2); color: var(--muted);
+    border: 1px solid var(--color-divider); border-bottom-width: 3px;
+    background: var(--color-surface-2); color: var(--color-neutral-400);
     border-radius: 10px 10px 0 0; padding: 10px 16px;
     font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
     transition: color .15s, background .15s, border-color .15s;
   }
-  .report-tab:hover { color: var(--text); background: var(--panel); }
+  .report-tab:hover { color: var(--color-text); background: var(--color-surface); }
   .report-tab.is-active {
-    color: var(--text); background: var(--panel);
-    border-bottom-color: var(--accent);
+    color: var(--color-text); background: var(--color-surface);
+    border-bottom-color: var(--color-accent);
   }
   .report-tab--summary.is-active { border-bottom-color: var(--cat-summary); }
   .report-tab--performance.is-active { border-bottom-color: var(--cat-performance); }
@@ -65,10 +65,10 @@
     background: transparent;
   }
   .form-tab, .game-review-tab {
-    border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--color-divider); background: var(--color-surface-2); color: var(--color-text);
     border-radius: 999px; padding: 8px 14px; cursor: pointer; font-size: 13px; font-weight: 600;
   }
   .form-tab.is-active, .game-review-tab.is-active {
-    border-color: var(--accent); color: #fff; background: var(--accent);
+    border-color: var(--color-accent); color: #fff; background: var(--color-accent);
   }
 </style>

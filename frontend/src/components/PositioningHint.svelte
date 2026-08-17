@@ -10,7 +10,7 @@
 <style>
   :global(.positioning-hint) {
     margin: 0; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.45;
-    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    background: var(--color-surface-2); border: 1px solid var(--color-divider); color: var(--color-text);
   }
   :global(.positioning-hint--positive) { border-color: rgba(63, 182, 139, 0.35); }
   :global(.positioning-hint--negative) { border-color: rgba(224, 85, 99, 0.35); }

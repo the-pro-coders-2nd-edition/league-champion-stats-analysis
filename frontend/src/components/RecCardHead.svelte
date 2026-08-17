@@ -20,11 +20,11 @@
   :global(.rec-head strong) { flex: 1 1 100%; font-size: 15px; }
   :global(.badge) {
     display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px;
-    background: var(--panel-2); color: var(--muted); margin-right: 8px;
+    background: var(--color-surface-2); color: var(--color-neutral-400); margin-right: 8px;
     text-transform: uppercase; letter-spacing: .05em;
   }
   :global(.badge--priority) { font-weight: 700; }
-  :global(.badge--high) { color: var(--loss); background: rgba(224, 85, 99, 0.12); }
+  :global(.badge--high) { color: var(--color-bad); background: rgba(224, 85, 99, 0.12); }
   :global(.badge--medium) { color: #e0b155; background: rgba(224, 177, 85, 0.12); }
-  :global(.badge--low) { color: var(--muted); }
+  :global(.badge--low) { color: var(--color-neutral-400); }
 </style>

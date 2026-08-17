@@ -22,19 +22,19 @@
     align-items: center;
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--color-divider);
     border-left-width: 3px;
-    background: var(--panel-2);
+    background: var(--color-surface-2);
   }
   :global(.peer-driver--above) {
-    border-left-color: var(--win);
+    border-left-color: var(--color-good-line);
     background: rgba(63, 182, 139, 0.06);
   }
   :global(.peer-driver--below) {
-    border-left-color: var(--loss);
+    border-left-color: var(--color-bad-line);
     background: rgba(224, 85, 99, 0.06);
   }
   :global(.peer-driver-label) { font-size: 13px; font-weight: 600; min-width: 0; }
-  :global(.peer-driver-values) { font-size: 12px; color: var(--muted); }
+  :global(.peer-driver-values) { font-size: 12px; color: var(--color-neutral-400); }
   :global(.peer-driver-gap) { font-size: 14px; font-weight: 700; white-space: nowrap; }
 </style>
