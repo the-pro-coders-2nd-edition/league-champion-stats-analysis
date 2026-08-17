@@ -39,11 +39,11 @@ def test_isolated_kills_are_not_fights() -> None:
 
 
 def test_teamfight_gold_and_manpower() -> None:
-    """Fight start captures unspent gold and manpower at the opening."""
+    """Fight start captures unspent gold and kill-feed combatant counts."""
     ctx = build_context(make_match(), make_timeline(), MY_PUUID)
     fight = detect_teamfights(ctx)[0]
     assert fight.unspent_gold == 400
-    assert fight.allies_present == 1
-    assert fight.enemies_present == 1
+    assert fight.allies_present == 3
+    assert fight.enemies_present == 3
     assert fight.manpower_advantage == 0
     assert fight.avg_teammate_distance == pytest.approx(9447, rel=0.01)

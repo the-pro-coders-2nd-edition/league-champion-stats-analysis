@@ -91,6 +91,7 @@ def _div(fig: go.Figure) -> str:
         colorway=COLORWAY,
         legend=dict(font=dict(family=FONT_FAMILY, color=MUTED_COLOR, size=12)),
         margin=dict(t=48, b=40, l=left, r=24),
+        autosize=True,
     )
     fig.update_xaxes(
         gridcolor=GRID_COLOR,
@@ -106,7 +107,12 @@ def _div(fig: go.Figure) -> str:
         tickfont=dict(family=FONT_FAMILY, color=MUTED_COLOR, size=11),
         title_font=dict(family=FONT_FAMILY, color=MUTED_COLOR, size=12),
     )
-    return fig.to_html(full_html=False, include_plotlyjs=False, default_height=420)
+    return fig.to_html(
+        full_html=False,
+        include_plotlyjs=False,
+        default_height=420,
+        config={"responsive": True},
+    )
 
 
 @dataclass
@@ -786,3 +792,29 @@ class GraphFactory:
             showlegend=False,
         )
         return _div(fig)
+
+
+def structure_pressure_timeline(rows: list[dict[str, float | int]]) -> str:
+    """Bar chart of tower damage / tower kills per time bucket for Game Review."""
+    if not rows:
+        return ""
+    minutes = [float(row.get("minute", 0)) for row in rows]
+    damage = [float(row.get("tower_damage", 0) or 0) for row in rows]
+    towers = [float(row.get("towers", 0) or 0) for row in rows]
+    fig = go.Figure()
+    fig.add_bar(x=minutes, y=damage, name="Tower damage", marker_color=ACCENT, opacity=0.85)
+    fig.add_scatter(
+        x=minutes,
+        y=[value * 500 for value in towers],
+        mode="lines+markers",
+        name="Towers taken",
+        line=dict(color=WIN_COLOR, width=2),
+    )
+    fig.update_layout(
+        title="Structure pressure by phase",
+        xaxis_title="Minute",
+        yaxis_title="Tower damage",
+        height=280,
+        barmode="overlay",
+    )
+    return _div(fig)

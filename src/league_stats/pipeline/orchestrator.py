@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass, field
+from itertools import combinations
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,16 @@ from league_stats.core.config import (
     AppConfig,
 )
 from league_stats.core.progress import STAGE_ANALYZING
-from league_stats.core.models import MatchRecord, PeerComparisonResult, ProgressionComparison, RankedEntry, GameReviewPayload, GameReviewQueueBundle
+from league_stats.core.models import (
+    MatchRecord,
+    PeerComparisonResult,
+    ProgressionComparison,
+    RankedEntry,
+    GameReviewPayload,
+    GameReviewQueueBundle,
+    format_solo_rank_label,
+    solo_rank_fields,
+)
 from league_stats.infra.ddragon_assets import DDragonAssets
 from league_stats.infra.riot_api import RiotApiClient
 from league_stats.ingest.parser import BuildPool, discover_build_pools
@@ -33,6 +43,7 @@ from league_stats.pipeline.bundles import (
     bundle_to_template_context,
     default_game_window_key,
     default_queue_filter_key,
+    filter_records_by_accounts,
     filter_records_by_queue,
     game_window_options,
     queue_filter_options,
@@ -140,6 +151,31 @@ def _meta_players(
         {"riot_id": player.riot_id, "tagline": player.tagline}
         for player in config.players
     ]
+
+
+def _account_icon_hrefs(
+    meta_players: list[dict[str, Any]],
+    asset_catalog: DDragonAssets,
+    run_dir: Path,
+) -> dict[str, str]:
+    """Map ``RiotID#Tag`` labels to relative profile-icon hrefs."""
+    icons: dict[str, str] = {}
+    for player in meta_players:
+        label = f"{player['riot_id']}#{player['tagline']}"
+        raw_icon = player.get("profile_icon_id")
+        if raw_icon is None:
+            continue
+        try:
+            icon_id = int(raw_icon)
+        except (TypeError, ValueError):
+            continue
+        asset_catalog.ensure_profile_icon(icon_id)
+        href = asset_catalog.profile_icon_href(icon_id, from_dir=run_dir)
+        if not href:
+            continue
+        icons[label] = href
+        icons[label.casefold()] = href
+    return icons
 
 
 @dataclass
@@ -256,6 +292,137 @@ def write_full_exports(
     return summary
 
 
+def build_report_views(
+    config: AppConfig,
+    records: list[MatchRecord],
+    graphs_dir: Path,
+    *,
+    peer_comparison: PeerComparisonResult | None = None,
+    assets: DDragonAssets | None = None,
+    shared_stats: Any = None,
+) -> tuple[
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, PeerComparisonResult | None]],
+    str,
+]:
+    """Build the queue x game-window dashboard bundles for one record set.
+
+    Returns the serializable views, the peer result per queue/window slice,
+    and the default queue key.
+    """
+    solo_count = sum(1 for record in records if record.queue_id == RANKED_SOLO_QUEUE_ID)
+    flex_count = sum(1 for record in records if record.queue_id == RANKED_FLEX_QUEUE_ID)
+
+    window_specs: list[tuple[str, int | None]] = [
+        (str(size), size) for size in GAME_WINDOW_OPTIONS
+    ]
+    window_specs.append(("all", None))
+
+    report_views: dict[str, dict[str, Any]] = {}
+    view_peers: dict[str, dict[str, PeerComparisonResult | None]] = {}
+    for queue_key in QUEUE_FILTER_OPTIONS:
+        queue_records = filter_records_by_queue(records, queue_key)
+        queue_total = len(queue_records)
+        queue_peer = peer_comparison if queue_key == "solo" else None
+        queue_label = QUEUE_SUBTITLE_LABELS[queue_key]
+        windows: dict[str, dict[str, Any]] = {}
+        window_peers: dict[str, PeerComparisonResult | None] = {}
+        for window_key, limit in window_specs:
+            sliced = slice_records(queue_records, limit)
+            bundle = build_window_bundle(
+                config,
+                sliced,
+                graphs_dir,
+                peer_comparison=queue_peer,
+                queue_label=queue_label,
+                assets=assets,
+                shared_stats=shared_stats,
+            )
+            window_peers[window_key] = bundle.pop("_peer_result", None)
+            serializable = {k: v for k, v in bundle.items() if not k.startswith("_")}
+            windows[window_key] = serializable
+        report_views[queue_key] = {
+            "total_games": queue_total,
+            "default_window": default_game_window_key(queue_total),
+            "window_options": game_window_options(queue_total),
+            "windows": windows,
+        }
+        view_peers[queue_key] = window_peers
+
+    return report_views, view_peers, default_queue_filter_key(solo_count, flex_count)
+
+
+# Groups up to this size get every account combination precomputed; larger
+# groups only get "all" + one view per single account (the web API fills in
+# arbitrary combinations on demand).
+ACCOUNT_FULL_COMBINATION_LIMIT = 4
+
+
+def account_view_key(labels: list[str] | tuple[str, ...]) -> str:
+    """Stable views key for one account subset (sorted ``|``-joined labels)."""
+    return "|".join(sorted(labels))
+
+
+def account_subset_keys(
+    labels: list[str], *, full_combination_limit: int = ACCOUNT_FULL_COMBINATION_LIMIT
+) -> list[tuple[str, ...]]:
+    """Proper account subsets to precompute (the full set is the main report)."""
+    ordered = sorted(labels)
+    if len(ordered) <= full_combination_limit:
+        subsets: list[tuple[str, ...]] = []
+        for size in range(1, len(ordered)):
+            subsets.extend(combinations(ordered, size))
+        return subsets
+    return [(label,) for label in ordered]
+
+
+def build_account_subset_views(
+    config: AppConfig,
+    records: list[MatchRecord],
+    graphs_dir: Path,
+    *,
+    assets: DDragonAssets | None = None,
+    account_icons: dict[str, str] | None = None,
+    run_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Dashboard + Form Tracker + Game Review views for one account slice.
+
+    Peer comparison is intentionally omitted: the report's peer baseline is
+    anchored to the primary player and would be misleading for subsets.
+    """
+    records = sorted(records, key=lambda record: record.game_creation_ms, reverse=True)
+    frames = build_analysis_frames(records)
+    stats = compute_report_stats(frames, run_dir or graphs_dir.parent)
+    report_views, _, default_queue = build_report_views(
+        config,
+        records,
+        graphs_dir,
+        assets=assets,
+        shared_stats=stats,
+    )
+    progression_views = build_progression_views(
+        config, records, graphs_dir, assets=assets
+    )
+    game_review = build_game_review_views(
+        config,
+        records,
+        frames,
+        graphs_dir=graphs_dir,
+        assets=assets,
+        from_dir=run_dir,
+        account_icons=account_icons,
+    )
+    return {
+        "queue_filter_default": default_queue,
+        "report_views": report_views,
+        "progression_views": progression_views,
+        "game_review_views": {
+            queue_key: bundle.model_dump()
+            for queue_key, bundle in game_review.queues.items()
+        },
+    }
+
+
 def run_analysis(
     config: AppConfig,
     records: list[MatchRecord],
@@ -284,6 +451,10 @@ def run_analysis(
 
     asset_catalog = assets or DDragonAssets(config)
     asset_catalog.ensure_downloaded()
+    asset_catalog.ensure_champion_ability_icons(config.champion)
+
+    meta_players = _meta_players(config, profile_players)
+    account_icons = _account_icon_hrefs(meta_players, asset_catalog, run_dir)
 
     full_frames = build_analysis_frames(records)
     report_stats = compute_report_stats(full_frames, run_dir)
@@ -294,6 +465,7 @@ def run_analysis(
         graphs_dir=graphs_dir,
         assets=asset_catalog,
         from_dir=run_dir,
+        account_icons=account_icons,
     )
 
     summary = write_full_exports(
@@ -318,43 +490,14 @@ def run_analysis(
         ),
     ).death_heatmap_png(deaths_dataframe(records))
 
-    window_specs: list[tuple[str, int | None]] = [
-        (str(size), size) for size in GAME_WINDOW_OPTIONS
-    ]
-    window_specs.append(("all", None))
-
-    report_views: dict[str, dict[str, Any]] = {}
-    view_peers: dict[str, dict[str, PeerComparisonResult | None]] = {}
-    default_queue = default_queue_filter_key(solo_count, flex_count)
-    for queue_key in QUEUE_FILTER_OPTIONS:
-        queue_records = filter_records_by_queue(records, queue_key)
-        queue_total = len(queue_records)
-        queue_peer = peer_comparison if queue_key == "solo" else None
-        queue_label = QUEUE_SUBTITLE_LABELS[queue_key]
-        windows: dict[str, dict[str, Any]] = {}
-        window_peers: dict[str, PeerComparisonResult | None] = {}
-        for window_key, limit in window_specs:
-            sliced = slice_records(queue_records, limit)
-            bundle = build_window_bundle(
-                config,
-                sliced,
-                graphs_dir,
-                peer_comparison=queue_peer,
-                queue_label=queue_label,
-                assets=asset_catalog,
-                shared_stats=report_stats,
-            )
-            window_peers[window_key] = bundle.pop("_peer_result", None)
-            serializable = {k: v for k, v in bundle.items() if not k.startswith("_")}
-            windows[window_key] = serializable
-        default_window = default_game_window_key(queue_total)
-        report_views[queue_key] = {
-            "total_games": queue_total,
-            "default_window": default_window,
-            "window_options": game_window_options(queue_total),
-            "windows": windows,
-        }
-        view_peers[queue_key] = window_peers
+    report_views, view_peers, default_queue = build_report_views(
+        config,
+        records,
+        graphs_dir,
+        peer_comparison=peer_comparison,
+        assets=asset_catalog,
+        shared_stats=report_stats,
+    )
 
     default_window = report_views[default_queue]["default_window"]
     default_bundle = report_views[default_queue]["windows"][default_window]
@@ -379,7 +522,6 @@ def run_analysis(
         for queue_key, bundle in game_review.queues.items()
     }
 
-    meta_players = _meta_players(config, profile_players)
     report_players: list[dict[str, Any]] = []
     for player in meta_players:
         icon_href = None
@@ -391,10 +533,59 @@ def run_analysis(
                 )
             except (TypeError, ValueError):
                 icon_href = None
-        report_players.append(
+        entry: dict[str, Any] = {
+            "riot_id": str(player["riot_id"]),
+            "tagline": str(player["tagline"]),
+            "label": f"{player['riot_id']}#{player['tagline']}",
+            "profile_icon": icon_href,
+        }
+        rank = solo_rank_fields(player)
+        if rank:
+            tier = str(rank["solo_tier"])
+            entry["solo_rank_label"] = format_solo_rank_label(
+                tier,
+                str(rank.get("solo_rank") or ""),
+                rank.get("solo_lp"),
+            )
+            asset_catalog.ensure_rank_emblem(tier)
+            rank_icon = asset_catalog.rank_emblem_href(tier, from_dir=run_dir)
+            if rank_icon:
+                entry["solo_rank_icon"] = rank_icon
+        report_players.append(entry)
+
+    account_filter_json = "{}"
+    if len(report_players) > 1:
+        members: list[dict[str, Any]] = []
+        for entry in report_players:
+            label = str(entry["label"])
+            games = sum(
+                1
+                for record in records
+                if (record.account or "").casefold() == label.casefold()
+            )
+            members.append({**entry, "key": label, "games": games})
+        member_labels = [member["key"] for member in members]
+        subset_views: dict[str, Any] = {}
+        for subset in account_subset_keys(member_labels):
+            subset_records = filter_records_by_accounts(records, set(subset))
+            if not subset_records:
+                continue
+            subset_views[account_view_key(subset)] = build_account_subset_views(
+                config,
+                subset_records,
+                graphs_dir,
+                assets=asset_catalog,
+                account_icons=account_icons,
+                run_dir=run_dir,
+            )
+        account_filter_json = serialize_report_views_json(
             {
-                "label": f"{player['riot_id']}#{player['tagline']}",
-                "profile_icon": icon_href,
+                "enabled": True,
+                "full_combinations": len(member_labels)
+                <= ACCOUNT_FULL_COMBINATION_LIMIT,
+                "members": members,
+                "default_key": "all",
+                "views": subset_views,
             }
         )
 
@@ -418,7 +609,10 @@ def run_analysis(
         "progression_views_json": serialize_report_views_json(progression_views),
         "progression_default": default_preset,
         "game_review_json": serialize_report_views_json(game_review_views),
-        "game_review_tooltips_json": serialize_report_views_json(game_review_tooltips()),
+        "game_review_tooltips_json": serialize_report_views_json(
+            game_review_tooltips(role=config.role)
+        ),
+        "account_filter_json": account_filter_json,
         "chatbot_stats": summary,
         # Web-served reports proxy chat through the backend and poll for
         # peer-analysis completion; local CLI reports embed the key directly.
@@ -432,6 +626,7 @@ def run_analysis(
         "refresh_champion": config.champion,
         "refresh_role": config.role,
         "show_cs_stats": config.role.upper() != "UTILITY",
+        "show_split_push_stats": config.role.upper() == "TOP",
         "chat_report_ref": (
             f"{config.reports_group_slug}/{champion_slug(config.champion, config.role)}"
         ),

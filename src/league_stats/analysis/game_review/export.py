@@ -26,8 +26,20 @@ def _notable_deaths(detail: GameDetail, *, limit: int = 3) -> list[dict[str, Any
 def _slim_game(detail: GameDetail) -> dict[str, Any]:
     fights_won = sum(1 for fight in detail.fights if fight.fight_won)
     obj_present = sum(1 for obj in detail.objectives if obj.present)
+    obj_accounted = sum(1 for obj in detail.objectives if obj.justified_absence)
     obj_total = len(detail.objectives)
     obj_dead = sum(1 for obj in detail.objectives if obj.dead_before)
+    objective_notes: list[str] = []
+    for obj in detail.objectives:
+        if obj.trade_summary:
+            objective_notes.append(f"{obj.kind} @ {obj.minute:.0f}m: {obj.trade_summary}")
+        elif obj.macro_role == "defending_split":
+            objective_notes.append(
+                f"{obj.kind} @ {obj.minute:.0f}m: defending split"
+                + (f" ({obj.defending_lane})" if obj.defending_lane else "")
+            )
+        elif obj.macro_role == "split_pushing":
+            objective_notes.append(f"{obj.kind} @ {obj.minute:.0f}m: split pushing")
     return {
         "index": detail.index,
         "match_id": detail.match_id,
@@ -53,8 +65,10 @@ def _slim_game(detail: GameDetail) -> dict[str, Any]:
             },
             "objectives": {
                 "present": obj_present,
+                "accounted": obj_accounted,
                 "total": obj_total,
                 "dead_before": obj_dead,
+                "notes": objective_notes,
             },
             "build": {
                 "keystone": detail.build.keystone,

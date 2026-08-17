@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from league_stats.analysis.game_review.behaviors import evaluate_behaviors
-from league_stats.analysis.game_review.compare import compare_to_baseline
+from league_stats.analysis.game_review.compare import compare_key_stats_to_baseline, compare_to_baseline
 from league_stats.analysis.game_review.export import game_review_chatbot_export
 from league_stats.analysis.game_review.score import compute_game_score
 from league_stats.analysis.game_review.views import build_game_review_views
@@ -24,7 +24,10 @@ from league_stats.core.config import (
 from league_stats.core.models import MatchRecord
 from league_stats.pipeline.bundles import filter_records_by_queue
 from league_stats.pipeline.frames import build_analysis_frames
-from league_stats.pipeline.game_review import build_game_review_views as pipeline_build_game_review
+from league_stats.pipeline.game_review import (
+    _lookup_account_icon,
+    build_game_review_views as pipeline_build_game_review,
+)
 from league_stats.pipeline.summaries import build_export_summary, compute_report_stats
 from league_stats.infra.ddragon_assets import DDragonAssets
 from league_stats.pipeline.orchestrator import run_analysis
@@ -135,6 +138,26 @@ def test_game_score_role_native_support_dimensions() -> None:
     ]
 
 
+def test_support_vision_score_uses_wider_bands() -> None:
+    """Support vision numbers are high by default — modest beats should not max out."""
+    baseline = {"vspm": 2.0, "control_wards": 2.5, "duration_min": 30.0}
+    good_game = {"vspm": 2.4, "control_wards": 3.5, "duration_min": 30.0}
+    elite_game = {"vspm": 4.0, "control_wards": 5.0, "duration_min": 30.0}
+    support = compute_game_score(good_game, baseline, role="UTILITY")
+    elite = compute_game_score(elite_game, baseline, role="UTILITY")
+    mid = compute_game_score(
+        {"vspm": 1.4, "control_wards": 2.5, "duration_min": 30.0},
+        {"vspm": 1.0, "control_wards": 1.5, "duration_min": 30.0},
+        role="MIDDLE",
+    )
+    support_vision = _dimension(support, "Vision").score
+    elite_vision = _dimension(elite, "Vision").score
+    mid_vision = _dimension(mid, "Vision").score
+    assert support_vision < 70
+    assert elite_vision >= 90
+    assert mid_vision > support_vision
+
+
 def test_game_score_normalizes_counts_by_duration() -> None:
     """Same deaths/control-ward pace should score alike across short and long games."""
     baseline = {
@@ -217,23 +240,43 @@ def test_game_score_swings_outside_mid_band() -> None:
 
 
 def test_objectives_score_avoids_binary_extremes() -> None:
-    """Modest presence gaps should land mid-range, not snap to 0/100."""
+    """Modest macro gaps should land mid-range, not snap to 0/100."""
     baseline = {
         "objectives_present_rate": 0.60,
+        "objectives_accounted_for_rate": 0.60,
+        "unproductive_absence_rate": 0.15,
         "deaths_before_neutral_objective": 0.5,
     }
     above = compute_game_score(
-        {"objectives_present_rate": 0.80, "deaths_before_neutral_objective": 0},
+        {
+            "objectives_present_rate": 0.80,
+            "objectives_accounted_for_rate": 0.80,
+            "unproductive_absence_rate": 0.05,
+            "deaths_before_neutral_objective": 0,
+            "duration_min": 30,
+        },
         baseline,
         role="MIDDLE",
     )
     below = compute_game_score(
-        {"objectives_present_rate": 0.40, "deaths_before_neutral_objective": 1},
+        {
+            "objectives_present_rate": 0.40,
+            "objectives_accounted_for_rate": 0.40,
+            "unproductive_absence_rate": 0.45,
+            "deaths_before_neutral_objective": 1,
+            "duration_min": 30,
+        },
         baseline,
         role="MIDDLE",
     )
     perfect = compute_game_score(
-        {"objectives_present_rate": 1.0, "deaths_before_neutral_objective": 0},
+        {
+            "objectives_present_rate": 1.0,
+            "objectives_accounted_for_rate": 1.0,
+            "unproductive_absence_rate": 0.0,
+            "deaths_before_neutral_objective": 0,
+            "duration_min": 30,
+        },
         baseline,
         role="MIDDLE",
     )
@@ -327,13 +370,52 @@ def test_compare_gap_color_scales_with_delta_size() -> None:
     baseline = {key: float(value) for key, value in row.items() if isinstance(value, (int, float))}
     baseline["gd10"] = float(row["gd10"]) - 150.0
     big = next(item for item in compare_to_baseline(row, baseline, role="MIDDLE") if item.metric == "gd10")
-    baseline["gd10"] = float(row["gd10"]) - 30.0
+    baseline["gd10"] = float(row["gd10"]) - 80.0
     small = next(item for item in compare_to_baseline(row, baseline, role="MIDDLE") if item.metric == "gd10")
     assert big.verdict == "above"
     assert small.verdict == "above"
     assert big.gap_color == interpolate_metric_color(150 / 300)
-    assert small.gap_color == interpolate_metric_color(30 / 300)
+    assert small.gap_color == interpolate_metric_color(80 / 300)
     assert big.gap_color != small.gap_color
+
+
+def test_top_game_review_includes_split_push_key_stats() -> None:
+    from league_stats.analysis.game_review.hints import (
+        game_review_key_stats_for_role,
+        game_review_tooltips,
+    )
+
+    stats = game_review_key_stats_for_role("TOP")
+    assert "objectives_split_push_rate" in stats
+    tooltips = game_review_tooltips(role="TOP")
+    group_labels = [group["label"] for group in tooltips["key_stats_groups"]]
+    assert "Split push" in group_labels
+
+
+def test_compare_on_par_uses_friendly_gap_labels() -> None:
+    record = _parse_record()
+    row = record.to_row()
+    baseline = {key: float(value) for key, value in row.items() if isinstance(value, (int, float))}
+    baseline["gd10"] = float(row["gd10"])
+    baseline["deaths"] = float(row["deaths"]) + 0.05
+    rows = compare_key_stats_to_baseline(row, baseline, role="MIDDLE")
+    gd10 = next(item for item in rows if item.metric == "gd10")
+    deaths = next(item for item in rows if item.metric == "deaths")
+    assert gd10.verdict == "on_par"
+    assert gd10.gap_label == "same as your avg"
+    assert gd10.verdict_label == "Same"
+    assert deaths.verdict == "on_par"
+    assert deaths.gap_label == "same as your avg"
+    assert deaths.verdict_label == "Same"
+
+    baseline["deaths"] = float(row["deaths"]) + 0.2
+    close = next(
+        item for item in compare_key_stats_to_baseline(row, baseline, role="MIDDLE")
+        if item.metric == "deaths"
+    )
+    assert close.verdict == "above"
+    assert close.gap_label == "close to your avg"
+    assert close.verdict_label == "Close"
 
 
 def test_death_flags_use_readable_labels() -> None:
@@ -379,6 +461,18 @@ def test_game_review_build_includes_full_rune_page() -> None:
     assert detail.build.shards
 
 
+def test_game_review_build_includes_skill_progression() -> None:
+    records = _make_records(1)
+    frames = build_analysis_frames(records)
+    detail = build_game_review_views(_make_config(), records, frames).queues["all"].games[0]
+    build = detail.build
+    assert build.skill_sequence
+    assert len(build.skill_levels_by_level) == 18
+    assert build.skill_max_level >= len(build.skill_sequence)
+    assert build.skill_levels_by_level[0]["Q"] == 1
+    assert build.skill_levels_by_level[-1]["Q"] >= 1
+
+
 def test_game_review_deaths_include_gold_given() -> None:
     records = _make_records(1)
     frames = build_analysis_frames(records)
@@ -414,6 +508,35 @@ def test_game_review_includes_account_name() -> None:
     frames = build_analysis_frames(records)
     detail = build_game_review_views(_make_config(), records, frames).queues["all"].games[0]
     assert detail.account == "Test#EUW"
+
+
+def test_lookup_account_icon_is_case_insensitive() -> None:
+    icons = {"Player#EUW": "../assets/profile_icons/1.png", "player#euw": "../assets/profile_icons/1.png"}
+    assert _lookup_account_icon("player#EUW", icons) == "../assets/profile_icons/1.png"
+    assert _lookup_account_icon("Player#euw", icons) == "../assets/profile_icons/1.png"
+
+
+def test_pipeline_enriches_account_icon_with_case_mismatch(tmp_path: Path) -> None:
+    config = _make_config(output_dir=tmp_path / "output", cache_dir=tmp_path / ".cache")
+    records = [
+        record.model_copy(update={"account": "test#euw"})
+        for record in _make_records(1)
+    ]
+    frames = build_analysis_frames(records)
+    assets = DDragonAssets(config)
+    assets._profile_icons_dir.mkdir(parents=True)
+    (assets._profile_icons_dir / "42.png").write_bytes(b"png")
+    report_dir = config.report_dir
+    report_dir.mkdir(parents=True)
+    payload = pipeline_build_game_review(
+        config,
+        records,
+        frames,
+        assets=assets,
+        from_dir=report_dir,
+        account_icons={"Test#EUW": "../../assets/profile_icons/42.png", "test#euw": "../../assets/profile_icons/42.png"},
+    )
+    assert payload.queues["all"].games[0].account_icon is not None
 
 
 def test_build_game_review_views_serializes() -> None:
@@ -494,6 +617,9 @@ def test_pipeline_enriches_game_review_icons(tmp_path: Path) -> None:
     }
     assets._map_dir.mkdir(parents=True)
     (assets._map_dir / "summoners_rift.png").write_bytes(b"png-map")
+    assets._abilities_dir.mkdir(parents=True)
+    for slot in ("Q", "W", "E", "R"):
+        (assets._abilities_dir / f"Viktor_{slot}.png").write_bytes(b"png")
 
     report_dir = config.report_dir
     report_dir.mkdir(parents=True)
@@ -512,6 +638,8 @@ def test_pipeline_enriches_game_review_icons(tmp_path: Path) -> None:
     assert game.build.secondary_tree_icon is not None
     assert any(icon is not None for icon in game.build.summoner_icons)
     assert any(icon is not None for icon in game.build.item_icons)
+    assert game.build.ability_icons.get("Q") is not None
+    assert len(game.build.skill_levels_by_level) == 18
     assert isinstance(game.key_moments, list)
     if game.key_moments:
         participant = game.key_moments[0].frames[0].participants[0]
@@ -534,6 +662,8 @@ def test_report_has_game_review_category_tab(tmp_path: Path) -> None:
     assert 'id="game-review-panel-key-moments"' in html
     assert 'Mistakes' not in html
     assert 'game-review-layout' in html
+    assert 'game-review-skill-grid' in html
+    assert 'Skill progression' in html
     assert 'Last 10 games' in html
     assert 'GAME_REVIEW_VISIBLE_N' in html
     assert 'report-tab--games' in html

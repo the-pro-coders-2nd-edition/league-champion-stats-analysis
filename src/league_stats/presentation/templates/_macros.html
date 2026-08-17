@@ -18,9 +18,10 @@
 {%- endmacro %}
 
 {% macro build_card(build) -%}
-<a class="build-card{% if build.selected %} is-default{% endif %}" href="{{ build.href }}">
+{%- set card_title = build.champion ~ (' · ' ~ build.role_display if build.role_display else '') ~ ' · ' ~ build.games ~ ' games · ' ~ ('%.0f' % (build.winrate * 100)) ~ '%' -%}
+<a class="build-card{% if build.selected %} is-default{% endif %}" href="{{ build.href }}" title="{{ card_title }}">
   {%- if build.champion_icon -%}
-  <img src="{{ build.champion_icon }}" alt="" class="game-icon">
+  <img src="{{ build.champion_icon }}" alt="{{ build.champion }}" class="game-icon">
   {%- endif -%}
   <div class="build-card-body">
     <strong>{{ build_heading(build.champion, build.role_icon, build.role_display) }}</strong>
@@ -78,12 +79,53 @@
 {%- endif -%}
 {%- endmacro %}
 
+{% macro ui_chip(label, tone=none, title=none, class=none, id=none) -%}
+<span class="ui-chip{% if tone %} ui-chip--{{ tone }}{% endif %}{% if class %} {{ class }}{% endif %}"{% if id %} id="{{ id }}"{% endif %}{% if title %} title="{{ title }}"{% endif %}>{{ label }}</span>
+{%- endmacro %}
+
+{% macro ui_chip_row(chips, class=none) -%}
+<div class="ui-chip-row{% if class %} {{ class }}{% endif %}">
+  {%- for chip in chips -%}
+  {{ ui_chip(chip.label, chip.tone, chip.title, chip.class) }}
+  {%- endfor -%}
+</div>
+{%- endmacro %}
+
+{% macro score_card(name, score, verdict=none, tone='solid', value=none, hint=none, class=none) -%}
+{%- set card_tone = tone or 'solid' -%}
+{%- set card_verdict = verdict or 'Solid' -%}
+{%- set card_score = '%.0f' % score if score is not none else '0' -%}
+<div class="comp comp--{{ card_tone }}{% if class %} {{ class }}{% endif %}"{% if hint %} title="{{ hint }}"{% endif %}>
+  <span class="comp-verdict">{{ card_verdict }}</span>
+  <div class="comp-head">
+    <span class="comp-name">{{ name }}</span>
+    <span class="comp-score">{{ card_score }}</span>
+  </div>
+  {%- if value %}
+  <div class="comp-value">{{ value }}</div>
+  {%- endif %}
+  <div class="bar" aria-hidden="true"><i style="width: {{ card_score }}%"></i></div>
+</div>
+{%- endmacro %}
+
+{% macro score_card_row(section_id=none, name='', score=none, verdict=none, tone='solid', value=none, hint=none, fix=none, hidden=false) -%}
+<div class="score-card-row{% if fix and fix.title %} score-card-row--with-fix{% endif %}"{% if section_id %} data-section-verdict="{{ section_id }}"{% endif %}{% if hidden %} hidden{% endif %}>
+  {{ score_card(name, score, verdict, tone, value, hint) }}
+  {%- if fix and fix.title %}
+  <a class="score-card-fix" href="#{{ fix.anchor or 'coaching' }}">
+    <span class="score-card-fix-kicker">Try this</span>
+    <span class="score-card-fix-title">{{ fix.title }}</span>
+  </a>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
 {% macro section_title(label, icon=none, tone='accent', iconify_id=none, icon_href=none, category=none, scope=none, scope_kind=none) -%}
 <h2 class="section-title{% if category %} section-title--{{ category }}{% endif %}">
   {{ metric_icon(icon, tone, iconify_id, icon_href) }}
   <span>{{ label }}</span>
   {%- if scope %}
-  <span class="scope-chip{% if scope_kind %} scope-chip--{{ scope_kind }}{% endif %}">{{ scope }}</span>
+  {{ ui_chip(scope, class='ui-chip--scope' ~ (' ui-chip--' ~ scope_kind if scope_kind else '')) }}
   {%- endif %}
 </h2>
 {%- endmacro %}
@@ -177,31 +219,17 @@
 
 {% macro section_pulse(section_id, verdict=none) -%}
 {% set v = verdict or {} %}
-<div class="section-pulse{% if v.tone %} section-pulse--{{ v.tone }}{% endif %}" data-section-verdict="{{ section_id }}"{% if not v.text %} hidden{% endif %}>
-  <div class="section-pulse-callout">
-    <span class="section-pulse-label">{{ v.label or 'Score' }}</span>
-    <div class="section-pulse-head">
-      <strong class="section-pulse-title">{{ v.text or '' }}</strong>
-      {% if v.score is defined and v.score is not none %}
-      <span class="section-pulse-score">{{ v.score }}</span>
-      {% endif %}
-    </div>
-    {% if v.score is defined and v.score is not none %}
-    <div class="section-pulse-bar" aria-hidden="true"><i style="width: {{ v.score }}%"></i></div>
-    {% endif %}
-    {% if v.hint %}
-    <p class="section-pulse-hint">{{ v.hint }}</p>
-    {% elif v.value %}
-    <p class="section-pulse-hint">{{ v.value }}</p>
-    {% endif %}
-  </div>
-  {% if v.fix and v.fix.title %}
-  <a class="section-pulse-fix" href="#{{ v.fix.anchor or 'coaching' }}">
-    <span class="section-pulse-fix-kicker">Try this</span>
-    <span class="section-pulse-fix-title">{{ v.fix.title }}</span>
-  </a>
-  {% endif %}
-</div>
+{{ score_card_row(
+  section_id,
+  v.name or '',
+  v.score if v.score is defined and v.score is not none else none,
+  v.label,
+  v.tone or 'solid',
+  v.hint or v.value or v.text or '',
+  v.hint,
+  v.fix if v.fix is defined else none,
+  hidden=(not v.name and not v.text)
+) }}
 {%- endmacro %}
 
 {% macro app_brand(title, logo_href=none, variant='page', home_href='/') -%}

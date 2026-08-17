@@ -281,6 +281,9 @@ class CoachEngine:
             self._rule_side_lane_deaths,
             self._rule_deaths_before_objectives,
             self._rule_objective_presence,
+            self._rule_objective_grouping_wins,
+            self._rule_sidelane_trade_wins,
+            self._rule_defend_split_wins,
             self._rule_solo_deaths,
             self._rule_outnumbered_deaths,
             self._rule_greed_deaths,
@@ -665,6 +668,90 @@ class CoachEngine:
             effect_size=round(0.6 - presence, 3),
             priority=_priority(0.6 - presence, None, len(self._objectives)),
             sample_size=len(self._objectives),
+        )
+
+    def _rule_objective_grouping_wins(self) -> Recommendation | None:
+        if "objectives_present_rate" not in self._matches.columns:
+            return None
+        split = self._stats.winrate_split_test("objectives_present_rate", 0.65)
+        if split is None or split["n_high"] < 3:
+            return None
+        delta = split["winrate_high"] - split["winrate_low"]
+        if delta < MIN_WINRATE_DELTA:
+            return None
+        return Recommendation(
+            category="Objectives",
+            title="Grouping at objectives correlates with your wins",
+            detail=(
+                f"When you attend {split['threshold']:.0%}+ of epic objectives you win "
+                f"{split['winrate_high']:.0%} versus {split['winrate_low']:.0%} otherwise."
+            ),
+            evidence=(
+                f"WR {split['winrate_high']:.0%} ({split['n_high']} high-presence games) vs "
+                f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
+            ),
+            action="Group for epic objectives when your history says it wins games",
+            tone=RecommendationTone.POSITIVE,
+            p_value=split["p_value"],
+            effect_size=round(delta, 3),
+            priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
+            sample_size=split["n_high"] + split["n_low"],
+        )
+
+    def _rule_sidelane_trade_wins(self) -> Recommendation | None:
+        if "objective_trade_success_rate" not in self._matches.columns:
+            return None
+        split = self._stats.winrate_split_test("objective_trade_success_rate", 0.5)
+        if split is None or split["n_high"] < 3:
+            return None
+        delta = split["winrate_high"] - split["winrate_low"]
+        if delta < MIN_WINRATE_DELTA:
+            return None
+        return Recommendation(
+            category="Objectives",
+            title="Sidelane trades correlate with your wins",
+            detail=(
+                "When you turn objective timers into cross-map structure trades "
+                f"you win {split['winrate_high']:.0%} versus {split['winrate_low']:.0%} otherwise."
+            ),
+            evidence=(
+                f"WR {split['winrate_high']:.0%} ({split['n_high']} high-trade games) vs "
+                f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
+            ),
+            action="Keep applying real sidelane pressure when objectives spawn",
+            tone=RecommendationTone.POSITIVE,
+            p_value=split["p_value"],
+            effect_size=round(delta, 3),
+            priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
+            sample_size=split["n_high"] + split["n_low"],
+        )
+
+    def _rule_defend_split_wins(self) -> Recommendation | None:
+        if "objectives_defend_split_rate" not in self._matches.columns:
+            return None
+        split = self._stats.winrate_split_test("objectives_defend_split_rate", 0.2)
+        if split is None or split["n_high"] < 3:
+            return None
+        delta = split["winrate_high"] - split["winrate_low"]
+        if delta < MIN_WINRATE_DELTA:
+            return None
+        return Recommendation(
+            category="Objectives",
+            title="Holding tower during objectives correlates with your wins",
+            detail=(
+                f"When you defend a split during objective contests you win "
+                f"{split['winrate_high']:.0%} versus {split['winrate_low']:.0%} otherwise."
+            ),
+            evidence=(
+                f"WR {split['winrate_high']:.0%} ({split['n_high']} defend games) vs "
+                f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
+            ),
+            action="Stay under tower when the enemy splits during objective timers",
+            tone=RecommendationTone.POSITIVE,
+            p_value=split["p_value"],
+            effect_size=round(delta, 3),
+            priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
+            sample_size=split["n_high"] + split["n_low"],
         )
 
     def _rule_solo_deaths(self) -> Recommendation | None:

@@ -10,6 +10,7 @@ cooldowns) are typed ``Optional`` and documented as heuristics or unknowns.
 
 from __future__ import annotations
 
+import math
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -249,6 +250,38 @@ class ObjectiveRecord(BaseModel):
     control_wards_before: int = 0
     secured_count: int | None = None
     objective_total: int | None = None
+    macro_role: str = "absent"
+    justified_absence: bool = False
+    absence_reason: str | None = None
+    sidelane_pressure: bool = False
+    defending_lane: str | None = None
+    nearby_enemy_count: int | None = None
+    manpower_at_pit: str | None = None
+    pit_ally_champions: list[str] = Field(default_factory=list)
+    pit_enemy_champions: list[str] = Field(default_factory=list)
+    tp_available: bool | None = None
+    trade_outcome: str | None = None
+    trade_gain: list[str] = Field(default_factory=list)
+    trade_loss: list[str] = Field(default_factory=list)
+    trade_value_delta: float | None = None
+    trade_summary: str | None = None
+
+
+class BuildingRecord(BaseModel):
+    """One structure kill with player context."""
+
+    minute: float
+    timestamp_ms: int
+    building_type: Literal["tower", "inhibitor", "nexus"]
+    lane: Literal["top", "mid", "bot", "unknown"]
+    tier: Literal["outer", "inner", "inhib", "nexus"]
+    taken_by_team: bool
+    destroyed_team_id: int
+    position: Position
+    player_present: bool = False
+    player_killer: bool = False
+    split_push_context: bool = False
+    structure_id: str = ""
 
 
 class CombatStats(BaseModel):
@@ -275,6 +308,8 @@ class CombatStats(BaseModel):
     quadra_kills: int
     penta_kills: int
     kill_participation: float
+    damage_to_turrets: int = 0
+    damage_to_objectives: int = 0
 
 
 class EconomyStats(BaseModel):
@@ -325,6 +360,7 @@ class MatchRecord(BaseModel):
     summoners: list[str] = Field(default_factory=list)
     skill_order: str = ""
     skill_sequence: list[str] = Field(default_factory=list)
+    champ_level: int = 0
 
     final_items: list[str] = Field(default_factory=list)
     item_path: list[str] = Field(default_factory=list)
@@ -337,6 +373,7 @@ class MatchRecord(BaseModel):
     deaths: list[DeathEvent] = Field(default_factory=list)
     teamfights: list[TeamfightRecord] = Field(default_factory=list)
     objectives: list[ObjectiveRecord] = Field(default_factory=list)
+    buildings: list[BuildingRecord] = Field(default_factory=list)
     key_moments: list[KeyMoment] = Field(default_factory=list)
 
     @property
@@ -510,6 +547,16 @@ class MatchRecord(BaseModel):
                 if self.objectives
                 else None
             ),
+            "structure_tower_damage": self.combat.damage_to_turrets,
+            "structure_objective_damage": self.combat.damage_to_objectives,
+            "towers_taken": sum(
+                1
+                for b in self.buildings
+                if b.taken_by_team
+                and b.building_type == "tower"
+                and (b.player_killer or b.player_present)
+            ),
+            **self._objective_macro_rates(),
             "hpm": round(self.combat.healing / max(1.0, self.duration_min), 1),
             "spm": round(self.combat.shielding / max(1.0, self.duration_min), 1),
         }
@@ -522,6 +569,19 @@ class MatchRecord(BaseModel):
             row[f"cs{minute}"] = snap.cs.get(minute)
             row[f"csd{minute}"] = snap.cs_diff.get(minute)
         return row
+
+    def _objective_macro_rates(self) -> dict[str, float | None]:
+        from league_stats.analysis.objective_macro import objective_aggregate_rates
+
+        rates = objective_aggregate_rates(self.objectives)
+        split = rates.get("objectives_split_push_rate")
+        defend = rates.get("objectives_defend_split_rate")
+        if split is not None and defend is not None:
+            diff = round(float(split) - float(defend), 3)
+            rates["split_push_balance"] = diff if math.isfinite(diff) else None
+        else:
+            rates["split_push_balance"] = None
+        return rates
 
 
 class RecommendationTone(StrEnum):
@@ -754,6 +814,8 @@ class GameComparisonRow(BaseModel):
     delta: float
     verdict: str
     gap_color: str = ""
+    gap_label: str = ""
+    verdict_label: str = ""
 
 
 class GameDeathRow(BaseModel):
@@ -797,6 +859,25 @@ class GameObjectiveRow(BaseModel):
     objective_icon: str | None = None
     secured_count: int | None = None
     objective_total: int | None = None
+    macro_role: str | None = None
+    justified_absence: bool = False
+    absence_reason: str | None = None
+    sidelane_pressure: bool = False
+    defending_lane: str | None = None
+    nearby_enemy_count: int | None = None
+    manpower_at_pit: str | None = None
+    pit_ally_champions: list[str] = Field(default_factory=list)
+    pit_enemy_champions: list[str] = Field(default_factory=list)
+    pit_ally_icons: list[str | None] = Field(default_factory=list)
+    pit_enemy_icons: list[str | None] = Field(default_factory=list)
+    tp_available: bool | None = None
+    trade_outcome: str | None = None
+    trade_summary: str | None = None
+    trade_value_delta: float | None = None
+    trade_gain: list[str] = Field(default_factory=list)
+    trade_loss: list[str] = Field(default_factory=list)
+    trade_gain_labels: list[str] = Field(default_factory=list)
+    trade_loss_labels: list[str] = Field(default_factory=list)
 
 
 class GameBuildInfo(BaseModel):
@@ -810,6 +891,9 @@ class GameBuildInfo(BaseModel):
     shards: list[str] = Field(default_factory=list)
     summoners: list[str] = Field(default_factory=list)
     skill_order: str = ""
+    skill_sequence: list[str] = Field(default_factory=list)
+    skill_levels_by_level: list[dict[str, int]] = Field(default_factory=list)
+    skill_max_level: int = 0
     items: list[str] = Field(default_factory=list)
     keystone_icon: str | None = None
     primary_tree_icon: str | None = None
@@ -818,6 +902,7 @@ class GameBuildInfo(BaseModel):
     secondary_rune_icons: list[str | None] = Field(default_factory=list)
     shard_icons: list[str | None] = Field(default_factory=list)
     summoner_icons: list[str | None] = Field(default_factory=list)
+    ability_icons: dict[str, str | None] = Field(default_factory=dict)
     item_icons: list[str | None] = Field(default_factory=list)
 
 
@@ -883,6 +968,7 @@ class GameDetail(BaseModel):
     kda: str
     archetype: str
     account: str | None = None
+    account_icon: str | None = None
     champion_icon: str | None = None
     opponent_icon: str | None = None
     score: GameScoreBreakdown
@@ -899,6 +985,7 @@ class GameDetail(BaseModel):
     timeline_figure: str = ""
     key_moments: list[KeyMoment] = Field(default_factory=list)
     map_background: str | None = None
+    structure_pressure: list[dict[str, float | int]] = Field(default_factory=list)
     ai_recap: str | None = None
 
 

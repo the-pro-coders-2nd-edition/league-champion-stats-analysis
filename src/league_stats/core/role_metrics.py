@@ -23,6 +23,9 @@ ALL_COACH_RULES: Final[frozenset[str]] = frozenset(
         "_rule_side_lane_deaths",
         "_rule_deaths_before_objectives",
         "_rule_objective_presence",
+        "_rule_objective_grouping_wins",
+        "_rule_sidelane_trade_wins",
+        "_rule_defend_split_wins",
         "_rule_solo_deaths",
         "_rule_outnumbered_deaths",
         "_rule_greed_deaths",
@@ -126,6 +129,7 @@ class RoleMetricProfile:
     deaths: tuple[MetricSpec, ...]
     teamfights: tuple[MetricSpec, ...]
     score_components: tuple[ScoreSpec, ...]
+    objectives: tuple[MetricSpec, ...]
     peer_metrics: tuple[tuple[str, str, MetricDirection], ...]
     coach_rule_ids: frozenset[str]
     ml_features: tuple[str, ...]
@@ -292,6 +296,92 @@ _LANER_PEER: tuple[tuple[str, str, MetricDirection], ...] = (
     ("damage_share", "Damage share", "higher"),
     ("deaths_pre14", "Deaths pre-14", "lower"),
 )
+
+_TOP_PEER: tuple[tuple[str, str, MetricDirection], ...] = _LANER_PEER + (
+    ("objectives_split_push_rate", "Split push rate", "higher"),
+    ("structure_tower_damage", "Tower damage/game", "higher"),
+)
+
+
+def _top_overview() -> tuple[MetricSpec, ...]:
+    return (
+        MetricSpec("Win rate", "overview", "winrate_pct"),
+        MetricSpec("KDA", "overview", "avg_kda"),
+        MetricSpec("DPM", "overview", "avg_dpm"),
+        MetricSpec("Split push", "split_push", "avg_objectives_split_push_rate", pct=True),
+        MetricSpec("Tower damage", "split_push", "avg_structure_tower_damage"),
+        MetricSpec("Deaths/game", "overview", "avg_deaths"),
+        MetricSpec("Vision/min", "overview", "avg_vspm"),
+        MetricSpec("Game length", "overview", "avg_duration", suffix=" min"),
+    )
+
+
+def _top_objectives() -> tuple[MetricSpec, ...]:
+    return (
+        MetricSpec("At objective", "split_push", "avg_objectives_present_rate", pct=True),
+        MetricSpec("Split pushing", "split_push", "avg_objectives_split_push_rate", pct=True),
+        MetricSpec("Defending split", "split_push", "avg_objectives_defend_split_rate", pct=True),
+        MetricSpec("Unproductive absence", "split_push", "avg_unproductive_absence_rate", pct=True),
+        MetricSpec("Split balance", "split_push", "avg_split_push_balance", pct=True),
+        MetricSpec("Towers taken", "split_push", "avg_towers_taken"),
+        MetricSpec("Tower damage", "split_push", "avg_structure_tower_damage"),
+    )
+
+
+def _top_score() -> tuple[ScoreSpec, ...]:
+    return (
+        ScoreSpec(
+            "Laning",
+            "Gold/CS diff @10 and early-lane deaths",
+            (
+                ScoreMetricSpec("gd10", 1.0),
+                ScoreMetricSpec("csd10", 0.75),
+                ScoreMetricSpec("deaths_pre14", 0.75, "lower"),
+            ),
+        ),
+        ScoreSpec(
+            "Economy",
+            "CS @10, gold share, gold usage before recalls, and first-item timing",
+            (
+                ScoreMetricSpec("cs10", 1.0),
+                ScoreMetricSpec("gold_share", 0.85),
+                ScoreMetricSpec("avg_unspent_gold", 0.85, "lower"),
+                ScoreMetricSpec("first_item_min", 0.85, "lower"),
+            ),
+        ),
+        ScoreSpec(
+            "Fight",
+            "Damage/CC share, kill participation, and fight presence/win rate",
+            (
+                ScoreMetricSpec("damage_share", 1.15),
+                ScoreMetricSpec("kill_participation", 1.0),
+                ScoreMetricSpec("tf_participation", 0.55),
+                ScoreMetricSpec("tf_won_share", 0.55),
+            ),
+        ),
+        ScoreSpec(
+            "Survival",
+            "Fewer deaths score higher",
+            (ScoreMetricSpec("deaths", 1.0, "lower"),),
+        ),
+        ScoreSpec(
+            "Vision",
+            "Vision score per minute and control-ward buys",
+            (
+                ScoreMetricSpec("vspm", 1.0),
+                ScoreMetricSpec("control_wards", 0.7),
+            ),
+        ),
+        ScoreSpec(
+            "Objectives",
+            "Macro at epics: accounted presence, split pressure, and tower damage",
+            (
+                ScoreMetricSpec("objectives_accounted_for_rate", 0.55),
+                ScoreMetricSpec("objectives_split_push_rate", 0.25),
+                ScoreMetricSpec("structure_tower_damage", 0.20),
+            ),
+        ),
+    )
 
 _LANER_ML: tuple[str, ...] = (
     "deaths_pre20", "deaths_pre14", "control_wards", "first_item_min", "cs10", "gd10", "gd15",
@@ -587,15 +677,16 @@ _PROFILES: dict[str, RoleMetricProfile] = {
     "TOP": RoleMetricProfile(
         role="TOP",
         early_section_title="Laning",
-        overview=_laner_overview(),
+        overview=_top_overview(),
         early_game=_laner_early(),
         early_headlines=("Gold diff @10", "CS diff @10", "Lane win rate"),
         economy=_laner_economy(),
         vision=_standard_vision(),
         deaths=_laner_deaths(),
         teamfights=_standard_teamfights(),
-        score_components=_laner_score(),
-        peer_metrics=_LANER_PEER,
+        score_components=_top_score(),
+        objectives=_top_objectives(),
+        peer_metrics=_TOP_PEER,
         coach_rule_ids=LANER_COACH_RULES,
         ml_features=_LANER_ML,
         early_ml_features=_LANER_EARLY_ML,
@@ -611,6 +702,7 @@ _PROFILES: dict[str, RoleMetricProfile] = {
         deaths=_laner_deaths(),
         teamfights=_standard_teamfights(),
         score_components=_laner_score(),
+        objectives=(),
         peer_metrics=_LANER_PEER,
         coach_rule_ids=LANER_COACH_RULES,
         ml_features=_LANER_ML,
@@ -627,6 +719,7 @@ _PROFILES: dict[str, RoleMetricProfile] = {
         deaths=_laner_deaths(),
         teamfights=_standard_teamfights(),
         score_components=_laner_score(),
+        objectives=(),
         peer_metrics=_LANER_PEER,
         coach_rule_ids=LANER_COACH_RULES,
         ml_features=_LANER_ML,
@@ -643,6 +736,7 @@ _PROFILES: dict[str, RoleMetricProfile] = {
         deaths=_jungle_deaths(),
         teamfights=_jungle_teamfights(),
         score_components=_jungle_score(),
+        objectives=(),
         peer_metrics=_JUNGLE_PEER,
         coach_rule_ids=JUNGLE_COACH_RULES,
         ml_features=_JUNGLE_ML,
@@ -662,6 +756,7 @@ _PROFILES: dict[str, RoleMetricProfile] = {
         deaths=_utility_deaths(),
         teamfights=_utility_teamfights(),
         score_components=_utility_score(),
+        objectives=(),
         peer_metrics=_UTILITY_PEER,
         coach_rule_ids=UTILITY_COACH_RULES,
         ml_features=_UTILITY_ML,
@@ -731,6 +826,7 @@ def card_tier_headlines(
         "vision": [spec.label for spec in profile.vision[:3]],
         "deaths": [spec.label for spec in profile.deaths[:3]],
         "teamfight": [spec.label for spec in profile.teamfights[:3]],
+        "objectives": [spec.label for spec in profile.objectives[:4]],
     }
     return mapping.get(section, [])
 
@@ -745,4 +841,6 @@ def resolve_metric_value(spec: MetricSpec, summaries: dict[str, Any]) -> Any:
         return bucket.get(spec.key)
     if spec.section == "overview":
         return summaries.get("overview", {}).get(spec.key)
+    if spec.section == "split_push":
+        return summaries.get("split_push", {}).get(spec.key)
     return None

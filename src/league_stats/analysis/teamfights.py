@@ -16,7 +16,6 @@ from league_stats.analysis.timeline import (
     TimelineContext,
     avg_teammate_distance_at_ms,
     current_gold_at_ms,
-    headcount_near,
 )
 from league_stats.core.models import MatchRecord, Position, TeamfightRecord
 from league_stats.utils import distance, ms_to_min, push_progress
@@ -204,14 +203,10 @@ def detect_teamfights(ctx: TimelineContext) -> list[TeamfightRecord]:
                     sum(ally_progress) / len(ally_progress)
                 )
 
-        fight_pos = my_pos or centroid
-        # Manpower still uses proximity at fight start (who was nearby).
-        allies_near, enemies_near = headcount_near(ctx, fight_pos, start_ts)
-        allies_present = allies_near + 1
-        enemies_present = enemies_near
-        manpower_advantage = allies_present - enemies_present
-        # Icons use kill-feed combatants (killer/victim/assists/damage) — definitive.
         ally_champions, enemy_champions = _champions_from_pids(ctx, combatant_pids)
+        allies_present = len(ally_champions)
+        enemies_present = len(enemy_champions)
+        manpower_advantage = allies_present - enemies_present
         unspent_gold = current_gold_at_ms(ctx, start_ts)
         teammate_distance = avg_teammate_distance_at_ms(ctx, start_ts)
 

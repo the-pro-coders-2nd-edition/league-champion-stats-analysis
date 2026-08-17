@@ -20,9 +20,13 @@ from league_stats.presentation.metric_colors import normalize_count_for_duration
 # Soft objectives scoring — sparse per-game epic samples need a wide band.
 _OBJ_PRESENCE_SPAN = 0.40
 _OBJ_PRESENCE_FALLBACK_MID = 0.55
+_OBJ_ACCOUNTED_SPAN = 0.40
+_OBJ_ACCOUNTED_FALLBACK_MID = 0.55
+_OBJ_UNPRODUCTIVE_SPAN = 0.35
 _OBJ_DEAD_BEFORE_SPAN = 1.5
 _OBJ_DEAD_BEFORE_FALLBACK_MID = 0.5
-_OBJ_PRESENCE_WEIGHT = 0.75
+_OBJ_ACCOUNTED_WEIGHT = 0.60
+_OBJ_UNPRODUCTIVE_WEIGHT = 0.15
 _OBJ_DEAD_BEFORE_WEIGHT = 0.25
 _REFERENCE_GAME_MIN = 30.0
 
@@ -45,6 +49,8 @@ _GAME_REVIEW_SPANS: dict[str, float] = {
     "tf_won_share": 0.12,
     "lane_priority": 0.10,
     "objectives_present_rate": 0.10,
+    "objectives_accounted_for_rate": 0.10,
+    "unproductive_absence_rate": 0.10,
     "vspm": 0.8,
     "control_wards": 1.25,
     "roams_pre15": 1.25,
@@ -53,6 +59,13 @@ _GAME_REVIEW_SPANS: dict[str, float] = {
     "hpm": 80.0,
     "spm": 80.0,
     "kp15": 0.10,
+}
+
+# Supports post much higher vision numbers; widen bands so routine ward output
+# does not inflate Vision. ~4.0 VS/min is world-class — reserve top scores for that tier.
+_UTILITY_GAME_REVIEW_SPANS: dict[str, float] = {
+    "vspm": 2.0,
+    "control_wards": 2.5,
 }
 
 _RATE_METRICS = frozenset(
@@ -125,7 +138,9 @@ def _metric_label(column: str) -> str:
     return feature_label(column)
 
 
-def _span_for(column: str) -> float | None:
+def _span_for(column: str, *, role: str) -> float | None:
+    if role == "UTILITY" and column in _UTILITY_GAME_REVIEW_SPANS:
+        return _UTILITY_GAME_REVIEW_SPANS[column]
     if column in _GAME_REVIEW_SPANS:
         return _GAME_REVIEW_SPANS[column]
     if column in _RATE_METRICS or column.endswith("_rate"):
@@ -160,39 +175,71 @@ def _comparable_values(
     )
 
 
+def _objective_accounted_span(baseline_means: dict[str, float]) -> float:
+    """Widen accounted-for band for players who historically sidelane more."""
+    side_lane = float(baseline_means.get("side_lane_share", 0.0))
+    solo = float(baseline_means.get("solo_share", 0.0))
+    bonus = min(0.15, max(0.0, (side_lane - 0.25) * 0.4 + (solo - 0.25) * 0.3))
+    return _OBJ_ACCOUNTED_SPAN + bonus
+
+
 def _score_objectives_dimension(
     game_row: dict[str, Any],
     baseline_means: dict[str, float],
     *,
     hint: str,
 ) -> GameScoreDimension:
-    """Softer objectives score for sparse per-game epic-monster samples."""
-    rate = game_row.get("objectives_present_rate")
-    if rate is None:
+    """Objectives score using accounted macro and unproductive absence."""
+    accounted = game_row.get("objectives_accounted_for_rate")
+    if accounted is None:
+        accounted = game_row.get("objectives_present_rate")
+    if accounted is None:
         return GameScoreDimension(name="Objectives", score=50, hint=hint, ingredients=[])
 
-    mid = float(baseline_means.get("objectives_present_rate", _OBJ_PRESENCE_FALLBACK_MID))
-    presence = _clamp_unit((float(rate) - mid) / _OBJ_PRESENCE_SPAN)
+    accounted_mid = float(
+        baseline_means.get(
+            "objectives_accounted_for_rate",
+            baseline_means.get("objectives_present_rate", _OBJ_ACCOUNTED_FALLBACK_MID),
+        )
+    )
+    accounted_span = _objective_accounted_span(baseline_means)
+    accounted_score = _clamp_unit((float(accounted) - accounted_mid) / accounted_span)
 
+    unproductive = game_row.get("unproductive_absence_rate")
     dead = game_row.get("deaths_before_neutral_objective")
+    ingredients: list[GameScoreIngredient] = [
+        GameScoreIngredient(
+            column="objectives_accounted_for_rate",
+            label="Accounted macro",
+            score=_to_percent_score(accounted_score),
+            game_value=float(accounted),
+            baseline_value=accounted_mid,
+            weight=_OBJ_ACCOUNTED_WEIGHT,
+            direction="higher",
+        )
+    ]
+
+    unprod_score = 0.0
+    if unproductive is not None:
+        unprod_mid = float(baseline_means.get("unproductive_absence_rate", 0.15))
+        unprod_score = _clamp_unit((unprod_mid - float(unproductive)) / _OBJ_UNPRODUCTIVE_SPAN)
+        ingredients.append(
+            GameScoreIngredient(
+                column="unproductive_absence_rate",
+                label="Unproductive absence",
+                score=_to_percent_score(unprod_score),
+                game_value=float(unproductive),
+                baseline_value=unprod_mid,
+                weight=_OBJ_UNPRODUCTIVE_WEIGHT,
+                direction="lower",
+            )
+        )
+
+    survival = 0.0
     dead_mid = float(
         baseline_means.get("deaths_before_neutral_objective", _OBJ_DEAD_BEFORE_FALLBACK_MID)
     )
-    if dead is None:
-        blended = presence
-        ingredients = [
-            GameScoreIngredient(
-                column="objectives_present_rate",
-                label=_metric_label("objectives_present_rate"),
-                score=_to_percent_score(presence),
-                game_value=float(rate),
-                baseline_value=mid,
-                weight=_OBJ_PRESENCE_WEIGHT,
-                direction="higher",
-            )
-        ]
-    else:
-        # Lower deaths-before-objective is better; normalize counts by game length.
+    if dead is not None:
         game_dead, base_dead = _comparable_values(
             "deaths_before_neutral_objective",
             float(dead),
@@ -201,17 +248,7 @@ def _score_objectives_dimension(
             baseline_means=baseline_means,
         )
         survival = _clamp_unit((base_dead - game_dead) / _OBJ_DEAD_BEFORE_SPAN)
-        blended = _OBJ_PRESENCE_WEIGHT * presence + _OBJ_DEAD_BEFORE_WEIGHT * survival
-        ingredients = [
-            GameScoreIngredient(
-                column="objectives_present_rate",
-                label=_metric_label("objectives_present_rate"),
-                score=_to_percent_score(presence),
-                game_value=float(rate),
-                baseline_value=mid,
-                weight=_OBJ_PRESENCE_WEIGHT,
-                direction="higher",
-            ),
+        ingredients.append(
             GameScoreIngredient(
                 column="deaths_before_neutral_objective",
                 label="Deaths before objective",
@@ -220,8 +257,24 @@ def _score_objectives_dimension(
                 baseline_value=dead_mid,
                 weight=_OBJ_DEAD_BEFORE_WEIGHT,
                 direction="lower",
-            ),
-        ]
+            )
+        )
+
+    if dead is not None and unproductive is not None:
+        blended = (
+            _OBJ_ACCOUNTED_WEIGHT * accounted_score
+            + _OBJ_UNPRODUCTIVE_WEIGHT * unprod_score
+            + _OBJ_DEAD_BEFORE_WEIGHT * survival
+        )
+    elif dead is not None:
+        blended = 0.75 * accounted_score + 0.25 * survival
+    elif unproductive is not None:
+        blended = (
+            _OBJ_ACCOUNTED_WEIGHT * accounted_score
+            + _OBJ_UNPRODUCTIVE_WEIGHT * unprod_score
+        ) / (_OBJ_ACCOUNTED_WEIGHT + _OBJ_UNPRODUCTIVE_WEIGHT)
+    else:
+        blended = accounted_score
 
     return GameScoreDimension(
         name="Objectives",
@@ -261,13 +314,14 @@ def _component_score(
     game_row: dict[str, Any],
     baseline_means: dict[str, float],
     direction: str,
+    role: str,
 ) -> int | None:
     if game_value is None:
         return None
     if baseline is None:
         return 50
 
-    span = _span_for(column)
+    span = _span_for(column, role=role)
     if span is None or span == 0:
         return 50
 
@@ -286,6 +340,8 @@ def _score_ingredient(
     metric: ScoreMetricSpec,
     game_row: dict[str, Any],
     baseline_means: dict[str, float],
+    *,
+    role: str,
 ) -> GameScoreIngredient | None:
     game_value = game_row.get(metric.column)
     if game_value is None:
@@ -311,6 +367,7 @@ def _score_ingredient(
         game_row=game_row,
         baseline_means=baseline_means,
         direction=direction,
+        role=role,
     )
     if score is None:
         return None
@@ -356,7 +413,7 @@ def compute_game_score(
         for metric in spec.metrics:
             if metric.column == "objectives_present_rate":
                 continue
-            ingredient = _score_ingredient(metric, game_row, baseline_means)
+            ingredient = _score_ingredient(metric, game_row, baseline_means, role=role)
             if ingredient is not None:
                 ingredients.append(ingredient)
 

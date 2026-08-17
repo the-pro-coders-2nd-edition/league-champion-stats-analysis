@@ -21,6 +21,7 @@ from league_stats.utils import get_logger
 # Keystones live in the 8000+ perk id range (stat shards are 5000+).
 KEYSTONE_ID_MIN: int = 8000
 KEYSTONE_ID_MAX: int = 10_000
+ABILITY_SLOTS: tuple[str, ...] = ("Q", "W", "E", "R")
 
 # Stat shard icons are not listed in runesReforged.json.
 STAT_SHARD_ICON_PATHS: dict[int, str] = {
@@ -174,6 +175,7 @@ class DDragonAssets:
         self._roles_dir = self._assets_root / "roles"
         self._ui_dir = self._assets_root / "ui"
         self._objectives_dir = self._assets_root / "objectives"
+        self._abilities_dir = self._assets_root / "abilities"
         self._map_dir = self._assets_root / "map"
         self._manifest_path = config.cache_dir / "static" / "manifest.json"
         self._session = session or requests.Session()
@@ -218,6 +220,7 @@ class DDragonAssets:
         self._roles_dir.mkdir(parents=True, exist_ok=True)
         self._ui_dir.mkdir(parents=True, exist_ok=True)
         self._objectives_dir.mkdir(parents=True, exist_ok=True)
+        self._abilities_dir.mkdir(parents=True, exist_ok=True)
         self._map_dir.mkdir(parents=True, exist_ok=True)
         self._manifest_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -618,6 +621,54 @@ class DDragonAssets:
             return None
         return _relative_href(from_dir, path)
 
+    def ability_icon_path(self, champion: str, slot: str) -> Path | None:
+        """Return the on-disk champion ability icon path when it exists."""
+        champion_id = champion_icon_id(champion)
+        normalized = slot.strip().upper()
+        if normalized not in ABILITY_SLOTS:
+            return None
+        path = self._abilities_dir / f"{champion_id}_{normalized}.png"
+        return path if path.is_file() else None
+
+    def ability_href(self, champion: str, slot: str, *, from_dir: Path) -> str | None:
+        """Relative URL from an HTML directory to a champion ability icon."""
+        path = self.ability_icon_path(champion, slot)
+        if path is None:
+            return None
+        return _relative_href(from_dir, path)
+
+    def ensure_champion_ability_icons(self, champion: str) -> None:
+        """Download Q/W/E/R ability icons for one champion when missing."""
+        champion_id = champion_icon_id(champion)
+        self._abilities_dir.mkdir(parents=True, exist_ok=True)
+        if all(self.ability_icon_path(champion, slot) for slot in ABILITY_SLOTS):
+            return
+        version = self._resolve_asset_version()
+        if not version:
+            self._log.warning(
+                "Cannot download ability icons for %s: no DDragon version",
+                champion_id,
+            )
+            return
+        try:
+            detail = self._fetch_champion_detail(version, champion_id)
+        except requests.RequestException as exc:
+            self._log.warning("Could not fetch champion detail for %s: %s", champion_id, exc)
+            return
+        spells = detail.get("spells") or []
+        for index, slot in enumerate(ABILITY_SLOTS):
+            if index >= len(spells):
+                continue
+            image = spells[index].get("image") or {}
+            filename = str(image.get("full", "")).strip()
+            if not filename:
+                continue
+            destination = self._abilities_dir / f"{champion_id}_{slot}.png"
+            if destination.is_file():
+                continue
+            url = f"{DDRAGON_BASE}/cdn/{version}/img/spell/{filename}"
+            self._download_binary(url, destination)
+
     def enrich_rune_rows(self, rows: list[dict[str, Any]], *, from_dir: Path) -> list[dict[str, Any]]:
         """Attach ``keystone_icon`` and ``secondary_tree_icon`` hrefs to rune table rows."""
         enriched: list[dict[str, Any]] = []
@@ -672,6 +723,19 @@ class DDragonAssets:
         )
         response.raise_for_status()
         return dict(response.json()["data"])
+
+    def _fetch_champion_detail(self, version: str, champion_id: str) -> dict[str, Any]:
+        response = self._session.get(
+            f"{DDRAGON_BASE}/cdn/{version}/data/en_US/champion/{champion_id}.json",
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json().get("data") or {}
+        if champion_id in data:
+            return dict(data[champion_id])
+        if data:
+            return dict(next(iter(data.values())))
+        return {}
 
     def _fetch_rune_icons(self, version: str) -> dict[int, str]:
         """All style-tree rune icons plus known stat shard icons."""

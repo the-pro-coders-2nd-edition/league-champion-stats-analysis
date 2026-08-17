@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -88,8 +89,11 @@ def improvement_score(
     components = [
         ScoreComponent(name=c.name, score=c.score, value=c.value, hint=c.hint)
         for c in categories
+        if math.isfinite(c.score)
     ]
-    overall = round(sum(c.score for c in components) / len(components), 1) if components else 0.0
+    overall = (
+        round(sum(c.score for c in components) / len(components), 1) if components else 0.0
+    )
     return overall, components
 
 

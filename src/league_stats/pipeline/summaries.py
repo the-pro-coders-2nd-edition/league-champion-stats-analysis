@@ -15,6 +15,7 @@ from league_stats.analysis.jungle import jungle_summary
 from league_stats.analysis.laning import laning_summary
 from league_stats.analysis.support import utility_summary
 from league_stats.analysis.matchups import matchup_summary
+from league_stats.analysis.objective_macro import split_push_summary
 from league_stats.analysis.objectives import objective_summary
 from league_stats.analysis.peer import peer_recommendations
 from league_stats.analysis.positioning import macro_summary, positioning_summary
@@ -64,6 +65,7 @@ def build_domain_summaries(frames: AnalysisFrames, records: list[MatchRecord]) -
         "teamfights": teamfight_summary(frames.teamfights_df),
         "positioning": positioning_summary(frames.matches_df, player_role),
         "objectives": objective_summary(frames.objectives_df),
+        "split_push": split_push_summary(frames.matches_df),
         "macro": macro_summary(records, frames.matches_df),
         "matchups": matchup_summary(frames.matchups_df),
         "items": item_summary(frames.items_df),

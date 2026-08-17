@@ -51,6 +51,9 @@ _SCORE_METRIC_LABELS: dict[str, str] = {
     "vspm": "Vision/min",
     "control_wards": "Control wards",
     "objectives_present_rate": "Objective presence",
+    "objectives_accounted_for_rate": "Objective macro",
+    "objectives_split_push_rate": "Split push rate",
+    "structure_tower_damage": "Tower damage/game",
     "early_ganks": "Early ganks",
     "roams_pre15": "Roams pre-15",
     "lane_priority": "Lane priority",
@@ -106,7 +109,12 @@ def progression_metrics_for_role(role: str, *, avg_damage_share: float | None = 
                 section = "laning"
             if metric.column in {"vspm", "control_wards"}:
                 section = "vision"
-            if metric.column in {"objectives_present_rate"}:
+            if metric.column in {
+                "objectives_present_rate",
+                "objectives_accounted_for_rate",
+                "objectives_split_push_rate",
+                "structure_tower_damage",
+            }:
                 section = "objectives"
             if metric.column in {"avg_unspent_gold", "gold_share", "first_item_min"}:
                 section = "economy"

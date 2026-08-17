@@ -266,3 +266,77 @@ def test_form_row_display_inline_verdict_uses_neutral_gap_color() -> None:
     assert row["verdict"] == "inline"
     assert row["gap"] == "-4%"
     assert row["gap_color"] == ""
+
+
+def test_cards_from_specs_attaches_peer_metric_keys() -> None:
+    cards = cards_from_specs(
+        (
+            MetricSpec("Win rate", "overview", "winrate_pct"),
+            MetricSpec("KDA", "overview", "avg_kda"),
+            MetricSpec("Game length", "overview", "avg_duration", suffix=" min"),
+        ),
+        {"overview": {"winrate": 0.55, "avg_kda": 3.2, "avg_duration": 28}},
+        section="overview",
+        role="MIDDLE",
+    )
+    by_label = {card["label"]: card for card in cards}
+    assert by_label["Win rate"]["metric"] == "win"
+    assert by_label["KDA"]["metric"] == "kda"
+    assert "metric" not in by_label["Game length"]
+
+
+def test_peer_row_display_includes_metric_key() -> None:
+    from league_stats.pipeline.view_models import peer_row_display
+
+    row = peer_row_display(
+        {
+            "metric": "kda",
+            "label": "KDA",
+            "yours": 3.0,
+            "peer_avg": 2.5,
+            "delta_pct": 20.0,
+            "direction": "higher",
+            "verdict": "above",
+        }
+    )
+    assert row["metric"] == "kda"
+
+
+def test_attach_peer_benchmarks_only_on_headline_non_inline_cards() -> None:
+    from league_stats.pipeline.bundles import _attach_peer_benchmarks
+
+    cards = [
+        {"label": "KDA", "value": "3.0", "tier": "headline", "metric": "kda"},
+        {"label": "CS/min", "value": "7.5", "tier": "more", "metric": "cspm"},
+        {"label": "Vision/min", "value": "1.0", "tier": "headline", "metric": "vspm"},
+    ]
+    _attach_peer_benchmarks(
+        [cards],
+        {
+            "tier": "GOLD",
+            "rows": [
+                {
+                    "metric": "kda",
+                    "gap": "+12%",
+                    "verdict": "above",
+                    "gap_color": "#00ff00",
+                },
+                {
+                    "metric": "cspm",
+                    "gap": "+5%",
+                    "verdict": "above",
+                    "gap_color": "#00ff00",
+                },
+                {
+                    "metric": "vspm",
+                    "gap": "+2%",
+                    "verdict": "inline",
+                    "gap_color": "",
+                },
+            ],
+        },
+    )
+    assert cards[0]["benchmark"] == "+12% vs Gold peers"
+    assert cards[0]["benchmark_tone"] == "above"
+    assert "benchmark" not in cards[1]
+    assert "benchmark" not in cards[2]

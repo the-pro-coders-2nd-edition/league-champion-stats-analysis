@@ -17,8 +17,20 @@ from league_stats.core.models import (
     KeyMomentFrame,
     MatchRecord,
 )
-from league_stats.infra.ddragon_assets import DDragonAssets
+from league_stats.infra.ddragon_assets import ABILITY_SLOTS, DDragonAssets
 from league_stats.pipeline.frames import AnalysisFrames
+
+
+def _lookup_account_icon(
+    account: str | None,
+    account_icons: dict[str, str] | None,
+) -> str | None:
+    if not account or not account_icons:
+        return None
+    direct = account_icons.get(account)
+    if direct:
+        return direct
+    return account_icons.get(account.casefold())
 
 
 def _enrich_key_moment(
@@ -60,6 +72,7 @@ def _enrich_game_detail(
     assets: DDragonAssets,
     from_dir: Path,
     champion: str,
+    account_icons: dict[str, str] | None = None,
 ) -> GameDetail:
     """Attach relative icon hrefs for champions, runes, items, and objectives."""
     deaths = [
@@ -98,6 +111,14 @@ def _enrich_game_detail(
         objective.model_copy(
             update={
                 "objective_icon": assets.objective_href(objective.kind, from_dir=from_dir),
+                "pit_ally_icons": [
+                    assets.champion_href(name, from_dir=from_dir)
+                    for name in objective.pit_ally_champions
+                ],
+                "pit_enemy_icons": [
+                    assets.champion_href(name, from_dir=from_dir)
+                    for name in objective.pit_enemy_champions
+                ],
             }
         )
         for objective in detail.objectives
@@ -112,6 +133,9 @@ def _enrich_game_detail(
         shards=list(build.shards),
         summoners=list(build.summoners),
         skill_order=build.skill_order,
+        skill_sequence=list(build.skill_sequence),
+        skill_levels_by_level=list(build.skill_levels_by_level),
+        skill_max_level=build.skill_max_level,
         items=list(build.items),
         keystone_icon=assets.rune_href(build.keystone, from_dir=from_dir),
         primary_tree_icon=assets.rune_tree_href(build.primary_tree, from_dir=from_dir),
@@ -126,6 +150,9 @@ def _enrich_game_detail(
         summoner_icons=[
             assets.summoner_href(spell_name, from_dir=from_dir) for spell_name in build.summoners
         ],
+        ability_icons={
+            slot: assets.ability_href(champion, slot, from_dir=from_dir) for slot in ABILITY_SLOTS
+        },
         item_icons=[
             assets.item_href_by_name(item_name, from_dir=from_dir) for item_name in build.items
         ],
@@ -134,10 +161,13 @@ def _enrich_game_detail(
         _enrich_key_moment(moment, assets=assets, from_dir=from_dir)
         for moment in detail.key_moments
     ]
+    account_icon = _lookup_account_icon(detail.account, account_icons)
+
     return detail.model_copy(
         update={
             "champion_icon": assets.champion_href(champion, from_dir=from_dir),
             "opponent_icon": assets.champion_href(detail.opponent, from_dir=from_dir),
+            "account_icon": account_icon,
             "deaths": deaths,
             "fights": fights,
             "objectives": objectives,
@@ -156,6 +186,7 @@ def build_game_review_views(
     graphs_dir: Path | None = None,
     assets: DDragonAssets | None = None,
     from_dir: Path | None = None,
+    account_icons: dict[str, str] | None = None,
 ) -> GameReviewPayload:
     """Build game review payload with UI icon hrefs.
 
@@ -176,6 +207,7 @@ def build_game_review_views(
                     assets=assets,
                     from_dir=from_dir,
                     champion=config.champion,
+                    account_icons=account_icons,
                 )
             games.append(enriched)
         queues[queue_key] = bundle.model_copy(update={"games": games})

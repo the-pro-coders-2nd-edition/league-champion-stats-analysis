@@ -49,6 +49,14 @@ METRIC_ICONS: dict[str, str] = {
     "Deaths/game": "skull",
     "Vision/min": "eye",
     "Game length": "clock",
+    "Split push": "tower",
+    "Tower damage": "tower",
+    "At objective": "target",
+    "Split pushing": "tower",
+    "Defending split": "tower",
+    "Unproductive absence": "skull",
+    "Split balance": "chart",
+    "Towers taken": "tower",
     "Kill participation": "kp",
     "Objective presence": "target",
     "Gold @10": "coin",
@@ -156,6 +164,28 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "Deaths/game": "Average deaths per game in the window.",
     "Vision/min": "Average vision score per minute (Riot vision score ÷ game length).",
     "Game length": "Average match duration in minutes.",
+    "Split push": (
+        "Share of epic objectives where you applied offensive sidelane pressure "
+        "instead of joining the pit (post-14 min or after a lane tower falls)."
+    ),
+    "Tower damage": "Average damage dealt to turrets per game.",
+    "At objective": "Share of epic objectives where you were present at the pit.",
+    "Split pushing": (
+        "Offensive sidelane pressure during an objective window — absent at the pit "
+        "but threatening structures on your assignment."
+    ),
+    "Defending split": (
+        "Holding your tower under enemy split pressure while the team contests an objective."
+    ),
+    "Unproductive absence": (
+        "Share of objectives where you were absent without sidelane pressure, a defend, "
+        "or a successful trade."
+    ),
+    "Split balance": (
+        "Offensive split-push rate minus defend-split rate — positive means more pressure "
+        "than babysitting towers."
+    ),
+    "Towers taken": "Average enemy towers you helped destroy per game (present or last-hit).",
     # Lane
     "Gold diff @10": "Your total gold minus your lane opponent's at the 10-minute timeline frame, averaged across games.",
     "CS diff @10": "Your CS minus your lane opponent's at minute 10 (lane + jungle minions).",

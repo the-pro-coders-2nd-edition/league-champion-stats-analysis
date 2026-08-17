@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ app_title }} — {{ player_name }}</title>
-{% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, tiered_cards, rec_card, metric_card, section_pulse, generated_at_time, format_generated_at_script %}
+{% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, tiered_cards, rec_card, metric_card, section_pulse, score_card, ui_chip, generated_at_time, format_generated_at_script %}
 {{ favicon_links(favicon_href) }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,9 +17,32 @@
 <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual';</script>
 </head>
 <body>
+<script>
+(function () {
+  try {
+    if (localStorage.getItem('report-nav-collapsed') === '1') {
+      document.documentElement.classList.add('report-nav-collapsed');
+    }
+  } catch (e) {}
+})();
+</script>
 <div class="layout">
-<nav class="report-nav">
-  {{ app_brand(app_title, logo_href, variant='nav') }}
+<nav class="report-nav" id="report-nav" aria-label="Report navigation">
+  <div class="nav-header">
+    {{ app_brand(app_title, logo_href, variant='nav') }}
+    <button
+      type="button"
+      class="nav-fold-btn"
+      id="nav-fold-btn"
+      aria-expanded="true"
+      aria-controls="nav-builds-panel"
+      title="Collapse champions menu"
+    >
+      <iconify-icon class="nav-fold-icon nav-fold-icon--collapse" icon="mdi:chevron-left" width="18" height="18" aria-hidden="true"></iconify-icon>
+      <iconify-icon class="nav-fold-icon nav-fold-icon--expand" icon="mdi:chevron-right" width="18" height="18" aria-hidden="true"></iconify-icon>
+      <span class="nav-fold-label">Hide</span>
+    </button>
+  </div>
   <div class="nav-back">
     {% if player_page_href %}
     <a href="{{ player_page_href }}">← Player page</a>
@@ -27,8 +50,15 @@
     <a href="/">← Home</a>
     {% endif %}
   </div>
+  {% if report_players and report_players|length > 1 %}
+  <div class="nav-accounts" id="account-filter-bar">
+    <div class="nav-accounts-label">Accounts</div>
+    <div class="nav-accounts-list" id="account-filter-menu"></div>
+    <p class="account-filter-notice" id="account-filter-notice" hidden></p>
+  </div>
+  {% endif %}
   {% if player_builds %}
-  <div class="nav-builds">
+  <div class="nav-builds" id="nav-builds-panel">
     <div class="nav-builds-label">Champions</div>
     <div class="build-grid">
       {% for build in player_builds %}
@@ -38,6 +68,34 @@
   </div>
   {% endif %}
 </nav>
+<script>
+(function () {
+  var STORAGE_KEY = 'report-nav-collapsed';
+  var root = document.documentElement;
+  var nav = document.getElementById('report-nav');
+  var btn = document.getElementById('nav-fold-btn');
+  if (!nav || !btn) return;
+
+  function isCollapsed() {
+    return root.classList.contains('report-nav-collapsed');
+  }
+
+  function apply(collapsed) {
+    root.classList.toggle('report-nav-collapsed', collapsed);
+    nav.classList.toggle('is-collapsed', collapsed);
+    btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    btn.title = collapsed ? 'Expand champions menu' : 'Collapse champions menu';
+    var label = btn.querySelector('.nav-fold-label');
+    if (label) label.textContent = collapsed ? 'Show' : 'Hide';
+    try { localStorage.setItem(STORAGE_KEY, collapsed ? '1' : '0'); } catch (e) {}
+  }
+
+  apply(isCollapsed());
+  btn.addEventListener('click', function () {
+    apply(!isCollapsed());
+  });
+})();
+</script>
 <main>
 
 <div class="report-sticky-header" id="report-sticky-header">
@@ -237,32 +295,35 @@
 
 <section id="overview" class="report-section report-section--summary">
   <div class="report-hero" id="report-hero">
-    <div class="report-hero-identity">
-      {% if champion_icon %}
-      <img src="{{ champion_icon }}" alt="" class="game-icon">
-      {% endif %}
-      <div>
-        <h1 class="report-page-title">{{ build_heading(champion, role_icon_href, role_display) }}</h1>
-        {% if report_players and report_players|length > 1 %}
-        <div class="report-players">
-          {% for member in report_players %}
-          <span class="report-player-chip">
-            {% if member.profile_icon %}
-            <img src="{{ member.profile_icon }}" alt="" class="report-player-icon" width="22" height="22">
-            {% endif %}
-            <span>{{ member.label }}</span>
-          </span>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="report-player-name">{{ player_name }}</div>
+    <div class="report-hero-main">
+      <div class="report-hero-identity">
+        {% if champion_icon %}
+        <img src="{{ champion_icon }}" alt="" class="game-icon">
         {% endif %}
-        <div class="report-hero-meta" id="overview-subtitle">{{ total_games }} {{ queue_label }} games · patches {{ patch_range }}</div>
+        <div class="report-hero-copy">
+          <h1 class="report-page-title">{{ build_heading(champion, role_icon_href, role_display) }}</h1>
+          {% if not report_players or report_players|length <= 1 %}
+          <div class="report-player-name">{{ player_name }}</div>
+          {% endif %}
+          <div class="report-hero-meta" id="overview-subtitle">{{ total_games }} {{ queue_label }} games · patches {{ patch_range }}</div>
+          {% if overview_cards %}
+          <div class="report-hero-chips ui-chip-row" id="hero-chips">
+            {% for card in overview_cards[:4] %}
+            <span class="ui-chip ui-chip--{% if card.value_class == 'win' %}good{% elif card.value_class == 'loss' %}bad{% else %}stat{% endif %} hero-chip">
+              <span class="hero-chip-label">{{ card.label }}</span>
+              <strong class="hero-chip-value"{% if card.value_color %} style="color: {{ card.value_color }}"{% endif %}>{{ card.value }}</strong>
+            </span>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="report-hero-chips ui-chip-row" id="hero-chips" hidden></div>
+          {% endif %}
+        </div>
       </div>
-    </div>
-    <div class="hero-score-panel">
-      <div class="hero-score-label">Improvement score</div>
-      <div class="hero-score-value" id="score-value" data-score="{{ score }}">{{ score }}<span>/100</span></div>
+      <div class="hero-score-panel">
+        <div class="hero-score-label">Improvement score</div>
+        <div class="hero-score-value" id="score-value" data-score="{{ score }}">{{ score }}<span>/100</span></div>
+      </div>
     </div>
     <div class="hero-actions-block">
       <div class="hero-actions-title">Focus next game</div>
@@ -284,26 +345,15 @@
     <div class="score-breakdown-title">Score breakdown</div>
     <div class="score-comps" id="score-comps">
       {% for comp in score_components %}
-      <div class="comp comp--{{ comp.tone or 'solid' }}" title="{{ comp.hint }}">
-        <span class="comp-verdict">{{ comp.verdict or 'Solid' }}</span>
-        <div class="comp-head">
-          <span class="comp-name">{{ comp.name }}</span>
-          <span class="comp-score">{{ '%.0f' % comp.score }}</span>
-        </div>
-        <div class="comp-value">{{ comp.value }}</div>
-        <div class="bar"><i style="width: {{ comp.score }}%"></i></div>
-      </div>
+      {{ score_card(comp.name, comp.score, comp.verdict, comp.tone, comp.value, comp.hint) }}
       {% endfor %}
     </div>
   </div>
-  <details class="section-details section-details--overview">
-    <summary>All overview stats</summary>
-    <div id="overview-cards" class="cards">
-      {% for card in overview_cards %}
-      {{ metric_card(card) }}
-      {% endfor %}
-    </div>
-  </details>
+  <div id="overview-cards" class="cards">
+    {% for card in overview_cards %}
+    {{ metric_card(card) }}
+    {% endfor %}
+  </div>
 </section>
 
 <section id="coaching" class="report-section report-section--summary">
@@ -371,8 +421,8 @@
             <div class="label">Form score</div>
             <div class="form-score-value form-score-value--{{ form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable' }}" id="form-score-value">{{ '%+.0f' % form_snapshot.form_score if form_snapshot and form_snapshot.form_score is defined else '0' }}</div>
             <div class="form-meta">
-              <span class="form-badge form-badge--{{ form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable' }}" id="form-trend-badge">{{ form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable' }}</span>
-              <span class="form-badge form-badge--confidence" id="form-confidence-badge">{{ form_snapshot.confidence if form_snapshot and form_snapshot.confidence else 'insufficient' }} confidence</span>
+              {{ ui_chip(form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable', form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable', id='form-trend-badge') }}
+              {{ ui_chip((form_snapshot.confidence if form_snapshot and form_snapshot.confidence else 'insufficient') ~ ' confidence', 'confidence', id='form-confidence-badge') }}
             </div>
           </div>
           <div class="form-stage-wr">
@@ -396,10 +446,6 @@
         <button type="button" class="form-tab" data-tab="evidence" role="tab" aria-selected="false">Evidence</button>
       </div>
       <div class="form-panel" id="form-panel-pulse" role="tabpanel">
-        <div class="figure-block">
-          <div class="figure" id="fig-form_rolling_wr">{{ form_figures.form_rolling_wr | safe if form_figures else '' }}</div>
-          <p class="figure-caption">Rolling win rate — shaded region is your recent window; grey band is baseline WR.</p>
-        </div>
         <div class="form-stories" id="form-stories">
           {% if form_stories %}
           {% for story in form_stories %}
@@ -416,6 +462,10 @@
           {% else %}
           <p class="sub form-stories-empty" id="form-stories-empty">No standout form stories for this window.</p>
           {% endif %}
+        </div>
+        <div class="figure-block form-figure-block">
+          <div class="figure" id="fig-form_rolling_wr">{{ form_figures.form_rolling_wr | safe if form_figures else '' }}</div>
+          <p class="figure-caption">Rolling win rate — shaded region is your recent window; grey band is baseline WR.</p>
         </div>
       </div>
       <div class="form-panel" id="form-panel-evidence" role="tabpanel" hidden>
@@ -504,80 +554,45 @@
             <span class="peer-balance-chip peer-balance-chip--below"><strong id="peer-below-count">{{ peer_below|length }}</strong> below</span>
           </div>
           <div class="peer-meta-chips" id="peer-meta-chips">
-            <span class="peer-meta-chip">{{ peer_comparison.peer_games }} peer games</span>
-            <span class="peer-meta-chip">{{ peer_comparison.peer_players }} players</span>
-            <span class="peer-meta-chip peer-meta-chip--confidence">{{ peer_comparison.confidence }} confidence</span>
+            {{ ui_chip(peer_comparison.peer_games ~ ' peer games', 'meta') }}
+            {{ ui_chip(peer_comparison.peer_players ~ ' players', 'meta') }}
+            {{ ui_chip(peer_comparison.confidence ~ ' confidence', 'confidence') }}
           </div>
         </div>
       </div>
     </div>
-    <div class="peer-verdict" id="peer-verdict">
-      <div class="peer-verdict-grid">
-        {% for item in peer_comparison.weaknesses[:2] %}
-        {% set parts = item.split(': ') %}
-        <div class="peer-callout peer-callout--fix">
-          <span class="peer-callout-label">Fix</span>
-          <strong class="peer-callout-title">{{ parts[0] }}</strong>
-          {% if parts|length > 1 %}<span class="peer-callout-detail">{{ parts[1:] | join(': ') }}</span>{% endif %}
-        </div>
-        {% endfor %}
-        {% for item in peer_comparison.strengths[:2] %}
-        {% set parts = item.split(': ') %}
-        <div class="peer-callout peer-callout--keep">
-          <span class="peer-callout-label">Keep</span>
-          <strong class="peer-callout-title">{{ parts[0] }}</strong>
-          {% if parts|length > 1 %}<span class="peer-callout-detail">{{ parts[1:] | join(': ') }}</span>{% endif %}
-        </div>
-        {% endfor %}
-      </div>
-      {% if not peer_comparison.strengths and not peer_comparison.weaknesses %}
-      <p class="sub peer-verdict-empty">No standout gaps vs this rank sample.</p>
-      {% endif %}
-    </div>
-    <div class="peer-tabs" id="peer-tabs" role="tablist">
-      <button type="button" class="peer-tab is-active" data-tab="gaps" role="tab" aria-selected="true">Gaps</button>
-      <button type="button" class="peer-tab" data-tab="drivers" role="tab" aria-selected="false">Drivers</button>
-      <button type="button" class="peer-tab" data-tab="details" role="tab" aria-selected="false">Details</button>
-    </div>
-    <div class="peer-panel" id="peer-panel-gaps" role="tabpanel">
-      <div class="figure-block">
-        <div class="figure" id="fig-peer_comparison">{{ figures.peer_comparison | safe }}</div>
-        <p class="figure-caption">Gap vs same-rank peers — teal bars are strengths, redder bars trail the benchmark (intensity reflects gap size).</p>
-      </div>
-    </div>
-    <div class="peer-panel" id="peer-panel-drivers" role="tabpanel" hidden>
-      <div class="peer-drivers" id="peer-drivers">
-        <div class="peer-driver-section">
-          <h4 class="peer-feed-title">Above peers</h4>
-          <div class="peer-driver-feed" id="peer-above-list">
-            {% for row in peer_above[:6] %}
-            <div class="peer-driver peer-driver--above">
-              <span class="peer-driver-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
-              <span class="peer-driver-values">{{ row.yours }} vs {{ row.peer_avg }}</span>
-              <span class="peer-driver-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
-            </div>
-            {% else %}
-            <p class="sub">No above-peer metrics.</p>
-            {% endfor %}
+    <div class="peer-drivers" id="peer-drivers">
+      <div class="peer-driver-section">
+        <h4 class="peer-feed-title">Above peers</h4>
+        <div class="peer-driver-feed" id="peer-above-list">
+          {% for row in peer_above[:6] %}
+          <div class="peer-driver peer-driver--above">
+            <span class="peer-driver-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
+            <span class="peer-driver-values">{{ row.yours }} vs {{ row.peer_avg }}</span>
+            <span class="peer-driver-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
           </div>
+          {% else %}
+          <p class="sub">No above-peer metrics.</p>
+          {% endfor %}
         </div>
-        <div class="peer-driver-section">
-          <h4 class="peer-feed-title">Below peers</h4>
-          <div class="peer-driver-feed" id="peer-below-list">
-            {% for row in peer_below[:6] %}
-            <div class="peer-driver peer-driver--below">
-              <span class="peer-driver-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
-              <span class="peer-driver-values">{{ row.yours }} vs {{ row.peer_avg }}</span>
-              <span class="peer-driver-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
-            </div>
-            {% else %}
-            <p class="sub">No below-peer metrics.</p>
-            {% endfor %}
+      </div>
+      <div class="peer-driver-section">
+        <h4 class="peer-feed-title">Below peers</h4>
+        <div class="peer-driver-feed" id="peer-below-list">
+          {% for row in peer_below[:6] %}
+          <div class="peer-driver peer-driver--below">
+            <span class="peer-driver-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
+            <span class="peer-driver-values">{{ row.yours }} vs {{ row.peer_avg }}</span>
+            <span class="peer-driver-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
           </div>
+          {% else %}
+          <p class="sub">No below-peer metrics.</p>
+          {% endfor %}
         </div>
       </div>
     </div>
-    <div class="peer-panel" id="peer-panel-details" role="tabpanel" hidden>
+    <details class="peer-all-metrics">
+      <summary>All metrics</summary>
       <div class="table-scroll">
         <table>
           <thead>
@@ -596,7 +611,7 @@
           </tbody>
         </table>
       </div>
-    </div>
+    </details>
   </div>
 </section>
 {% elif status_endpoint %}
@@ -762,6 +777,9 @@
 <section id="objectives" class="report-section report-section--deepdive">
   {{ section_title("Objectives", "target", "gold", category='deepdive', scope=window_scope_label, scope_kind='window') }}
   {{ section_pulse('objectives', section_verdicts.objectives if section_verdicts else none) }}
+  {% if show_split_push_stats | default(false) %}
+  <div id="objective-macro-cards">{{ tiered_cards(objective_macro_cards, 'More split-push stats') }}</div>
+  {% endif %}
   <div class="table-scroll">
   <table>
     <thead>
@@ -908,11 +926,14 @@
 <script type="application/json" id="report-views-data">{{ report_views_json | safe }}</script>
 <script type="application/json" id="progression-views-data">{{ progression_views_json | safe }}</script>
 <script type="application/json" id="game-review-data">{{ game_review_json | default('{}') | safe }}</script>
+<script type="application/json" id="account-filter-data">{{ account_filter_json | default('{}') | safe }}</script>
 <script type="application/json" id="game-review-tooltips">{{ game_review_tooltips_json | default('{}') | safe }}</script>
 <script>
 (function () {
   var buildLabel = {{ build_label | tojson }};
   var visibleCount = {{ recommendation_visible_count }};
+  var isGroupReport = {{ (report_players | length > 1) | tojson }};
+  var reportPlayerIcons = {{ report_players | default([]) | tojson }};
   var reportViews = {};
   var progressionViews = {};
   var gameReviewViews = {};
@@ -946,13 +967,206 @@
   var matchupSort = { key: 'verdict', dir: 'desc', type: 'verdict' };
 
   function pct(value) {
-    return Math.round(Number(value) * 100) + '%';
+    var num = Number(value);
+    if (value == null || !Number.isFinite(num)) return '—';
+    return Math.round(num * 100) + '%';
+  }
+
+  function tradeSummaryIsMixed(summary) {
+    if (!summary) return false;
+    var lower = String(summary).toLowerCase();
+    var hasGain = lower.indexOf('gained') !== -1 || lower.indexOf('secured') !== -1 || lower.indexOf('held our') !== -1;
+    var hasLoss = lower.indexOf('lost') !== -1;
+    return hasGain && hasLoss;
+  }
+
+  function objectiveOutcome(row) {
+    var isGrubs = row.kind === 'grubs' && row.secured_count != null && row.objective_total != null;
+    if (isGrubs) {
+      var secured = Number(row.secured_count);
+      var total = Number(row.objective_total) || 3;
+      var share = total > 0 ? secured / total : 0;
+      if (share >= 2 / 3) return { label: secured + '/' + total + ' secured', tone: 'good' };
+      if (share <= 1 / 3) return { label: secured + '/' + total + ' secured', tone: 'bad' };
+      return { label: secured + '/' + total + ' secured', tone: 'mixed' };
+    }
+    if (row.trade_outcome === 'held') return { label: 'Held', tone: 'good' };
+    if (row.trade_outcome === 'traded_for') {
+      return { label: 'Trade', tone: 'mixed' };
+    }
+    if (row.trade_outcome === 'traded_away') {
+      var tradeDelta = row.trade_value_delta != null ? Number(row.trade_value_delta) : null;
+      return { label: 'Trade', tone: tradeDelta != null && tradeDelta < 0 ? 'bad' : 'mixed' };
+    }
+    if (row.taken_by_team) {
+      if (row.trade_summary && tradeSummaryIsMixed(row.trade_summary)) {
+        return { label: 'Secured', tone: 'mixed' };
+      }
+      return { label: 'Secured', tone: 'good' };
+    }
+    return { label: 'Lost', tone: 'bad' };
+  }
+
+  function objectivePresenceDetail(row, objectiveHints) {
+    if (row.dead_before) {
+      return { label: 'Died in setup', tone: 'bad', hint: objectiveHints['Died in setup window (45–10s)'] || '' };
+    }
+    if (row.present) {
+      return { label: 'Present at pit', tone: 'good', hint: objectiveHints['Present'] || '' };
+    }
+    if (row.macro_role === 'split_pushing') {
+      return { label: 'Split pushing', tone: 'warn', hint: objectiveHints['Split pushing'] || '' };
+    }
+    if (row.macro_role === 'defending_split') {
+      var label = 'Defending split';
+      if (row.defending_lane) label += ' (' + row.defending_lane + ')';
+      return { label: label, tone: 'warn', hint: objectiveHints['Defending split'] || '' };
+    }
+    if (row.justified_absence) {
+      return { label: 'Accounted absence', tone: 'warn', hint: '' };
+    }
+    return { label: 'Absent without pressure', tone: 'bad', hint: objectiveHints['Absent without pressure'] || '' };
+  }
+
+  function renderObjectiveDetails(row, objectiveHints) {
+    var parts = [];
+    var presence = objectivePresenceDetail(row, objectiveHints);
+    parts.push('<div class="game-review-objective-detail-row">' +
+      '<span class="game-review-objective-detail-label">Your role</span>' +
+      chipHtml(presence.label, presence.tone, presence.hint) +
+      '</div>');
+
+    if (row.present && row.wards_before != null) {
+      var wardCount = Number(row.wards_before) || 0;
+      var wardLabel = wardCount === 1
+        ? 'You placed 1 ward near objective during setup'
+        : 'You placed ' + wardCount + ' wards near objective during setup';
+      parts.push('<div class="game-review-objective-detail-row">' +
+        '<span class="game-review-objective-detail-label">Vision</span>' +
+        chipHtml(wardLabel, 'stat', objectiveHints['Wards during setup'] || objectiveHints['Wards before'] || '') +
+        '</div>');
+    }
+
+    var allies = row.pit_ally_champions || [];
+    var enemies = row.pit_enemy_champions || [];
+    if (allies.length || enemies.length) {
+      parts.push('<div class="game-review-objective-detail-row game-review-objective-detail-row--pit">' +
+        '<span class="game-review-objective-detail-label">At pit' +
+        (row.manpower_at_pit ? ' (' + escapeHtml(row.manpower_at_pit) + ')' : '') +
+        '</span>' +
+        '<div class="game-review-fight-sides">' +
+          championIconStack(allies, row.pit_ally_icons, 'ally') +
+          '<span class="game-review-fight-vs">vs</span>' +
+          championIconStack(enemies, row.pit_enemy_icons, 'enemy') +
+        '</div></div>');
+    }
+
+    var gainLabels = row.trade_gain_labels || [];
+    var lossLabels = row.trade_loss_labels || [];
+    if (gainLabels.length) {
+      parts.push('<div class="game-review-objective-detail-row">' +
+        '<span class="game-review-objective-detail-label">Gained</span>' +
+        '<span class="game-review-objective-detail-text">' + gainLabels.map(escapeHtml).join(' · ') + '</span></div>');
+    }
+    if (lossLabels.length) {
+      parts.push('<div class="game-review-objective-detail-row">' +
+        '<span class="game-review-objective-detail-label">Lost</span>' +
+        '<span class="game-review-objective-detail-text">' + lossLabels.map(escapeHtml).join(' · ') + '</span></div>');
+    } else if (row.trade_summary && !gainLabels.length) {
+      parts.push('<div class="game-review-objective-detail-row">' +
+        '<span class="game-review-objective-detail-label">Trade</span>' +
+        '<span class="game-review-objective-detail-text">' + escapeHtml(row.trade_summary) + '</span></div>');
+    }
+
+    if (row.tp_available === true) {
+      parts.push('<div class="game-review-objective-detail-row">' +
+        '<span class="game-review-objective-detail-label">Summoners</span>' +
+        chipHtml('TP available', 'warn', objectiveHints['TP available'] || '') + '</div>');
+    } else if (row.tp_available === false) {
+      parts.push('<div class="game-review-objective-detail-row">' +
+        '<span class="game-review-objective-detail-label">Summoners</span>' +
+        chipHtml('No TP', 'stat', objectiveHints['No TP'] || '') + '</div>');
+    }
+
+    return parts.join('');
+  }
+
+  function renderObjectiveRow(row, objectiveHints) {
+    var kindLabel = row.kind.charAt(0).toUpperCase() + row.kind.slice(1);
+    var outcome = objectiveOutcome(row);
+    var grubClass = '';
+    if (row.kind === 'grubs' && row.secured_count != null && row.objective_total != null) {
+      var bucket = Math.max(0, Math.min(3, Math.round(Number(row.secured_count) || 0)));
+      grubClass = ' game-review-objective--grubs-' + bucket;
+    }
+    return '<details class="game-review-objective game-review-objective--' + outcome.tone + grubClass + '">' +
+      '<summary class="game-review-objective-summary">' +
+        '<span class="game-review-objective-time">' + formatGameTime(row.minute) + '</span>' +
+        '<span class="game-review-objective-kind">' +
+          iconCell(kindLabel, row.objective_icon, true) +
+          '<span>' + escapeHtml(kindLabel) + '</span>' +
+        '</span>' +
+        '<span class="game-review-objective-outcome game-review-objective-outcome--' + outcome.tone + '">' +
+          escapeHtml(outcome.label) +
+        '</span>' +
+      '</summary>' +
+      '<div class="game-review-objective-details">' + renderObjectiveDetails(row, objectiveHints) + '</div>' +
+      '</details>';
   }
 
   function escapeHtml(str) {
     var div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  function uiChip(label, tone, opts) {
+    opts = opts || {};
+    var cls = 'ui-chip';
+    if (tone) cls += ' ui-chip--' + tone;
+    if (opts.className) cls += ' ' + opts.className;
+    var attrs = '';
+    if (opts.id) attrs += ' id="' + escapeHtml(opts.id) + '"';
+    if (opts.title) attrs += ' title="' + escapeHtml(opts.title) + '"';
+    return '<span class="' + cls + '"' + attrs + '>' + escapeHtml(label) + '</span>';
+  }
+
+  function renderScoreCard(opts) {
+    opts = opts || {};
+    var tone = opts.tone || 'solid';
+    var verdict = opts.verdict || 'Solid';
+    var name = opts.name || '';
+    var score = Math.max(0, Math.min(100, Math.round(Number(opts.score) || 0)));
+    var value = opts.value || '';
+    var hint = opts.hint || '';
+    var titleAttr = hint ? ' title="' + escapeHtml(hint) + '"' : '';
+    var inner =
+      '<span class="comp-verdict">' + escapeHtml(verdict) + '</span>' +
+      '<div class="comp-head">' +
+        '<span class="comp-name">' + escapeHtml(name) + '</span>' +
+        '<span class="comp-score">' + score + '</span>' +
+      '</div>' +
+      (value ? '<div class="comp-value">' + escapeHtml(value) + '</div>' : '') +
+      '<div class="bar" aria-hidden="true"><i style="width:' + score + '%"></i></div>';
+    if (opts.expandableBody) {
+      return '<details class="comp comp--expandable comp--' + tone + '"' + titleAttr + '>' +
+        '<summary>' + inner + '</summary>' + opts.expandableBody + '</details>';
+    }
+    return '<div class="comp comp--' + tone + '"' + titleAttr + '>' + inner + '</div>';
+  }
+
+  function renderScoreCardRow(opts) {
+    opts = opts || {};
+    var card = renderScoreCard(opts);
+    if (!opts.fix || !opts.fix.title) {
+      return card;
+    }
+    var href = '#' + (opts.fix.anchor || 'coaching');
+    return '<div class="score-card-row score-card-row--with-fix">' + card +
+      '<a class="score-card-fix" href="' + href + '">' +
+        '<span class="score-card-fix-kicker">Try this</span>' +
+        '<span class="score-card-fix-title">' + escapeHtml(opts.fix.title) + '</span>' +
+      '</a></div>';
   }
 
   function metricCardLabel(card) {
@@ -1032,6 +1246,23 @@
     container.innerHTML = html;
   }
 
+  function resizePlotlyIn(root) {
+    if (!root || !window.Plotly || !window.Plotly.Plots) return;
+    root.querySelectorAll('.js-plotly-plot').forEach(function (plot) {
+      window.Plotly.Plots.resize(plot);
+    });
+  }
+
+  function resizePlotlySoon(root) {
+    requestAnimationFrame(function () {
+      resizePlotlyIn(root);
+      requestAnimationFrame(function () {
+        resizePlotlyIn(root);
+      });
+    });
+  }
+  window.resizePlotlySoon = resizePlotlySoon;
+
   function setFigure(id, html) {
     var node = document.getElementById(id);
     if (!node) return;
@@ -1066,24 +1297,15 @@
     }
     if (!compsNode) return;
     compsNode.innerHTML = (bundle.score_components || []).map(function (comp) {
-      var tone = comp.tone || 'solid';
-      var verdict = comp.verdict || 'Solid';
-      return '<div class="comp comp--' + tone + '" title="' + escapeHtml(comp.hint || '') + '">' +
-        '<span class="comp-verdict">' + escapeHtml(verdict) + '</span>' +
-        '<div class="comp-head">' +
-        '<span class="comp-name">' + escapeHtml(comp.name) + '</span>' +
-        '<span class="comp-score">' + Math.round(comp.score) + '</span>' +
-        '</div>' +
-        '<div class="comp-value">' + escapeHtml(comp.value) + '</div>' +
-        '<div class="bar"><i style="width:' + comp.score + '%"></i></div></div>';
+      return renderScoreCard({
+        name: comp.name,
+        score: comp.score,
+        verdict: comp.verdict || 'Solid',
+        tone: comp.tone || 'solid',
+        value: comp.value || '',
+        hint: comp.hint || ''
+      });
     }).join('');
-  }
-
-  function parsePeerHighlight(line) {
-    var text = String(line || '');
-    var idx = text.indexOf(': ');
-    if (idx === -1) return { title: text, detail: '' };
-    return { title: text.slice(0, idx), detail: text.slice(idx + 2) };
   }
 
   function peerDriverRowHtml(row, tone) {
@@ -1092,28 +1314,6 @@
       '<span class="peer-driver-label">' + metricLabel(row.label, row.iconify, row.icon_tone, row.icon_href) + '</span>' +
       '<span class="peer-driver-values">' + escapeHtml(String(row.yours)) + ' vs ' + escapeHtml(String(row.peer_avg)) + '</span>' +
       '<span class="peer-driver-gap"' + style + '>' + escapeHtml(String(row.gap)) + '</span></div>';
-  }
-
-  function renderPeerVerdict(peer) {
-    var verdict = document.getElementById('peer-verdict');
-    if (!verdict) return;
-    var keep = (peer.strengths || []).slice(0, 2).map(parsePeerHighlight);
-    var fix = (peer.weaknesses || []).slice(0, 2).map(parsePeerHighlight);
-    if (!keep.length && !fix.length) {
-      verdict.innerHTML = '<p class="sub peer-verdict-empty">No standout gaps vs this rank sample.</p>';
-      return;
-    }
-    function callout(item, tone, label) {
-      return '<div class="peer-callout peer-callout--' + tone + '">' +
-        '<span class="peer-callout-label">' + label + '</span>' +
-        '<strong class="peer-callout-title">' + escapeHtml(item.title) + '</strong>' +
-        (item.detail ? '<span class="peer-callout-detail">' + escapeHtml(item.detail) + '</span>' : '') +
-        '</div>';
-    }
-    verdict.innerHTML = '<div class="peer-verdict-grid">' +
-      fix.map(function (item) { return callout(item, 'fix', 'Fix'); }).join('') +
-      keep.map(function (item) { return callout(item, 'keep', 'Keep'); }).join('') +
-      '</div>';
   }
 
   function renderPeer(bundle) {
@@ -1155,15 +1355,13 @@
     var metaChips = document.getElementById('peer-meta-chips');
     if (metaChips) {
       var chips = [];
-      if (peer.peer_games != null) chips.push('<span class="peer-meta-chip">' + peer.peer_games + ' peer games</span>');
-      if (peer.peer_players != null) chips.push('<span class="peer-meta-chip">' + peer.peer_players + ' players</span>');
+      if (peer.peer_games != null) chips.push(uiChip(peer.peer_games + ' peer games', 'meta'));
+      if (peer.peer_players != null) chips.push(uiChip(peer.peer_players + ' players', 'meta'));
       if (peer.confidence) {
-        chips.push('<span class="peer-meta-chip peer-meta-chip--confidence">' +
-          escapeHtml(String(peer.confidence).replace(/_/g, ' ')) + ' confidence</span>');
+        chips.push(uiChip(String(peer.confidence).replace(/_/g, ' ') + ' confidence', 'confidence'));
       }
       metaChips.innerHTML = chips.join('');
     }
-    renderPeerVerdict(peer);
     var aboveList = document.getElementById('peer-above-list');
     if (aboveList) {
       aboveList.innerHTML = aboveRows.length
@@ -1189,31 +1387,7 @@
           '</td><td class="delta-' + row.verdict + '"' + style + '>' + row.gap + '</td><td class="delta-' + row.verdict + '"' + style + '>' + row.verdict + '</td></tr>';
       }).join('');
     }
-    setFigure('fig-peer_comparison', (bundle.figures || {}).peer_comparison || '');
   }
-
-  document.querySelectorAll('.peer-tab').forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      var name = tab.getAttribute('data-tab');
-      document.querySelectorAll('.peer-tab').forEach(function (node) {
-        var active = node === tab;
-        node.classList.toggle('is-active', active);
-        node.setAttribute('aria-selected', active ? 'true' : 'false');
-      });
-      document.querySelectorAll('.peer-panel').forEach(function (panel) {
-        panel.hidden = panel.id !== 'peer-panel-' + name;
-      });
-      if (name === 'gaps') {
-        requestAnimationFrame(function () {
-          var panel = document.getElementById('peer-panel-gaps');
-          if (!panel || !window.Plotly || !window.Plotly.Plots) return;
-          panel.querySelectorAll('.js-plotly-plot').forEach(function (plot) {
-            window.Plotly.Plots.resize(plot);
-          });
-        });
-      }
-    });
-  });
 
   function coreCell(row) {
     if (row.first_item_icon || row.second_item_icon) {
@@ -1349,6 +1523,30 @@
     updateMatchupSortHeaders();
   }
 
+  function heroChipTone(card) {
+    if (card.value_class === 'win') return 'good';
+    if (card.value_class === 'loss') return 'bad';
+    return 'stat';
+  }
+
+  function renderHeroChips(bundle) {
+    var node = document.getElementById('hero-chips');
+    if (!node) return;
+    var cards = (bundle.overview_cards || []).slice(0, 4);
+    if (!cards.length) {
+      node.innerHTML = '';
+      node.hidden = true;
+      return;
+    }
+    node.hidden = false;
+    node.innerHTML = cards.map(function (card) {
+      var valueStyle = card.value_color ? ' style="color:' + card.value_color + '"' : '';
+      return '<span class="ui-chip ui-chip--' + heroChipTone(card) + ' hero-chip">' +
+        '<span class="hero-chip-label">' + escapeHtml(card.label) + '</span>' +
+        '<strong class="hero-chip-value"' + valueStyle + '>' + escapeHtml(card.value) + '</strong></span>';
+    }).join('');
+  }
+
   function renderHeroActions(bundle) {
     var node = document.getElementById('hero-actions');
     if (!node) return;
@@ -1368,44 +1566,28 @@
   function renderSectionVerdicts(bundle) {
     var verdicts = bundle.section_verdicts || {};
     document.querySelectorAll('[data-section-verdict]').forEach(function (node) {
-      var verdict = verdicts[node.getAttribute('data-section-verdict')];
-      if (!verdict || !verdict.text) {
+      var sectionId = node.getAttribute('data-section-verdict');
+      var verdict = verdicts[sectionId];
+      if (!verdict || (!verdict.name && !verdict.text)) {
         node.hidden = true;
-        node.className = 'section-pulse';
+        node.className = 'score-card-row';
         node.innerHTML = '';
         return;
       }
-      var tone = verdict.tone || 'solid';
-      var scoreHtml = '';
-      var barHtml = '';
-      if (verdict.score != null) {
-        scoreHtml = '<span class="section-pulse-score">' + escapeHtml(String(verdict.score)) + '</span>';
-        barHtml = '<div class="section-pulse-bar" aria-hidden="true"><i style="width:' +
-          Number(verdict.score) + '%"></i></div>';
-      }
-      var hintText = verdict.hint || verdict.value || '';
-      var hintHtml = hintText
-        ? '<p class="section-pulse-hint">' + escapeHtml(hintText) + '</p>'
-        : '';
-      var fix = '';
-      if (verdict.fix && verdict.fix.title) {
-        var href = '#' + (verdict.fix.anchor || 'coaching');
-        fix = '<a class="section-pulse-fix" href="' + href + '">' +
-          '<span class="section-pulse-fix-kicker">Try this</span>' +
-          '<span class="section-pulse-fix-title">' + escapeHtml(verdict.fix.title) + '</span></a>';
-      }
       node.hidden = false;
-      node.className = 'section-pulse section-pulse--' + tone;
-      node.innerHTML =
-        '<div class="section-pulse-callout">' +
-          '<span class="section-pulse-label">' + escapeHtml(verdict.label || 'Score') + '</span>' +
-          '<div class="section-pulse-head">' +
-            '<strong class="section-pulse-title">' + escapeHtml(verdict.text) + '</strong>' +
-            scoreHtml +
-          '</div>' +
-          barHtml +
-          hintHtml +
-        '</div>' + fix;
+      node.className = 'score-card-row' + (verdict.fix && verdict.fix.title ? ' score-card-row--with-fix' : '');
+      node.innerHTML = renderScoreCard({
+        name: verdict.name || '',
+        score: verdict.score,
+        verdict: verdict.label || 'Solid',
+        tone: verdict.tone || 'solid',
+        value: verdict.hint || verdict.value || verdict.text || '',
+        hint: verdict.hint || ''
+      }) + (verdict.fix && verdict.fix.title
+        ? '<a class="score-card-fix" href="#' + (verdict.fix.anchor || 'coaching') + '">' +
+            '<span class="score-card-fix-kicker">Try this</span>' +
+            '<span class="score-card-fix-title">' + escapeHtml(verdict.fix.title) + '</span></a>'
+        : '');
     });
   }
 
@@ -1414,7 +1596,7 @@
     if (!view) return;
     var option = (view.window_options || []).find(function (opt) { return opt.key === windowKey; });
     var label = (option ? option.label : 'All') + ' games';
-    document.querySelectorAll('.scope-chip--window').forEach(function (chip) {
+    document.querySelectorAll('.ui-chip--window').forEach(function (chip) {
       chip.textContent = label;
     });
   }
@@ -1616,7 +1798,7 @@
     var trendBadge = document.getElementById('form-trend-badge');
     if (trendBadge) {
       trendBadge.textContent = trend;
-      trendBadge.className = 'form-badge form-badge--' + trend;
+      trendBadge.className = 'ui-chip ui-chip--' + trend;
     }
     var confBadge = document.getElementById('form-confidence-badge');
     if (confBadge) confBadge.textContent = (snap.confidence || 'low') + ' confidence';
@@ -1658,6 +1840,7 @@
     }
     setFigure('fig-form_rolling_wr', (preset.figures || {}).form_rolling_wr || '');
     setFigure('fig-form_metric_delta_bar', (preset.figures || {}).form_metric_delta_bar || '');
+    resizePlotlySoon(document.getElementById('form-content'));
   }
 
   document.querySelectorAll('.form-tab').forEach(function (tab) {
@@ -1672,13 +1855,7 @@
         panel.hidden = panel.id !== 'form-panel-' + name;
       });
       if (name === 'pulse' || name === 'evidence') {
-        requestAnimationFrame(function () {
-          var panel = document.getElementById('form-panel-' + name);
-          if (!panel || !window.Plotly || !window.Plotly.Plots) return;
-          panel.querySelectorAll('.js-plotly-plot').forEach(function (plot) {
-            window.Plotly.Plots.resize(plot);
-          });
-        });
+        resizePlotlySoon(document.getElementById('form-panel-' + name));
       }
     });
   });
@@ -1755,14 +1932,6 @@
     return '';
   }
 
-  function fightManpower(row) {
-    if (row.allies_present != null && row.enemies_present != null) {
-      return row.allies_present + ' vs ' + row.enemies_present;
-    }
-    if (row.manpower_advantage != null) return String(row.manpower_advantage);
-    return '—';
-  }
-
   function formatScoreIngredientValue(column, value) {
     if (value === null || value === undefined || !isFinite(Number(value))) return '—';
     var num = Number(value);
@@ -1783,38 +1952,56 @@
     return num.toFixed(1);
   }
 
-  function scoreBar(dimension) {
+  function renderGameReviewScoreDim(dimension) {
     dimension = dimension || {};
-    var pct = Math.max(0, Math.min(100, Number(dimension.score) || 0));
-    var label = dimension.name || 'Score';
-    var hint = dimension.hint || ((gameReviewTooltips.score || {})[label]) || '';
+    var pct = Math.max(0, Math.min(100, Math.round(Number(dimension.score) || 0)));
+    var name = dimension.name || 'Score';
+    var hint = dimension.hint || ((gameReviewTooltips.score || {})[name]) || '';
     var ingredients = dimension.ingredients || [];
+    var titleAttr = hint ? ' title="' + escapeHtml(hint) + '"' : '';
+    var summary =
+      '<div class="gr-score-summary">' +
+        '<span class="gr-score-name">' + escapeHtml(name) + '</span>' +
+        '<span class="gr-score-value">' + pct + '</span>' +
+        '<div class="gr-score-bar" aria-hidden="true"><i style="width:' + pct + '%"></i></div>' +
+      '</div>';
+    if (!ingredients.length) {
+      return '<div class="gr-score"' + titleAttr + '>' + summary + '</div>';
+    }
     var rows = ingredients.map(function (item) {
-      var subPct = Math.max(0, Math.min(100, Number(item.score) || 0));
+      var subPct = Math.max(0, Math.min(100, Math.round(Number(item.score) || 0)));
       var gameTxt = formatScoreIngredientValue(item.column, item.game_value);
       var baseTxt = formatScoreIngredientValue(item.column, item.baseline_value);
-      return '<div class="game-score-ingredient">' +
-        '<div class="game-score-ingredient-head">' +
-          '<span class="game-score-ingredient-label">' + escapeHtml(item.label || item.column || '') + '</span>' +
-          '<span class="game-score-ingredient-score">' + subPct + '</span>' +
+      return '<div class="comp-ingredient">' +
+        '<div class="comp-ingredient-head">' +
+          '<span class="comp-ingredient-label">' + escapeHtml(item.label || item.column || '') + '</span>' +
+          '<span class="comp-ingredient-score">' + subPct + '</span>' +
         '</div>' +
-        '<div class="game-score-ingredient-meta">' + escapeHtml(gameTxt) +
+        '<div class="comp-ingredient-meta">' + escapeHtml(gameTxt) +
           ' vs your avg ' + escapeHtml(baseTxt) + '</div>' +
-        '<div class="game-score-ingredient-track"><div class="game-score-ingredient-fill" style="width:' +
-          subPct + '%"></div></div>' +
+        '<div class="bar bar--sm" aria-hidden="true"><i style="width:' + subPct + '%"></i></div>' +
         '</div>';
     }).join('');
-    var body = rows
-      ? '<div class="game-score-ingredients">' + rows + '</div>'
-      : '<div class="game-score-ingredients game-score-ingredients--empty">No substats for this category.</div>';
-    return '<details class="game-score-bar"' + (hint ? ' title="' + escapeHtml(hint) + '"' : '') + '>' +
-      '<summary class="game-score-bar-summary">' +
-        '<div class="game-score-bar-label"><span>' + escapeHtml(label) +
-        '</span><span>' + pct + '</span></div>' +
-        '<div class="game-score-bar-track"><div class="game-score-bar-fill" style="width:' +
-        pct + '%"></div></div>' +
-      '</summary>' + body +
-      '</details>';
+    return '<details class="gr-score gr-score--expandable"' + titleAttr + '>' +
+      '<summary><span class="gr-score-chevron" aria-hidden="true"></span>' + summary + '</summary>' +
+      '<div class="gr-score-details">' + rows + '</div></details>';
+  }
+
+  function bindGameReviewScoreList(container) {
+    if (!container) return;
+    var syncing = false;
+    var items = container.querySelectorAll('.gr-score--expandable');
+    items.forEach(function (details) {
+      details.addEventListener('toggle', function () {
+        if (syncing) return;
+        syncing = true;
+        var open = details.open;
+        items.forEach(function (node) {
+          node.open = open;
+        });
+        syncing = false;
+      });
+    });
   }
 
   function renderGameReviewRunes(build) {
@@ -1882,15 +2069,50 @@
     }).join('<span class="game-review-summoner-sep" aria-hidden="true">+</span>') + '</span>';
   }
 
+  function renderGameReviewSkillProgression(build) {
+    build = build || {};
+    var levels = build.skill_levels_by_level || [];
+    var icons = build.ability_icons || {};
+    var slots = ['Q', 'W', 'E', 'R'];
+    var maxLevel = build.skill_max_level || (build.skill_sequence || []).length;
+    if (!maxLevel || !levels.length) {
+      return '<p class="sub game-review-verdict-empty">No skill data for this game.</p>';
+    }
+    var visibleLevels = levels.slice(0, maxLevel);
+    var header = '<tr><th class="game-review-skill-ability" scope="col" aria-label="Ability"></th>' +
+      Array.from({ length: maxLevel }, function (_, index) {
+        return '<th scope="col">' + (index + 1) + '</th>';
+      }).join('') + '</tr>';
+    var body = slots.map(function (slot) {
+      var rowCells = visibleLevels.map(function (row, levelIndex) {
+        var value = (row && row[slot]) || 0;
+        var prev = levelIndex > 0 ? ((visibleLevels[levelIndex - 1] && visibleLevels[levelIndex - 1][slot]) || 0) : 0;
+        var gained = value > prev;
+        var classes = 'game-review-skill-cell' +
+          (gained ? ' game-review-skill-cell--gain' : '') +
+          (!value ? ' game-review-skill-cell--empty' : '');
+        return '<td class="' + classes + '"' +
+          (gained ? ' aria-label="Level ' + (levelIndex + 1) + ' ' + slot + '"' : '') + '></td>';
+      }).join('');
+      return '<tr><th class="game-review-skill-ability" scope="row">' +
+        iconCell(slot, icons[slot] || null, true) + '</th>' + rowCells + '</tr>';
+    }).join('');
+    return '<div class="game-review-skill-progression"><div class="game-review-skill-grid-wrap">' +
+      '<table class="game-review-skill-grid" aria-label="Skill points by level">' +
+      '<thead>' + header + '</thead><tbody>' + body + '</tbody></table></div></div>';
+  }
+
   function renderGameReviewComparisonTable(title, rows) {
     if (!rows || !rows.length) return '';
     var body = rows.map(function (row) {
       var metric = row.metric || row.label;
       var style = row.gap_color ? ' style="color:' + row.gap_color + '"' : '';
+      var gapText = row.gap_label || formatGameReviewMetricDelta(metric, row.delta);
+      var verdictText = row.verdict_label || row.verdict;
       return '<tr><td>' + escapeHtml(row.label) + '</td><td>' + formatGameReviewMetricValue(metric, row.game_value) + '</td><td>' +
         formatGameReviewMetricValue(metric, row.benchmark_value) + '</td><td class="delta-' + row.verdict + '"' + style + '>' +
-        formatGameReviewMetricDelta(metric, row.delta) + '</td><td class="delta-' +
-        row.verdict + '"' + style + '>' + row.verdict + '</td></tr>';
+        escapeHtml(gapText) + '</td><td class="delta-' +
+        row.verdict + '"' + style + '>' + escapeHtml(verdictText) + '</td></tr>';
     }).join('');
     return '<div class="card card--wide"><div class="label">' + escapeHtml(title) +
       '</div><div class="table-scroll"><table><thead><tr><th>Metric</th><th>This game</th><th>Benchmark</th><th>Delta</th><th>Verdict</th></tr></thead><tbody>' +
@@ -2087,9 +2309,7 @@
   }
 
   function chipHtml(label, tone, title) {
-    return '<span class="game-review-chip' + (tone ? ' game-review-chip--' + tone : '') + '"' +
-      (title ? ' title="' + escapeHtml(title) + '"' : '') + '>' +
-      escapeHtml(label) + '</span>';
+    return uiChip(label, tone, { title: title });
   }
 
   function championIconStack(names, icons, tone) {
@@ -2134,7 +2354,7 @@
                 : '<span>' + escapeHtml(row.killer || 'Unknown') + '</span>') +
             '</span>' +
             goldHtml +
-            (flags ? '<span class="game-review-chip-row">' + flags + '</span>' : '') +
+            (flags ? '<span class="ui-chip-row">' + flags + '</span>' : '') +
           '</div></div></div>';
       }).join('') + '</div>');
     }
@@ -2149,15 +2369,14 @@
         var verdict = row.fight_won ? 'Fight won' : 'Fight lost';
         var stats = [
           chipHtml(row.kills + '/' + row.deaths + '/' + row.assists, 'stat'),
-          chipHtml(Math.round(Number(row.damage) || 0).toLocaleString() + ' dmg', 'stat'),
-          chipHtml(fightManpower(row), 'stat')
+          chipHtml(Math.round(Number(row.damage) || 0).toLocaleString() + ' dmg', 'stat')
         ].join('');
         return '<div class="game-review-event game-review-event--' + tone + ' game-review-event--subtle">' +
           '<span class="game-review-event-time">' + formatGameTime(row.start_minute) + '</span>' +
           '<div class="game-review-event-body">' +
           '<div class="game-review-event-headline">' +
             '<strong>' + verdict + '</strong>' +
-            '<div class="game-review-chip-row">' + stats + '</div>' +
+            '<div class="ui-chip-row">' + stats + '</div>' +
           '</div>' +
           '<div class="game-review-fight-sides">' +
             championIconStack(row.ally_champions, row.ally_icons, 'ally') +
@@ -2172,53 +2391,9 @@
     if (!objectives.length) {
       parts.push('<p class="sub">No objectives tracked.</p>');
     } else {
-      parts.push('<div class="game-review-feed">' + objectives.map(function (row) {
-        var kindLabel = row.kind.charAt(0).toUpperCase() + row.kind.slice(1);
-        var isGrubs = row.kind === 'grubs' && row.secured_count != null && row.objective_total != null;
-        var tone;
-        var verdict;
-        var grubClass = '';
-        if (isGrubs) {
-          var secured = Number(row.secured_count);
-          var total = Number(row.objective_total) || 3;
-          var share = total > 0 ? secured / total : 0;
-          var bucket = Math.max(0, Math.min(3, Math.round(secured)));
-          grubClass = ' game-review-event--grubs-' + bucket;
-          if (share >= 2 / 3) tone = 'good';
-          else if (share <= 1 / 3) tone = 'bad';
-          else tone = 'mixed';
-          verdict = secured + '/' + total + ' secured';
-        } else {
-          tone = row.taken_by_team ? 'good' : 'bad';
-          verdict = row.taken_by_team ? 'Secured' : 'Missed';
-        }
-        var chips = [
-          chipHtml(verdict, tone === 'mixed' ? 'warn' : tone),
-          chipHtml(row.present ? 'Present' : 'Absent', row.present ? 'good' : 'bad')
-        ];
-        if (row.dead_before) {
-          chips.push(chipHtml('Died in setup', 'bad', objectiveHints['Died in setup window (45–10s)'] || ''));
-        }
-        if (row.wards_before != null) {
-          chips.push(chipHtml(
-            row.wards_before + ' wards before',
-            'stat',
-            objectiveHints['Wards before'] || ''
-          ));
-        }
-        return '<div class="game-review-event game-review-event--' + tone + grubClass +
-          ' game-review-event--subtle">' +
-          '<span class="game-review-event-time">' + formatGameTime(row.minute) + '</span>' +
-          '<div class="game-review-event-body">' +
-          '<div class="game-review-event-headline">' +
-            '<strong class="game-review-objective-title">' +
-              iconCell(kindLabel, row.objective_icon, true) +
-              '<span>' + escapeHtml(kindLabel) + '</span>' +
-            '</strong>' +
-          '</div>' +
-          '<div class="game-review-chip-row">' + chips.join('') + '</div>' +
-          '</div></div>';
-      }).join('') + '</div>');
+      parts.push('<div class="game-review-objective-list">' +
+        objectives.map(function (row) { return renderObjectiveRow(row, objectiveHints); }).join('') +
+        '</div>');
     }
     parts.push('</div>');
     return parts.join('');
@@ -2420,12 +2595,17 @@
       var compare = baselineByMetric[key];
       var compareHtml = '<span class="game-review-stat-delta">— vs your avg</span>';
       if (compare) {
-        var deltaTone = compare.verdict === 'above' ? 'is-good'
+        var neutralDelta = compare.verdict === 'on_par'
+          || compare.gap_label === 'close to your avg'
+          || compare.gap_label === 'same as your avg';
+        var deltaTone = neutralDelta ? ''
+          : compare.verdict === 'above' ? 'is-good'
           : compare.verdict === 'below' ? 'is-bad' : '';
+        var deltaText = compare.gap_label
+          || (formatGameReviewMetricDelta(key, compare.delta) + ' vs your avg');
         compareHtml = '<span class="game-review-stat-delta ' + deltaTone + '"' +
-          (compare.gap_color ? ' style="color:' + compare.gap_color + '"' : '') + '>' +
-          formatGameReviewMetricDelta(key, compare.delta) +
-          ' vs your avg</span>';
+          (neutralDelta || !compare.gap_color ? '' : ' style="color:' + compare.gap_color + '"') + '>' +
+          escapeHtml(deltaText) + '</span>';
       }
       return '<div class="game-review-stat-row" title="' + escapeHtml(hint) + '">' +
         '<span class="game-review-stat-label">' + escapeHtml(label) + '</span>' +
@@ -2463,7 +2643,25 @@
 
     return '<div class="game-review-overview">' +
       (groupsHtml || '<p class="sub">No overview stats for this game.</p>') +
+      renderGameReviewStructurePressure(game) +
       '</div>';
+  }
+
+  function renderGameReviewStructurePressure(game) {
+    var rows = game.structure_pressure || [];
+    if (!rows.length) return '';
+    var chartId = 'game-review-structure-pressure';
+    var bars = rows.map(function (row) {
+      return '<div class="game-review-structure-bar" title="' +
+        Math.round(Number(row.tower_damage) || 0) + ' tower dmg">' +
+        '<span class="game-review-structure-bar-fill" style="height:' +
+        Math.min(100, (Number(row.towers) || 0) * 35 + (Number(row.tower_damage) || 0) / 500) +
+        '%"></span><span class="game-review-structure-bar-label">' +
+        Math.round(Number(row.minute) || 0) + 'm</span></div>';
+    }).join('');
+    return '<section class="game-review-stat-group game-review-structure-pressure">' +
+      '<h4 class="game-review-stat-group-title"><span>Structure pressure</span></h4>' +
+      '<div class="game-review-structure-chart" id="' + chartId + '">' + bars + '</div></section>';
   }
 
   function renderGameReviewDetail(game) {
@@ -2481,11 +2679,12 @@
     if (stage) {
       var resultClass = game.result === 'win' ? 'game-review-result--win' : 'game-review-result--loss';
       var metaBits = [];
-      if (game.account) metaBits.push(escapeHtml(game.account));
       metaBits.push(escapeHtml(game.date));
       metaBits.push(formatGameTime(game.duration_min));
       metaBits.push(escapeHtml(game.side));
-      if (game.archetype) metaBits.push(escapeHtml(game.archetype));
+      var archetypeChip = game.archetype
+        ? uiChip(game.archetype, game.result === 'win' ? 'good' : 'bad')
+        : '';
       stage.innerHTML =
         '<div class="game-review-stage-inner">' +
         '<span class="game-review-result game-review-result--stage ' + resultClass + '">' +
@@ -2498,9 +2697,12 @@
         '<div class="game-review-stage-kda">' + escapeHtml(game.kda) + '</div>' +
         '<div class="game-review-stage-score">' +
         '<span class="game-review-stage-score-value">' + (score.overall || 0) + '</span>' +
-        '<span class="form-badge form-badge--stable">' + escapeHtml(score.tier || '—') + '</span>' +
+        uiChip(score.tier || '—', 'stable') +
         '</div>' +
-        '<div class="game-review-stage-meta">' + metaBits.join(' · ') + '</div>' +
+        '<div class="game-review-stage-meta">' +
+        (archetypeChip ? '<span class="game-review-stage-meta-chip">' + archetypeChip + '</span>' : '') +
+        '<span class="game-review-stage-meta-text">' + metaBits.join(' · ') + '</span>' +
+        '</div>' +
         ((build.keystone_icon || build.secondary_tree_icon || (build.summoners || []).length)
           ? '<div class="game-review-stage-loadout">' + renderGameReviewRunes(build) +
             ((build.summoners || []).length ? '<span class="game-review-rune-sep" aria-hidden="true">·</span>' +
@@ -2513,13 +2715,13 @@
 
     var hero = document.getElementById('game-review-score-hero');
     if (hero) {
-      var gameScoreHint = ((gameReviewTooltips.score || {})['Game score']) || '';
       var dimensions = score.dimensions || [];
-      hero.innerHTML = '<div class="game-review-scoreboard-bars" title="' + escapeHtml(gameScoreHint) + '">' +
+      hero.innerHTML = '<div class="gr-score-list">' +
         (dimensions.length
-          ? dimensions.map(function (dim) { return scoreBar(dim); }).join('')
+          ? dimensions.map(function (dim) { return renderGameReviewScoreDim(dim); }).join('')
           : '<p class="game-review-verdict-empty">No score dimensions available.</p>') +
         '</div>';
+      bindGameReviewScoreList(hero.querySelector('.gr-score-list'));
     }
 
     var overviewPanel = document.getElementById('game-review-panel-overview');
@@ -2537,11 +2739,14 @@
       var itemsHtml = (build.items || []).map(function (itemName, index) {
         return iconCell(itemName, itemIcons[index] || null, true);
       }).join('<span class="core-arrow" aria-hidden="true">→</span>');
-      loadoutPanel.innerHTML = '<div class="cards"><div class="card card--wide"><div class="label">Runes</div><div class="value">' +
-        renderGameReviewRunePage(build) + '</div></div><div class="card"><div class="label">Summoners</div><div class="value">' +
-        renderGameReviewSummoners(build) + '</div></div><div class="card card--wide"><div class="label">Item path</div><div class="value core-cell">' +
-        (itemsHtml || '—') + '</div></div><div class="card card--wide"><div class="label">Skill order</div><div class="value">' +
-        escapeHtml(build.skill_order || '—') + '</div></div></div>';
+      loadoutPanel.innerHTML = '<div class="cards game-review-loadout-cards"><div class="card card--wide"><div class="label">Runes</div><div class="value">' +
+        renderGameReviewRunePage(build) + '</div></div><div class="card card--wide game-review-loadout-utilities">' +
+        '<div class="game-review-loadout-section"><div class="label">Summoners</div><div class="value">' +
+        renderGameReviewSummoners(build) + '</div></div>' +
+        '<div class="game-review-loadout-section"><div class="label">Item path</div><div class="value core-cell">' +
+        (itemsHtml || '—') + '</div></div></div>' +
+        '<div class="card card--full"><div class="label">Skill progression</div><div class="value">' +
+        renderGameReviewSkillProgression(build) + '</div></div></div>';
     }
     document.querySelectorAll('.game-review-row').forEach(function (row) {
       row.classList.toggle('is-selected', row.getAttribute('data-match-id') === selectedGameId);
@@ -2549,6 +2754,19 @@
   }
 
   var GAME_REVIEW_VISIBLE_N = 5;
+
+  function lookupReportPlayerIcon(account) {
+    if (!account || !reportPlayerIcons || !reportPlayerIcons.length) return null;
+    var folded = String(account).toLowerCase();
+    for (var i = 0; i < reportPlayerIcons.length; i++) {
+      var member = reportPlayerIcons[i] || {};
+      var label = member.label || '';
+      if (label === account || label.toLowerCase() === folded) {
+        return member.profile_icon || null;
+      }
+    }
+    return null;
+  }
 
   function gameReviewRowHtml(game) {
     var isWin = game.result === 'win';
@@ -2558,11 +2776,21 @@
       ? '<span class="game-review-signal game-review-signal--' + signal.tone + '">' +
         escapeHtml(signal.title) + '</span>'
       : '<span class="game-review-signal game-review-signal--none">—</span>';
+    var accountHtml = '';
+    if (isGroupReport && game.account) {
+      var iconHref = game.account_icon || lookupReportPlayerIcon(game.account);
+      var accountIcon = iconHref
+        ? '<img src="' + escapeHtml(iconHref) + '" alt="" class="game-review-account-icon" width="16" height="16">'
+        : '';
+      accountHtml = '<span class="game-review-account">' + accountIcon +
+        '<span>' + escapeHtml(game.account) + '</span></span>';
+    }
     return '<button type="button" class="game-review-row game-review-row--' +
       (isWin ? 'win' : 'loss') +
       (game.match_id === selectedGameId ? ' is-selected' : '') +
       '" data-match-id="' + escapeHtml(game.match_id) + '">' +
       '<span class="game-review-result ' + resultClass + '">' + (isWin ? 'W' : 'L') + '</span>' +
+      accountHtml +
       '<span class="game-review-icons">' + iconCell(game.champion || 'You', game.champion_icon, true) +
       '<span class="game-review-vs">vs</span>' + iconCell(game.opponent || 'Opponent', game.opponent_icon, true) + '</span>' +
       '<span class="game-review-rail-stats">' +
@@ -2686,6 +2914,7 @@
           ' games · patches ' + bundle.patch_range;
       }
       renderFlatCards(document.getElementById('overview-cards'), bundle.overview_cards);
+      renderHeroChips(bundle);
       renderSectionVerdicts(bundle);
       renderWindowScopeChips(queueKey, windowKey);
       renderHeroActions(bundle);
@@ -2698,6 +2927,10 @@
       renderPositioningHints(bundle.positioning_hints);
       renderTieredCards(document.getElementById('positioning-cards'), bundle.positioning_cards);
       renderTieredCards(document.getElementById('teamfight-cards'), bundle.teamfight_cards);
+      renderTieredCards(
+        document.getElementById('objective-macro-cards'),
+        bundle.objective_macro_cards || []
+      );
 
       var blindBlock = document.getElementById('blind-spots-block');
       var blindBody = document.getElementById('blind-spots-body');
@@ -2748,12 +2981,7 @@
   document.addEventListener('toggle', function (e) {
     var details = e.target;
     if (!details || details.tagName !== 'DETAILS' || !details.open) return;
-    requestAnimationFrame(function () {
-      if (!window.Plotly || !window.Plotly.Plots) return;
-      details.querySelectorAll('.js-plotly-plot').forEach(function (plot) {
-        window.Plotly.Plots.resize(plot);
-      });
-    });
+    resizePlotlySoon(details);
   }, true);
 
   document.querySelectorAll('.queue-filter-btn').forEach(function (btn) {
@@ -2790,6 +3018,200 @@
     });
   });
 
+  // --- Account filter (group reports only) ---
+  {% if status_endpoint and report_slug %}
+  var ACCOUNT_VIEWS_ENDPOINT = {{ (status_endpoint ~ "/builds/" ~ report_slug ~ "/account-views") | tojson }};
+  {% else %}
+  var ACCOUNT_VIEWS_ENDPOINT = null;
+  {% endif %}
+  var accountFilter = {};
+  try {
+    accountFilter = JSON.parse(document.getElementById('account-filter-data').textContent || '{}');
+  } catch (err) {
+    accountFilter = {};
+  }
+  var accountMembers = (accountFilter && accountFilter.members) || [];
+  var accountViewsCache = {
+    all: {
+      queue_filter_default: {{ queue_filter_default | tojson }},
+      report_views: reportViews,
+      progression_views: progressionViews,
+      game_review_views: gameReviewViews
+    }
+  };
+  Object.keys((accountFilter && accountFilter.views) || {}).forEach(function (key) {
+    accountViewsCache[key] = accountFilter.views[key];
+  });
+  var selectedAccounts = {};
+  accountMembers.forEach(function (m) { selectedAccounts[m.key] = true; });
+  var currentAccountKey = 'all';
+  var accountFetchSeq = 0;
+
+  function accountKeyFromSelection() {
+    var selected = accountMembers
+      .filter(function (m) { return selectedAccounts[m.key]; })
+      .map(function (m) { return m.key; });
+    if (!selected.length || selected.length === accountMembers.length) return 'all';
+    return selected.slice().sort().join('|');
+  }
+
+  function updateAccountTrigger() {}
+
+  function persistAccountSelection() {
+    try {
+      localStorage.setItem('reportAccountFilter', JSON.stringify(
+        accountMembers
+          .filter(function (m) { return selectedAccounts[m.key]; })
+          .map(function (m) { return m.key; })
+      ));
+    } catch (e) {}
+  }
+
+  function setAccountViews(key, views) {
+    currentAccountKey = key;
+    reportViews = views.report_views || {};
+    progressionViews = views.progression_views || {};
+    gameReviewViews = views.game_review_views || {};
+    // Queue buttons follow the selection: only queues with games stay enabled.
+    document.querySelectorAll('.queue-filter-btn').forEach(function (btn) {
+      var qview = reportViews[btn.getAttribute('data-queue')];
+      btn.disabled = !qview || !qview.total_games;
+    });
+    var queueKey = currentQueue;
+    var view = reportViews[queueKey];
+    if (!view || !view.total_games) {
+      queueKey = views.queue_filter_default || queueKey;
+    }
+    applyView(queueKey, currentWindow);
+    updateAccountTrigger();
+    persistAccountSelection();
+  }
+
+  function showAccountMenuNotice(text) {
+    var notice = document.getElementById('account-filter-notice');
+    if (!notice) return;
+    notice.textContent = text || '';
+    notice.hidden = !text;
+  }
+
+  function applyAccountSelection() {
+    var key = accountKeyFromSelection();
+    if (key === currentAccountKey) {
+      updateAccountTrigger();
+      persistAccountSelection();
+      return;
+    }
+    showAccountMenuNotice('');
+    var cached = accountViewsCache[key];
+    if (cached) {
+      setAccountViews(key, cached);
+      return;
+    }
+    if (!ACCOUNT_VIEWS_ENDPOINT) {
+      updateAccountTrigger();
+      showAccountMenuNotice('This account combination is not available in this report.');
+      return;
+    }
+    var seq = ++accountFetchSeq;
+    if (mainEl) mainEl.classList.add('is-filter-loading');
+    showAccountMenuNotice('Crunching numbers for this selection…');
+    fetch(ACCOUNT_VIEWS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accounts: key.split('|') })
+    }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }).then(function (views) {
+      accountViewsCache[key] = views;
+      if (seq !== accountFetchSeq) return;
+      showAccountMenuNotice('');
+      setAccountViews(key, views);
+    }).catch(function () {
+      if (seq !== accountFetchSeq) return;
+      showAccountMenuNotice('Could not load this account combination. Try again.');
+      updateAccountTrigger();
+    }).finally(function () {
+      if (seq === accountFetchSeq && mainEl) mainEl.classList.remove('is-filter-loading');
+    });
+  }
+
+  function renderAccountMenu() {
+    var menu = document.getElementById('account-filter-menu');
+    if (!menu) return;
+    var rows = accountMembers.map(function (m) {
+      var icon = m.profile_icon
+        ? '<img src="' + escapeHtml(m.profile_icon) + '" alt="" class="account-toggle-icon" width="28" height="28">'
+        : '<span class="account-toggle-icon account-toggle-icon--empty" aria-hidden="true"></span>';
+      var rank = m.solo_rank_label
+        ? '<span class="account-toggle-rank">' +
+            (m.solo_rank_icon
+              ? '<img src="' + escapeHtml(m.solo_rank_icon) + '" alt="" width="16" height="16">'
+              : '') +
+            escapeHtml(m.solo_rank_label) + '</span>'
+        : '<span class="account-toggle-rank account-toggle-rank--none">Unranked</span>';
+      var gamesCount = Number(m.games || 0);
+      var games = gamesCount + ' game' + (gamesCount === 1 ? '' : 's');
+      return '<label class="account-toggle-row' + (!gamesCount ? ' is-empty' : '') + '">' +
+        '<span class="account-toggle-head">' +
+          '<span class="account-toggle-name">' + escapeHtml(m.riot_id || m.label) +
+            '<span class="account-toggle-tag">#' + escapeHtml(m.tagline || '') + '</span></span>' +
+          rank +
+        '</span>' +
+        '<span class="account-toggle-foot">' +
+          icon +
+          '<span class="account-toggle-games">' + games + '</span>' +
+          '<input type="checkbox" class="account-toggle-input" data-account="' + escapeHtml(m.key) + '"' +
+            (selectedAccounts[m.key] ? ' checked' : '') + (!gamesCount ? ' disabled' : '') + '>' +
+          '<span class="account-toggle-switch" aria-hidden="true"></span>' +
+        '</span>' +
+        '</label>';
+    }).join('');
+    menu.innerHTML = rows;
+    menu.querySelectorAll('.account-toggle-input').forEach(function (input) {
+      input.addEventListener('change', function () {
+        var key = input.getAttribute('data-account');
+        if (!input.checked) {
+          var remaining = accountMembers.filter(function (m) {
+            return selectedAccounts[m.key] && m.key !== key;
+          });
+          if (!remaining.length) {
+            input.checked = true; // At least one account must stay selected.
+            return;
+          }
+        }
+        selectedAccounts[key] = input.checked;
+        applyAccountSelection();
+      });
+    });
+  }
+
+  (function initAccountFilter() {
+    var bar = document.getElementById('account-filter-bar');
+    var menu = document.getElementById('account-filter-menu');
+    if (!bar || !menu) return;
+    if (accountMembers.length < 2) {
+      bar.style.display = 'none';
+      return;
+    }
+    // Restore a persisted selection only when its views are already embedded.
+    try {
+      var saved = JSON.parse(localStorage.getItem('reportAccountFilter') || 'null');
+      if (Array.isArray(saved) && saved.length) {
+        var valid = saved.filter(function (key) {
+          return accountMembers.some(function (m) { return m.key === key; });
+        });
+        if (valid.length && valid.length < accountMembers.length &&
+            accountViewsCache[valid.slice().sort().join('|')]) {
+          accountMembers.forEach(function (m) {
+            selectedAccounts[m.key] = valid.indexOf(m.key) !== -1;
+          });
+        }
+      }
+    } catch (e) {}
+    renderAccountMenu();
+  })();
+
   var savedQueue = null;
   var savedWindow = null;
   try {
@@ -2822,6 +3244,13 @@
 
   whenPlotlyReady(function () {
     renderGameReview(currentQueue);
+    var initialAccountKey = accountKeyFromSelection();
+    if (initialAccountKey !== 'all' && accountViewsCache[initialAccountKey]) {
+      currentQueue = initialQueue;
+      currentWindow = initialWindow;
+      setAccountViews(initialAccountKey, accountViewsCache[initialAccountKey]);
+      return;
+    }
     if (!initialView || !initialView.windows[initialWindow]) return;
     // Server HTML already matches the default view; only swap when restoring another slice.
     if ((!savedQueue || initialQueue === defaultQueue) && (!savedWindow || initialWindow === defaultWindow)) return;
@@ -2978,6 +3407,10 @@
     }
     if (options.scrollTop) {
       window.scrollTo({ top: 0, behavior: options.behavior || 'smooth' });
+    }
+    var activePanel = document.getElementById('category-' + category);
+    if (activePanel && window.resizePlotlySoon) {
+      window.resizePlotlySoon(activePanel);
     }
     document.dispatchEvent(new CustomEvent('report-category-change', { detail: { category: category } }));
   }

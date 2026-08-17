@@ -60,6 +60,16 @@ Last **10 games** per queue filter (rail shows 5, with expand for 5 more) with p
 
 Game Review is **orthogonal** to the game-window toggle — it follows the queue filter only.
 
+## Account filter (group reports)
+
+Group reports get an **Accounts** dropdown in the filter bar (name, tag, rank, per-account toggle).
+
+1. Record slicing? `pipeline/bundles.py` → `filter_records_by_accounts()`
+2. Precompute? `pipeline/orchestrator.py` → `account_subset_keys()` / `build_account_subset_views()`; every combination for ≤4 members (`ACCOUNT_FULL_COMBINATION_LIMIT`), otherwise singletons only; embedded as `account_filter_json`
+3. Non-precomputed combinations? `POST /api/players/{slug}/builds/{build}/account-views` in `web/app.py` (rebuilds from the match store, disk-cached under `account_views/`)
+4. UI? `report.html` `#account-filter-bar` + `applyAccountSelection()` JS; swaps the same view JSON as the queue/window toggles
+5. Peer comparison stays full-group only — subsets render without peer data
+
 ## Icons
 
 - Iconify keys in `presentation/ui_icons.py` → `ICONIFY_ICONS`

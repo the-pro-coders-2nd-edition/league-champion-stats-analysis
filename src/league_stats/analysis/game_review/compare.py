@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from league_stats.analysis.game_review.hints import (
-    GAME_REVIEW_KEY_STATS,
-    GAME_REVIEW_KEY_STAT_DIRECTIONS,
+    game_review_key_stat_directions_for_role,
+    game_review_key_stats_for_role,
 )
 from league_stats.analysis.progression.metrics import progression_metrics_for_role
 from league_stats.core.config import GAME_REVIEW_MAX_COMPARISONS
@@ -14,12 +14,22 @@ from league_stats.core.models import GameComparisonRow
 from league_stats.presentation.metric_colors import interpolate_metric_color, score_form_delta
 
 
-def _verdict(delta: float, direction: str) -> str:
-    if abs(delta) < 1e-9:
+def _verdict(delta: float, direction: str, metric: str, baseline: float) -> str:
+    """Classify a gap as above/below/on_par relative to personal baseline."""
+    if metric in ("gd10", "cs10", "gd15") and abs(delta) < 30:
         return "on_par"
+    threshold = max(abs(baseline) * 0.08, 0.05) if baseline else 0.05
     if direction == "higher":
-        return "above" if delta > 0 else "below"
-    return "below" if delta > 0 else "above"
+        if delta > threshold:
+            return "above"
+        if delta < -threshold:
+            return "below"
+    else:
+        if delta < -threshold:
+            return "above"
+        if delta > threshold:
+            return "below"
+    return "on_par"
 
 
 def _improvement_delta(delta: float, direction: str) -> float:
@@ -73,6 +83,60 @@ def _round_comparison(metric: str, value: float) -> float:
     return round(value, _comparison_decimals(metric))
 
 
+def _is_share_metric(metric: str) -> bool:
+    key = metric.lower()
+    return (
+        "share" in key
+        or "participation" in key
+        or key.endswith("_rate")
+        or key == "objectives_present_rate"
+    )
+
+
+def _is_gold_diff_metric(metric: str) -> bool:
+    key = metric.lower()
+    return key in {"gd10", "gd15"} or "gold_diff" in key or "gold diff" in key
+
+
+def _format_delta_display(metric: str, value: float) -> str:
+    rounded = _round_comparison(metric, value)
+    if _is_share_metric(metric):
+        scaled = round(rounded * 100)
+        return f"{scaled:+d}%" if scaled != 0 else "0%"
+    if _is_gold_diff_metric(metric):
+        gold = round(rounded)
+        return f"{gold:+d}" if gold != 0 else "0"
+    decimals = _comparison_decimals(metric)
+    formatted = f"{rounded:.{decimals}f}".rstrip("0").rstrip(".")
+    if rounded > 0:
+        return f"+{formatted}"
+    return formatted if rounded < 0 else "0"
+
+
+def _delta_is_effectively_zero(metric: str, value: float) -> bool:
+    return _format_delta_display(metric, value) in {"0", "+0", "0%", "+0%"}
+
+
+def _gap_label(metric: str, delta: float, verdict: str) -> str:
+    if verdict == "on_par":
+        return "same as your avg"
+    if _delta_is_effectively_zero(metric, delta):
+        return "close to your avg"
+    return f"{_format_delta_display(metric, delta)} vs your avg"
+
+
+def _verdict_label(metric: str, delta: float, verdict: str) -> str:
+    if verdict == "on_par":
+        return "Same"
+    if _delta_is_effectively_zero(metric, delta):
+        return "Close"
+    if verdict == "above":
+        return "Above"
+    if verdict == "below":
+        return "Below"
+    return verdict.replace("_", " ").title()
+
+
 def _row_for_metric(
     metric: str,
     *,
@@ -82,15 +146,18 @@ def _row_for_metric(
     direction: str,
 ) -> GameComparisonRow:
     delta = game_value - baseline
-    verdict = _verdict(delta, direction)
+    verdict = _verdict(delta, direction, metric, baseline)
+    rounded_delta = _round_comparison(metric, delta)
     return GameComparisonRow(
         metric=metric,
         label=label,
         game_value=_round_comparison(metric, game_value),
         benchmark_value=_round_comparison(metric, baseline),
-        delta=_round_comparison(metric, delta),
+        delta=rounded_delta,
         verdict=verdict,
         gap_color=_gap_color(metric, delta, direction, verdict),
+        gap_label=_gap_label(metric, rounded_delta, verdict),
+        verdict_label=_verdict_label(metric, rounded_delta, verdict),
     )
 
 
@@ -124,15 +191,18 @@ def compare_to_baseline(
 def compare_key_stats_to_baseline(
     game_row: dict[str, Any],
     baseline_means: dict[str, float],
+    *,
+    role: str,
 ) -> list[GameComparisonRow]:
     """Baseline delta for every Game Review overview key stat."""
     rows: list[GameComparisonRow] = []
-    for metric, (label, _) in GAME_REVIEW_KEY_STATS.items():
+    directions = game_review_key_stat_directions_for_role(role)
+    for metric, (label, _) in game_review_key_stats_for_role(role).items():
         game_value = game_row.get(metric)
         baseline = baseline_means.get(metric)
         if game_value is None or baseline is None:
             continue
-        direction = GAME_REVIEW_KEY_STAT_DIRECTIONS.get(metric, "higher")
+        direction = directions.get(metric, "higher")
         rows.append(
             _row_for_metric(
                 metric,

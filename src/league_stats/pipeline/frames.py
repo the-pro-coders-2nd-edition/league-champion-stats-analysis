@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from league_stats.analysis.buildings import buildings_dataframe
 from league_stats.analysis.deaths import deaths_dataframe
 from league_stats.analysis.items import items_dataframe
 from league_stats.analysis.matchups import matchups_dataframe
@@ -25,6 +26,7 @@ class AnalysisFrames:
     deaths_df: pd.DataFrame
     teamfights_df: pd.DataFrame
     objectives_df: pd.DataFrame
+    buildings_df: pd.DataFrame
     vision_df: pd.DataFrame
     runes_df: pd.DataFrame
     items_df: pd.DataFrame
@@ -38,6 +40,7 @@ def build_analysis_frames(records: list[MatchRecord]) -> AnalysisFrames:
     deaths_df = deaths_dataframe(records)
     teamfights_df = teamfights_dataframe(records)
     objectives_df = objectives_dataframe(records)
+    buildings_df = buildings_dataframe(records)
     vision_df = vision_dataframe(records)
     runes_df = runes_dataframe(records)
     items_df = items_dataframe(matches_df)
@@ -50,6 +53,7 @@ def build_analysis_frames(records: list[MatchRecord]) -> AnalysisFrames:
         deaths_df=deaths_df,
         teamfights_df=teamfights_df,
         objectives_df=objectives_df,
+        buildings_df=buildings_df,
         vision_df=vision_df,
         runes_df=runes_df,
         items_df=items_df,

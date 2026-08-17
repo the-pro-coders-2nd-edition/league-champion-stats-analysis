@@ -118,7 +118,7 @@ def load_all_records(
                 log.warning("Failed to parse %s: %s", match_id, exc)
                 continue
             label = labels.get(puuid)
-            if label and not record.account:
+            if label:
                 record = record.model_copy(update={"account": label})
             records.append(record)
     records.sort(key=lambda r: r.game_creation_ms, reverse=True)

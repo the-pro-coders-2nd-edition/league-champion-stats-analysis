@@ -59,6 +59,20 @@ def evaluate_behaviors(
     vspm = _num(game_row, "vspm")
     control_wards = int(game_row.get("control_wards") or 0)
     obj_rate = _num(game_row, "objectives_present_rate")
+    accounted_raw = game_row.get("objectives_accounted_for_rate")
+    accounted_rate = float(accounted_raw) if accounted_raw is not None else obj_rate
+    unproductive_rate = _num(game_row, "unproductive_absence_rate")
+    split_trades = sum(
+        1
+        for obj in record.objectives
+        if obj.sidelane_pressure and (obj.trade_value_delta or 0) >= 0
+    )
+    held_defends = sum(1 for obj in record.objectives if obj.trade_outcome == "held")
+    failed_defends = sum(
+        1
+        for obj in record.objectives
+        if obj.macro_role == "defending_split" and obj.trade_outcome == "lost"
+    )
     fights_disadv = int(game_row.get("fights_disadvantaged") or 0)
     solo_deaths = int(game_row.get("solo_deaths") or 0)
 
@@ -69,6 +83,7 @@ def evaluate_behaviors(
     norm_base_deaths = normalize_deaths_for_duration(base_deaths, base_duration)
     base_vspm = _baseline(baseline_means, "vspm", 1.0)
     base_obj = _baseline(baseline_means, "objectives_present_rate", 0.5)
+    base_unproductive = _baseline(baseline_means, "unproductive_absence_rate", 0.15)
 
     if gd10 >= base_gd10 + 200:
         candidates.append(
@@ -128,24 +143,73 @@ def evaluate_behaviors(
         candidates.append(
             _Candidate(
                 "positive",
-                "Objective presence",
+                "Strong objective attendance",
                 f"Present for {obj_rate * 100:.0f}% of epic objectives.",
                 6.5,
                 "objectives",
             )
         )
-    elif obj_rate < 0.35 and base_obj >= 0.4:
+
+    if split_trades >= 2:
+        candidates.append(
+            _Candidate(
+                "positive",
+                "Sidelane pressure at objectives",
+                f"Created sidelane pressure during {split_trades} objective(s).",
+                6.5,
+                "objectives",
+            )
+        )
+
+    if held_defends >= 1:
+        candidates.append(
+            _Candidate(
+                "positive",
+                "Held tower during objective",
+                f"Defended a split {held_defends} time(s) while the team contested.",
+                6.5,
+                "objectives",
+            )
+        )
+
+    if unproductive_rate >= max(0.35, base_unproductive + 0.15):
         candidates.append(
             _Candidate(
                 "negative",
-                "Low objective presence",
-                f"Only {obj_rate * 100:.0f}% objective presence.",
+                "Absent without pressure",
+                f"Unproductive absence on {unproductive_rate * 100:.0f}% of objectives.",
+                6.5,
+                "objectives",
+            )
+        )
+    elif (
+        obj_rate < 0.35
+        and base_obj >= 0.4
+        and accounted_rate < base_obj
+        and unproductive_rate >= base_unproductive + 0.1
+    ):
+        candidates.append(
+            _Candidate(
+                "negative",
+                "Absent without pressure",
+                f"Low accounted macro ({accounted_rate * 100:.0f}%) with idle absences.",
                 6.0,
                 "objectives",
             )
         )
 
-    if vspm >= base_vspm * 1.15:
+    if failed_defends >= 1:
+        candidates.append(
+            _Candidate(
+                "negative",
+                "Failed to hold split",
+                f"Lost a defended tower during {failed_defends} objective contest(s).",
+                6.5,
+                "objectives",
+            )
+        )
+
+    if vspm >= base_vspm * (1.25 if record.role == "UTILITY" else 1.15):
         candidates.append(
             _Candidate(
                 "positive",

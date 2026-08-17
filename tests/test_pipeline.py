@@ -96,8 +96,8 @@ def test_full_pipeline_generates_all_artifacts(tmp_path: Path) -> None:
     assert 'data-tab="pulse"' in html
     assert "Rank peer comparison" in html
     assert 'id="peer-dossier"' in html
-    assert 'data-tab="gaps"' in html
-    assert 'id="peer-verdict"' in html
+    assert 'id="peer-stage"' in html
+    assert 'id="peer-above-list"' in html
     assert "← Home" in html
     assert 'href="/"' in html
 

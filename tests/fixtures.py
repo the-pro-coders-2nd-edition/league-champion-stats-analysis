@@ -57,6 +57,7 @@ def make_participant(pid: int, team_id: int, champion: str, position: str) -> di
         "totalMinionsKilled": 180 if is_me else 120,
         "neutralMinionsKilled": 8 if is_me else 4,
         "champExperience": 14000,
+        "champLevel": 13,
         "totalDamageDealtToChampions": 24000 if is_me else 12000,
         "totalDamageTaken": 18000 if is_me else 14000,
         "trueDamageDealtToChampions": 1000,

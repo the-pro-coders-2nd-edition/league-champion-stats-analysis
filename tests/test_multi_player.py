@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
 import pytest
@@ -142,3 +144,18 @@ def test_run_all_builds_pools_multi_player_reports(
     assert hub_path.exists()
     assert "Alice#EUW, Bob#NA1" in report_html
     assert "25 games" in report_html or ">25<" in report_html
+
+    payload_match = re.search(
+        r'id="account-filter-data">(.*?)</script>', report_html, re.S
+    )
+    assert payload_match is not None
+    account_filter = json.loads(payload_match.group(1))
+    assert account_filter["enabled"] is True
+    assert account_filter["full_combinations"] is True
+    assert set(account_filter["views"]) == {"Alice#EUW", "Bob#NA1"}
+    members = {member["key"]: member for member in account_filter["members"]}
+    assert members["Alice#EUW"]["games"] == 10
+    assert members["Bob#NA1"]["games"] == 15
+    alice_views = account_filter["views"]["Alice#EUW"]
+    assert alice_views["report_views"]["solo"]["total_games"] == 10
+    assert alice_views["report_views"]["all"]["total_games"] == 10

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,6 +20,12 @@ AVG_GAME_MIN: float = 28.0
 UTILITY_CC_NOISE_RATIO: float = 0.25
 UTILITY_HEAL_NOISE_RATIO: float = 0.40
 UTILITY_SHIELD_NOISE_RATIO: float = 0.40
+
+# Support vision bands: ~4.0 VS/min is world-class (pro anchor).
+_UTILITY_VSPM_FLOOR = 0.9
+_UTILITY_VSPM_CEILING = 4.0
+_UTILITY_CONTROL_WARD_FLOOR = 0.8
+_UTILITY_CONTROL_WARD_CEILING = 6.0
 
 _DEFAULT_HEALING_BENCH: float = 7500.0
 _DEFAULT_SHIELDING_BENCH: float = 3500.0
@@ -99,7 +106,8 @@ def column_mean(matches_df: pd.DataFrame, column: str) -> float | None:
     series = pd.to_numeric(matches_df[column], errors="coerce").dropna()
     if series.empty:
         return None
-    return float(series.mean())
+    value = float(series.mean())
+    return value if math.isfinite(value) else None
 
 
 def clamp_score(value: float, floor: float, ceiling: float) -> float:
@@ -206,6 +214,10 @@ def _format_metric_value(column: str, value: float) -> str:
         "kill_participation",
         "tf_participation",
         "objectives_present_rate",
+        "objectives_accounted_for_rate",
+        "objectives_split_push_rate",
+        "objectives_defend_split_rate",
+        "unproductive_absence_rate",
         "lane_priority",
         "damage_taken_share",
     }:
@@ -249,7 +261,7 @@ def score_metric_value(
     role: str,
 ) -> tuple[float, str] | None:
     """Score one raw metric against role/Gold bands. Returns ``None`` when unavailable."""
-    if value is None:
+    if value is None or not math.isfinite(float(value)):
         return None
 
     if column == "gd10":
@@ -294,12 +306,22 @@ def score_metric_value(
     if column == "tf_won_share":
         return clamp_score(value, 0.30, 0.70), f"{value * 100:.0f}% fight WR"
     if column == "vspm":
+        if role == "UTILITY":
+            return (
+                clamp_score(value, _UTILITY_VSPM_FLOOR, _UTILITY_VSPM_CEILING),
+                _format_metric_value(column, value),
+            )
         bench = float(gold.get("vspm", 0.8))
         return (
             clamp_score(value, bench * 0.65, bench * 1.35),
             _format_metric_value(column, value),
         )
     if column == "control_wards":
+        if role == "UTILITY":
+            return (
+                clamp_score(value, _UTILITY_CONTROL_WARD_FLOOR, _UTILITY_CONTROL_WARD_CEILING),
+                _format_metric_value(column, value),
+            )
         bench = float(gold.get("control_wards", 1.5))
         return (
             clamp_score(value, bench * 0.45, bench * 1.40),
@@ -310,6 +332,24 @@ def score_metric_value(
         return (
             clamp_score(value, max(0.25, bench - 0.25), min(0.90, bench + 0.20)),
             f"{value * 100:.0f}% presence",
+        )
+    if column == "objectives_accounted_for_rate":
+        bench = float(gold.get("objectives_accounted_for_rate", 0.70))
+        return (
+            clamp_score(value, max(0.35, bench - 0.25), min(0.95, bench + 0.15)),
+            f"{value * 100:.0f}% accounted",
+        )
+    if column == "objectives_split_push_rate":
+        bench = float(gold.get("objectives_split_push_rate", 0.10))
+        return (
+            clamp_score(value, max(0.0, bench - 0.08), bench + 0.15),
+            f"{value * 100:.0f}% split",
+        )
+    if column == "structure_tower_damage":
+        bench = float(gold.get("structure_tower_damage", 4500.0))
+        return (
+            clamp_score(value, bench * 0.45, bench * 1.45),
+            f"{value:,.0f} tower dmg",
         )
     if column == "avg_unspent_gold":
         return (
@@ -395,6 +435,8 @@ def score_category(
         if scored is None:
             continue
         part, fragment = scored
+        if not math.isfinite(part):
+            continue
         weighted.append((part, metric.weight))
         fragments.append(fragment)
 

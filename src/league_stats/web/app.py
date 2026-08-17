@@ -7,6 +7,8 @@ the Gemini chat proxy on top.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -29,12 +31,21 @@ from league_stats.core.config import (
     VALID_PLATFORMS,
     VALID_REGIONS,
     AppConfig,
+    PlayerIdentity,
     WebConfig,
     load_config,
     load_web_config,
 )
 from league_stats.infra.cache import HttpCache, MatchStore
+from league_stats.infra.ddragon_assets import DDragonAssets
 from league_stats.infra.riot_api import RiotApiClient, RiotApiError, shared_rate_limiter
+from league_stats.pipeline.fetch import group_records, load_all_records, resolve_player_contexts
+from league_stats.pipeline.orchestrator import (
+    _account_icon_hrefs,
+    account_view_key,
+    build_account_subset_views,
+)
+from league_stats.pipeline.services import Services
 from league_stats.presentation.brand_assets import (
     APP_TITLE,
     FAVICON_FILENAME,
@@ -110,6 +121,12 @@ class RefreshRequest(BaseModel):
 
     champion: str = Field(default="", max_length=64)
     role: str = Field(default="", max_length=32)
+
+
+class AccountViewsRequest(BaseModel):
+    """Body of ``POST /api/players/{slug}/builds/{build_slug}/account-views``."""
+
+    accounts: list[str] = Field(min_length=1, max_length=MAX_GROUP_PLAYERS)
 
 
 def _parse_player_entry(value: str, tagline: str = "") -> dict[str, str]:
@@ -986,6 +1003,136 @@ def create_app(
     def regenerate_player(slug: str) -> dict[str, Any]:
         """Re-render reports from cached matches without fetching newer games."""
         return _enqueue_player_job(slug, JOB_KIND_REGENERATE)
+
+    @app.post("/api/players/{slug}/builds/{build_slug}/account-views")
+    def account_views(
+        slug: str, build_slug: str, body: AccountViewsRequest
+    ) -> dict[str, Any]:
+        """Dashboard views for one account subset of a group report.
+
+        The report page calls this when a toggled account combination was not
+        precomputed into the HTML (groups above the precompute limit). Views
+        are rebuilt from the local match store and cached beside the report.
+        """
+
+        def _is_report_slug(value: str) -> bool:
+            return bool(value) and all(ch.isalnum() or ch == "_" for ch in value)
+
+        if not (_is_report_slug(slug) and _is_report_slug(build_slug)):
+            raise HTTPException(status_code=400, detail="Invalid report reference.")
+        build_dir = config.reports_dir / slug / build_slug
+        meta_path = build_dir / "meta.json"
+        if not meta_path.is_file():
+            raise HTTPException(status_code=404, detail="Report not found.")
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raise HTTPException(status_code=500, detail="Report metadata unreadable.")
+        champion = str(meta.get("champion", "")).strip()
+        role = str(meta.get("role", "")).strip()
+        tracked = _players_from_meta(meta)
+        if not champion or not role or len(tracked) < 2:
+            raise HTTPException(
+                status_code=400, detail="Not a group report with account data."
+            )
+
+        by_label = {
+            f"{p['riot_id']}#{p['tagline']}".casefold(): p for p in tracked
+        }
+        requested: dict[str, dict[str, Any]] = {}
+        for raw in body.accounts:
+            player = by_label.get(str(raw).strip().casefold())
+            if player is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown account {raw!r} for this report.",
+                )
+            requested[f"{player['riot_id']}#{player['tagline']}"] = player
+        labels = sorted(requested)
+
+        cache_key = hashlib.sha1(
+            f"{account_view_key(labels).casefold()}|{meta.get('generated_at', '')}".encode()
+        ).hexdigest()[:16]
+        cache_path = build_dir / "account_views" / f"{cache_key}.json"
+        if cache_path.is_file():
+            try:
+                return json.loads(cache_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                pass
+
+        player_row = store.get_player(slug)
+        region = str(player_row["region"]) if player_row else "euw1"
+        run_config = load_config(
+            riot_id=str(tracked[0]["riot_id"]),
+            tagline=str(tracked[0]["tagline"]),
+            region=region,
+            output_dir=config.output_dir,
+            players=[
+                PlayerIdentity(riot_id=str(p["riot_id"]), tagline=str(p["tagline"]))
+                for p in tracked
+            ],
+            output_reports_slug=slug,
+        )
+        build_config = run_config.model_copy(update={"champion": champion, "role": role})
+        http_cache = HttpCache(build_config.http_cache_dir)
+        match_store = MatchStore(build_config.db_path)
+        client = RiotApiClient(
+            build_config,
+            http_cache,
+            match_store,
+            limiter=shared_rate_limiter(
+                build_config.requests_per_second,
+                build_config.requests_per_two_minutes,
+            ),
+        )
+        assets = DDragonAssets(build_config)
+        services = Services(
+            config=build_config,
+            http_cache=http_cache,
+            store=match_store,
+            client=client,
+            assets=assets,
+        )
+        try:
+            contexts = resolve_player_contexts(services)
+            wanted = {label.casefold() for label in labels}
+            selected = [c for c in contexts if c.label.casefold() in wanted]
+            if not selected:
+                raise HTTPException(
+                    status_code=404, detail="No cached matches for these accounts."
+                )
+            records = load_all_records(
+                services,
+                [context.puuid for context in selected],
+                account_by_puuid={context.puuid: context.label for context in selected},
+            )
+            records = group_records(records, champion, role)
+            if not records:
+                raise HTTPException(
+                    status_code=404, detail="No games for this account selection."
+                )
+            account_icons = _account_icon_hrefs(tracked, assets, build_dir)
+            build_config.run_graphs_dir.mkdir(parents=True, exist_ok=True)
+            views = build_account_subset_views(
+                build_config,
+                records,
+                build_config.run_graphs_dir,
+                assets=assets,
+                account_icons=account_icons,
+                run_dir=build_dir,
+            )
+        finally:
+            match_store.close()
+            http_cache.close()
+
+        # Same encoding as the embedded report JSON (stringifies numpy scalars).
+        payload: dict[str, Any] = json.loads(json.dumps(views, default=str))
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(json.dumps(payload), encoding="utf-8")
+        except OSError:
+            pass
+        return payload
 
     @app.post("/api/chat")
     def chat(body: ChatRequest) -> dict[str, Any]:

@@ -54,6 +54,21 @@ def test_champion_and_keystone_hrefs(tmp_path: Path) -> None:
     assert assets.champion_href("Missing", from_dir=report_dir) is None
 
 
+def test_ability_icon_href(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    assets = DDragonAssets(config)
+    assets._abilities_dir.mkdir(parents=True)
+    (assets._abilities_dir / "Viktor_Q.png").write_bytes(b"png")
+
+    report_dir = config.output_dir / "reports" / "player" / "viktor_middle"
+    report_dir.mkdir(parents=True)
+
+    assert assets.ability_href("Viktor", "Q", from_dir=report_dir) == (
+        "../../../assets/abilities/Viktor_Q.png"
+    )
+    assert assets.ability_href("Viktor", "R", from_dir=report_dir) is None
+
+
 def test_fiddlesticks_match_id_resolves_ddragon_icon(tmp_path: Path) -> None:
     """Match-v5 uses FiddleSticks; DDragon stores Fiddlesticks.png."""
     config = _config(tmp_path)

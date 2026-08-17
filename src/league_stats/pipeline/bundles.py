@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -58,6 +59,22 @@ def filter_records_by_queue(records: list[MatchRecord], key: str) -> list[MatchR
     if key == "flex":
         return [record for record in records if record.queue_id == RANKED_FLEX_QUEUE_ID]
     return records
+
+
+def filter_records_by_accounts(
+    records: list[MatchRecord], accounts: set[str] | None
+) -> list[MatchRecord]:
+    """Return records played on the given ``RiotID#Tag`` accounts.
+
+    ``None`` or an empty set means no filtering. Labels are compared
+    case-insensitively because cached match payloads may differ in casing.
+    """
+    if not accounts:
+        return records
+    wanted = {label.casefold() for label in accounts}
+    return [
+        record for record in records if (record.account or "").casefold() in wanted
+    ]
 
 
 def queue_filter_options(solo_count: int, flex_count: int) -> list[dict[str, Any]]:
@@ -180,7 +197,9 @@ def _annotate_score_components(
 ) -> list[dict[str, Any]]:
     """Attach Strength / Solid / Focus tone + label to each score category card."""
     for comp in score_components:
-        tone, verdict = _chip_tone(float(comp.get("score", 0.0)))
+        raw_score = float(comp.get("score", 0.0))
+        score = raw_score if math.isfinite(raw_score) else 0.0
+        tone, verdict = _chip_tone(score)
         comp["tone"] = tone
         comp["verdict"] = verdict
     return score_components
@@ -251,16 +270,17 @@ def _build_section_verdicts(bundle: dict[str, Any]) -> dict[str, dict[str, Any]]
 
     verdicts: dict[str, dict[str, Any]] = {}
     for section, comp, score in section_comps:
+        safe_score = score if math.isfinite(score) else 0.0
         text, tone, label = _score_verdict_sentence(
             str(comp.get("name", "")),
-            score,
+            safe_score,
             is_biggest_gap=(section == biggest_gap_section),
         )
         payload: dict[str, Any] = {
             "text": text,
             "tone": tone,
             "label": label,
-            "score": round(score),
+            "score": round(safe_score),
             "name": str(comp.get("name", "")),
             "hint": str(comp.get("hint") or ""),
             "value": str(comp.get("value") or ""),
@@ -278,18 +298,25 @@ def _build_section_verdicts(bundle: dict[str, Any]) -> dict[str, dict[str, Any]]
 def _attach_peer_benchmarks(
     card_lists: list[list[dict[str, Any]]], peer_payload: dict[str, Any]
 ) -> None:
-    """Add 'vs peers' benchmark sub-lines to metric cards that have a peer row."""
-    rows_by_label = {
-        str(row.get("label", "")): row for row in peer_payload.get("rows", [])
+    """Add 'vs peers' benchmark sub-lines to headline cards with a peer row."""
+    rows_by_metric = {
+        str(row.get("metric", "")): row
+        for row in peer_payload.get("rows", [])
+        if row.get("metric")
     }
-    if not rows_by_label:
+    if not rows_by_metric:
         return
     tier = str(peer_payload.get("tier") or "").strip()
     peers_label = f"{tier.title()} peers" if tier else "rank peers"
     for entries in card_lists:
         for entry in entries:
-            row = rows_by_label.get(str(entry.get("label", "")))
-            if row is None:
+            if entry.get("tier") != "headline":
+                continue
+            metric = str(entry.get("metric", ""))
+            if not metric:
+                continue
+            row = rows_by_metric.get(metric)
+            if row is None or row.get("verdict") == "inline":
                 continue
             entry["benchmark"] = f"{row['gap']} vs {peers_label}"
             entry["benchmark_tone"] = row.get("verdict", "inline")
@@ -376,6 +403,7 @@ def bundle_to_template_context(
         "positioning_cards": bundle.get("positioning_cards", []),
         "positioning_hints": bundle.get("positioning_hints", []),
         "teamfight_cards": bundle["teamfight_cards"],
+        "objective_macro_cards": bundle.get("objective_macro_cards", []),
         "objective_rows": bundle["objective_rows"],
         "objectives_section_icon": bundle.get("objectives_section_icon"),
         "blind_spots": bundle["blind_spots"],
@@ -427,6 +455,7 @@ def build_window_bundle(
         "positioning_hints": [],
         "teamfight_cards": [],
         "objective_rows": [],
+        "objective_macro_cards": [],
         "blind_spots": [],
         "build_paths": [],
         "rune_rows": [],
@@ -531,6 +560,7 @@ def build_window_bundle(
         "positioning": positioning_agg,
         "jungle": summaries.get("jungle", {}),
         "utility": summaries.get("utility", {}),
+        "split_push": summaries.get("split_push", {}),
     }
 
     bundle: dict[str, Any] = {
@@ -542,7 +572,11 @@ def build_window_bundle(
         ),
         "queue_label": queue_label,
         "overview": overview,
-        "overview_cards": overview_card_entries(overview, role=config.role),
+        "overview_cards": overview_card_entries(
+            overview,
+            role=config.role,
+            split_push=summaries.get("split_push", {}),
+        ),
         "early_section_title": profile.early_section_title,
         "section_order": list(profile.section_order),
         "score": score,
@@ -589,6 +623,15 @@ def build_window_bundle(
             role=config.role,
             avg_damage_share=avg_damage_share,
         ),
+        "objective_macro_cards": cards_from_specs(
+            profile.objectives,
+            summary_buckets,
+            section="objectives",
+            role=config.role,
+            avg_damage_share=avg_damage_share,
+        )
+        if profile.objectives
+        else [],
         "positioning_cards": _build_positioning_cards(
             positioning_agg,
             config.role,
@@ -631,9 +674,6 @@ def build_window_bundle(
     bundle["section_verdicts"] = _build_section_verdicts(bundle)
 
     if window_peer is not None:
-        figures["peer_comparison"] = graphs.peer_comparison_chart(
-            window_peer.comparisons, build_label=window_peer.build_label
-        )
         peer_payload: dict[str, Any] = {
             "subtitle": peer_subtitle(window_peer),
             "rank_label": window_peer.rank_label,
@@ -656,7 +696,6 @@ def build_window_bundle(
             if rank_icon:
                 peer_payload["rank_icon"] = rank_icon
         bundle["peer"] = peer_payload
-        bundle["figures"]["peer_comparison"] = figures["peer_comparison"]
         bundle["_peer_result"] = window_peer
         _attach_peer_benchmarks(
             [
@@ -667,6 +706,7 @@ def build_window_bundle(
                 bundle["death_cards"],
                 bundle["positioning_cards"],
                 bundle["teamfight_cards"],
+                bundle["objective_macro_cards"],
             ],
             peer_payload,
         )

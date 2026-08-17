@@ -6,12 +6,14 @@ from typing import Any
 
 import pandas as pd
 
+from league_stats.analysis.buildings import extract_buildings
 from league_stats.analysis.deaths import (
     BEFORE_OBJECTIVE_EXCLUDE_MS,
     in_objective_setup_window,
 )
+from league_stats.analysis.objective_macro import enrich_objectives
 from league_stats.analysis.timeline import TimelineContext
-from league_stats.core.models import MatchRecord, ObjectiveKind, ObjectiveRecord
+from league_stats.core.models import BuildingRecord, MatchRecord, ObjectiveKind, ObjectiveRecord
 from league_stats.utils import BARON_PIT, DRAGON_PIT, distance, ms_to_min
 
 PRESENCE_RADIUS: float = 4_500.0
@@ -197,6 +199,17 @@ def extract_objectives(ctx: TimelineContext) -> list[ObjectiveRecord]:
     return records
 
 
+def extract_objectives_enriched(
+    ctx: TimelineContext,
+    *,
+    summoners: list[str],
+) -> tuple[list[ObjectiveRecord], list[BuildingRecord]]:
+    """Extract objectives with macro/trade enrichment and building records."""
+    buildings = extract_buildings(ctx)
+    objectives = enrich_objectives(ctx, extract_objectives(ctx), buildings, summoners=summoners)
+    return objectives, buildings
+
+
 def objectives_dataframe(records: list[MatchRecord]) -> pd.DataFrame:
     """Flatten every objective event into a dataframe.
 
@@ -224,6 +237,21 @@ def objectives_dataframe(records: list[MatchRecord]) -> pd.DataFrame:
                     "control_wards_before": obj.control_wards_before,
                     "secured_count": obj.secured_count,
                     "objective_total": obj.objective_total,
+                    "macro_role": obj.macro_role,
+                    "justified_absence": obj.justified_absence,
+                    "absence_reason": obj.absence_reason,
+                    "sidelane_pressure": obj.sidelane_pressure,
+                    "defending_lane": obj.defending_lane,
+                    "nearby_enemy_count": obj.nearby_enemy_count,
+                    "manpower_at_pit": obj.manpower_at_pit,
+                    "pit_ally_champions": list(obj.pit_ally_champions),
+                    "pit_enemy_champions": list(obj.pit_enemy_champions),
+                    "tp_available": obj.tp_available,
+                    "trade_outcome": obj.trade_outcome,
+                    "trade_summary": obj.trade_summary,
+                    "trade_value_delta": obj.trade_value_delta,
+                    "trade_gain": list(obj.trade_gain),
+                    "trade_loss": list(obj.trade_loss),
                 }
             )
     return pd.DataFrame(rows)

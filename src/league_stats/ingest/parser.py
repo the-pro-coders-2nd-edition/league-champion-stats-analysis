@@ -15,7 +15,7 @@ from typing import Any, Iterable, Final
 
 from league_stats.analysis.deaths import extract_deaths
 from league_stats.analysis.key_moments import detect_key_moments
-from league_stats.analysis.objectives import extract_objectives
+from league_stats.analysis.objectives import extract_objectives_enriched
 from league_stats.analysis.positioning import extract_positioning
 from league_stats.analysis.teamfights import detect_teamfights
 from league_stats.analysis.jungle import extract_jungle_metrics
@@ -24,6 +24,7 @@ from league_stats.analysis.timeline import TimelineContext, build_context, extra
 from league_stats.analysis.vision import extract_control_ward_lifetime
 from league_stats.infra.cache import MatchStore
 from league_stats.core.champions import VALID_ROLES, build_label, role_display
+from league_stats.core.skills import build_skill_sequence_from_events
 from league_stats.core.config import (
     AppConfig,
     RANKED_QUEUE_IDS,
@@ -408,6 +409,7 @@ class MatchParser:
         timings = self._timings(purchases)
         skill_sequence, skill_order = self._skills(ctx)
         ult_learned_min = self._ult_learned_min(ctx)
+        champ_level = self._champ_level(ctx, me)
         timeline_stats = extract_timeline_stats(ctx, int(me.get("totalTimeSpentDead", 0)))
         positioning = extract_positioning(ctx)
         timeline_stats.grouped_share = positioning["grouped_share"]
@@ -434,6 +436,11 @@ class MatchParser:
             if int(e.get("killerId", 0)) == ctx.participant_id
         )
 
+        summoners = [
+            SUMMONER_SPELLS.get(int(me.get(f"summoner{i}Id", 0)), "Unknown") for i in (1, 2)
+        ]
+        objectives, buildings = extract_objectives_enriched(ctx, summoners=summoners)
+
         version = str(info.get("gameVersion", "0.0"))
         return MatchRecord(
             match_id=str(match["metadata"]["matchId"]),
@@ -455,11 +462,10 @@ class MatchParser:
             economy=self._economy(me, allies, ctx),
             vision=self._vision(me, ctx),
             runes=self._runes(me),
-            summoners=[
-                SUMMONER_SPELLS.get(int(me.get(f"summoner{i}Id", 0)), "Unknown") for i in (1, 2)
-            ],
+            summoners=summoners,
             skill_order=skill_order,
             skill_sequence=skill_sequence,
+            champ_level=champ_level,
             final_items=[
                 self._catalog.name(int(me[f"item{i}"]))
                 for i in range(6)
@@ -480,7 +486,8 @@ class MatchParser:
             timeline=timeline_stats,
             deaths=deaths,
             teamfights=detect_teamfights(ctx),
-            objectives=extract_objectives(ctx),
+            objectives=objectives,
+            buildings=buildings,
             key_moments=key_moments,
         )
 
@@ -523,6 +530,8 @@ class MatchParser:
             quadra_kills=int(me.get("quadraKills", 0)),
             penta_kills=int(me.get("pentaKills", 0)),
             kill_participation=kp,
+            damage_to_turrets=int(me.get("damageDealtToTurrets", 0)),
+            damage_to_objectives=int(me.get("damageDealtToObjectives", 0)),
         )
 
     def _economy(
@@ -627,7 +636,7 @@ class MatchParser:
             for e in ctx.events_of("SKILL_LEVEL_UP")
             if int(e.get("participantId", 0)) == ctx.participant_id
         ]
-        sequence = [SKILL_LETTERS.get(int(e.get("skillSlot", 0)), "?") for e in events]
+        sequence = build_skill_sequence_from_events(events, SKILL_LETTERS)
         points: dict[str, int] = {"Q": 0, "W": 0, "E": 0}
         max_order: list[str] = []
         for letter in sequence:
@@ -640,6 +649,18 @@ class MatchParser:
             if letter not in max_order:
                 max_order.append(letter)
         return sequence, ">".join(max_order)
+
+    def _champ_level(self, ctx: TimelineContext, participant: dict[str, Any]) -> int:
+        """End-of-game champion level from match stats or the final timeline frame."""
+        level = int(participant.get("champLevel", 0) or 0)
+        if level > 0:
+            return min(18, level)
+        if not ctx.frames:
+            return 0
+        pframe = ctx.participant_frame(ctx.frames[-1], ctx.participant_id)
+        if not pframe:
+            return 0
+        return min(18, max(0, int(pframe.get("level", 0) or 0)))
 
     def _ult_learned_min(self, ctx: TimelineContext) -> float | None:
         """Minute the ultimate (slot 4) was first skilled, if ever."""

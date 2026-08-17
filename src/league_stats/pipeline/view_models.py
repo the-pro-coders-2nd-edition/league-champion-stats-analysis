@@ -53,6 +53,37 @@ from league_stats.presentation.ui_icons import icon_fields_for_label, with_icons
 
 PRIORITY_LABELS: dict[str, str] = {"high": "High", "medium": "Medium", "low": "Low"}
 
+# Dashboard card summary keys → rank-peer comparison metric keys.
+_PEER_METRIC_BY_CARD_KEY: dict[str, str] = {
+    "winrate_pct": "win",
+    "avg_kda": "kda",
+    "avg_dpm": "dpm",
+    "avg_ccpm": "ccpm",
+    "avg_cspm": "cspm",
+    "avg_deaths": "deaths",
+    "avg_vspm": "vspm",
+    "avg_control_wards": "control_wards",
+    "avg_gd10": "gd10",
+    "avg_cs10": "cs10",
+    "avg_deaths_pre14": "deaths_pre14",
+    "avg_kill_participation": "kill_participation",
+    "participation_rate": "kill_participation",
+    "avg_damage_share": "damage_share",
+    "avg_objectives_split_push_rate": "objectives_split_push_rate",
+    "avg_structure_tower_damage": "structure_tower_damage",
+    "avg_objectives_present_rate": "objectives_present_rate",
+    "avg_roams_pre15": "roams_pre15",
+    "avg_assists": "assists",
+    "avg_early_ganks": "early_ganks",
+    "avg_hpm": "healing",
+    "avg_spm": "shielding",
+}
+
+
+def peer_metric_key_for_card_key(card_key: str) -> str | None:
+    """Map a dashboard summary key to its rank-peer comparison metric, if any."""
+    return _PEER_METRIC_BY_CARD_KEY.get(card_key)
+
 
 def format_map_distance(value: Any) -> str:
     """Format Riot map units as compact LoL landmarks (e.g. ``4.8k ≈ 1.6 screens``)."""
@@ -117,6 +148,8 @@ def card_entries(
 def _format_metric_value(spec: MetricSpec, raw: Any) -> str:
     if raw is None:
         return "—"
+    if isinstance(raw, float) and not math.isfinite(raw):
+        return "—"
     if spec.pct:
         return f"{float(raw) * 100:.0f}%"
     if spec.key == "winrate_pct":
@@ -139,14 +172,21 @@ def cards_from_specs(
     avg_damage_share: float | None = None,
 ) -> list[dict[str, Any]]:
     """Build dashboard cards from role metric specs."""
-    pairs: list[tuple[str, str]] = []
+    entries: list[dict[str, Any]] = []
     for spec in specs:
         raw = resolve_metric_value(spec, summaries)
         # Omit heal/shield cards when utility_summary dropped them as noise.
         if raw is None and spec.key in {"avg_hpm", "avg_spm"}:
             continue
-        pairs.append((spec.label, _format_metric_value(spec, raw)))
-    entries = card_entries(pairs, color_values=section != "deaths")
+        entry = with_icons(
+            [{"label": spec.label, "value": _format_metric_value(spec, raw)}]
+        )[0]
+        peer_key = peer_metric_key_for_card_key(spec.key)
+        if peer_key:
+            entry["metric"] = peer_key
+        if section != "deaths":
+            enrich_value_semantics(entry)
+        entries.append(entry)
     return annotate_card_tiers(
         entries,
         section,
@@ -256,14 +296,16 @@ def annotate_card_tiers(
 
 
 def overview_card_entries(
-    overview: dict[str, Any], *, role: str = "MIDDLE"
+    overview: dict[str, Any], *, role: str = "MIDDLE", split_push: dict[str, Any] | None = None
 ) -> list[dict[str, str]]:
     """Build overview cards from the role profile."""
     avg_damage_share = overview.get("avg_damage_share")
     if avg_damage_share is not None:
         avg_damage_share = float(avg_damage_share)
     profile = role_profile(role)
-    summaries = {"overview": overview}
+    summaries: dict[str, Any] = {"overview": overview}
+    if split_push:
+        summaries["split_push"] = split_push
     specs = overview_metric_specs(profile, avg_damage_share=avg_damage_share)
     entries = cards_from_specs(
         specs,
@@ -309,6 +351,7 @@ def peer_row_display(row: dict[str, Any]) -> dict[str, str]:
     gap_color = interpolate_metric_color(gap_score) if gap_score is not None else ""
     return {
         "label": str(row.get("label", "")),
+        "metric": str(row.get("metric", "")),
         **icon_fields_for_label(str(row.get("label", ""))),
         "yours": yours_display,
         "peer_avg": peer_display,

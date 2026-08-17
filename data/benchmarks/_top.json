@@ -9,7 +9,9 @@
     "control_wards": 1.2,
     "kill_participation": 0.48,
     "damage_share": 0.22,
-    "ccpm": 1.3
+    "ccpm": 1.3,
+    "objectives_split_push_rate": 0.09,
+    "structure_tower_damage": 4200.0
   },
   "PLATINUM": {
     "winrate": 0.5,
@@ -21,7 +23,9 @@
     "control_wards": 1.4,
     "kill_participation": 0.49,
     "damage_share": 0.22,
-    "ccpm": 1.35
+    "ccpm": 1.35,
+    "objectives_split_push_rate": 0.10,
+    "structure_tower_damage": 4500.0
   },
   "EMERALD": {
     "winrate": 0.5,
@@ -33,7 +37,9 @@
     "control_wards": 1.5,
     "kill_participation": 0.5,
     "damage_share": 0.23,
-    "ccpm": 1.4
+    "ccpm": 1.4,
+    "objectives_split_push_rate": 0.11,
+    "structure_tower_damage": 4800.0
   },
   "DIAMOND": {
     "winrate": 0.5,
@@ -45,6 +51,8 @@
     "control_wards": 1.6,
     "kill_participation": 0.51,
     "damage_share": 0.23,
-    "ccpm": 1.45
+    "ccpm": 1.45,
+    "objectives_split_push_rate": 0.12,
+    "structure_tower_damage": 5100.0
   }
 }

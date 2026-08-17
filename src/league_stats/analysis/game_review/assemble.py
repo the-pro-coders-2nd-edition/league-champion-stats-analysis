@@ -7,12 +7,18 @@ from typing import Any
 
 import pandas as pd
 
+from league_stats.analysis.buildings import structure_pressure_buckets
 from league_stats.analysis.game_review.behaviors import evaluate_behaviors
+from league_stats.analysis.game_review.skills import (
+    build_skill_levels_by_level,
+    skill_display_max_level,
+)
+from league_stats.analysis.trades import format_trade_asset_labels
 from league_stats.analysis.game_review.compare import (
     compare_key_stats_to_baseline,
     compare_to_baseline,
 )
-from league_stats.analysis.game_review.hints import GAME_REVIEW_KEY_STATS
+from league_stats.analysis.game_review.hints import game_review_key_stats_for_role
 from league_stats.analysis.game_review.score import compute_game_score
 from league_stats.analysis.timeline import TIMELINE_SERIES_KEYS, timeline_dataframe_rows
 from league_stats.core.config import RANKED_FLEX_QUEUE_ID, RANKED_SOLO_QUEUE_ID
@@ -59,14 +65,22 @@ def _death_flags(row: dict[str, Any]) -> list[str]:
     return flags
 
 
+def _as_name_list(value: Any) -> list[str]:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return []
+    if isinstance(value, list):
+        return [str(name) for name in value if name]
+    return [str(value)]
+
+
 def _filter_frame(df: pd.DataFrame, match_id: str) -> pd.DataFrame:
     if df.empty or "match_id" not in df.columns:
         return df.iloc[0:0]
     return df[df["match_id"] == match_id]
 
 
-def _key_stats(game_row: dict[str, Any]) -> dict[str, float | int | None]:
-    keys = tuple(GAME_REVIEW_KEY_STATS)
+def _key_stats(game_row: dict[str, Any], *, role: str) -> dict[str, float | int | None]:
+    keys = tuple(game_review_key_stats_for_role(role))
     return {key: game_row.get(key) for key in keys}
 
 
@@ -159,6 +173,41 @@ def assemble_game_detail(
             objective_total=(
                 int(row["objective_total"]) if pd.notna(row.get("objective_total")) else None
             ),
+            macro_role=str(row["macro_role"]) if row.get("macro_role") else None,
+            justified_absence=bool(row.get("justified_absence")),
+            absence_reason=str(row["absence_reason"]) if row.get("absence_reason") else None,
+            sidelane_pressure=bool(row.get("sidelane_pressure")),
+            defending_lane=str(row["defending_lane"]) if row.get("defending_lane") else None,
+            nearby_enemy_count=(
+                int(row["nearby_enemy_count"])
+                if row.get("nearby_enemy_count") is not None and pd.notna(row.get("nearby_enemy_count"))
+                else None
+            ),
+            manpower_at_pit=str(row["manpower_at_pit"]) if row.get("manpower_at_pit") else None,
+            pit_ally_champions=_as_name_list(row.get("pit_ally_champions")),
+            pit_enemy_champions=_as_name_list(row.get("pit_enemy_champions")),
+            tp_available=(
+                bool(row["tp_available"])
+                if row.get("tp_available") is not None and pd.notna(row.get("tp_available"))
+                else None
+            ),
+            trade_outcome=str(row["trade_outcome"]) if row.get("trade_outcome") else None,
+            trade_summary=str(row["trade_summary"]) if row.get("trade_summary") else None,
+            trade_value_delta=(
+                float(row["trade_value_delta"])
+                if row.get("trade_value_delta") is not None and pd.notna(row.get("trade_value_delta"))
+                else None
+            ),
+            trade_gain=[str(item) for item in (row.get("trade_gain") or []) if item],
+            trade_loss=[str(item) for item in (row.get("trade_loss") or []) if item],
+            trade_gain_labels=format_trade_asset_labels(
+                [str(item) for item in (row.get("trade_gain") or []) if item],
+                gained=True,
+            ),
+            trade_loss_labels=format_trade_asset_labels(
+                [str(item) for item in (row.get("trade_loss") or []) if item],
+                gained=False,
+            ),
         )
         for row in (objectives_df.to_dict("records") if not objectives_df.empty else [])
     ]
@@ -176,6 +225,9 @@ def assemble_game_detail(
         shards=list(record.runes.shards),
         summoners=list(record.summoners),
         skill_order=record.skill_order,
+        skill_sequence=list(record.skill_sequence),
+        skill_levels_by_level=build_skill_levels_by_level(record.skill_sequence),
+        skill_max_level=skill_display_max_level(record.champ_level, record.skill_sequence),
         items=item_path,
     )
 
@@ -196,8 +248,10 @@ def assemble_game_detail(
         behaviors_good=good,
         behaviors_bad=bad,
         vs_baseline=compare_to_baseline(game_row, baseline_means, role=role),
-        key_stats=_key_stats(game_row),
-        key_stats_vs_baseline=compare_key_stats_to_baseline(game_row, baseline_means),
+        key_stats=_key_stats(game_row, role=role),
+        key_stats_vs_baseline=compare_key_stats_to_baseline(
+            game_row, baseline_means, role=role
+        ),
         deaths=deaths,
         fights=fights,
         objectives=objectives,
@@ -205,5 +259,6 @@ def assemble_game_detail(
         timeline=timeline,
         timeline_figure="",
         key_moments=list(record.key_moments),
+        structure_pressure=structure_pressure_buckets(record),
         ai_recap=None,
     )
