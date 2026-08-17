@@ -679,6 +679,8 @@ class MetricComparison(BaseModel):
     delta_pct: float | None
     direction: str  # "higher" or "lower" (whether bigger is better)
     verdict: str  # "above", "below", "inline"
+    peer_p50: float | None = None
+    peer_p75: float | None = None
 
 
 class PeerComparisonResult(BaseModel):

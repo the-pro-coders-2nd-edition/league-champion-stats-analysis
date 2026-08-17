@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Final
 
 from league_stats.analysis.peer.benchmark_cache import read_live_cache, write_live_cache
 from league_stats.analysis.peer.benchmark_fetcher import BenchmarkSnapshot, fetch_benchmark_from_api
 from league_stats.analysis.peer.benchmarks import try_role_benchmark, try_static_benchmark
-from league_stats.analysis.peer.cache import PeerSample, aggregate_peer_metrics, collect_peer_games_from_store
+from league_stats.analysis.peer.cache import (
+    PeerSample,
+    aggregate_peer_metrics,
+    collect_peer_games_from_store,
+    peer_metric_quantiles,
+)
 from league_stats.analysis.peer.rank_scope import RankScope, build_exact_scope, build_wider_scope, build_widened_scope
 from league_stats.infra.cache import MatchStore
 from league_stats.core.champions import build_label
@@ -35,6 +40,8 @@ class PeerBaseline:
     source: str
     confidence: str
     fallback_level: int
+    metrics_p50: dict[str, float] = field(default_factory=dict)
+    metrics_p75: dict[str, float] = field(default_factory=dict)
 
 
 def _baseline_from_sample(sample: PeerSample, *, level: int, confidence: str) -> PeerBaseline:
@@ -49,6 +56,8 @@ def _baseline_from_sample(sample: PeerSample, *, level: int, confidence: str) ->
         source=sample.source,
         confidence=confidence,
         fallback_level=level,
+        metrics_p50=peer_metric_quantiles(sample.rows, 0.5),
+        metrics_p75=peer_metric_quantiles(sample.rows, 0.75),
     )
 
 
@@ -113,6 +122,8 @@ def _baseline_from_snapshot(
         ),
         confidence="medium",
         fallback_level=level,
+        metrics_p50=dict(snapshot.metrics_p50),
+        metrics_p75=dict(snapshot.metrics_p75),
     )
 
 

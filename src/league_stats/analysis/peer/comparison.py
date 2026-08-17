@@ -139,6 +139,8 @@ def build_comparisons(
     *,
     role: str = "MIDDLE",
     avg_damage_share: float | None = None,
+    peer_p50: dict[str, float] | None = None,
+    peer_p75: dict[str, float] | None = None,
 ) -> list[MetricComparison]:
     """Build side-by-side metric comparisons.
 
@@ -147,10 +149,14 @@ def build_comparisons(
         peer_avgs: Peer/benchmark averages.
         role: Normalised team position for combat-metric selection.
         avg_damage_share: Average team damage share for tank detection.
+        peer_p50: Peer 50th-percentile values per metric, when available.
+        peer_p75: Peer 75th-percentile values per metric, when available.
 
     Returns:
         List of :class:`~models.MetricComparison` rows.
     """
+    p50 = peer_p50 or {}
+    p75 = peer_p75 or {}
     comparisons: list[MetricComparison] = []
     for key, label, direction in compare_metrics_for_role(role, avg_damage_share=avg_damage_share):
         if key not in user_avgs or key not in peer_avgs:
@@ -174,6 +180,8 @@ def build_comparisons(
                 delta_pct=delta_pct,
                 direction=direction,
                 verdict=_verdict(delta, direction, key, peer),
+                peer_p50=round(float(p50[key]), 3) if key in p50 else None,
+                peer_p75=round(float(p75[key]), 3) if key in p75 else None,
             )
         )
     return comparisons
@@ -514,7 +522,12 @@ def build_peer_comparison(
                 user_avgs[key] = float(pd.to_numeric(snap[key], errors="coerce").dropna().mean())
 
     comparisons = build_comparisons(
-        user_avgs, final_peer, role=role, avg_damage_share=avg_damage_share
+        user_avgs,
+        final_peer,
+        role=role,
+        avg_damage_share=avg_damage_share,
+        peer_p50=baseline.metrics_p50,
+        peer_p75=baseline.metrics_p75,
     )
     strengths = [
         _comparison_summary_line(c) for c in comparisons if c.verdict == "above"
