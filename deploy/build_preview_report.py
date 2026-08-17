@@ -7,7 +7,12 @@ needing any secrets in CI.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 import pandas as pd
 
@@ -19,7 +24,6 @@ from league_stats.pipeline.orchestrator import run_analysis
 from league_stats.presentation.report import refresh_report_indexes
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_DIR = REPO_ROOT / "src" / "league_stats" / "presentation" / "templates"
 
 PREVIEW_BUILDS = [
