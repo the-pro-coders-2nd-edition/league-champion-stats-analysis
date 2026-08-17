@@ -109,9 +109,12 @@ Do not share HTML that was rendered without `chat_endpoint` if a real key was ba
 uv sync
 uv run python main.py                    # web app on 127.0.0.1:8000
 uv run python -m league_stats.web        # same
-uv run pytest
+uv run pytest                            # parallel, skips integration tests (~1 min)
+uv run pytest -m integration             # real DDragon CDN download (~6 min, run explicitly)
 ```
 
 ## Tests
 
 Synthetic fixtures in `tests/fixtures.py`. One module per area: `tests/test_<module>.py`.
+Default `pytest` runs with `pytest-xdist` (`-n auto`) and excludes `@pytest.mark.integration`
+tests (hit real external services) via `addopts` in `pyproject.toml`.
