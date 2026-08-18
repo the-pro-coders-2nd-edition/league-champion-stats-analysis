@@ -1,6 +1,7 @@
 <script>
   import { fetchBuild } from '../lib/api.js';
   import Overview from '../sections/Overview.svelte';
+  import Coaching from '../sections/Coaching.svelte';
 
   export let params = {};
 
@@ -18,4 +19,5 @@
   <p class="report-loading">Loading…</p>
 {:else}
   <Overview data={payload} />
+  <Coaching data={payload} />
 {/if}

@@ -1,10 +1,20 @@
 <script lang="ts">
   export let targetId: string;
   export let label: string;
+  export let expanded: boolean = false;
 </script>
 
-<button type="button" class="rec-extend" data-target="{targetId}" data-more-label="{label}" aria-expanded="false" aria-controls="{targetId}">
-  {label}
+<button
+  type="button"
+  class="rec-extend"
+  class:is-expanded={expanded}
+  data-target="{targetId}"
+  data-more-label="{label}"
+  aria-expanded={expanded}
+  aria-controls="{targetId}"
+  on:click
+>
+  {expanded ? 'Show less' : label}
 </button>
 
 <style>
