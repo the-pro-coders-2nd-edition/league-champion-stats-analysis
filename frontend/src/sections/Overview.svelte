@@ -3,6 +3,7 @@
   import HeroAction from '../components/HeroAction.svelte';
   import ScoreSetItem from '../components/ScoreSetItem.svelte';
   import ReportPlayerChip from '../components/ReportPlayerChip.svelte';
+  import MetricCard from '../components/MetricCard.svelte';
 
   export let data;
 
@@ -86,5 +87,10 @@
         />
       {/each}
     </div>
+  </div>
+  <div id="overview-cards" class="cards">
+    {#each data.overview_cards || [] as card}
+      <MetricCard {card} />
+    {/each}
   </div>
 </section>
