@@ -916,36 +916,30 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 }
 .form-mover-feed { display: flex; flex-direction: column; gap: 8px; }
 
-.form-all-metrics,
-.peer-all-metrics {
+.all-metrics-details {
   margin-top: 14px;
   border: 1px solid var(--color-divider);
   border-radius: 12px;
   background: var(--color-surface-2);
   padding: 10px 14px;
 }
-.form-all-metrics > summary,
-.peer-all-metrics > summary {
+.all-metrics-details > summary {
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-neutral-400);
   list-style: none;
 }
-.form-all-metrics > summary::-webkit-details-marker,
-.peer-all-metrics > summary::-webkit-details-marker { display: none; }
-.form-all-metrics > summary::before,
-.peer-all-metrics > summary::before {
+.all-metrics-details > summary::-webkit-details-marker { display: none; }
+.all-metrics-details > summary::before {
   content: "▸";
   color: var(--color-accent);
   display: inline-block;
   margin-right: 8px;
   transition: transform .15s;
 }
-.form-all-metrics[open] > summary,
-.peer-all-metrics[open] > summary { color: var(--color-accent); margin-bottom: 10px; }
-.form-all-metrics[open] > summary::before,
-.peer-all-metrics[open] > summary::before { transform: rotate(90deg); }
+.all-metrics-details[open] > summary { color: var(--color-accent); margin-bottom: 10px; }
+.all-metrics-details[open] > summary::before { transform: rotate(90deg); }
 
 .form-empty { padding: 24px; color: var(--color-neutral-400); background: var(--color-surface-2); border-radius: 12px; border: 1px dashed var(--color-divider); }
 @media (max-width: 860px) {
@@ -1666,12 +1660,12 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .game-review-rune-empty { color: var(--color-neutral-400); font-size: 12px; }
 /* Scoreboard objective sprites already have transparent padding — no chrome box. */
 .game-review-event-body strong .game-icon,
-#objective-table-body .game-icon,
+.objectives-table .game-icon,
 .map-pin--objective .game-icon {
   border: 0; background: transparent; border-radius: 0;
 }
 .game-review-event-body strong .game-icon,
-#objective-table-body .game-icon {
+.objectives-table .game-icon {
   width: 22px; height: 22px;
 }
 .game-review-event-meta {

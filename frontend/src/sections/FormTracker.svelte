@@ -6,22 +6,15 @@
   import TabBar from '../components/TabBar.svelte';
   import FormStoryHead from '../components/FormStoryHead.svelte';
   import FormStoryLine from '../components/FormStoryLine.svelte';
-  import DataTableHead from '../components/DataTableHead.svelte';
-  import DataTableRow from '../components/DataTableRow.svelte';
+  import MetricDeltaTable from '../components/MetricDeltaTable.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
   import { resizePlotlySoon } from '../lib/plotlyResize.js';
   import TrendRow from '../components/TrendRow.svelte';
-  import { escapeHtml, metricLabelFromRow } from '../lib/html.js';
+  import { metricLabelFromRow } from '../lib/html.js';
 
   export let data;
 
   let activeTab = 'pulse';
-
-  function deltaRowCellsHtml(row) {
-    const style = row.gap_color ? ` style="color: ${row.gap_color}"` : '';
-    return `<td>${metricLabelFromRow(row)}</td><td>${escapeHtml(row.recent)}</td><td>${escapeHtml(row.baseline)}</td>` +
-      `<td class="delta-${row.verdict}"${style}>${escapeHtml(row.gap)}</td><td class="delta-${row.verdict}"${style}>${escapeHtml(row.verdict)}</td>`;
-  }
 
   $: formAvailable = !!data.form_available;
   $: snapshot = data.form_snapshot || {};
@@ -43,9 +36,16 @@
   $: stories = data.form_stories || [];
   $: topImproved = data.form_top_improved || [];
   $: topRegressed = data.form_top_regressed || [];
-  $: deltaRows = data.form_delta_rows || [];
-
-  const tableColumns = ['Metric', 'Recent', 'Baseline', 'Change', 'Verdict'].map((html) => ({ html, id: '' }));
+  $: deltaRows = (data.form_delta_rows || []).map((row) => ({
+    label: row.label,
+    icon_href: row.icon_href,
+    icon_tone: row.icon_tone,
+    value: row.recent,
+    baseline: row.baseline,
+    gap: row.gap,
+    gap_color: row.gap_color,
+    verdict: row.verdict,
+  }));
 
   $: formTabs = [
     { value: 'pulse', label: 'Pulse', active: activeTab === 'pulse' },
@@ -167,18 +167,9 @@
           <PlotlyFigure id="fig-form_metric_delta_bar" html={(data.form_figures && data.form_figures.form_metric_delta_bar) || ''} />
           <p class="figure-caption">Largest metric shifts between recent games and your baseline period.</p>
         </div>
-        <details class="form-all-metrics">
+        <details class="all-metrics-details">
           <summary>All metrics</summary>
-          <div class="table-scroll">
-            <table>
-              <DataTableHead columns={tableColumns} />
-              <tbody id="form-table-body">
-                {#each deltaRows as row}
-                  <DataTableRow cellsHtml={deltaRowCellsHtml(row)} />
-                {/each}
-              </tbody>
-            </table>
-          </div>
+          <MetricDeltaTable rows={deltaRows} valueHeader="Recent" baselineHeader="Baseline" />
         </details>
       </div>
     </div>

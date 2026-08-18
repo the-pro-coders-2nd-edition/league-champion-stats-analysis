@@ -4,21 +4,14 @@
   import PeerBalanceChip from '../components/PeerBalanceChip.svelte';
   import UiChipBadge from '../components/UiChipBadge.svelte';
   import TrendRow from '../components/TrendRow.svelte';
-  import DataTableHead from '../components/DataTableHead.svelte';
-  import DataTableRow from '../components/DataTableRow.svelte';
-  import { escapeHtml, metricLabelFromRow } from '../lib/html.js';
+  import MetricDeltaTable from '../components/MetricDeltaTable.svelte';
+  import { metricLabelFromRow } from '../lib/html.js';
   import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
   export let data;
   export let peerStageDetail = '';
   export let peerFailed = false;
   export let peerUnavailable = false;
-
-  function peerTableRowCellsHtml(row) {
-    const style = row.gap_color ? ` style="color: ${row.gap_color}"` : '';
-    return `<td>${metricLabelFromRow(row)}</td><td>${escapeHtml(row.yours)}</td><td>${escapeHtml(row.peer_avg)}</td>` +
-      `<td class="delta-${row.verdict}"${style}>${escapeHtml(row.gap)}</td><td class="delta-${row.verdict}"${style}>${escapeHtml(row.verdict)}</td>`;
-  }
 
   $: windowScopeLabel = computeWindowScopeLabel(data);
 
@@ -35,13 +28,17 @@
     ? 'above'
     : (peerBelow.length > peerAbove.length ? 'below' : 'even');
 
-  $: tableColumns = [
-    { html: 'Metric', id: '' },
-    { html: 'You', id: '' },
-    { html: `${(peerComparison.tier || '').charAt(0).toUpperCase()}${(peerComparison.tier || '').slice(1).toLowerCase()} ${data.build_label || ''} avg`, id: 'peer-table-peer-header' },
-    { html: 'Gap', id: '' },
-    { html: 'Verdict', id: '' },
-  ];
+  $: peerTableRows = peerRows.map((row) => ({
+    label: row.label,
+    icon_href: row.icon_href,
+    icon_tone: row.icon_tone,
+    value: row.yours,
+    baseline: row.peer_avg,
+    gap: row.gap,
+    gap_color: row.gap_color,
+    verdict: row.verdict,
+  }));
+  $: peerBaselineHeader = `${(peerComparison.tier || '').charAt(0).toUpperCase()}${(peerComparison.tier || '').slice(1).toLowerCase()} ${data.build_label || ''} avg`;
 </script>
 
 {#if hasPeerComparison}
@@ -100,18 +97,9 @@
         </div>
       </div>
     </div>
-    <details class="peer-all-metrics">
+    <details class="all-metrics-details">
       <summary>All metrics</summary>
-      <div class="table-scroll">
-        <table>
-          <DataTableHead columns={tableColumns} />
-          <tbody id="peer-table-body">
-            {#each peerRows as row}
-              <DataTableRow cellsHtml={peerTableRowCellsHtml(row)} />
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <MetricDeltaTable rows={peerTableRows} valueHeader="You" baselineHeader={peerBaselineHeader} />
     </details>
   </div>
 </section>
