@@ -643,14 +643,10 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .account-filter-tag { color: var(--color-neutral-400); font-weight: 500; }
 .account-filter-input { position: absolute; opacity: 0; pointer-events: none; }
 .account-filter-switch {
-  position: relative; flex: 0 0 auto; width: 30px; height: 18px;
-  border-radius: 999px; background: var(--color-surface-2); border: 1px solid var(--color-divider);
-  transition: background .15s ease, border-color .15s ease;
+  background: var(--color-surface-2); border-color: var(--color-divider);
 }
 .account-filter-switch::after {
-  content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px;
-  border-radius: 50%; background: var(--color-neutral-400);
-  transition: transform .15s ease, background .15s ease;
+  content: ""; background: var(--color-neutral-400);
 }
 .account-filter-input:checked + .account-filter-switch { background: var(--color-accent); border-color: var(--color-accent); }
 .account-filter-input:checked + .account-filter-switch::after { transform: translateX(12px); background: #fff; }

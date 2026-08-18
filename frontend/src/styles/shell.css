@@ -392,18 +392,12 @@ input::placeholder { color: var(--muted); }
 .watch-toggle.is-on { color: var(--text); border-color: var(--accent); background: rgba(124, 108, 240, .10); }
 
 .watch-toggle-track {
-  position: relative; display: block; flex: 0 0 auto;
-  width: 30px; height: 18px; border-radius: 999px;
-  background: var(--panel-2); border: 1px solid var(--border);
-  transition: background .15s, border-color .15s;
+  background: var(--panel-2); border-color: var(--border);
 }
 .watch-toggle.is-on .watch-toggle-track { background: var(--accent); border-color: var(--accent); }
 
 .watch-toggle-knob {
-  position: absolute; top: 2px; left: 2px;
-  width: 12px; height: 12px; border-radius: 50%;
   background: var(--muted);
-  transition: transform .15s, background .15s;
 }
 .watch-toggle.is-on .watch-toggle-knob { transform: translateX(12px); background: #fff; }
 
