@@ -35,7 +35,7 @@ def _progression_verdict(
     metric: str,
     baseline: float,
 ) -> Literal["improved", "regressed", "inline"]:
-    if metric in ("gd10", "cs10") and abs(delta) < 3:
+    if metric in ("gd10", "cs10") and abs(delta) < 30:
         return "inline"
     threshold = max(abs(baseline) * 0.08, 0.05) if baseline else 0.05
     if direction == "higher":

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pandas as pd
 
-from league_stats.analysis.progression.diff import build_progression_comparison
+import pytest
+
+from league_stats.analysis.peer.comparison import _verdict as _peer_verdict
+from league_stats.analysis.progression.diff import _progression_verdict, build_progression_comparison
 from league_stats.analysis.progression.form_score import compute_form_score, trend_from_score
 from league_stats.analysis.progression.metrics import progression_metrics_for_role
 from league_stats.analysis.progression.slicing import (
@@ -264,3 +267,24 @@ def test_form_stories_action_does_not_restate_driver() -> None:
     assert "6.5" in stories[0].driver
     assert "4.2" not in stories[0].action
     assert "6.5" not in stories[0].action
+
+
+@pytest.mark.parametrize("metric", ["gd10", "cs10"])
+@pytest.mark.parametrize("delta", [2, -2, 5, -15, 25, -29.9])
+def test_gd10_cs10_noise_gate_agrees_below_threshold(metric: str, delta: float) -> None:
+    """Same metric, same delta magnitude, must be judged noise consistently.
+
+    Regression test: progression/diff.py used to suppress gd10/cs10 noise below
+    abs(delta) < 3 while peer/comparison.py used < 30 -- a 10x gap on the same
+    metric pair. Baseline/peer of 0 forces the generic magnitude threshold to
+    0.05, isolating the gd10/cs10-specific noise gate being compared here.
+    """
+    assert _progression_verdict(delta, "higher", metric, 0.0) == "inline"
+    assert _peer_verdict(delta, "higher", metric, 0.0) == "inline"
+
+
+@pytest.mark.parametrize("metric", ["gd10", "cs10"])
+@pytest.mark.parametrize("delta", [30, -30, 35, -50])
+def test_gd10_cs10_noise_gate_agrees_at_and_above_threshold(metric: str, delta: float) -> None:
+    assert _progression_verdict(delta, "higher", metric, 0.0) != "inline"
+    assert _peer_verdict(delta, "higher", metric, 0.0) != "inline"

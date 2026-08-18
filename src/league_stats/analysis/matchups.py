@@ -7,6 +7,7 @@ from typing import Any, Mapping
 import pandas as pd
 
 from league_stats.core.champions import champion_display_name
+from league_stats.presentation.tones import focus_tone, verdict_tone
 from league_stats.utils import wilson_lower_bound
 
 MIN_GAMES_FOR_VERDICT: int = 3
@@ -364,11 +365,14 @@ def matchup_advice(row: Mapping[str, Any], *, role: str | None = None) -> dict[s
 
     candidates.sort(key=lambda item: item[0], reverse=True)
     _, focus, recommendation = candidates[0]
+    focus_key = focus.lower().replace(" ", "-")
     return {
         "verdict": verdict,
         "verdict_label": _VERDICT_LABELS[verdict],
+        "verdict_tone": verdict_tone(verdict),
         "focus": focus,
-        "focus_key": focus.lower().replace(" ", "-"),
+        "focus_key": focus_key,
+        "focus_tone": focus_tone(focus_key),
         "recommendation": recommendation,
     }
 
