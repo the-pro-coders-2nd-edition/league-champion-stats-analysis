@@ -1,6 +1,6 @@
 <script>
   import CareerNode from '../components/CareerNode.svelte';
-  import Pill from '../components/Pill.svelte';
+  import Chip from '../components/Chip.svelte';
   import { dropCareerBlock } from '../lib/api.js';
 
   export let data;
@@ -89,7 +89,7 @@
           <div class="career-block-head">
             <span class="career-block-position">{block.position}</span>
             <span class="career-block-state">
-              <Pill tone={block.tone} label={block.state_label} />
+              <Chip tone={block.tone} dot={true} label={block.state_label} />
             </span>
             {#if canDrop && block.slot != null}
               <button

@@ -2,8 +2,8 @@
   import SectionHeader from '../components/SectionHeader.svelte';
   import Panel from '../components/Panel.svelte';
   import PeerRankValue from '../components/PeerRankValue.svelte';
-  import PeerBalanceChip from '../components/PeerBalanceChip.svelte';
-  import UiChipBadge from '../components/UiChipBadge.svelte';
+  import StatChip from '../components/StatChip.svelte';
+  import Chip from '../components/Chip.svelte';
   import TrendRow from '../components/TrendRow.svelte';
   import MetricDeltaTable from '../components/MetricDeltaTable.svelte';
   import Disclosure from '../components/Disclosure.svelte';
@@ -52,13 +52,13 @@
       </div>
       <div class="peer-stage-meta">
         <div class="peer-balance" id="peer-balance">
-          <PeerBalanceChip modifier="above" countId="peer-above-count" count={peerAbove.length} label="above" />
-          <PeerBalanceChip modifier="below" countId="peer-below-count" count={peerBelow.length} label="below" />
+          <StatChip pill tone="good" id="peer-above-count" value={peerAbove.length} label="above" />
+          <StatChip pill tone="bad" id="peer-below-count" value={peerBelow.length} label="below" />
         </div>
         <div class="peer-meta-chips" id="peer-meta-chips">
-          <UiChipBadge tone="meta" label={`${peerComparison.peer_games} peer games`} />
-          <UiChipBadge tone="meta" label={`${peerComparison.peer_players} players`} />
-          <UiChipBadge tone="confidence" label={`${peerComparison.confidence} confidence`} />
+          <Chip tone="note" fill={true} caps={true} label={`${peerComparison.peer_games} peer games`} />
+          <Chip tone="note" fill={true} caps={true} label={`${peerComparison.peer_players} players`} />
+          <Chip tone="info" fill={true} caps={true} label={`${peerComparison.confidence} confidence`} />
         </div>
       </div>
     </svelte:fragment>

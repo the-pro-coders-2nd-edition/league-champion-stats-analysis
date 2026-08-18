@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Pill from './Pill.svelte';
+  import Chip from './Chip.svelte';
 
   export let state: string;
   export let stateClass: string;
@@ -23,7 +23,7 @@
   <div class="career-body">
     {#if !compact}
     <div class="career-head">
-      <Pill tone={tone} label={state} />
+      <Chip tone={tone} dot={true} label={state} />
       <span class="career-count">{count}</span>
     </div>
     {/if}

@@ -1,11 +1,11 @@
 <script>
-  import HeroChip from '../components/HeroChip.svelte';
+  import StatChip from '../components/StatChip.svelte';
   import HeroAction from '../components/HeroAction.svelte';
   import Meter from '../components/Meter.svelte';
   import ReportPlayerChip from '../components/ReportPlayerChip.svelte';
   import MetricCard from '../components/MetricCard.svelte';
   import CareerNode from '../components/CareerNode.svelte';
-  import Pill from '../components/Pill.svelte';
+  import Chip from '../components/Chip.svelte';
 
   export let data;
   export let onGoToCareer = () => {};
@@ -13,7 +13,7 @@
   function heroChipTone(card) {
     if (card.value_class === 'win') return 'good';
     if (card.value_class === 'loss') return 'bad';
-    return 'stat';
+    return 'flat';
   }
 
   function scorePercent(score) {
@@ -73,7 +73,7 @@
           <div class="report-hero-meta" id="overview-subtitle">{data.total_games} {data.queue_label} games · patches {data.patch_range}</div>
           <div class="report-hero-chips ui-chip-row" id="hero-chips" hidden={heroChips.length === 0}>
             {#each heroChips as card}
-              <HeroChip tone={heroChipTone(card)} label={card.label} value={card.value} valueColor={card.value_color || ''} />
+              <StatChip tone={heroChipTone(card)} label={card.label} value={card.value} valueColor={card.value_color || ''} />
             {/each}
           </div>
         </div>
@@ -111,7 +111,7 @@
               <span class="accounts-panel-name">
                 {member.label}
                 {#if member.is_main}
-                  <Pill tone="good" variant="soft" dot={false} label="Main" />
+                  <Chip tone="good" fill={true} label="Main" />
                 {/if}
               </span>
               <span class="accounts-panel-rank">{member.solo_rank_division || 'Unranked'}</span>
