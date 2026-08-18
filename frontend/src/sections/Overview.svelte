@@ -8,6 +8,9 @@
   import Chip from '../components/Chip.svelte';
 
   export let data;
+  // Career follows neither the queue nor the game-window filter, so the widget
+  // takes the ladder Report.svelte resolved rather than reading it off the slice.
+  export let career = null;
   export let onGoToCareer = () => {};
 
   function heroChipTone(card) {
@@ -151,7 +154,7 @@
         <Meter value={data.score} tone={heroTone} size="md" reference={50} --meter-margin="8px 0 0" />
       </div>
 
-      {#if data.career && data.career.has_career}
+      {#if career && career.has_career}
         <div class="career-widget" id="career-widget">
           <div class="career-widget-head">
             <span class="career-widget-label">Live block</span>
@@ -159,7 +162,7 @@
               All goals
             </button>
           </div>
-          {#each data.career.widget as item, index (index)}
+          {#each career.widget || [] as item, index (index)}
             <CareerNode
               compact={true}
               state={item.state}
@@ -170,7 +173,7 @@
               text={item.text}
               note={item.note}
               count={item.count}
-              last={index === data.career.widget.length - 1}
+              last={index === (career.widget || []).length - 1}
             />
           {/each}
         </div>

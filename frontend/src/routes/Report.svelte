@@ -500,7 +500,7 @@
   </div>
 
   <div class="report-category-panel{activeCategory === 'summary' ? ' is-active' : ''}" id="category-summary" data-category="summary">
-    <Overview data={$view} onGoToCareer={() => selectCategory('career')} />
+    <Overview data={$view} career={careerLadder} onGoToCareer={() => selectCategory('career')} />
     <Coaching data={$view} />
   </div>
 
