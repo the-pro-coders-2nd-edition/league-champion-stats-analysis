@@ -84,7 +84,12 @@ def test_report_json_has_a_career_block(tmp_path: Path) -> None:
 
 def test_career_rules_and_legend_are_present(tmp_path: Path) -> None:
     career = _career_payload(tmp_path)
-    assert any("p50 toward peer p75" in rule["value"] for rule in career["rules"])
+    # Derived from the constants rather than the literal copy: the wording of this
+    # panel is pinned in tests/test_career_rules_copy.py.
+    from league_stats.analysis.career.steps import ANCHOR_QUANTILE, BASELINE_GAMES
+
+    anchor = f"P{int(ANCHOR_QUANTILE * 100)} of your last {BASELINE_GAMES} games"
+    assert any(anchor in rule["value"] for rule in career["rules"])
     legend_states = [entry["name"] for entry in career["legend"]]
     assert legend_states == ["Locked", "In progress", "At risk", "Cleared", "Revoked"]
 
