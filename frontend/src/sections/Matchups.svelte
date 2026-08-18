@@ -1,6 +1,7 @@
 <script>
   import Pill from '../components/Pill.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
+  import PlotlyFigure from '../lib/PlotlyFigure.svelte';
 
   export let data;
 
@@ -132,7 +133,7 @@
   </h2>
   <p class="sub sub--lead">Lane opponents you've faced most. <strong>Verdict</strong> is your win rate read; <strong>Play plan</strong> is the single biggest pattern in those games.</p>
   <div class="figure-block">
-    <div class="figure" id="fig-matchup_bar">{@html (data.figures && data.figures.matchup_bar) || ''}</div>
+    <PlotlyFigure id="fig-matchup_bar" html={(data.figures && data.figures.matchup_bar) || ''} />
     <p class="figure-caption">Win rate vs lane opponents — bar length shows sample size; color shows above/below 50% WR.</p>
   </div>
   <div class="table-scroll">

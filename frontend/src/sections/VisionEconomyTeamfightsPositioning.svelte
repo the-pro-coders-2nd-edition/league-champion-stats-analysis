@@ -3,6 +3,7 @@
   import SectionPulse from '../components/SectionPulse.svelte';
   import TieredCards from '../components/TieredCards.svelte';
   import PositioningHint from '../components/PositioningHint.svelte';
+  import PlotlyFigure from '../lib/PlotlyFigure.svelte';
 
   export let data;
 
@@ -23,7 +24,7 @@
   <details class="section-details">
     <summary>Show charts</summary>
     <div class="figure-block">
-      <div class="figure" id="fig-vision_trend">{@html data.figures?.vision_trend || ''}</div>
+      <PlotlyFigure id="fig-vision_trend" html={data.figures?.vision_trend || ''} />
       <p class="figure-caption">Vision score per minute over time — compare win and loss trajectories to spot when vision drops off.</p>
     </div>
   </details>
@@ -40,7 +41,7 @@
   <details class="section-details">
     <summary>Show charts</summary>
     <div class="figure-block">
-      <div class="figure" id="fig-dpm_scatter">{@html data.figures?.dpm_scatter || ''}</div>
+      <PlotlyFigure id="fig-dpm_scatter" html={data.figures?.dpm_scatter || ''} />
       <p class="figure-caption">Damage vs gold income per game — dots above the trend line punch above their gold weight.</p>
     </div>
   </details>

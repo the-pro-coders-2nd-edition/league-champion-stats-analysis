@@ -4,6 +4,7 @@
   import TieredCards from '../components/TieredCards.svelte';
   import DataTableHead from '../components/DataTableHead.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
+  import PlotlyFigure from '../lib/PlotlyFigure.svelte';
 
   export let data;
 
@@ -96,16 +97,16 @@
   <details class="section-details">
     <summary>Show charts</summary>
     <div class="figure-block">
-      <div class="figure" id="fig-gd10_histogram">{@html data.figures?.gd10_histogram || ''}</div>
+      <PlotlyFigure id="fig-gd10_histogram" html={data.figures?.gd10_histogram || ''} />
       <p class="figure-caption">Gold diff @10 distribution — a right-skewed shape means you often win lane; left-skewed means you fall behind early.</p>
     </div>
     <div class="figure-block">
-      <div class="figure" id="fig-gold_diff_timeline">{@html data.figures?.gold_diff_timeline || ''}</div>
+      <PlotlyFigure id="fig-gold_diff_timeline" html={data.figures?.gold_diff_timeline || ''} />
       <p class="figure-caption">Average gold lead over time in wins vs losses — check where your leads convert or collapse.</p>
     </div>
     {#if showCsStats}
       <div class="figure-block">
-        <div class="figure" id="fig-cs10_violin">{@html data.figures?.cs10_violin || ''}</div>
+        <PlotlyFigure id="fig-cs10_violin" html={data.figures?.cs10_violin || ''} />
         <p class="figure-caption">CS @10 spread across games — tighter clusters mean more consistent farming.</p>
       </div>
     {/if}
@@ -135,7 +136,7 @@
   <details class="section-details">
     <summary>Show charts</summary>
     <div class="figure-block">
-      <div class="figure" id="fig-objective_timing">{@html data.figures?.objective_timing || ''}</div>
+      <PlotlyFigure id="fig-objective_timing" html={data.figures?.objective_timing || ''} />
       <p class="figure-caption">When objectives are taken — early arrivals and ward placement before spawn improve take rates.</p>
     </div>
   </details>
@@ -152,11 +153,11 @@
   <details class="section-details">
     <summary>Show charts &amp; danger zones</summary>
     <div class="figure-block">
-      <div class="figure" id="fig-death_heatmap">{@html data.figures?.death_heatmap || ''}</div>
+      <PlotlyFigure id="fig-death_heatmap" html={data.figures?.death_heatmap || ''} />
       <p class="figure-caption">Where you die on the map — red-side games are mirrored across the river (perpendicular to mid) so bot-lane deaths stay on the bottom edge. Hot zones without nearby team vision are prime gank or face-check risks.</p>
     </div>
     <div class="figure-block">
-      <div class="figure" id="fig-deaths_box">{@html data.figures?.deaths_box || ''}</div>
+      <PlotlyFigure id="fig-deaths_box" html={data.figures?.deaths_box || ''} />
       <p class="figure-caption">Deaths per game spread — a high median with a long upper tail means volatile survival.</p>
     </div>
     {#if blindSpots.length}

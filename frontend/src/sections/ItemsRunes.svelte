@@ -2,6 +2,7 @@
   import Pill from '../components/Pill.svelte';
   import DataTableHead from '../components/DataTableHead.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
+  import PlotlyFigure from '../lib/PlotlyFigure.svelte';
 
   export let data;
 
@@ -76,7 +77,7 @@
     <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
   </h2>
   <div class="figure-block">
-    <div class="figure" id="fig-item_winrate_bar">{@html data.figures?.item_winrate_bar || ''}</div>
+    <PlotlyFigure id="fig-item_winrate_bar" html={data.figures?.item_winrate_bar || ''} />
     <p class="figure-caption">Win rate by completed item — favor items with enough sample size and a clear WR edge.</p>
   </div>
   <h3>Two-item cores</h3>
@@ -99,7 +100,7 @@
     <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
   </h2>
   <div class="figure-block">
-    <div class="figure" id="fig-rune_winrate_bar">{@html data.figures?.rune_winrate_bar || ''}</div>
+    <PlotlyFigure id="fig-rune_winrate_bar" html={data.figures?.rune_winrate_bar || ''} />
     <p class="figure-caption">Win rate by keystone — compare rune setups with similar game counts before switching.</p>
   </div>
   <div class="table-scroll">

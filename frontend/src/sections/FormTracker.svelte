@@ -8,6 +8,7 @@
   import MoverRow from '../components/MoverRow.svelte';
   import DataTableHead from '../components/DataTableHead.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
+  import PlotlyFigure from '../lib/PlotlyFigure.svelte';
 
   export let data;
 
@@ -130,7 +131,7 @@
           {/if}
         </div>
         <div class="figure-block form-figure-block">
-          <div class="figure" id="fig-form_rolling_wr">{@html (data.form_figures && data.form_figures.form_rolling_wr) || ''}</div>
+          <PlotlyFigure id="fig-form_rolling_wr" html={(data.form_figures && data.form_figures.form_rolling_wr) || ''} />
           <p class="figure-caption">Rolling win rate — shaded region is your recent window; grey band is baseline WR.</p>
         </div>
       </div>
@@ -174,7 +175,7 @@
           </div>
         </div>
         <div class="figure-block">
-          <div class="figure" id="fig-form_metric_delta_bar">{@html (data.form_figures && data.form_figures.form_metric_delta_bar) || ''}</div>
+          <PlotlyFigure id="fig-form_metric_delta_bar" html={(data.form_figures && data.form_figures.form_metric_delta_bar) || ''} />
           <p class="figure-caption">Largest metric shifts between recent games and your baseline period.</p>
         </div>
         <details class="form-all-metrics">
