@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS career_goals (
     state       TEXT NOT NULL,
     since_ms    INTEGER NOT NULL DEFAULT 0,
     peer_seeded INTEGER NOT NULL DEFAULT 0,
+    why         TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (build_key, slot, goal_index)
 );
 CREATE TABLE IF NOT EXISTS career_used_tracks (
@@ -87,6 +88,14 @@ class CareerStore:
                 "ALTER TABLE career_goals ADD COLUMN peer_seeded INTEGER NOT NULL DEFAULT 0"
             )
             self._conn.commit()
+        # Defaults to empty, so a goal written before the column existed simply has no
+        # explanation until its block next regenerates.
+        if "why" not in columns:
+            self._log.info("Adding career_goals.why")
+            self._conn.execute(
+                "ALTER TABLE career_goals ADD COLUMN why TEXT NOT NULL DEFAULT ''"
+            )
+            self._conn.commit()
         flag_columns = {row[1] for row in self._conn.execute("PRAGMA table_info(career_flags)")}
         if "pending_drop_slot" not in flag_columns:
             self._log.info("Adding career_flags.pending_drop_slot")
@@ -116,7 +125,8 @@ class CareerStore:
         """Every persisted goal for a ladder, ordered by slot then goal index."""
         rows = self._conn.execute(
             "SELECT slot, goal_index, track_key, text, column_name, comparator, "
-            "target, need, state, since_ms, peer_seeded FROM career_goals WHERE build_key = ? "
+            "target, need, state, since_ms, peer_seeded, why FROM career_goals "
+            "WHERE build_key = ? "
             "ORDER BY slot, goal_index",
             (key,),
         ).fetchall()
@@ -131,6 +141,7 @@ class CareerStore:
                     comparator="under" if row[5] == "under" else "at_least",
                     target=float(row[6]),
                     need=int(row[7]),
+                    why=str(row[11] or ""),
                 ),
                 state=str(row[8]),
                 since_ms=int(row[9]),
@@ -158,8 +169,8 @@ class CareerStore:
         self.delete_slot(key, slot)
         self._conn.executemany(
             "INSERT INTO career_goals (build_key, slot, goal_index, track_key, text, "
-            "column_name, comparator, target, need, state, since_ms, peer_seeded) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "column_name, comparator, target, need, state, since_ms, peer_seeded, why) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     key,
@@ -174,6 +185,7 @@ class CareerStore:
                     states[index],
                     int(since_ms),
                     1 if peer_seeded else 0,
+                    rung.why,
                 )
                 for index, rung in enumerate(rungs)
             ],
