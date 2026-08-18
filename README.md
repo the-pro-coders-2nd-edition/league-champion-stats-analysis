@@ -69,7 +69,10 @@ Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv sync
+./deploy/build_spa.sh   # builds the Svelte SPA (required once, and after frontend changes)
 ```
+
+Requires [Node.js](https://nodejs.org/) for `npm` (SPA build only).
 
 ### 3. Run the web app
 

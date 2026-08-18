@@ -28,15 +28,11 @@ from league_stats.analysis.career.models import (
     Rung,
 )
 from league_stats.analysis.career.window import player_mean, player_median, player_quantile
-from league_stats.analysis.coach.engine import (
-    MIN_GOLD_AT_DEATH,
-    MIN_OBJECTIVE_PRESENCE,
-)
-from league_stats.analysis.economy import RECALL_GOLD_COMPONENT_MAX, recall_gold_severity
+from league_stats.analysis.coach.engine import MIN_OBJECTIVE_PRESENCE
+from league_stats.analysis.improvement import _FIRST_ITEM_BAND
 from league_stats.core.role_metrics import normalize_role
 
 DEFAULT_CATEGORY_WEIGHT: Final[float] = 50.0
-GOLD_STEP: Final[int] = 100
 
 # How far above their own median a single block may ask a player to go.
 # Peer p75 is the long-run destination, not a one-block demand: a player at
@@ -101,9 +97,9 @@ TRACK_SPECS: Final[tuple[TrackSpec, ...]] = (
         categories=("Fight",),
     ),
     TrackSpec(
-        key="economy_discipline",
-        name="Economy discipline",
-        metric_label="banked gold",
+        key="item_spike",
+        name="Item spike",
+        metric_label="first item timing",
         categories=("Economy",),
     ),
 )
@@ -184,6 +180,42 @@ def _stepped_rungs(
             text=template.format(target=f"{target * display_scale:.{shown}f}"),
             column=column,
             comparator="at_least",
+            target=target,
+            need=CLEAR_BAR,
+        )
+        for target in targets
+    )
+
+
+def _stepped_rungs_under(
+    ctx: TrackContext,
+    *,
+    column: str,
+    template: str,
+    precision: int,
+) -> tuple[Rung, ...] | None:
+    """Rungs stepping a lower-is-better metric from the player's p50 toward p25."""
+    p50 = player_median(ctx.matches_df, column)
+    if p50 is None:
+        return None
+    floor = ctx.peer_p75.get(column)
+    if floor is None or floor >= p50:
+        floor = player_quantile(ctx.matches_df, column, 0.25)
+    if floor is None:
+        return None
+    floor = max(floor, p50 * (1 - MAX_BLOCK_STRETCH))
+    gap = p50 - floor
+    if gap <= 0:
+        return None
+    step = gap / 3
+    targets = [round(p50 - step * i, precision) for i in (1, 2, 3)]
+    if not (targets[0] > targets[1] > targets[2]):
+        return None
+    return tuple(
+        Rung(
+            text=template.format(target=f"{target:.{precision}f}"),
+            column=column,
+            comparator="under",
             target=target,
             need=CLEAR_BAR,
         )
@@ -302,50 +334,12 @@ def _map_presence(ctx: TrackContext) -> tuple[Rung, ...] | None:
     )
 
 
-def _gold_target(average: float, floor: int) -> int:
-    """One 100g step below the player's current average.
-
-    The floor is a "don't demand the unreasonable" guard for players above the
-    norm; a player already under it gets a genuinely tighter target instead of
-    one loosened back up to the norm.
-    """
-    stepped = int(average // GOLD_STEP) * GOLD_STEP - GOLD_STEP
-    if average > floor:
-        return max(floor, stepped)
-    return max(GOLD_STEP, stepped)
-
-
-def _economy_discipline(ctx: TrackContext) -> tuple[Rung, ...] | None:
-    recall = player_mean(ctx.matches_df, "avg_unspent_gold")
-    fights = player_mean(ctx.matches_df, "avg_unspent_gold_per_fight")
-    death = player_mean(ctx.matches_df, "avg_gold_at_death")
-    if recall is None or fights is None or death is None:
-        return None
-    recall_target = _gold_target(recall, RECALL_GOLD_COMPONENT_MAX)
-    fight_target = _gold_target(fights, RECALL_GOLD_COMPONENT_MAX)
-    death_target = _gold_target(death, MIN_GOLD_AT_DEATH)
-    return (
-        Rung(
-            text=f"Under {recall_target}g banked before recall in 15 of 20 games",
-            column="avg_unspent_gold",
-            comparator="under",
-            target=float(recall_target),
-            need=CLEAR_BAR,
-        ),
-        Rung(
-            text=f"Under {fight_target}g banked entering fights in 15 of 20 games",
-            column="avg_unspent_gold_per_fight",
-            comparator="under",
-            target=float(fight_target),
-            need=CLEAR_BAR,
-        ),
-        Rung(
-            text=f"Under {death_target}g banked on death in 15 of 20 games",
-            column="avg_gold_at_death",
-            comparator="under",
-            target=float(death_target),
-            need=CLEAR_BAR,
-        ),
+def _item_spike(ctx: TrackContext) -> tuple[Rung, ...] | None:
+    return _stepped_rungs_under(
+        ctx,
+        column="first_item_min",
+        template="First item by {target} minutes in 15 of 20 games",
+        precision=1,
     )
 
 
@@ -367,6 +361,12 @@ def _behind_peers(ctx: TrackContext, column: str) -> bool:
     peer_p75 = ctx.peer_p75.get(column)
     p50 = player_median(ctx.matches_df, column)
     return peer_p75 is not None and p50 is not None and p50 < peer_p75
+
+
+def _slower_than_peers(ctx: TrackContext, column: str) -> bool:
+    peer_p75 = ctx.peer_p75.get(column)
+    p50 = player_median(ctx.matches_df, column)
+    return peer_p75 is not None and p50 is not None and p50 > peer_p75
 
 
 def _significant_laning_income(ctx: TrackContext) -> bool:
@@ -393,9 +393,14 @@ def _significant_map_presence(ctx: TrackContext) -> bool:
     return not presence.empty and float(presence.mean()) < MIN_OBJECTIVE_PRESENCE
 
 
-def _significant_economy_discipline(ctx: TrackContext) -> bool:
-    recall = player_mean(ctx.matches_df, "avg_unspent_gold")
-    return recall is not None and recall_gold_severity(recall) is not None
+def _significant_item_spike(ctx: TrackContext) -> bool:
+    p50 = player_median(ctx.matches_df, "first_item_min")
+    if p50 is None:
+        return False
+    if _slower_than_peers(ctx, "first_item_min"):
+        return True
+    slow_floor, _ = _FIRST_ITEM_BAND.get(normalize_role(ctx.role), (14.0, 9.0))
+    return p50 >= slow_floor
 
 
 _SIGNIFICANCE: Final[dict[str, Any]] = {
@@ -404,7 +409,7 @@ _SIGNIFICANCE: Final[dict[str, Any]] = {
     "map_presence": _significant_map_presence,
     "vision_uptime": _significant_vision_uptime,
     "fight_impact": _significant_fight_impact,
-    "economy_discipline": _significant_economy_discipline,
+    "item_spike": _significant_item_spike,
 }
 
 
@@ -414,5 +419,5 @@ _BUILDERS: Final[dict[str, Any]] = {
     "map_presence": _map_presence,
     "vision_uptime": _vision_uptime,
     "fight_impact": _fight_impact,
-    "economy_discipline": _economy_discipline,
+    "item_spike": _item_spike,
 }

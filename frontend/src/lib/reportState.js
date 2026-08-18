@@ -11,6 +11,8 @@ function bundleFields(bundle) {
     queue_label: bundle.queue_label,
     overview: bundle.overview,
     score: bundle.score,
+    score_color: bundle.score_color,
+    score_verdict_label: bundle.score_verdict_label,
     score_components: bundle.score_components,
     figures: bundle.figures,
     overview_cards: bundle.overview_cards || [],

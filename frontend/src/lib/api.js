@@ -1,7 +1,9 @@
+import { rewriteWebAssetHrefs } from './assets.js';
+
 export async function fetchBuild(slug, buildSlug) {
   const response = await fetch(`/api/players/${slug}/builds/${buildSlug}`);
   if (!response.ok) throw new Error(`Failed to load build: ${response.status}`);
-  return response.json();
+  return rewriteWebAssetHrefs(await response.json());
 }
 
 export async function fetchPlayerStatus(slug) {
@@ -17,7 +19,7 @@ export async function fetchAccountViews(slug, buildSlug, accounts) {
     body: JSON.stringify({ accounts }),
   });
   if (!response.ok) throw new Error(`Failed to load account views: ${response.status}`);
-  return response.json();
+  return rewriteWebAssetHrefs(await response.json());
 }
 
 function detailMessage(body, fallback) {

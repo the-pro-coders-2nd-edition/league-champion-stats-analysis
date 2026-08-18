@@ -1,8 +1,17 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, setContext, tick } from 'svelte';
+  import { createReportNav, REPORT_NAV_KEY } from '../lib/reportNav.js';
+  import { get } from 'svelte/store';
   import { link } from 'svelte-spa-router';
-  import { fetchBuild, fetchAccountViews, fetchPlayerStatus, sendChatMessage } from '../lib/api.js';
+  import {
+    fetchBuild,
+    fetchAccountViews,
+    fetchPlayerStatus,
+    refreshPlayer,
+    sendChatMessage,
+  } from '../lib/api.js';
   import { createReportState } from '../lib/reportState.js';
+  import { createPoller } from '../lib/poller.js';
   import FilterButton from '../components/FilterButton.svelte';
   import AccountFilter from '../sections/AccountFilter.svelte';
   import Chatbot from '../sections/Chatbot.svelte';
@@ -18,10 +27,146 @@
   import Graphs from '../sections/Graphs.svelte';
   import CareerMode from '../sections/CareerMode.svelte';
   import TabBar from '../components/TabBar.svelte';
+  import { bindPlotlyDetailsResize, resizePlotlySoon } from '../lib/plotlyResize.js';
 
   export let params = {};
 
   const NAV_COLLAPSE_KEY = 'report-nav-collapsed';
+  const ACTIVE_JOB_STATES = ['queued', 'fetching', 'analyzing', 'report_ready', 'peer_running'];
+  const ACTIVE_PEER_STATES = ['report_ready', 'peer_running'];
+
+  const poller = createPoller();
+  let peerStageDetail = '';
+  let peerFailed = false;
+  let peerUnavailable = false;
+  let statusBannerVisible = false;
+  let statusBannerText = '';
+  let refreshing = false;
+  let jobActive = false;
+
+  function statusSlugFromEndpoint(endpoint) {
+    if (!endpoint) return null;
+    const match = endpoint.match(/\/api\/players\/([^/]+)$/);
+    return match ? match[1] : null;
+  }
+
+  async function reloadBuild() {
+    const prevQueue = report ? get(report.queue) : null;
+    const prevWindow = report ? get(report.gameWindow) : null;
+    const prevAccount = report ? get(report.accountKey) : null;
+    const result = await fetchBuild(params.slug, params.buildSlug);
+    payload = result;
+    report = createReportState(payload, {
+      fetchAccountViews: (accounts) => fetchAccountViews(params.slug, params.buildSlug, accounts),
+    });
+    if (prevQueue) report.selectQueue(prevQueue);
+    if (prevWindow) report.selectWindow(prevWindow);
+    if (prevAccount) await report.selectAccountKey(prevAccount);
+  }
+
+  async function pollStatus() {
+    const slug = statusSlugFromEndpoint(payload?.status_endpoint);
+    if (!slug || !payload?.status_endpoint) return;
+    try {
+      const data = await fetchPlayerStatus(slug);
+      playerBuilds = data.builds || [];
+      peerFailed = !!data.peer_failed;
+
+      const build = (data.builds || []).find((entry) => entry.slug === params.buildSlug);
+      const job = data.active_job;
+      jobActive = !!(job && ACTIVE_JOB_STATES.includes(job.state));
+
+      if (build?.generated_at && payload.generated_at && build.generated_at !== payload.generated_at) {
+        await reloadBuild();
+        refreshing = false;
+        statusBannerVisible = false;
+        peerStageDetail = '';
+        poller.reschedule(30000);
+        return;
+      }
+
+      if (jobActive) {
+        statusBannerVisible = true;
+        statusBannerText = job.stage_detail || (
+          job.state === 'report_ready' || job.state === 'peer_running'
+            ? 'Comparing you to players at your rank…'
+            : 'Analysis in progress…'
+        );
+        if (ACTIVE_PEER_STATES.includes(job.state)) {
+          peerStageDetail = job.stage_detail || '';
+          peerUnavailable = false;
+        }
+        poller.reschedule(3000);
+        return;
+      }
+
+      if (!refreshing) {
+        statusBannerVisible = false;
+      }
+
+      if (build?.peers_ready && !payload.has_peer_comparison) {
+        await reloadBuild();
+        peerStageDetail = '';
+        peerFailed = false;
+        peerUnavailable = false;
+        poller.reschedule(30000);
+        return;
+      }
+
+      if (data.peer_failed) {
+        peerStageDetail = '';
+        poller.reschedule(30000);
+        return;
+      }
+
+      if (data.peer_completed_at && !build?.peers_ready) {
+        peerUnavailable = true;
+        peerStageDetail = '';
+      }
+
+      const peerPending = !payload.has_peer_comparison && !peerFailed && !peerUnavailable;
+      poller.reschedule(peerPending || refreshing ? 3000 : 30000);
+    } catch {
+      // Transient polling errors — keep trying.
+    }
+  }
+
+  function startStatusPoll(intervalMs = 10000) {
+    if (!payload?.status_endpoint) return;
+    poller.start(pollStatus, intervalMs);
+  }
+
+  function resetStatusPollState() {
+    peerStageDetail = '';
+    peerFailed = false;
+    peerUnavailable = false;
+    statusBannerVisible = false;
+    statusBannerText = '';
+    refreshing = false;
+    jobActive = false;
+  }
+
+  async function handleRefresh() {
+    if (refreshing || jobActive || !payload?.refresh_champion || !payload?.refresh_role) return;
+    refreshing = true;
+    statusBannerVisible = true;
+    statusBannerText = 'Queueing refresh…';
+    try {
+      const result = await refreshPlayer(params.slug, {
+        champion: payload.refresh_champion,
+        role: payload.refresh_role,
+      });
+      statusBannerText = result.job?.stage_detail || 'Fetching latest games…';
+      refreshing = false;
+      startStatusPoll(3000);
+    } catch (err) {
+      refreshing = false;
+      statusBannerText = err.message || 'Refresh failed.';
+      setTimeout(() => {
+        if (!jobActive) statusBannerVisible = false;
+      }, 5000);
+    }
+  }
 
   let payload = null;
   let error = null;
@@ -29,6 +174,14 @@
   let playerBuilds = [];
   let playerPageHref = null;
   let navCollapsed = false;
+  let stickyHeaderEl = null;
+
+  function syncStickyOffset() {
+    if (!stickyHeaderEl) return;
+    const height = Math.ceil(stickyHeaderEl.getBoundingClientRect().height);
+    document.documentElement.style.setProperty('--report-sticky-offset', `${height}px`);
+    stickyHeaderEl.classList.toggle('is-scrolled', window.scrollY > 8);
+  }
 
   // `params` is a fresh object on every route match, so a bare `$:` on its fields
   // would refire on any unrelated reactivity tick; only refetch when the actual
@@ -38,16 +191,30 @@
     const key = `${params.slug}/${params.buildSlug}`;
     if (key !== loadedKey) {
       loadedKey = key;
+      resetStatusPollState();
       fetchBuild(params.slug, params.buildSlug)
         .then((result) => {
           payload = result;
           report = createReportState(payload, {
             fetchAccountViews: (accounts) => fetchAccountViews(params.slug, params.buildSlug, accounts),
           });
+          if (payload.status_endpoint) {
+            startStatusPoll();
+          }
         })
         .catch((err) => { error = err; });
     }
   }
+
+  $: if ($view?.has_peer_comparison) {
+    peerStageDetail = '';
+    peerUnavailable = false;
+  }
+
+  $: showRefresh = !!(
+    payload?.status_endpoint && payload?.refresh_champion && payload?.refresh_role
+  );
+  $: refreshDisabled = refreshing || jobActive;
 
   let loadedStatusSlug = '';
   $: if (params.slug !== loadedStatusSlug) {
@@ -62,16 +229,52 @@
       });
   }
 
+  let stickyResizeObserver = null;
+
+  function attachStickyHeader(el) {
+    if (stickyResizeObserver) {
+      stickyResizeObserver.disconnect();
+      stickyResizeObserver = null;
+    }
+    stickyHeaderEl = el;
+    if (!el) return;
+    syncStickyOffset();
+    if (typeof ResizeObserver !== 'undefined') {
+      stickyResizeObserver = new ResizeObserver(syncStickyOffset);
+      stickyResizeObserver.observe(el);
+    }
+  }
+
+  function stickyHeaderAction(node) {
+    attachStickyHeader(node);
+    return {
+      destroy() {
+        attachStickyHeader(null);
+      },
+    };
+  }
+
   onMount(() => {
     try {
       navCollapsed = localStorage.getItem(NAV_COLLAPSE_KEY) === '1';
     } catch (err) {
       // Private mode: collapse state lives for this page only.
     }
+    const unbindPlotlyResize = bindPlotlyDetailsResize();
+    window.addEventListener('scroll', syncStickyOffset, { passive: true });
+    window.addEventListener('resize', syncStickyOffset);
     return () => {
+      unbindPlotlyResize();
+      window.removeEventListener('scroll', syncStickyOffset);
+      window.removeEventListener('resize', syncStickyOffset);
+      stickyResizeObserver?.disconnect();
       document.documentElement.classList.remove('report-nav-collapsed');
     };
   });
+
+  $: if (stickyHeaderEl && (statusBannerVisible !== undefined || payload)) {
+    tick().then(syncStickyOffset);
+  }
 
   // CSS for the collapsed state is scoped to html.report-nav-collapsed (matching
   // the original report.html script), not a class on any element this component owns.
@@ -94,9 +297,9 @@
 
   const REPORT_CATEGORIES = [
     { value: 'summary', label: 'Summary' },
+    { value: 'games', label: 'Games' },
     { value: 'career', label: 'Career' },
     { value: 'performance', label: 'Performance' },
-    { value: 'games', label: 'Games' },
     { value: 'champion', label: 'Champion' },
     { value: 'deepdive', label: 'Deepdive' },
   ];
@@ -110,7 +313,13 @@
   }));
   function selectCategory(value) {
     activeCategory = value;
+    tick().then(() => {
+      const panel = document.getElementById(`category-${value}`);
+      if (panel) resizePlotlySoon(panel);
+    });
   }
+
+  setContext(REPORT_NAV_KEY, createReportNav(selectCategory));
 
   $: queue = report ? report.queue : null;
   $: gameWindow = report ? report.gameWindow : null;
@@ -197,57 +406,87 @@
 {:else if payload === null || !$view}
   <p class="report-loading">Loading…</p>
 {:else}
-  <div class="report-filter-bar" id="report-filter-bar">
-    <div class="filter-group" id="queue-filter-bar">
-      <span class="game-window-label">Queue</span>
-      {#each queueButtons as option}
-        <FilterButton
-          dataAttr="data-queue"
-          buttonClass="queue-filter-btn game-window-btn"
-          value={option.key}
-          label={option.label}
-          activeClass={option.key === $view.queue_filter_default ? 'is-active' : ''}
-          disabled={!option.enabled}
-          on:click={() => selectQueue(option)}
-        />
-      {/each}
+  <div
+    class="report-sticky-header"
+    id="report-sticky-header"
+    use:stickyHeaderAction
+  >
+    {#if payload.status_endpoint && statusBannerVisible}
+      <div id="web-status-banner">
+        <span id="web-status-banner-text">{statusBannerText}</span>
+      </div>
+    {/if}
+
+    <div class="report-filter-bar" id="report-filter-bar">
+      <div class="filter-group" id="queue-filter-bar">
+        <span class="game-window-label">Queue</span>
+        {#each queueButtons as option}
+          <FilterButton
+            dataAttr="data-queue"
+            buttonClass="queue-filter-btn game-window-btn"
+            value={option.key}
+            label={option.label}
+            activeClass={option.key === $view.queue_filter_default ? 'is-active' : ''}
+            disabled={!option.enabled}
+            on:click={() => selectQueue(option)}
+          />
+        {/each}
+      </div>
+      <div class="filter-group" id="game-window-bar">
+        <span class="game-window-label">Games</span>
+        {#each $view.game_window_options || [] as option}
+          <FilterButton
+            dataAttr="data-window"
+            buttonClass="game-window-btn"
+            value={option.key}
+            label={option.label}
+            activeClass={option.key === $view.game_window_default ? 'is-active' : ''}
+            disabled={!option.enabled}
+            on:click={() => selectWindow(option)}
+          />
+        {/each}
+      </div>
+      <AccountFilter
+        data={payload.account_filter || {}}
+        accountKey={$accountKey}
+        loading={$accountLoading}
+        error={$accountError}
+        onChange={(key) => report.selectAccountKey(key)}
+      />
+      {#if showRefresh}
+        <div class="filter-group filter-group--actions" id="report-refresh-bar">
+          <button
+            type="button"
+            class="report-refresh-btn"
+            id="report-refresh-btn"
+            title="Fetch latest games and rebuild this champion report"
+            on:click={handleRefresh}
+            disabled={refreshDisabled}
+          >
+            <iconify-icon icon="mdi:refresh" width="16" height="16" aria-hidden="true"></iconify-icon>
+            <span>Refresh</span>
+          </button>
+        </div>
+      {/if}
     </div>
-    <div class="filter-group" id="game-window-bar">
-      <span class="game-window-label">Games</span>
-      {#each $view.game_window_options || [] as option}
-        <FilterButton
-          dataAttr="data-window"
-          buttonClass="game-window-btn"
-          value={option.key}
-          label={option.label}
-          activeClass={option.key === $view.game_window_default ? 'is-active' : ''}
-          disabled={!option.enabled}
-          on:click={() => selectWindow(option)}
-        />
-      {/each}
-    </div>
+
+    <TabBar
+      containerId="report-category-tabs"
+      ariaLabel="Report categories"
+      buttonClass="report-tab"
+      dataAttr="data-category"
+      tabs={categoryTabs}
+      on:select={(event) => selectCategory(event.detail)}
+    />
   </div>
-
-  <AccountFilter
-    data={payload.account_filter || {}}
-    accountKey={$accountKey}
-    loading={$accountLoading}
-    error={$accountError}
-    onChange={(key) => report.selectAccountKey(key)}
-  />
-
-  <TabBar
-    containerId="report-category-tabs"
-    ariaLabel="Report categories"
-    buttonClass="report-tab"
-    dataAttr="data-category"
-    tabs={categoryTabs}
-    on:select={(event) => selectCategory(event.detail)}
-  />
 
   <div class="report-category-panel{activeCategory === 'summary' ? ' is-active' : ''}" id="category-summary" data-category="summary">
     <Overview data={$view} onGoToCareer={() => selectCategory('career')} />
     <Coaching data={$view} />
+  </div>
+
+  <div class="report-category-panel{activeCategory === 'games' ? ' is-active' : ''}" id="category-games" data-category="games">
+    <GameReview data={$view} />
   </div>
 
   <div class="report-category-panel{activeCategory === 'career' ? ' is-active' : ''}" id="category-career" data-category="career">
@@ -256,11 +495,12 @@
 
   <div class="report-category-panel{activeCategory === 'performance' ? ' is-active' : ''}" id="category-performance" data-category="performance">
     <FormTracker data={$view} />
-    <RankPeers data={$view} />
-  </div>
-
-  <div class="report-category-panel{activeCategory === 'games' ? ' is-active' : ''}" id="category-games" data-category="games">
-    <GameReview data={$view} />
+    <RankPeers
+      data={$view}
+      peerStageDetail={peerStageDetail}
+      peerFailed={peerFailed}
+      peerUnavailable={peerUnavailable}
+    />
   </div>
 
   <div class="report-category-panel{activeCategory === 'champion' ? ' is-active' : ''}" id="category-champion" data-category="champion">

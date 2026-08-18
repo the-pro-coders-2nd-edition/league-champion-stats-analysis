@@ -7,5 +7,4 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$APP_DIR"
 
-echo "→ building the Svelte SPA"
-(cd frontend && npm ci && npm run build)
+"$APP_DIR/deploy/build_spa.sh"

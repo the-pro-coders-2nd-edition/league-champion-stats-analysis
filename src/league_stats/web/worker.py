@@ -26,6 +26,7 @@ from league_stats.pipeline.orchestrator import (
     analyze_build,
     build_peer_for_pool,
     prepare_builds,
+    report_needs_peer_comparison,
     resolve_ranked,
     should_skip_unchanged_build,
 )
@@ -282,8 +283,12 @@ def _run_stage_b(
     for index, pool in enumerate(batch.pools, start=1):
         _ensure_not_cancelled(store, job_id)
         records = group_records(batch.records, pool.champion, pool.role)
-        if not force_rebuild and should_skip_unchanged_build(
-            services.config, pool, records, new_match_ids
+        if (
+            not force_rebuild
+            and should_skip_unchanged_build(
+                services.config, pool, records, new_match_ids
+            )
+            and not report_needs_peer_comparison(services.config, pool)
         ):
             log.info(
                 "Skipping peer for %s: no new games since last report", pool.build_label

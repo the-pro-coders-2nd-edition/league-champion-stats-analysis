@@ -182,6 +182,8 @@ install_and_start() {
   echo "→ syncing dependencies"
   (cd "$APP_DIR" && "$uv_bin" sync)
 
+  "$APP_DIR/deploy/build_spa.sh"
+
   ensure_caddy
   write_caddyfile
   write_systemd_unit "$uv_bin"

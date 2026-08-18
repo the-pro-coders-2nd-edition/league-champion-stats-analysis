@@ -5,6 +5,8 @@
   import GameReviewKeyMoments from './GameReviewKeyMoments.svelte';
   import { escapeHtml, soloIconCellHtml } from '../lib/html.js';
   import { formatGameTime, pct } from '../lib/format.js';
+  import { gameReviewBarStyle } from '../lib/metricColors.js';
+  import { resizePlotlySoon } from '../lib/plotlyResize.js';
 
   export let data;
 
@@ -127,7 +129,7 @@
       `<div class="comp-ingredient-head"><span class="comp-ingredient-label">${escapeHtml(item.label || item.column || '')}</span>` +
       `<span class="comp-ingredient-score">${subPct}</span></div>` +
       `<div class="comp-ingredient-meta">${escapeHtml(gameTxt)} vs your avg ${escapeHtml(baseTxt)}</div>` +
-      `<div class="bar bar--sm" aria-hidden="true"><i style="width:${subPct}%"></i></div></div>`;
+      `<div class="bar bar--sm" aria-hidden="true"><i style="${gameReviewBarStyle(subPct)}"></i></div></div>`;
   }
 
   function renderGameReviewRunesHtml(build) {
@@ -554,6 +556,15 @@
       showlegend: false,
     };
     window.Plotly.react(chartEl, timelineTraces, layout, { displayModeBar: false, responsive: true });
+    resizePlotlySoon(chartEl);
+  }
+
+  function selectGameReviewTab(tab) {
+    activeTab = tab;
+    tick().then(() => {
+      const panel = document.getElementById(`game-review-panel-${tab}`);
+      if (panel) resizePlotlySoon(panel);
+    });
   }
 
   $: games = data.game_review?.[data.queue_filter_default]?.games || [];
@@ -699,7 +710,7 @@
                           <div class="gr-score-summary">
                             <span class="gr-score-name">{dim.name || 'Score'}</span>
                             <span class="gr-score-value">{dimPct}</span>
-                            <div class="gr-score-bar" aria-hidden="true"><i style="width:{dimPct}%"></i></div>
+                            <div class="gr-score-bar" aria-hidden="true"><i style={gameReviewBarStyle(dimPct)}></i></div>
                           </div>
                         </summary>
                         <div class="gr-score-details">
@@ -713,7 +724,7 @@
                         <div class="gr-score-summary">
                           <span class="gr-score-name">{dim.name || 'Score'}</span>
                           <span class="gr-score-value">{dimPct}</span>
-                          <div class="gr-score-bar" aria-hidden="true"><i style="width:{dimPct}%"></i></div>
+                          <div class="gr-score-bar" aria-hidden="true"><i style={gameReviewBarStyle(dimPct)}></i></div>
                         </div>
                       </div>
                     {/if}
@@ -729,7 +740,7 @@
               buttonClass="game-review-tab"
               dataAttr="data-tab"
               tabs={gameReviewTabs}
-              on:select={(e) => (activeTab = e.detail)}
+              on:select={(e) => selectGameReviewTab(e.detail)}
             />
 
             <div class="game-review-panel" id="game-review-panel-overview" role="tabpanel" hidden={activeTab !== 'overview'}>

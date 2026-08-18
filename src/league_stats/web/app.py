@@ -50,6 +50,7 @@ from league_stats.presentation.brand_assets import (
     refresh_saved_report_branding,
 )
 from league_stats.presentation.report import discover_player_builds, is_group_player_label
+from league_stats.presentation.report_json import rewrite_web_asset_hrefs
 from league_stats.utils import setup_logging
 from league_stats.infra.career_store import CareerStore, build_key as career_build_key
 from league_stats.web.watch import WatchPoller, watch_public_fields
@@ -885,7 +886,8 @@ def create_app(
         report_json_path = config.reports_dir / slug / build_slug / "report.json"
         if not report_json_path.is_file():
             raise HTTPException(status_code=404, detail="Unknown build")
-        return json.loads(report_json_path.read_text(encoding="utf-8"))
+        payload = json.loads(report_json_path.read_text(encoding="utf-8"))
+        return rewrite_web_asset_hrefs(payload)
 
     def _resolve_build_filter(
         slug: str,
@@ -1070,7 +1072,8 @@ def create_app(
         cache_path = build_dir / "account_views" / f"{cache_key}.json"
         if cache_path.is_file():
             try:
-                return json.loads(cache_path.read_text(encoding="utf-8"))
+                cached = json.loads(cache_path.read_text(encoding="utf-8"))
+                return rewrite_web_asset_hrefs(cached)
             except (OSError, json.JSONDecodeError):
                 pass
 
@@ -1141,6 +1144,7 @@ def create_app(
 
         # Same encoding as the embedded report JSON (stringifies numpy scalars).
         payload: dict[str, Any] = json.loads(json.dumps(views, default=str))
+        payload = rewrite_web_asset_hrefs(payload)
         try:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache_path.write_text(json.dumps(payload), encoding="utf-8")

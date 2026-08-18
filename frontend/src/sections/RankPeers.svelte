@@ -10,6 +10,9 @@
   import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
   export let data;
+  export let peerStageDetail = '';
+  export let peerFailed = false;
+  export let peerUnavailable = false;
 
   function peerTableRowCellsHtml(row) {
     const style = row.gap_color ? ` style="color: ${row.gap_color}"` : '';
@@ -20,7 +23,9 @@
   $: windowScopeLabel = computeWindowScopeLabel(data);
 
   $: hasPeerComparison = !!data.has_peer_comparison;
-  $: pending = !hasPeerComparison && !!data.status_endpoint;
+  $: pending = !hasPeerComparison && !!data.status_endpoint && !peerFailed && !peerUnavailable;
+  $: pendingMessage = peerStageDetail
+    || 'Peer comparison is still running — this section updates when it finishes.';
 
   $: peerComparison = data.peer_comparison || {};
   $: peerRows = data.peer_rows || [];
@@ -119,7 +124,33 @@
   </h2>
   <div class="peer-dossier peer-dossier--pending">
     <div class="peer-pending" role="status" aria-live="polite">
-      <p class="sub" id="rank-peers-pending">Peer comparison is still running — this section updates when it finishes.</p>
+      <p class="sub" id="rank-peers-pending">{pendingMessage}</p>
+    </div>
+  </div>
+</section>
+{:else if peerFailed}
+<section id="rank-peers" class="report-section report-section--performance" data-peer-failed="1">
+  <h2 class="section-title section-title--performance">
+    <iconify-icon icon="lucide:bar-chart-2" class="metric-icon metric-icon--accent" aria-hidden="true"></iconify-icon>
+    <span>Rank peer comparison</span>
+    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
+  </h2>
+  <div class="peer-dossier peer-dossier--pending">
+    <div class="peer-pending" role="status">
+      <p class="sub is-failed" id="rank-peers-pending">Peer comparison could not be completed for this report.</p>
+    </div>
+  </div>
+</section>
+{:else if peerUnavailable}
+<section id="rank-peers" class="report-section report-section--performance" data-peer-unavailable="1">
+  <h2 class="section-title section-title--performance">
+    <iconify-icon icon="lucide:bar-chart-2" class="metric-icon metric-icon--accent" aria-hidden="true"></iconify-icon>
+    <span>Rank peer comparison</span>
+    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
+  </h2>
+  <div class="peer-dossier peer-dossier--pending">
+    <div class="peer-pending" role="status">
+      <p class="sub" id="rank-peers-pending">Rank peer comparison is not available for this build (rank or baseline data could not be resolved).</p>
     </div>
   </div>
 </section>

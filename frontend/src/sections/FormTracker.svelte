@@ -1,4 +1,5 @@
 <script>
+  import { tick } from 'svelte';
   import Pill from '../components/Pill.svelte';
   import UiChipBadge from '../components/UiChipBadge.svelte';
   import FormWrBridge from '../components/FormWrBridge.svelte';
@@ -8,6 +9,7 @@
   import DataTableHead from '../components/DataTableHead.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
+  import { resizePlotlySoon } from '../lib/plotlyResize.js';
   import TrendRow from '../components/TrendRow.svelte';
   import { escapeHtml, metricLabelFromRow } from '../lib/html.js';
 
@@ -49,6 +51,14 @@
     { value: 'pulse', label: 'Pulse', active: activeTab === 'pulse' },
     { value: 'evidence', label: 'Evidence', active: activeTab === 'evidence' },
   ];
+
+  function selectFormTab(tab) {
+    activeTab = tab;
+    tick().then(() => {
+      const panel = document.getElementById(`form-panel-${tab}`);
+      if (panel) resizePlotlySoon(panel);
+    });
+  }
 </script>
 
 <section id="form-tracker" class="report-section report-section--performance">
@@ -88,7 +98,7 @@
         buttonClass="form-tab"
         dataAttr="data-tab"
         tabs={formTabs}
-        on:select={(e) => (activeTab = e.detail)}
+        on:select={(e) => selectFormTab(e.detail)}
       />
       <div class="form-panel" id="form-panel-pulse" role="tabpanel" hidden={activeTab !== 'pulse'}>
         <div class="form-stories" id="form-stories">

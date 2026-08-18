@@ -174,36 +174,29 @@ def test_map_presence_still_builds_when_presence_is_healthy() -> None:
     assert not is_significant(TRACKS_BY_KEY["map_presence"], ctx)
 
 
-def test_economy_discipline_steps_below_current_averages() -> None:
-    matches = _matches(
-        avg_unspent_gold=[1650.0, 1650.0],
-        avg_unspent_gold_per_fight=[1420.0, 1420.0],
-        avg_gold_at_death=[1180.0, 1180.0],
-    )
-    rungs = build_rungs(TRACKS_BY_KEY["economy_discipline"], _ctx(matches))
+def test_item_spike_steps_from_p50_toward_p25() -> None:
+    matches = _matches(first_item_min=[12.0, 12.0, 12.0, 10.0, 9.0, 8.0])
+    rungs = build_rungs(TRACKS_BY_KEY["item_spike"], _ctx(matches))
 
     assert rungs is not None
-    assert rungs[0].text == "Under 1500g banked before recall in 15 of 20 games"
-    assert rungs[1].text == "Under 1300g banked entering fights in 15 of 20 games"
-    assert rungs[2].text == "Under 1000g banked on death in 15 of 20 games"
+    assert [r.target for r in rungs] == [10.4, 9.8, 9.2]
     assert all(r.comparator == "under" for r in rungs)
+    assert rungs[2].text == "First item by 9.2 minutes in 15 of 20 games"
 
 
-def test_economy_discipline_tightens_further_for_healthy_players() -> None:
-    matches = _matches(
-        avg_unspent_gold=[600.0, 600.0],
-        avg_unspent_gold_per_fight=[500.0, 500.0],
-        avg_gold_at_death=[400.0, 400.0],
-    )
-    ctx = _ctx(matches)
-    rungs = build_rungs(TRACKS_BY_KEY["economy_discipline"], ctx)
+def test_item_spike_is_significant_when_behind_role_norm() -> None:
+    matches = _matches(first_item_min=[14.0, 14.5, 15.0])
+    ctx = _ctx(matches, role="MIDDLE")
+    assert is_significant(TRACKS_BY_KEY["item_spike"], ctx)
+
+
+def test_item_spike_is_stretch_only_when_already_fast() -> None:
+    matches = _matches(first_item_min=[8.0, 8.5, 9.0, 7.5, 8.0, 7.0])
+    ctx = _ctx(matches, role="MIDDLE")
+    rungs = build_rungs(TRACKS_BY_KEY["item_spike"], ctx)
 
     assert rungs is not None
-    # Already under the component norm, so the target tightens rather than
-    # loosening back up to it.
-    assert rungs[0].text == "Under 500g banked before recall in 15 of 20 games"
-    assert rungs[2].text == "Under 300g banked on death in 15 of 20 games"
-    assert not is_significant(TRACKS_BY_KEY["economy_discipline"], ctx)
+    assert not is_significant(TRACKS_BY_KEY["item_spike"], ctx)
 
 
 def test_a_healthy_player_can_still_fill_three_blocks() -> None:
@@ -213,9 +206,7 @@ def test_a_healthy_player_can_still_fill_three_blocks() -> None:
         damage_share=[0.28, 0.30, 0.32, 0.34],
         deaths_pre20=[3.0, 3.0, 3.0, 3.0],
         deaths_before_neutral_objective=[0.0, 0.0, 0.0, 0.0],
-        avg_unspent_gold=[600.0, 600.0, 600.0, 600.0],
-        avg_unspent_gold_per_fight=[500.0, 500.0, 500.0, 500.0],
-        avg_gold_at_death=[400.0, 400.0, 400.0, 400.0],
+        first_item_min=[9.0, 9.0, 9.0, 9.0],
         tf_participation=[0.9, 0.9, 0.9, 0.9],
         control_wards=[2.0, 2.0, 2.0, 2.0],
         objectives_present_rate=[0.9, 0.9, 0.9, 0.9],
@@ -237,7 +228,7 @@ def test_rank_track_keys_puts_the_weakest_category_first() -> None:
         _Component("Objectives", 33.0),
     ]
     assert rank_track_keys(components)[:3] == [
-        "economy_discipline",
+        "item_spike",
         "map_presence",
         "death_discipline",
     ]
@@ -250,8 +241,8 @@ def test_rank_track_keys_uses_the_jungle_category_name() -> None:
 
 def test_rank_track_keys_excludes_and_defaults_missing_categories() -> None:
     components = [_Component("Economy", 10.0)]
-    ranked = rank_track_keys(components, exclude={"economy_discipline"})
-    assert "economy_discipline" not in ranked
+    ranked = rank_track_keys(components, exclude={"item_spike"})
+    assert "item_spike" not in ranked
     assert len(ranked) == 5
 
 

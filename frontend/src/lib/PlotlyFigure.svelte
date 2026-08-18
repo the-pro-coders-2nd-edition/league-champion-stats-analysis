@@ -1,5 +1,6 @@
 <script>
   import { onMount, afterUpdate, onDestroy } from 'svelte';
+  import { resizePlotlySoon } from './plotlyResize.js';
 
   export let html = '';
   export let id = '';
@@ -31,6 +32,7 @@
       }
       script.parentNode.replaceChild(replacement, script);
     });
+    resizePlotlySoon(container);
   }
 
   onMount(() => {

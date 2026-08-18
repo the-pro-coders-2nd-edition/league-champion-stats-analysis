@@ -339,12 +339,23 @@ def test_player_status_serves_existing_reports(client: TestClient) -> None:
 
 def test_get_build_payload_returns_report_json(client: TestClient) -> None:
     report_dir = _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
-    (report_dir / "report.json").write_text('{"champion": "Viktor"}', encoding="utf-8")
+    (report_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "champion": "Viktor",
+                "champion_icon": "../../../assets/champions/Viktor.png",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     response = client.get("/api/players/test_euw/builds/viktor_middle")
 
     assert response.status_code == 200
-    assert response.json() == {"champion": "Viktor"}
+    assert response.json() == {
+        "champion": "Viktor",
+        "champion_icon": "/out/assets/champions/Viktor.png",
+    }
 
 
 def test_get_build_payload_404_when_missing(client: TestClient) -> None:

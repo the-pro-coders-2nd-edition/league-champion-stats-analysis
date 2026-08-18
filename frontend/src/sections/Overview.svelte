@@ -5,6 +5,7 @@
   import ReportPlayerChip from '../components/ReportPlayerChip.svelte';
   import MetricCard from '../components/MetricCard.svelte';
   import CareerNode from '../components/CareerNode.svelte';
+  import Pill from '../components/Pill.svelte';
 
   export let data;
   export let onGoToCareer = () => {};
@@ -15,10 +16,25 @@
     return 'stat';
   }
 
+  function scorePercent(score) {
+    return Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
+  }
+
+  function scoreToneStyle(tone) {
+    const resolved = tone || 'flat';
+    return {
+      valueColor: resolved === 'flat' ? 'var(--color-text)' : `var(--tone-${resolved}-fg)`,
+      fillColor: `var(--tone-${resolved}-line)`,
+    };
+  }
+
   $: heroChips = (data.overview_cards || []).slice(0, 4);
   $: topTips = data.top_tips || [];
   $: scoreComponents = data.score_components || [];
   $: showPlayerChips = data.report_players && data.report_players.length > 1;
+  $: scoreColor = data.score_color || 'var(--color-text)';
+  $: scoreVerdictLabel = data.score_verdict_label || 'Solid';
+  $: scorePct = scorePercent(data.score);
 </script>
 
 <section id="overview" class="report-section report-section--summary">
@@ -56,10 +72,6 @@
           </div>
         </div>
       </div>
-      <div class="hero-score-panel">
-        <div class="hero-score-label">Improvement score</div>
-        <div class="hero-score-value" id="score-value" data-score={data.score}>{data.score}<span>/100</span></div>
-      </div>
     </div>
     <div class="hero-actions-block">
       <div class="hero-actions-title">Focus next game</div>
@@ -74,46 +86,94 @@
       </div>
     </div>
   </div>
-  <div class="score-breakdown" id="score-breakdown">
-    <div class="score-breakdown-title">Score breakdown</div>
-    <div class="score-comps" id="score-comps">
-      {#each scoreComponents as comp}
-        <ScoreSetItem
-          name={comp.name}
-          scoreLabel={String(Math.round(comp.score))}
-          scoreValue={comp.score}
-          value={comp.value}
-          tone={comp.tone || 'solid'}
-          verdict={comp.verdict || 'Solid'}
-          hint={comp.hint}
-        />
-      {/each}
+
+  <div class="summary-grid">
+    <div class="summary-grid-main">
+      {#if showPlayerChips}
+        <div class="accounts-panel">
+          <div class="accounts-panel-head">
+            <span class="accounts-panel-label">Accounts in this pool</span>
+            <span class="accounts-panel-count">{data.report_players.length} accounts</span>
+          </div>
+          {#each data.report_players as member}
+            <div class="accounts-panel-row">
+              {#if member.profile_icon}
+                <img src={member.profile_icon} alt="" class="accounts-panel-icon">
+              {:else}
+                <span class="accounts-panel-icon accounts-panel-icon--placeholder" aria-hidden="true"></span>
+              {/if}
+              <span class="accounts-panel-name">
+                {member.label}
+                {#if member.is_main}
+                  <Pill tone="good" variant="soft" dot={false} label="Main" />
+                {/if}
+              </span>
+              <span class="accounts-panel-rank">{member.solo_rank_division || 'Unranked'}</span>
+              <span class="accounts-panel-lp">{member.solo_lp != null ? `${member.solo_lp} LP` : '—'}</span>
+              <span class="accounts-panel-region">{member.region || '—'}</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      <h2 class="score-breakdown-title" id="score-breakdown">Score breakdown</h2>
+      <div class="score-set" id="score-comps">
+        {#each scoreComponents as comp}
+          {@const toneStyle = scoreToneStyle(comp.tone)}
+          <ScoreSetItem
+            name={comp.name}
+            scoreLabel={String(scorePercent(comp.score))}
+            scoreValue={scorePercent(comp.score)}
+            valueColor={toneStyle.valueColor}
+            fillColor={toneStyle.fillColor}
+            verdict={comp.verdict || 'Solid'}
+            sub={comp.value || ''}
+            hint={comp.hint || ''}
+          />
+        {/each}
+      </div>
+    </div>
+
+    <div class="summary-grid-side">
+      <div class="hero-score-panel" id="improvement-score-card">
+        <div class="hero-score-head">
+          <div class="hero-score-label">Improvement score</div>
+          <span id="score-verdict-label" class="hero-score-verdict" style="color: {scoreColor}">{scoreVerdictLabel}</span>
+        </div>
+        <div class="hero-score-value" id="score-value" data-score={data.score} style="color: {scoreColor}">{data.score}<span>/100</span></div>
+        <div class="hero-score-bar" aria-hidden="true">
+          <i class="hero-score-bar-fill" style="width: {scorePct}%; background: {scoreColor}"></i>
+          <i class="hero-score-bar-tick"></i>
+        </div>
+      </div>
+
+      {#if data.career && data.career.has_career}
+        <div class="career-widget" id="career-widget">
+          <div class="career-widget-head">
+            <span class="career-widget-label">Live block</span>
+            <button type="button" class="career-widget-link" id="career-widget-link" on:click={onGoToCareer}>
+              All goals
+            </button>
+          </div>
+          {#each data.career.widget as item, index (index)}
+            <CareerNode
+              compact={true}
+              state={item.state}
+              stateClass={item.state_class}
+              tone={item.tone}
+              pct={item.pct}
+              mark={item.mark}
+              text={item.text}
+              note={item.note}
+              count={item.count}
+              last={index === data.career.widget.length - 1}
+            />
+          {/each}
+        </div>
+      {/if}
     </div>
   </div>
-  {#if data.career && data.career.has_career}
-    <div class="career-widget" id="career-widget">
-      <div class="career-widget-head">
-        <span class="career-widget-label">Live block</span>
-        <button type="button" class="career-widget-link" id="career-widget-link" on:click={onGoToCareer}>
-          All goals
-        </button>
-      </div>
-      {#each data.career.widget as item, index (index)}
-        <CareerNode
-          compact={true}
-          state={item.state}
-          stateClass={item.state_class}
-          tone={item.tone}
-          pct={item.pct}
-          mark={item.mark}
-          text={item.text}
-          note={item.note}
-          count={item.count}
-          last={index === data.career.widget.length - 1}
-        />
-      {/each}
-    </div>
-  {/if}
+
   <div id="overview-cards" class="cards">
     {#each data.overview_cards || [] as card}
       <MetricCard {card} />

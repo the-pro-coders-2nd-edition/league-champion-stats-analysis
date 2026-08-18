@@ -31,49 +31,35 @@
 </script>
 
 {#if members.length > 1}
-<div class="nav-accounts" id="account-filter-bar">
-  <div class="nav-accounts-label">Accounts</div>
-  <div class="nav-accounts-list" id="account-filter-menu">
+<div class="filter-group account-filter-group" id="account-filter-bar">
+  <span class="game-window-label">Accounts</span>
+  <div class="account-filter-list" id="account-filter-menu">
     {#each members as member}
-      <label class="account-toggle-row{member.games ? '' : ' is-empty'}">
-        <span class="account-toggle-head">
-          <span class="account-toggle-name">
-            {member.riot_id || member.label}
-            <span class="account-toggle-tag">#{member.tagline || ''}</span>
-          </span>
-          {#if member.solo_rank_label}
-            <span class="account-toggle-rank">
-              {#if member.solo_rank_icon}
-                <img src={member.solo_rank_icon} alt="" width="16" height="16">
-              {/if}
-              {member.solo_rank_label}
-            </span>
-          {:else}
-            <span class="account-toggle-rank account-toggle-rank--none">Unranked</span>
-          {/if}
+      <label class="account-filter-chip{member.games ? '' : ' is-empty'}{selected.has(member.key) ? ' is-active' : ''}">
+        {#if member.profile_icon}
+          <img src={member.profile_icon} alt="" class="account-filter-icon" width="22" height="22">
+        {:else}
+          <span class="account-filter-icon account-filter-icon--empty" aria-hidden="true"></span>
+        {/if}
+        <span class="account-filter-name">
+          {member.riot_id || member.label}<span class="account-filter-tag">#{member.tagline || ''}</span>
         </span>
-        <span class="account-toggle-foot">
-          {#if member.profile_icon}
-            <img src={member.profile_icon} alt="" class="account-toggle-icon" width="28" height="28">
-          {:else}
-            <span class="account-toggle-icon account-toggle-icon--empty" aria-hidden="true"></span>
-          {/if}
-          <span class="account-toggle-games">{member.games || 0} game{member.games === 1 ? '' : 's'}</span>
-          <input
-            type="checkbox"
-            class="account-toggle-input"
-            data-account={member.key}
-            checked={selected.has(member.key)}
-            disabled={!member.games}
-            on:change={(e) => toggle(member, e.currentTarget.checked)}
-          >
-          <span class="account-toggle-switch" aria-hidden="true"></span>
-        </span>
+        <input
+          type="checkbox"
+          class="account-filter-input"
+          data-account={member.key}
+          checked={selected.has(member.key)}
+          disabled={!member.games}
+          on:change={(e) => toggle(member, e.currentTarget.checked)}
+        >
+        <span class="account-filter-switch" aria-hidden="true"></span>
       </label>
     {/each}
   </div>
-  <p class="account-filter-notice" id="account-filter-notice" hidden={!error && !loading}>
-    {loading ? 'Crunching numbers for this selection…' : error}
-  </p>
+  {#if error || loading}
+    <p class="account-filter-notice" id="account-filter-notice">
+      {loading ? 'Crunching numbers for this selection…' : error}
+    </p>
+  {/if}
 </div>
 {/if}

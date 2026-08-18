@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from league_stats.core.models import PeerComparisonResult
-from league_stats.presentation.report_json import context_to_json
+from league_stats.presentation.report_json import context_to_json, rewrite_web_asset_hrefs
 
 
 @dataclass
@@ -117,6 +117,22 @@ def test_context_to_json_converts_numpy_array() -> None:
     assert isinstance(result["array"], list)
     assert all(isinstance(x, int) for x in result["array"])
     json.dumps(result)
+
+
+def test_rewrite_web_asset_hrefs_maps_relative_paths() -> None:
+    payload = {
+        "champion_icon": "../../../assets/champions/Viktor.png",
+        "nested": [{"icon_href": "../../assets/ui/tower.png"}],
+        "already_web": "/out/assets/champions/Ahri.png",
+        "plain": "no rewrite",
+    }
+
+    result = rewrite_web_asset_hrefs(payload)
+
+    assert result["champion_icon"] == "/out/assets/champions/Viktor.png"
+    assert result["nested"][0]["icon_href"] == "/out/assets/ui/tower.png"
+    assert result["already_web"] == "/out/assets/champions/Ahri.png"
+    assert result["plain"] == "no rewrite"
 
 
 def test_context_to_json_converts_pandas_timestamp() -> None:

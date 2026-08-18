@@ -218,6 +218,25 @@ def should_skip_unchanged_build(
     return new_match_ids.isdisjoint(record.match_id for record in records)
 
 
+def report_needs_peer_comparison(config: AppConfig, pool: BuildPool) -> bool:
+    """Whether the on-disk build report is still missing rank peer comparison."""
+    run_dir = (
+        config.output_dir
+        / "reports"
+        / config.reports_group_slug
+        / champion_slug(pool.champion, pool.role)
+    )
+    meta_path = run_dir / "meta.json"
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return True
+        if "has_peer_comparison" in meta:
+            return not bool(meta.get("has_peer_comparison"))
+    return not (run_dir / "rank_comparison.csv").is_file()
+
+
 def write_full_exports(
     config: AppConfig,
     records: list[MatchRecord],

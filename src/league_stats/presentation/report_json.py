@@ -66,3 +66,28 @@ def _is_json_safe(value: Any) -> bool:
     except TypeError:
         return False
     return True
+
+
+def _rewrite_asset_href(href: str) -> str:
+    """Map on-disk relative ``../assets/...`` paths to ``/out/assets/...`` URLs."""
+    if href.startswith("/out/"):
+        return href
+    marker = "assets/"
+    index = href.find(marker)
+    if index == -1:
+        return href
+    prefix = href[:index]
+    if prefix and not all(part == ".." for part in prefix.split("/") if part):
+        return href
+    return "/out/" + href[index:]
+
+
+def rewrite_web_asset_hrefs(value: Any) -> Any:
+    """Recursively rewrite report asset paths for SPA/API consumers."""
+    if isinstance(value, dict):
+        return {key: rewrite_web_asset_hrefs(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [rewrite_web_asset_hrefs(item) for item in value]
+    if isinstance(value, str) and "assets/" in value:
+        return _rewrite_asset_href(value)
+    return value
