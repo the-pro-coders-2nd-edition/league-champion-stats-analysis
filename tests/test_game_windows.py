@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import pandas as pd
@@ -56,7 +55,7 @@ def test_peer_comparison_for_window_updates_user_side() -> None:
 
 
 def test_report_contains_game_window_toggle(tmp_path: Path) -> None:
-    """Generated HTML embeds the toggle and all window snapshots."""
+    """report.json carries the window toggle's default and all window snapshots."""
     config = _config(tmp_path)
     records = _make_records(25)
     peer = _peer(records)
@@ -64,32 +63,15 @@ def test_report_contains_game_window_toggle(tmp_path: Path) -> None:
 
     run_analysis(config, records, peer_comparison=peer, ranked=ranked)
 
-    html = (config.report_dir / "report.html").read_text(encoding="utf-8")
-    assert 'id="game-window-bar"' in html
-    assert 'id="report-views-data"' in html
-    assert "Last 50" in html
-    assert "Last 100" in html
-    assert 'data-window="all"' in html
-    # Restoring a saved Last-50 window must update data-score before the
-    # entrance animation runs, or a peer-stage reload reverts to Last 100.
-    assert "scoreNode.setAttribute('data-score', String(bundle.score))" in html
+    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    assert payload["game_window_default"] == "all"
 
-    match = re.search(
-        r'<script type="application/json" id="report-views-data">(.*?)</script>',
-        html,
-        re.S,
-    )
-    assert match is not None
-    views = json.loads(match.group(1))
+    views = payload["report_views"]
     solo_windows = views["solo"]["windows"]
     assert set(solo_windows) == {"50", "100", "all"}
     assert solo_windows["50"]["total_games"] == 25
     assert solo_windows["100"]["total_games"] == 25
     assert solo_windows["all"]["total_games"] == 25
-    assert re.search(
-        r'class="game-window-btn is-active"[^>]*data-window="all"',
-        html.replace("\n", " "),
-    )
 
 
 def test_default_window_active_when_enough_games(tmp_path: Path) -> None:
@@ -100,11 +82,8 @@ def test_default_window_active_when_enough_games(tmp_path: Path) -> None:
 
     run_analysis(config, records, peer_comparison=peer, ranked=None)
 
-    html = (config.report_dir / "report.html").read_text(encoding="utf-8")
-    assert re.search(
-        rf'class="game-window-btn is-active"[^>]*data-window="{DEFAULT_GAME_WINDOW}"',
-        html.replace("\n", " "),
-    )
+    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    assert payload["game_window_default"] == str(DEFAULT_GAME_WINDOW)
 
 
 def test_window_snapshots_change_winrate(tmp_path: Path) -> None:
@@ -125,13 +104,6 @@ def test_window_snapshots_change_winrate(tmp_path: Path) -> None:
 
     run_analysis(config, records, peer_comparison=peer, ranked=None)
 
-    html = (config.report_dir / "report.html").read_text(encoding="utf-8")
-    match = re.search(
-        r'<script type="application/json" id="report-views-data">(.*?)</script>',
-        html,
-        re.S,
-    )
-    assert match is not None
-    views = json.loads(match.group(1))
-    solo_windows = views["solo"]["windows"]
+    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    solo_windows = payload["report_views"]["solo"]["windows"]
     assert solo_windows["50"]["overview"]["winrate"] > solo_windows["all"]["overview"]["winrate"]

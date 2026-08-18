@@ -1,4 +1,4 @@
-"""End-to-end smoke test: parsed records -> exports + HTML report."""
+"""End-to-end smoke test: parsed records -> exports + report.json."""
 
 from __future__ import annotations
 
@@ -84,22 +84,15 @@ def test_full_pipeline_generates_all_artifacts(tmp_path: Path) -> None:
     )
 
     assert report_path.exists()
-    assert report_path == config.report_dir / "report.html"
-    html = report_path.read_text(encoding="utf-8")
-    assert "Improvement score" in html and "Recommendations" in html
-    assert "Form tracker" in html
-    assert 'id="progression-views-data"' in html
-    assert 'id="form-dossier"' in html
-    assert 'data-tab="pulse"' in html
-    assert 'id="form-stories"' in html
-    assert 'data-tab="evidence"' in html
-    assert 'data-tab="pulse"' in html
-    assert "Rank peer comparison" in html
-    assert 'id="peer-dossier"' in html
-    assert 'id="peer-stage"' in html
-    assert 'id="peer-above-list"' in html
-    assert "← Home" in html
-    assert 'href="/"' in html
+    assert report_path == config.report_dir / "report.json"
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert payload["score"] is not None
+    assert payload["positive_recommendations"] or payload["negative_recommendations"]
+    assert "form_available" in payload
+    assert "progression_views" in payload
+    assert payload["has_peer_comparison"] is True
+    assert payload["peer_rows"]
+    assert payload["player_page_href"] is None
 
     expected = [
         "summary.json", "matches.csv", "deaths.csv", "timeline.csv", "matchups.csv",
@@ -112,7 +105,7 @@ def test_full_pipeline_generates_all_artifacts(tmp_path: Path) -> None:
     assert (config.run_graphs_dir / "death_heatmap.png").exists()
 
     assert not (config.output_dir / "index.html").exists()
-    assert (config.player_reports_dir / "index.html").exists()
+    assert (config.player_reports_dir / "manifest.json").exists()
 
 
 def test_report_embeds_chatbot_panel_and_stats(tmp_path: Path) -> None:
@@ -130,24 +123,15 @@ def test_report_embeds_chatbot_panel_and_stats(tmp_path: Path) -> None:
     config.ensure_directories()
 
     report_path = run_analysis(config, _make_records())
-    html = report_path.read_text(encoding="utf-8")
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
 
-    assert 'id="chatbot-toggle"' in html
-    assert 'id="chatbot-panel"' in html
-    assert 'id="chatbot-consent-checkbox"' in html
-    assert 'id="chatbot-stats-data"' in html
-    assert "NOTE(security)" in html
-    assert "generateContent" in html
-    # CLI-rendered report (no chat_endpoint): chat calls Gemini directly.
-    assert "var CHAT_ENDPOINT = null;" in html
+    # CLI-rendered report (no chat_endpoint): the SPA's chat panel calls Gemini directly.
+    assert payload["chat_endpoint"] is None
+    assert payload["gemini_api_key"] is None
 
-    stats_start = html.index('id="chatbot-stats-data">') + len('id="chatbot-stats-data">')
-    stats_end = html.index("</script>", stats_start)
-    embedded_stats = json.loads(html[stats_start:stats_end])
+    embedded_stats = payload["chatbot_stats"]
     assert embedded_stats["build_label"] == config.build_label
     assert embedded_stats["games"] == 15
-
-    assert "var GEMINI_API_KEY = null;" in html
 
 
 def test_web_stage_a_report_shows_peer_pending_placeholder(tmp_path: Path) -> None:
@@ -170,17 +154,13 @@ def test_web_stage_a_report_shows_peer_pending_placeholder(tmp_path: Path) -> No
     config.ensure_directories()
 
     report_path = run_analysis(config, _make_records(), peer_comparison=None)
-    html = report_path.read_text(encoding="utf-8")
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
 
-    assert 'id="rank-peers"' in html
-    assert 'data-peer-pending="1"' in html
-    assert 'id="rank-peers-pending"' in html
-    assert 'peer-dossier--pending' in html
-    assert "For the curious" in html
-    assert 'id="report-refresh-btn"' in html
-    assert 'var REFRESH_CHAMPION = "Viktor";' in html
-    assert 'var REFRESH_ROLE = "MIDDLE";' in html
-    assert "STATUS_ENDPOINT + '/refresh'" in html
+    assert payload["has_peer_comparison"] is False
+    assert "peer_comparison" not in payload
+    assert payload["refresh_champion"] == "Viktor"
+    assert payload["refresh_role"] == "MIDDLE"
+    assert payload["status_endpoint"] == "/api/players/test_euw"
     meta = json.loads((report_path.parent / "meta.json").read_text(encoding="utf-8"))
     assert meta["has_peer_comparison"] is False
     assert not (report_path.parent / "rank_comparison.csv").exists()
@@ -244,7 +224,7 @@ def test_peer_report_marks_meta_ready_and_keeps_export(tmp_path: Path) -> None:
 
 
 def test_pipeline_writes_report_json_alongside_report_html(tmp_path: Path) -> None:
-    """run_analysis writes a JSON-safe report.json next to report.html."""
+    """run_analysis writes a JSON-safe report.json."""
     config = AppConfig(
         riot_id="Test",
         tagline="EUW",
