@@ -380,8 +380,9 @@ img.metric-icon--asset { width: 14px; height: 14px; object-fit: contain; flex-sh
 .metric-icon--purple { color: var(--color-neutral-600); }
 .metric-icon--muted { color: var(--color-neutral-400); }
 .section-title { display: flex; align-items: center; gap: 10px; }
-.metric-card-label iconify-icon.metric-icon,
-.metric-card-label img.metric-icon--asset { display: none; }
+/* RFC-001 Open Question #1: render the metric-card header icons rather than delete them. This
+   used to force-hide them (`display: none`); keeping/rendering is the less destructive option and
+   preserves the curated icon set's design intent instead of discarding it silently. */
 .section-title iconify-icon.metric-icon { width: 18px; height: 18px; }
 .figure {
   background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-md);

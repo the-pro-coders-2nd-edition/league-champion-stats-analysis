@@ -1,9 +1,12 @@
-<script lang="ts">
+<script>
+  // Plain JS, not lang="ts": MetricCard.svelte is untyped (it imports the untyped MetricLabel.svelte
+  // — see MetricCard.svelte's own comment), and svelte-check flags an untyped child component
+  // import as an error under lang="ts".
   import MetricCard from './MetricCard.svelte';
   import ShowMore from './ShowMore.svelte';
 
-  export let cards: Array<Record<string, any>> = [];
-  export let moreLabel: string = 'More stats';
+  export let cards = [];
+  export let moreLabel = 'More stats';
 
   let open = false;
 
