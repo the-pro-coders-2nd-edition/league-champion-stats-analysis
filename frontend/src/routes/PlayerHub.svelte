@@ -10,6 +10,8 @@
   } from '../lib/api.js';
   import { createPoller } from '../lib/poller.js';
   import Button from '../components/Button.svelte';
+  import Panel from '../components/Panel.svelte';
+  import Chip from '../components/Chip.svelte';
 
   export let params = {};
 
@@ -262,7 +264,7 @@
 </header>
 
 {#if showJobCard}
-  <div class="panel panel--elevated panel--job" id="job-card">
+  <Panel class="panel-job" id="job-card">
     <div class="status-line">
       <span class="dot{active ? ' pulse' : (job.state === 'failed' || job.state === 'cancelled') ? ' err' : ' ok'}" id="job-dot"></span>
       <strong id="job-state">{STATE_LABELS[job.state] || job.state}</strong>
@@ -292,7 +294,7 @@
         <Button id="retry-btn" on:click={handleRetry} disabled={retrying}>Retry analysis</Button>
       </div>
     {/if}
-  </div>
+  </Panel>
 {/if}
 
 {#if showSkeleton}
@@ -335,7 +337,7 @@
               <div class="build-card-updated">Updated {formatUpdated(build.generated_at)}</div>
             {/if}
             {#if peersPending && !build.peers_ready}
-              <span class="build-card-badge">Ready — rank comparison loading</span>
+              <span class="build-card-badge-slot"><Chip tone="info" label="Ready — rank comparison loading" caps={true} density="compact" /></span>
             {/if}
           </div>
         </a>
@@ -345,7 +347,7 @@
 {/if}
 
 {#if showActions}
-  <div class="panel" id="actions-card" style="margin-top:24px;">
+  <Panel id="actions-card">
     <div class="actions-row">
       <Button id="refresh-btn" on:click={handleRefresh} disabled={busy}>Refresh with latest games</Button>
       <Button variant="bare" id="regenerate-btn" on:click={handleRegenerate} disabled={busy}>Regenerate with same games</Button>
@@ -377,6 +379,6 @@
         {/if}
       </div>
     {/if}
-  </div>
+  </Panel>
 {/if}
 </div>

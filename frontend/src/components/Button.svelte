@@ -43,9 +43,9 @@
   }
 
   .ctl--filled {
-    background: var(--accent);
+    background: var(--color-accent);
     color: #fff;
-    border: 1px solid var(--accent);
+    border: 1px solid var(--color-accent);
     font-weight: 700;
     box-shadow: 0 4px 16px rgba(124, 108, 240, .28);
   }
@@ -54,21 +54,21 @@
   .ctl--filled:hover:not(:disabled) { filter: brightness(1.08); }
 
   .ctl--outlined {
-    background: var(--panel-2);
-    color: var(--muted);
-    border: 1px solid var(--border);
+    background: var(--color-surface-2);
+    color: var(--color-neutral-400);
+    border: 1px solid var(--color-divider);
   }
   .ctl--outlined.ctl--md { padding: 11px 18px; font-size: 14px; }
   .ctl--outlined.ctl--sm { padding: 8px 12px; font-size: 13px; }
-  .ctl--outlined:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); filter: none; }
+  .ctl--outlined:hover:not(:disabled) { color: var(--color-accent); border-color: var(--color-accent); filter: none; }
 
   .ctl--bare {
     background: transparent;
-    color: var(--muted);
+    color: var(--color-neutral-400);
     border: 1px solid transparent;
   }
   .ctl--bare.ctl--md { padding: 9px 12px; font-weight: 600; }
-  .ctl--bare:hover:not(:disabled) { color: var(--accent); background: rgba(124, 108, 240, .08); filter: none; }
+  .ctl--bare:hover:not(:disabled) { color: var(--color-accent); background: rgba(124, 108, 240, .08); filter: none; }
   .ctl--bare.ctl--sm {
     border: none;
     background: none;

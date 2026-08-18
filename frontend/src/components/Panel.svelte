@@ -1,8 +1,11 @@
 <script lang="ts">
   export let id: string = '';
+
+  let className = '';
+  export { className as class };
 </script>
 
-<div class="panel" {id}>
+<div class="panel {className}" {id}>
   {#if $$slots.stage}
     <div class="panel-stage">
       <div class="panel-stage-inner">

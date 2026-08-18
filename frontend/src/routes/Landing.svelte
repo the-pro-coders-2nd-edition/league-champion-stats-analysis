@@ -4,6 +4,8 @@
   import { submitAnalysis, fetchActivity, fetchGroups } from '../lib/api.js';
   import { createPoller } from '../lib/poller.js';
   import Button from '../components/Button.svelte';
+  import Panel from '../components/Panel.svelte';
+  import Chip from '../components/Chip.svelte';
 
   const MAX_PLAYERS = 8;
   const REGION_CHOICES = [
@@ -160,7 +162,7 @@
 </a>
 <p class="home-lead">Coaching reports from your ranked games.</p>
 
-<div class="panel panel--form panel--elevated">
+<Panel class="panel-form">
   <form id="analyze-form" on:submit={handleSubmit}>
     <div id="player-rows">
       {#each playerInputs as value, index (index)}
@@ -206,7 +208,7 @@
     <p class="hint">Same region for every account. The games menu sets the minimum ranked games a champion and lane need before a report is created.</p>
     <div class="error" id="analyze-error">{error}</div>
   </form>
-</div>
+</Panel>
 
 <div class="section-header" id="reports-heading" hidden={!groupsLoaded || groups.length === 0}>
   <h2 class="section-label">Recent reports</h2>
@@ -269,7 +271,7 @@
             </div>
           {/each}
         </div>
-        {#if group.is_group}<span class="badge-group">Group</span>{/if}
+        {#if group.is_group}<span class="badge-group-slot"><Chip tone="plan" label="Group" caps={true} density="compact" /></span>{/if}
       </div>
       <div class="player-card-meta">
         {#if group.has_report}

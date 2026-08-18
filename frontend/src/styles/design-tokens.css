@@ -94,9 +94,11 @@
   --tone-note-soft: #1a2528;
   --tone-note-line: #7fa0a8;
 
-  /* Win/loss background tints at two opacities, keyed to report.css's/shell.css's
-     --win (#3fb68b) and --loss (#e05563). Components previously hardcoded these
-     rgba() triplets inline at slightly different opacities. */
+  /* Win/loss solid colors, plus background tints at two opacities. Components
+     previously hardcoded these rgba() triplets inline at slightly different
+     opacities. */
+  --color-win: #3fb68b;
+  --color-loss: #e05563;
   --win-tint-06: rgba(63, 182, 139, 0.06);
   --win-tint-12: rgba(63, 182, 139, 0.12);
   --loss-tint-06: rgba(224, 85, 99, 0.06);

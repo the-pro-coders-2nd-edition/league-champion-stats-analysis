@@ -35,24 +35,24 @@
     align-items: center;
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--color-divider);
     border-left-width: 3px;
-    background: var(--panel-2);
+    background: var(--color-surface-2);
   }
   .peer-driver--above,
   .form-mover--improved {
-    border-left-color: var(--win);
+    border-left-color: var(--color-win);
     background: var(--win-tint-06);
   }
   .peer-driver--below,
   .form-mover--regressed {
-    border-left-color: var(--loss);
+    border-left-color: var(--color-loss);
     background: var(--loss-tint-06);
   }
   .peer-driver-label,
   .form-mover-label { font-size: 13px; font-weight: 600; min-width: 0; }
   .peer-driver-values,
-  .form-mover-values { font-size: 12px; color: var(--muted); }
+  .form-mover-values { font-size: 12px; color: var(--color-neutral-400); }
   .peer-driver-gap,
   .form-mover-gap { font-size: 14px; font-weight: 700; white-space: nowrap; }
 
