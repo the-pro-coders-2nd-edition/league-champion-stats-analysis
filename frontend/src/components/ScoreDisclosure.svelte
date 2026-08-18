@@ -1,5 +1,6 @@
 <script>
   import Meter from './Meter.svelte';
+  import Disclosure from './Disclosure.svelte';
 
   export let name;
   export let score;
@@ -39,15 +40,14 @@
 </script>
 
 {#if hasIngredients}
-  <details class="gr-score gr-score--expandable" title={hint || null} bind:open>
-    <summary>
-      <span class="gr-score-chevron" aria-hidden="true"></span>
+  <Disclosure variant="score" chevron="trailing" bind:open title={hint || null}>
+    <svelte:fragment slot="summary">
       <div class="gr-score-summary">
         <span class="gr-score-name">{name || 'Score'}</span>
         <span class="gr-score-value">{pct}</span>
         <Meter value={pct} ramp size="sm" --meter-grid-column="1 / -1" />
       </div>
-    </summary>
+    </svelte:fragment>
     <div class="gr-score-details">
       {#each ingredients as item (item.column || item.label)}
         {@const subPct = ingredientPct(item)}
@@ -63,7 +63,7 @@
         </div>
       {/each}
     </div>
-  </details>
+  </Disclosure>
 {:else}
   <div class="gr-score" title={hint || null}>
     <div class="gr-score-summary">
@@ -100,39 +100,6 @@
     color: var(--color-neutral-400);
     font-variant-numeric: tabular-nums;
   }
-  .gr-score--expandable {
-    display: block;
-    padding: 0;
-    overflow: hidden;
-  }
-  .gr-score--expandable > summary {
-    display: block;
-    list-style: none;
-    cursor: pointer;
-    user-select: none;
-    position: relative;
-    padding: 10px 28px 10px 12px;
-  }
-  .gr-score--expandable > summary::-webkit-details-marker { display: none; }
-  .gr-score-chevron {
-    position: absolute;
-    right: 10px;
-    top: 12px;
-    width: 12px;
-    height: 12px;
-    pointer-events: none;
-    transition: transform 0.15s ease;
-  }
-  .gr-score-chevron::before {
-    content: "▾";
-    display: block;
-    font-size: 10px;
-    line-height: 12px;
-    text-align: center;
-    color: var(--color-neutral-400);
-    opacity: 0.8;
-  }
-  .gr-score--expandable[open] .gr-score-chevron { transform: rotate(180deg); }
   .gr-score-details {
     padding: 8px 12px 10px;
     display: grid;

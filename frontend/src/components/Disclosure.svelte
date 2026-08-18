@@ -1,7 +1,7 @@
 <script lang="ts">
-  // Real <details>/<summary> wrapper. Unifies the four disclosure sites that used to each
+  // Real <details>/<summary> wrapper. Unifies the disclosure sites that used to each
   // reimplement marker-hiding, list-style and a chevron: rec-evidence, form/peer all-metrics,
-  // section-details and the game-review objective row.
+  // section-details, the game-review objective row and the game-review score dimension rows.
   export let open: boolean = false;
   export let chevron: 'leading' | 'trailing' | 'none' = 'trailing';
   export let variant: string = '';
@@ -10,7 +10,7 @@
   export { className as class };
 </script>
 
-<details class="disclosure disclosure--{variant} {className}" {open}>
+<details class="disclosure disclosure--{variant} {className}" bind:open {...$$restProps}>
   <summary class="disclosure-summary">
     {#if chevron === 'leading'}<span class="disclosure-chevron" aria-hidden="true"></span>{/if}
     <slot name="summary" />
@@ -100,4 +100,36 @@
     color: var(--color-neutral-400);
     font-size: 11px;
   }
+
+  /* game-review score dimension row: bordered card, absolute trailing chevron */
+  .disclosure--score {
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--color-divider);
+    border-radius: 10px;
+    background: var(--color-surface-2);
+  }
+  .disclosure--score > summary {
+    display: block;
+    position: relative;
+    padding: 10px 28px 10px 12px;
+  }
+  .disclosure--score .disclosure-chevron {
+    position: absolute;
+    right: 10px;
+    top: 12px;
+    width: 12px;
+    height: 12px;
+    pointer-events: none;
+  }
+  .disclosure--score .disclosure-chevron::before {
+    content: "▾";
+    display: block;
+    font-size: 10px;
+    line-height: 12px;
+    text-align: center;
+    color: var(--color-neutral-400);
+    opacity: 0.8;
+  }
+  .disclosure--score[open] > summary .disclosure-chevron { transform: rotate(180deg); }
 </style>
