@@ -83,3 +83,48 @@ def test_context_to_json_converts_pydantic_models_to_dicts() -> None:
     assert result["peer_comparison"]["source"] == "solo queue"
     # Verify it's JSON-dumpable
     json.dumps(result)
+
+
+def test_context_to_json_converts_numpy_float64() -> None:
+    import numpy as np
+    context = {"value": np.float64(3.14)}
+
+    result = context_to_json(context)
+
+    assert result["value"] == 3.14
+    assert isinstance(result["value"], float)
+    json.dumps(result)
+
+
+def test_context_to_json_converts_numpy_int64() -> None:
+    import numpy as np
+    context = {"value": np.int64(42)}
+
+    result = context_to_json(context)
+
+    assert result["value"] == 42
+    assert isinstance(result["value"], int)
+    json.dumps(result)
+
+
+def test_context_to_json_converts_numpy_array() -> None:
+    import numpy as np
+    context = {"array": np.array([1, 2, 3])}
+
+    result = context_to_json(context)
+
+    assert result["array"] == [1, 2, 3]
+    assert isinstance(result["array"], list)
+    assert all(isinstance(x, int) for x in result["array"])
+    json.dumps(result)
+
+
+def test_context_to_json_converts_pandas_timestamp() -> None:
+    import pandas as pd
+    context = {"timestamp": pd.Timestamp("2024-01-15T12:30:45")}
+
+    result = context_to_json(context)
+
+    assert isinstance(result["timestamp"], str)
+    assert "2024-01-15" in result["timestamp"]
+    json.dumps(result)
