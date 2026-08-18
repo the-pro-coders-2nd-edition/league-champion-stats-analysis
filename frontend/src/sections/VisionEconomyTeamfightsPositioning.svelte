@@ -4,11 +4,11 @@
   import TieredCards from '../components/TieredCards.svelte';
   import PositioningHint from '../components/PositioningHint.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
+  import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
   export let data;
 
-  $: windowScopeOption = (data.game_window_options || []).find((o) => o.key === data.game_window_default);
-  $: windowScopeLabel = windowScopeOption ? `${windowScopeOption.label} games` : 'All games';
+  $: windowScopeLabel = computeWindowScopeLabel(data);
 
   $: positioningHints = data.positioning_hints || [];
 </script>

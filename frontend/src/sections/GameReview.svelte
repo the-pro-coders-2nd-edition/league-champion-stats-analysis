@@ -2,6 +2,8 @@
   import Pill from '../components/Pill.svelte';
   import TabBar from '../components/TabBar.svelte';
   import GameReviewKeyMoments from './GameReviewKeyMoments.svelte';
+  import { escapeHtml, soloIconCellHtml } from '../lib/html.js';
+  import { formatGameTime, pct } from '../lib/format.js';
 
   export let data;
 
@@ -15,21 +17,8 @@
   let chartEl;
   let plotlyReady = typeof window !== 'undefined' && !!window.Plotly;
 
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
   // `iconCell(name, iconHref, true)` from report.html — always icon-only in this section.
-  function iconCellHtml(name, iconHref) {
-    const title = escapeHtml(name || '');
-    if (!iconHref) return '—';
-    return `<span class="icon-cell icon-cell--solo" title="${title}"><img src="${iconHref}" alt="${title}" class="game-icon game-icon--sm"></span>`;
-  }
+  const iconCellHtml = soloIconCellHtml;
 
   function chipHtml(label, tone, title) {
     const cls = tone ? `ui-chip ui-chip--${tone}` : 'ui-chip';
@@ -46,13 +35,6 @@
       '</span>';
   }
 
-  function formatGameTime(minutes) {
-    const totalSec = Math.max(0, Math.round(Number(minutes) * 60));
-    const min = Math.floor(totalSec / 60);
-    const sec = totalSec % 60;
-    return `${min}:${String(sec).padStart(2, '0')}`;
-  }
-
   function formatMetricValue(value) {
     if (value === null || value === undefined) return '—';
     const num = Number(value);
@@ -61,12 +43,6 @@
     const rounded1 = Math.round(num * 10) / 10;
     if (Math.abs(num - rounded1) < 1e-9) return rounded1.toFixed(1);
     return (Math.round(num * 100) / 100).toFixed(2);
-  }
-
-  function pct(value) {
-    const num = Number(value);
-    if (value == null || !Number.isFinite(num)) return '—';
-    return Math.round(num * 100) + '%';
   }
 
   function isShareOrParticipationMetric(name) {

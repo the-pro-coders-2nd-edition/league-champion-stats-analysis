@@ -1,6 +1,7 @@
 <script>
   import Pill from '../components/Pill.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
+  import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
   export let data;
 
@@ -10,8 +11,7 @@
     helpOpen = !helpOpen;
   }
 
-  $: windowScopeOption = (data.game_window_options || []).find((o) => o.key === data.game_window_default);
-  $: windowScopeLabel = windowScopeOption ? `${windowScopeOption.label} games` : 'All games';
+  $: windowScopeLabel = computeWindowScopeLabel(data);
   $: figureHints = data.figure_hints || {};
 </script>
 

@@ -74,4 +74,12 @@
   --tone-accent-mid: var(--color-accent-600);
   --tone-accent-soft: var(--color-accent-900);
   --tone-accent-line: var(--color-accent);
+
+  /* Win/loss background tints at two opacities, keyed to report.css's/shell.css's
+     --win (#3fb68b) and --loss (#e05563). Components previously hardcoded these
+     rgba() triplets inline at slightly different opacities. */
+  --win-tint-06: rgba(63, 182, 139, 0.06);
+  --win-tint-12: rgba(63, 182, 139, 0.12);
+  --loss-tint-06: rgba(224, 85, 99, 0.06);
+  --loss-tint-12: rgba(224, 85, 99, 0.12);
 }

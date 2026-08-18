@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Pill from './Pill.svelte';
+
   type Badge = 'high' | 'medium' | 'low';
 
   export let badge: Badge;
@@ -6,10 +8,12 @@
   export let category: string;
   export let title: string;
   export let detail: string;
+
+  const PRIORITY_TONE = { high: 'bad', medium: 'warn', low: 'flat' };
 </script>
 
 <div class="rec-head">
-  <span class="badge badge--priority badge--{badge}">{priorityLabel}</span>
+  <Pill tone={PRIORITY_TONE[badge]} variant="soft" dot={false} label={priorityLabel} />
   <span class="badge">{category}</span>
   <strong>{title}</strong>
 </div>
@@ -18,13 +22,4 @@
 <style>
   :global(.rec-head) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
   :global(.rec-head strong) { flex: 1 1 100%; font-size: 15px; }
-  :global(.badge) {
-    display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px;
-    background: var(--panel-2); color: var(--muted); margin-right: 8px;
-    text-transform: uppercase; letter-spacing: .05em;
-  }
-  :global(.badge--priority) { font-weight: 700; }
-  :global(.badge--high) { color: var(--loss); background: rgba(224, 85, 99, 0.12); }
-  :global(.badge--medium) { color: #e0b155; background: rgba(224, 177, 85, 0.12); }
-  :global(.badge--low) { color: var(--muted); }
 </style>

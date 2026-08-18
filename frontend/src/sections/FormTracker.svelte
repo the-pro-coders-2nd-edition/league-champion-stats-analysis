@@ -5,42 +5,19 @@
   import TabBar from '../components/TabBar.svelte';
   import FormStoryHead from '../components/FormStoryHead.svelte';
   import FormStoryLine from '../components/FormStoryLine.svelte';
-  import MoverRow from '../components/MoverRow.svelte';
   import DataTableHead from '../components/DataTableHead.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
+  import TrendRow from '../components/TrendRow.svelte';
+  import { escapeHtml, metricLabelFromRow } from '../lib/html.js';
 
   export let data;
 
   let activeTab = 'pulse';
 
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  // Mirrors the existing Jinja mover/table row partials, which call the `metric_label` macro
-  // with `row.iconify` as its positional `icon` (icon-key) argument rather than `iconify_id`
-  // (unlike `metric_card`, which passes it correctly). That icon-key lookup never resolves for
-  // real data (row.iconify already holds a resolved "prefix:name" id), so no iconify icon is
-  // ever rendered here in practice — only `icon_href` produces a visible icon. Replicated as-is.
-  function metricIconHtml(row) {
-    if (!row.icon_href) return '';
-    const tone = row.icon_tone || 'muted';
-    return `<img src="${row.icon_href}" alt="" class="metric-icon metric-icon--asset metric-icon--${tone}" aria-hidden="true">`;
-  }
-
-  function metricLabelHtml(row) {
-    return `<span class="metric-label">${metricIconHtml(row)}<span>${escapeHtml(row.label)}</span></span>`;
-  }
-
   function deltaRowCellsHtml(row) {
     const style = row.gap_color ? ` style="color: ${row.gap_color}"` : '';
-    return `<td>${metricLabelHtml(row)}</td><td>${escapeHtml(row.recent)}</td><td>${escapeHtml(row.baseline)}</td>` +
+    return `<td>${metricLabelFromRow(row)}</td><td>${escapeHtml(row.recent)}</td><td>${escapeHtml(row.baseline)}</td>` +
       `<td class="delta-${row.verdict}"${style}>${escapeHtml(row.gap)}</td><td class="delta-${row.verdict}"${style}>${escapeHtml(row.verdict)}</td>`;
   }
 
@@ -142,9 +119,10 @@
             <div class="form-mover-feed" id="form-improved-list">
               {#if topImproved.length}
                 {#each topImproved as row}
-                  <MoverRow
-                    tone="improved"
-                    label={metricLabelHtml(row)}
+                  <TrendRow
+                    blockClass="form-mover"
+                    tone="positive"
+                    label={metricLabelFromRow(row)}
                     values={`${row.baseline} → ${row.recent}`}
                     gap={row.gap}
                     gapColor={row.gap_color || ''}
@@ -160,9 +138,10 @@
             <div class="form-mover-feed" id="form-regressed-list">
               {#if topRegressed.length}
                 {#each topRegressed as row}
-                  <MoverRow
-                    tone="regressed"
-                    label={metricLabelHtml(row)}
+                  <TrendRow
+                    blockClass="form-mover"
+                    tone="negative"
+                    label={metricLabelFromRow(row)}
                     values={`${row.baseline} → ${row.recent}`}
                     gap={row.gap}
                     gapColor={row.gap_color || ''}

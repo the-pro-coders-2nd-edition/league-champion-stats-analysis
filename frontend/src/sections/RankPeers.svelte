@@ -2,45 +2,22 @@
   import Pill from '../components/Pill.svelte';
   import PeerRankValue from '../components/PeerRankValue.svelte';
   import PeerBalanceChip from '../components/PeerBalanceChip.svelte';
-  import PeerMetaChip from '../components/PeerMetaChip.svelte';
-  import PeerDriverRow from '../components/PeerDriverRow.svelte';
+  import UiChipBadge from '../components/UiChipBadge.svelte';
+  import TrendRow from '../components/TrendRow.svelte';
   import DataTableHead from '../components/DataTableHead.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
+  import { escapeHtml, metricLabelFromRow } from '../lib/html.js';
+  import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
   export let data;
 
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  // Mirrors the generated peer_driver_row/data_table_row_peer_details partials, which call the
-  // `metric_label` macro with `row.iconify` as its positional `icon` (icon-key) argument rather
-  // than `iconify_id`. That icon-key lookup never resolves for real data (row.iconify already
-  // holds a resolved "prefix:name" id), so no iconify icon is ever rendered here in practice —
-  // only `icon_href` produces a visible icon. Replicated as-is.
-  function metricIconHtml(row) {
-    if (!row.icon_href) return '';
-    const tone = row.icon_tone || 'muted';
-    return `<img src="${row.icon_href}" alt="" class="metric-icon metric-icon--asset metric-icon--${tone}" aria-hidden="true">`;
-  }
-
-  function metricLabelHtml(row) {
-    return `<span class="metric-label">${metricIconHtml(row)}<span>${escapeHtml(row.label)}</span></span>`;
-  }
-
   function peerTableRowCellsHtml(row) {
     const style = row.gap_color ? ` style="color: ${row.gap_color}"` : '';
-    return `<td>${metricLabelHtml(row)}</td><td>${escapeHtml(row.yours)}</td><td>${escapeHtml(row.peer_avg)}</td>` +
+    return `<td>${metricLabelFromRow(row)}</td><td>${escapeHtml(row.yours)}</td><td>${escapeHtml(row.peer_avg)}</td>` +
       `<td class="delta-${row.verdict}"${style}>${escapeHtml(row.gap)}</td><td class="delta-${row.verdict}"${style}>${escapeHtml(row.verdict)}</td>`;
   }
 
-  $: windowScopeOption = (data.game_window_options || []).find((o) => o.key === data.game_window_default);
-  $: windowScopeLabel = windowScopeOption ? `${windowScopeOption.label} games` : 'All games';
+  $: windowScopeLabel = computeWindowScopeLabel(data);
 
   $: hasPeerComparison = !!data.has_peer_comparison;
   $: pending = !hasPeerComparison && !!data.status_endpoint;
@@ -85,9 +62,9 @@
             <PeerBalanceChip modifier="below" countId="peer-below-count" count={peerBelow.length} label="below" />
           </div>
           <div class="peer-meta-chips" id="peer-meta-chips">
-            <PeerMetaChip text={`${peerComparison.peer_games} peer games`} />
-            <PeerMetaChip text={`${peerComparison.peer_players} players`} />
-            <PeerMetaChip modifier="confidence" text={`${peerComparison.confidence} confidence`} />
+            <UiChipBadge tone="meta" label={`${peerComparison.peer_games} peer games`} />
+            <UiChipBadge tone="meta" label={`${peerComparison.peer_players} players`} />
+            <UiChipBadge tone="confidence" label={`${peerComparison.confidence} confidence`} />
           </div>
         </div>
       </div>
@@ -98,7 +75,7 @@
         <div class="peer-driver-feed" id="peer-above-list">
           {#if peerAbove.length}
             {#each peerAbove.slice(0, 6) as row}
-              <PeerDriverRow tone="above" label={metricLabelHtml(row)} values={`${row.yours} vs ${row.peer_avg}`} gap={row.gap} gapColor={row.gap_color || ''} />
+              <TrendRow blockClass="peer-driver" tone="positive" label={metricLabelFromRow(row)} values={`${row.yours} vs ${row.peer_avg}`} gap={row.gap} gapColor={row.gap_color || ''} />
             {/each}
           {:else}
             <p class="sub">No above-peer metrics.</p>
@@ -110,7 +87,7 @@
         <div class="peer-driver-feed" id="peer-below-list">
           {#if peerBelow.length}
             {#each peerBelow.slice(0, 6) as row}
-              <PeerDriverRow tone="below" label={metricLabelHtml(row)} values={`${row.yours} vs ${row.peer_avg}`} gap={row.gap} gapColor={row.gap_color || ''} />
+              <TrendRow blockClass="peer-driver" tone="negative" label={metricLabelFromRow(row)} values={`${row.yours} vs ${row.peer_avg}`} gap={row.gap} gapColor={row.gap_color || ''} />
             {/each}
           {:else}
             <p class="sub">No below-peer metrics.</p>

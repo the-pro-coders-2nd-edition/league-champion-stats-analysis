@@ -5,32 +5,17 @@
   import DataTableHead from '../components/DataTableHead.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
+  import { escapeHtml, iconCellHtml, metricLabelWithIconify } from '../lib/html.js';
+  import { pyFloatStr } from '../lib/format.js';
+  import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
   export let data;
-
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
 
   function titleCase(str) {
     return String(str)
       .split(' ')
       .map((word) => (word ? word.charAt(0).toUpperCase() + word.slice(1) : word))
       .join(' ');
-  }
-
-  function iconCellHtml(name, iconHref) {
-    if (!iconHref) return escapeHtml(name);
-    return `<span class="icon-cell"><img src="${iconHref}" alt="" class="game-icon game-icon--sm"><span>${escapeHtml(name)}</span></span>`;
-  }
-
-  function metricLabelHtml(label, iconify, tone) {
-    return `<span class="metric-label"><iconify-icon icon="${iconify}" class="metric-icon metric-icon--${tone}" aria-hidden="true"></iconify-icon><span>${escapeHtml(label)}</span></span>`;
   }
 
   function metricLabelTooltipHtml(label, tooltip) {
@@ -56,13 +41,8 @@
 
   $: blindSpotColumns = [
     { html: 'Zone', id: '' },
-    { html: metricLabelHtml('Deaths', 'lucide:skull', 'danger'), id: '' },
+    { html: metricLabelWithIconify('Deaths', 'lucide:skull', 'danger'), id: '' },
   ];
-
-  function pyFloatStr(value) {
-    const num = Number(value);
-    return Number.isInteger(num) ? `${num}.0` : String(num);
-  }
 
   function objectiveRowHtml(row) {
     return `<td>${iconCellHtml(titleCase(row.kind), row.objective_icon)}</td><td>${row.count}</td>` +
@@ -75,8 +55,7 @@
     return `<td>${escapeHtml(row.zone)}</td><td>${row.deaths}</td>`;
   }
 
-  $: windowScopeOption = (data.game_window_options || []).find((o) => o.key === data.game_window_default);
-  $: windowScopeLabel = windowScopeOption ? `${windowScopeOption.label} games` : 'All games';
+  $: windowScopeLabel = computeWindowScopeLabel(data);
 
   $: earlySectionTitle = data.early_section_title || 'Lane';
   $: laneMoreLabel = `More ${(data.early_section_title || 'lane').toLowerCase()} stats`;
@@ -162,7 +141,7 @@
     </div>
     {#if blindSpots.length}
       <div id="blind-spots-block">
-        <h3>{@html metricLabelHtml('Most dangerous zones (solo deaths without recent team vision)', 'lucide:skull', 'danger')}</h3>
+        <h3>{@html metricLabelWithIconify('Most dangerous zones (solo deaths without recent team vision)', 'lucide:skull', 'danger')}</h3>
         <div class="table-scroll">
           <table>
             <DataTableHead columns={blindSpotColumns} />
@@ -176,7 +155,7 @@
       </div>
     {:else}
       <div id="blind-spots-block" style="display:none">
-        <h3>{@html metricLabelHtml('Most dangerous zones (solo deaths without recent team vision)', 'lucide:skull', 'danger')}</h3>
+        <h3>{@html metricLabelWithIconify('Most dangerous zones (solo deaths without recent team vision)', 'lucide:skull', 'danger')}</h3>
         <div class="table-scroll">
           <table>
             <DataTableHead columns={blindSpotColumns} />

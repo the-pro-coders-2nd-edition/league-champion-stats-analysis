@@ -1,4 +1,7 @@
 <script>
+  import { soloIconCellHtml as iconCellHtml } from '../lib/html.js';
+  import { formatGameTime } from '../lib/format.js';
+
   export let game;
   export let tooltips = {};
 
@@ -10,28 +13,6 @@
   // Reset selection whenever the underlying game changes (new row picked in the rail).
   $: game, (selectedMomentIndex = 0);
   $: selectedMomentIndex, (frameIndex = 0);
-
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  function iconCellHtml(name, iconHref) {
-    const title = escapeHtml(name || '');
-    if (!iconHref) return '—';
-    return `<span class="icon-cell icon-cell--solo" title="${title}"><img src="${iconHref}" alt="${title}" class="game-icon game-icon--sm"></span>`;
-  }
-
-  function formatGameTime(minutes) {
-    const totalSec = Math.max(0, Math.round(Number(minutes) * 60));
-    const min = Math.floor(totalSec / 60);
-    const sec = totalSec % 60;
-    return `${min}:${String(sec).padStart(2, '0')}`;
-  }
 
   function mapCoordToPct(x, y) {
     return {

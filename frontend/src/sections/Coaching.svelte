@@ -2,14 +2,14 @@
   import RecCard from '../components/RecCard.svelte';
   import RecExtendButton from '../components/RecExtendButton.svelte';
   import Pill from '../components/Pill.svelte';
+  import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
   export let data;
 
   let showAllPositive = false;
   let showAllNegative = false;
 
-  $: windowScopeOption = (data.game_window_options || []).find((o) => o.key === data.game_window_default);
-  $: windowScopeLabel = windowScopeOption ? `${windowScopeOption.label} games` : 'All games';
+  $: windowScopeLabel = computeWindowScopeLabel(data);
 
   $: positive = data.positive_recommendations || [];
   $: negative = data.negative_recommendations || [];

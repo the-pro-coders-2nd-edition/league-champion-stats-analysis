@@ -2,6 +2,9 @@
   import Pill from '../components/Pill.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
+  import { escapeHtml, iconCellHtml } from '../lib/html.js';
+  import { pct } from '../lib/format.js';
+  import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
   export let data;
 
@@ -20,28 +23,6 @@
   let sortKey = 'verdict';
   let sortDir = 'desc';
   let sortType = 'verdict';
-
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  function iconCell(name, iconHref) {
-    if (iconHref) {
-      return `<span class="icon-cell"><img src="${iconHref}" alt="" class="game-icon game-icon--sm"><span>${name}</span></span>`;
-    }
-    return name;
-  }
-
-  function pct(value) {
-    const num = Number(value);
-    if (value == null || !Number.isFinite(num)) return '—';
-    return Math.round(num * 100) + '%';
-  }
 
   function signedMetric(value, color, digits) {
     if (value == null || value === '') return '—';
@@ -110,14 +91,13 @@
       : '';
     const tip = `<span class="matchup-tip">${escapeHtml(row.recommendation || '')}</span>`;
     const csCell = showCsStats ? `<td>${signedMetric(row.avg_csd10, row.csd10_color, 0)}</td>` : '';
-    return `<td>${iconCell(row.opponent, row.opponent_icon)}</td><td>${row.games}</td><td>${wrHtml}</td>` +
+    return `<td>${iconCellHtml(row.opponent, row.opponent_icon)}</td><td>${row.games}</td><td>${wrHtml}</td>` +
       `<td><span class="matchup-verdict matchup-verdict--${verdictKey}">${verdict}</span></td><td>` +
       `${signedMetric(row.avg_gd10, row.gd10_color, 0)}</td>${csCell}<td>${deathsHtml}</td>` +
       `<td class="matchup-plan">${focus}${tip}</td>`;
   }
 
-  $: windowScopeOption = (data.game_window_options || []).find((o) => o.key === data.game_window_default);
-  $: windowScopeLabel = windowScopeOption ? `${windowScopeOption.label} games` : 'All games';
+  $: windowScopeLabel = computeWindowScopeLabel(data);
 
   $: showCsStats = data.show_cs_stats !== false;
   $: matchupRows = data.matchup_rows || [];

@@ -1,7 +1,8 @@
 <script>
-  import { onDestroy, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import { link } from 'svelte-spa-router';
   import { fetchPlayerStatus, refreshPlayer, regeneratePlayer, cancelJob } from '../lib/api.js';
+  import { createPoller } from '../lib/poller.js';
 
   export let params = {};
 
@@ -20,7 +21,7 @@
 
   let status = null;
   let subtitle = 'Loading…';
-  let timer = null;
+  const poller = createPoller();
   let cancelling = false;
   let retrying = false;
   let busy = false;
@@ -80,9 +81,8 @@
             ? 'Analysis failed.'
             : 'No reports yet.';
       }
-      if (!active && timer) {
-        clearInterval(timer);
-        timer = setInterval(poll, 30000);
+      if (!active) {
+        poller.reschedule(30000);
       }
     } catch {
       subtitle = 'Could not reach the server — retrying…';
@@ -90,18 +90,11 @@
   }
 
   function restartFastPoll() {
-    if (timer) clearInterval(timer);
-    timer = setInterval(poll, 3000);
-    return poll();
+    return poller.start(poll, 3000);
   }
 
   onMount(() => {
-    timer = setInterval(poll, 3000);
-    poll();
-  });
-
-  onDestroy(() => {
-    if (timer) clearInterval(timer);
+    poller.start(poll, 3000);
   });
 
   async function handleRefresh() {

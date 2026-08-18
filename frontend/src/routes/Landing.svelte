@@ -1,7 +1,8 @@
 <script>
-  import { onDestroy, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import { link, push } from 'svelte-spa-router';
   import { submitAnalysis, fetchActivity, fetchGroups } from '../lib/api.js';
+  import { createPoller } from '../lib/poller.js';
 
   const MAX_PLAYERS = 8;
   const REGION_CHOICES = [
@@ -40,7 +41,7 @@
   let groups = [];
   let groupsLoaded = false;
   let searchQuery = '';
-  let activityTimer = null;
+  const poller = createPoller();
 
   function addPlayerRow() {
     if (playerInputs.length >= MAX_PLAYERS) return;
@@ -140,13 +141,8 @@
 
   onMount(() => {
     loadGroups().then(() => {
-      pollActivity();
-      activityTimer = setInterval(pollActivity, 3000);
+      poller.start(pollActivity, 3000);
     });
-  });
-
-  onDestroy(() => {
-    if (activityTimer) clearInterval(activityTimer);
   });
 
   $: normalizedQuery = searchQuery.trim().toLowerCase();
