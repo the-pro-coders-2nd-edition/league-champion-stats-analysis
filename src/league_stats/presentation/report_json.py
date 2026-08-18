@@ -22,7 +22,7 @@ def _convert(value: Any) -> Any:
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return {k: _convert(v) for k, v in dataclasses.asdict(value).items()}
     if isinstance(value, Path):
-        return str(value)
+        return value.as_posix()
     if isinstance(value, np.generic):
         return value.item()
     if isinstance(value, np.ndarray):
