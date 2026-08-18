@@ -2,6 +2,7 @@
   import { onMount, setContext, tick } from 'svelte';
   import { createReportNav, REPORT_NAV_KEY } from '../lib/reportNav.js';
   import { computeWindowScopeLabel, WINDOW_SCOPE_KEY } from '../lib/windowScope.js';
+  import { resolveCareerView } from '../lib/careerView.js';
   import { get, writable } from 'svelte/store';
   import { link } from 'svelte-spa-router';
   import {
@@ -345,6 +346,9 @@
   $: activeSource = report ? report.activeSource : null;
   $: view = report ? report.view : null;
   $: windowScopeLabel.set($view ? computeWindowScopeLabel($view) : '');
+  // Reports generated before every slice carried the ladder only have one in
+  // the all-ranked views, so resolve it from the payload rather than the slice.
+  $: careerLadder = resolveCareerView(payload, $view ? $view.career : null);
 
   $: queueItems = (payload && $activeSource)
     ? (payload.queue_filter_options || []).map((option) => ({
@@ -506,7 +510,7 @@
 
   <div class="report-category-panel{activeCategory === 'career' ? ' is-active' : ''}" id="category-career" data-category="career">
     <CareerMode
-      data={$view}
+      career={careerLadder}
       playerSlug={params.slug}
       buildSlug={params.buildSlug}
       busy={jobActive || refreshing}

@@ -6,7 +6,9 @@
   import SectionHeader from '../components/SectionHeader.svelte';
   import { dropCareerBlock } from '../lib/api.js';
 
-  export let data;
+  // The ladder to render, resolved by Report.svelte. Career follows neither the
+  // queue filter nor the game-window filter, so it is not read off the slice.
+  export let career = null;
   export let playerSlug = '';
   export let buildSlug = '';
   // True while an analysis job is running. A drop shifts every slot left, so
@@ -21,12 +23,12 @@
   let droppingSlot = null;
   let dropError = '';
 
-  $: career = data.career || { has_career: false, blocks: [], rules: [], legend: [], congrats: null };
+  $: ladder = career || { has_career: false, blocks: [], rules: [], legend: [], congrats: null };
   $: canDrop = !!(playerSlug && buildSlug);
   // Career spans every ranked game, so it does not follow the queue filter. The
   // caption says so rather than the ladder disappearing on a filtered view.
-  $: tracksAllRanked = career.tracks_all_ranked === true;
-  $: visibleBlocks = career.blocks.filter(
+  $: tracksAllRanked = ladder.tracks_all_ranked !== false;
+  $: visibleBlocks = (ladder.blocks || []).filter(
     (block, index) => (block.slot ?? index) !== pendingSlot
   );
   $: awaitingReplacement = pendingSlot !== null;
@@ -60,17 +62,23 @@
 </script>
 
 <section id="career" class="report-section report-section--career">
-  <SectionHeader id="career" title="Career mode" icon="trending-up" />
+  <SectionHeader
+    id="career"
+    title="Career mode"
+    icon="trending-up"
+    scope="All ranked · last 20 games"
+  />
 
-  {#if career.has_career}
+  {#if ladder.has_career}
     {#if tracksAllRanked}
       <p class="career-scope-caption">
-        Tracking <strong>all ranked games</strong>, Solo/Duo and Flex together — Career does not
-        follow the queue filter above.
+        Career reads <strong>all ranked games</strong>, Solo/Duo and Flex together, over a rolling
+        <strong>20-game window</strong>. It does not follow the queue or game-window filters above,
+        so it shows the same ladder whichever you pick.
       </p>
     {/if}
     <div class="career-rules">
-      {#each career.rules as rule}
+      {#each ladder.rules as rule}
         <div class="career-rule">
           <div class="career-rule-key">{rule.key}</div>
           <div class="career-rule-value">{rule.value}</div>
@@ -79,19 +87,19 @@
       {/each}
     </div>
 
-    {#if career.congrats}
+    {#if ladder.congrats}
       <div class="career-congrats">
         <div>
           <div class="career-congrats-label">Block complete</div>
-          <div class="career-congrats-title">{career.congrats.title}</div>
-          <p class="career-congrats-body">{career.congrats.body}</p>
+          <div class="career-congrats-title">{ladder.congrats.title}</div>
+          <p class="career-congrats-body">{ladder.congrats.body}</p>
         </div>
       </div>
     {/if}
 
     <div class="career-legend">
       <div class="career-legend-title">The five states a goal can be in</div>
-      {#each career.legend as entry}
+      {#each ladder.legend as entry}
         <div class="career-legend-row">
           <div class="career-ring career-ring--{entry.state_class}" style="--career-pct: {entry.pct}%">
             <div class="career-mark career-mark--{entry.state_class}">{entry.mark}</div>
