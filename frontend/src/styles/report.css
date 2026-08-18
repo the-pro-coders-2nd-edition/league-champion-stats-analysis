@@ -203,6 +203,7 @@ h3 { font-size: 15px; margin: 24px 0 12px; color: var(--color-neutral-400); }
   color: var(--color-neutral-500); margin-bottom: 12px;
 }
 .hero-actions { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; justify-content: center; }
+.hero-action-empty { color: var(--color-neutral-400); font-size: 13px; margin: 0; }
 .summary-grid {
   display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--space-6); align-items: start;
   margin: 0 0 var(--space-6);
@@ -1412,7 +1413,7 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
   gap: var(--space-4);
   margin: 10px 0 14px;
 }
-.section-pulse:has(.section-pulse-fix) {
+.section-pulse:has(.nav-link--card) {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 .section-pulse-callout {
@@ -1422,7 +1423,7 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 }
 @media (max-width: 720px) {
   .section-pulse,
-  .section-pulse:has(.section-pulse-fix) {
+  .section-pulse:has(.nav-link--card) {
     grid-template-columns: 1fr;
   }
 }
@@ -1440,13 +1441,6 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .nav-back a.nav-back-secondary { flex: 0 1 auto; background: transparent; }
 
 /* --- Career mode --- */
-.career-heading {
-  margin: 0 0 6px;
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 17px;
-}
-
 .career-rules {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));

@@ -52,9 +52,9 @@
   --shadow-md: 0 0 0 1px rgba(230, 237, 240, 0.09), 0 8px 24px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 0 0 1px rgba(230, 237, 240, 0.12), 0 18px 44px rgba(0, 0, 0, 0.6);
 
-  /* Status tones -- mirrors frontend/src/tones.js's T.good/warn/bad/flat/accent.
+  /* Status tones -- mirrors src/league_stats/presentation/tones.py's tone map.
      Components resolve a tone NAME ("good"/"warn"/"bad"/"flat"/"accent") via a
-     Jinja token or JS prop, then select colors through these custom properties
+     JS prop, then select colors through these custom properties
      (e.g. `.pill--good { color: var(--tone-good-fg); }`) -- never a literal hex
      value in component CSS. */
   --tone-good-fg: #82d2bb;

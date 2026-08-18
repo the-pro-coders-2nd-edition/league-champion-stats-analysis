@@ -1,0 +1,14 @@
+{
+  "description": "Scores that land exactly on a .5 RGB-channel rounding boundary in interpolate_metric_color's neutral->mint->win->jade ramp. Python's builtin round() uses banker's rounding (round-half-to-even) while JS Math.round() rounds half away from zero, so these values are chosen to expose that mismatch if either side regresses to the wrong rounding rule.",
+  "scores": [
+    -0.9939759036144579,
+    -0.5,
+    0.13095238095238096,
+    0.44047619047619047,
+    0.8095238095238095,
+    0.9920634920634921,
+    0.0,
+    -1.0,
+    1.0
+  ]
+}

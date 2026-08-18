@@ -1,6 +1,6 @@
 <script>
   import HeroChip from '../components/HeroChip.svelte';
-  import HeroAction from '../components/HeroAction.svelte';
+  import NavLink from '../components/NavLink.svelte';
   import Meter from '../components/Meter.svelte';
   import ReportPlayerChip from '../components/ReportPlayerChip.svelte';
   import MetricCard from '../components/MetricCard.svelte';
@@ -84,7 +84,7 @@
       <div class="hero-actions" id="hero-actions">
         {#if topTips.length}
           {#each topTips as tip, index}
-            <HeroAction anchor={tip.anchor || 'coaching'} index={index + 1} label={tip.action || tip.title} />
+            <NavLink anchor={tip.anchor || 'coaching'} index={index + 1} label={tip.action || tip.title} variant="row" />
           {/each}
         {:else}
           <p class="hero-action-empty">Play a few more games to unlock personalised coaching tips.</p>

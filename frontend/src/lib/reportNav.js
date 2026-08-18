@@ -33,6 +33,20 @@ export function categoryForSection(sectionId) {
   throw new Error(`categoryForSection: unknown section id "${sectionId}"`);
 }
 
+/** Shared click handler for anchor links that scroll to a report section via
+ *  the reportNav context, falling back to a plain scrollIntoView when there
+ *  is no Report.svelte ancestor (e.g. a standalone render). */
+export function handleNavClick(reportNav, anchor) {
+  return function onClick(event) {
+    event.preventDefault();
+    if (reportNav) {
+      reportNav.scrollToSection(anchor);
+      return;
+    }
+    document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+}
+
 export function createReportNav(selectCategory) {
   return {
     async scrollToSection(sectionId) {
