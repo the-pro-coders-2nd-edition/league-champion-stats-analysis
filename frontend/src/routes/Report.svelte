@@ -3,6 +3,7 @@
   import Overview from '../sections/Overview.svelte';
   import Coaching from '../sections/Coaching.svelte';
   import FormTracker from '../sections/FormTracker.svelte';
+  import RankPeers from '../sections/RankPeers.svelte';
 
   export let params = {};
 
@@ -22,4 +23,5 @@
   <Overview data={payload} />
   <Coaching data={payload} />
   <FormTracker data={payload} />
+  <RankPeers data={payload} />
 {/if}

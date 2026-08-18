@@ -9,7 +9,7 @@
 </script>
 
 <div class="peer-driver peer-driver--{tone}">
-  <span class="peer-driver-label">{label}</span>
+  <span class="peer-driver-label">{@html label}</span>
   <span class="peer-driver-values">{values}</span>
   <span class="peer-driver-gap" style="color: {gapColor}">{gap}</span>
 </div>
