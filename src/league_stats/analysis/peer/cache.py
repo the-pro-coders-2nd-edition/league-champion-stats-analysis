@@ -55,6 +55,21 @@ def aggregate_peer_metrics(rows: list[dict[str, Any]]) -> dict[str, float]:
     return metrics
 
 
+def peer_metric_quantiles(rows: list[dict[str, Any]], q: float) -> dict[str, float]:
+    """Per-metric quantile across peer rows (Career mode rung targets)."""
+    if not rows:
+        return {}
+    frame = _rows_to_frame(rows)
+    metrics: dict[str, float] = {}
+    for key in BENCHMARK_METRIC_KEYS:
+        if key not in frame.columns:
+            continue
+        series = pd.to_numeric(frame[key], errors="coerce").dropna()
+        if not series.empty:
+            metrics[key] = float(series.quantile(q))
+    return metrics
+
+
 def _backfill_ranks(
     store: MatchStore,
     client: RiotApiClient | None,

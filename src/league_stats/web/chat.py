@@ -1,6 +1,6 @@
 """Server-side Gemini proxy for the report chatbot.
 
-Mirrors the client-side chat in ``report.html``: same models, same system
+Mirrors the client-side chat in the Report SPA page: same models, same system
 instruction built from the report's ``summary.json`` — but the API key stays
 on the server.
 """
@@ -30,7 +30,7 @@ def _gemini_url(model: str) -> str:
 
 
 def build_system_instruction(stats: dict[str, Any], build_label: str, player_name: str) -> str:
-    """Build the coaching system prompt (kept in sync with report.html)."""
+    """Build the coaching system prompt (kept in sync with the Report SPA page)."""
     return (
         "You are a League of Legends coaching assistant. Answer questions about the "
         f"player's stats using ONLY the JSON data below for {build_label} "

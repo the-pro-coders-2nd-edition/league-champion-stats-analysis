@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
+
   type DataAttr = 'data-category' | 'data-tab';
   type Tab = {
     value: string;
@@ -14,6 +16,8 @@
   export let buttonClass: string;
   export let dataAttr: DataAttr;
   export let tabs: Tab[];
+
+  const dispatch = createEventDispatcher();
 </script>
 
 <div class="{containerId}" id="{containerId}" role="tablist" aria-label={ariaLabel || null}>
@@ -27,6 +31,7 @@
     aria-selected={tab.active}
     aria-controls={tab.ariaControls || null}
     id={tab.id || null}
+    on:click={() => dispatch('select', tab.value)}
   >{tab.label}</button>
   {/each}
 </div>
@@ -54,6 +59,7 @@
   .report-tab--games.is-active { border-bottom-color: var(--cat-games); }
   .report-tab--champion.is-active { border-bottom-color: var(--cat-champion); }
   .report-tab--deepdive.is-active { border-bottom-color: var(--cat-deepdive); }
+  .report-tab--career.is-active { border-bottom-color: var(--cat-career); }
   .report-tab--advanced.is-active { border-bottom-color: var(--cat-advanced); }
 
   .form-tabs, .game-review-tabs {

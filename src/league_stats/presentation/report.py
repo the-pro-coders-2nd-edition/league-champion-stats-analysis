@@ -1,17 +1,15 @@
-"""HTML report generation: improvement score and Jinja2 dashboard rendering."""
+"""Report generation support: improvement score and on-disk report/manifest metadata."""
 
 from __future__ import annotations
 
 import json
 import math
-import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 import pandas as pd
-from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from league_stats.analysis.improvement import column_mean, score_categories
 from league_stats.core.champions import (
@@ -21,9 +19,7 @@ from league_stats.core.champions import (
     role_display,
 )
 from league_stats.core.models import Recommendation
-from league_stats.presentation.brand_assets import brand_context, refresh_saved_report_branding
-from league_stats.presentation.ui_icons import iconify_for_key, tooltip_for_label
-from league_stats.utils import get_logger
+from league_stats.presentation.brand_assets import refresh_saved_report_branding
 
 if TYPE_CHECKING:
     from league_stats.infra.ddragon_assets import DDragonAssets
@@ -97,68 +93,6 @@ def improvement_score(
     return overall, components
 
 
-class ReportBuilder:
-    """Renders the final HTML dashboard via Jinja2."""
-
-    def __init__(self, template_dir: Path) -> None:
-        """Create the builder.
-
-        Args:
-            template_dir: Directory containing ``report.html``.
-        """
-        self._env = Environment(
-            loader=FileSystemLoader(str(template_dir)),
-            autoescape=select_autoescape(["html"]),
-        )
-        self._env.globals["iconify"] = iconify_for_key
-        self._env.globals["metric_tooltip"] = tooltip_for_label
-        self._log = get_logger("report")
-
-    def render(self, output_path: Path, context: dict[str, Any]) -> Path:
-        """Render the dashboard to disk.
-
-        Args:
-            output_path: Destination ``report.html`` path.
-            context: Template context (sections, figures, tables, score...).
-
-        Returns:
-            The written path.
-        """
-        template = self._env.get_template("report.html")
-        context.setdefault("generated_at", utc_now_iso())
-        # Write-then-rename so a report being re-rendered (e.g. when peer
-        # analysis lands) is never served half-written.
-        tmp_path = output_path.with_suffix(".html.tmp")
-        tmp_path.write_text(template.render(**context), encoding="utf-8")
-        os.replace(tmp_path, output_path)
-        self._log.info("Report written to %s", output_path)
-        return output_path
-
-    def render_player_hub(self, player_dir: Path, manifest: dict[str, Any]) -> Path:
-        """Render the per-player champion switcher landing page.
-
-        Args:
-            player_dir: ``output/reports/{player}/`` directory.
-            manifest: Player manifest with ``builds`` and ``default_href``.
-
-        Returns:
-            Path of ``index.html`` inside ``player_dir``.
-        """
-        template = self._env.get_template("player_hub.html")
-        output_path = player_dir / "index.html"
-        context = {
-            **brand_context(from_dir=player_dir, output_dir=player_dir.parent.parent),
-            "player": manifest.get("player", ""),
-            "builds": manifest.get("builds", []),
-            "default_href": manifest.get("default_href", ""),
-            "default_report_href": manifest.get("default_href", ""),
-            "generated_at": utc_now_iso(),
-        }
-        output_path.write_text(template.render(**context), encoding="utf-8")
-        self._log.info("Player hub written to %s", output_path)
-        return output_path
-
-
 def build_player_builds_nav(
     builds: list[dict[str, Any]],
     *,
@@ -191,7 +125,7 @@ def build_player_builds_nav(
                 "role_display": str(build.get("role_display", role_display(str(build["role"])))),
                 "games": int(build.get("games", 0)),
                 "winrate": winrate,
-                "href": f"../{slug}/report.html",
+                "href": f"../{slug}/report.json",
                 "selected": slug == current_slug,
                 "champion_icon": icon_href,
                 "role_icon": role_icon,
@@ -224,12 +158,12 @@ def build_manifest_entry(
         "build_label": build_label(champion, role),
         "games": games,
         "winrate": round(winrate, 3),
-        "href": f"{slug}/report.html",
+        "href": f"{slug}/report.json",
     }
 
 
 def write_report_meta(report_dir: Path, meta: dict[str, Any]) -> Path:
-    """Persist report metadata beside ``report.html``.
+    """Persist report metadata beside ``report.json``.
 
     Args:
         report_dir: Directory for this player/champion/lane run.
@@ -262,11 +196,11 @@ def discover_player_builds(player_dir: Path) -> list[dict[str, Any]]:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        report_html = meta_path.parent / "report.html"
-        if not report_html.is_file():
+        report_json = meta_path.parent / "report.json"
+        if not report_json.is_file():
             continue
         slug = meta_path.parent.name
-        meta["href"] = f"{slug}/report.html"
+        meta["href"] = f"{slug}/report.json"
         builds.append(meta)
 
     builds.sort(key=lambda entry: (entry.get("games", 0), entry.get("generated_at", "")), reverse=True)
@@ -280,11 +214,12 @@ def refresh_player_hub(
     player_label: str | None = None,
     assets: "DDragonAssets | None" = None,
 ) -> Path | None:
-    """Rebuild ``output/reports/{player}/index.html`` from on-disk build metadata.
+    """Rebuild ``output/reports/{player}/manifest.json`` from on-disk build metadata.
 
     Args:
         player_dir: Player reports root.
-        template_dir: Directory containing ``player_hub.html``.
+        template_dir: Unused; kept for call-site compatibility (the player hub
+            page is now rendered client-side by the SPA, not from a template).
         player_label: Display label (``Name#TAG``); inferred from builds when omitted.
 
     Returns:
@@ -312,8 +247,7 @@ def refresh_player_hub(
         "builds": builds,
         "default_href": builds[0]["href"],
     }
-    write_player_manifest(player_dir, manifest)
-    return ReportBuilder(template_dir).render_player_hub(player_dir, manifest)
+    return write_player_manifest(player_dir, manifest)
 
 
 def refresh_all_player_hubs(
@@ -386,10 +320,10 @@ def discover_reports(output_dir: Path) -> list[dict[str, Any]]:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        report_html = meta_path.parent / "report.html"
-        if not report_html.is_file():
+        report_json = meta_path.parent / "report.json"
+        if not report_json.is_file():
             continue
-        meta["href"] = report_html.relative_to(output_dir).as_posix()
+        meta["href"] = report_json.relative_to(output_dir).as_posix()
         entries.append(meta)
 
     entries.sort(key=lambda entry: entry.get("generated_at", ""), reverse=True)

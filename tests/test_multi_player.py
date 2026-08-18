@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import pytest
@@ -138,18 +137,14 @@ def test_run_all_builds_pools_multi_player_reports(
         store.close()
         http_cache.close()
 
-    report_html = (config.player_reports_dir / "viktor_middle" / "report.html").read_text(
-        encoding="utf-8"
+    report_payload = json.loads(
+        (config.player_reports_dir / "viktor_middle" / "report.json").read_text(encoding="utf-8")
     )
     assert hub_path.exists()
-    assert "Alice#EUW, Bob#NA1" in report_html
-    assert "25 games" in report_html or ">25<" in report_html
+    assert report_payload["player_name"] == "Alice#EUW, Bob#NA1"
+    assert report_payload["total_games"] == 25
 
-    payload_match = re.search(
-        r'id="account-filter-data">(.*?)</script>', report_html, re.S
-    )
-    assert payload_match is not None
-    account_filter = json.loads(payload_match.group(1))
+    account_filter = report_payload["account_filter"]
     assert account_filter["enabled"] is True
     assert account_filter["full_combinations"] is True
     assert set(account_filter["views"]) == {"Alice#EUW", "Bob#NA1"}

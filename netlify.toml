@@ -1,3 +1,23 @@
 [build]
   command = "./deploy/build_preview.sh"
-  publish = "output"
+  publish = "src/league_stats/web/spa_dist"
+
+# The SPA has no backend of its own on Netlify — proxy its API/asset calls
+# through to the real deployed app so previews show live data.
+[[redirects]]
+  from = "/api/*"
+  to = "https://league-champion-analyser.eu/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/out/*"
+  to = "https://league-champion-analyser.eu/out/:splat"
+  status = 200
+  force = true
+
+# Client-side routing: any other path falls through to the SPA shell.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
