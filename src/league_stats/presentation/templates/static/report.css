@@ -330,8 +330,8 @@ h3 { font-size: 15px; margin: 24px 0 12px; color: var(--color-neutral-400); }
 }
 .score-set {
   background: var(--color-surface); box-shadow: var(--shadow-sm); border-radius: var(--radius-md);
-  padding: var(--space-6); display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--space-6) var(--space-4);
+  padding: var(--space-6); display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-6) var(--space-4); align-items: start;
 }
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 14px 0; border-radius: 10px; }
 .table-scroll table { margin: 0; min-width: 640px; }
@@ -440,6 +440,7 @@ img.metric-icon--asset { width: 14px; height: 14px; object-fit: contain; flex-sh
 .metric-icon--purple { color: var(--color-neutral-600); }
 .metric-icon--muted { color: var(--color-neutral-400); }
 .section-title { display: flex; align-items: center; gap: 10px; }
+.section-title-scope { font-size: 11px; font-weight: 400; color: var(--color-neutral-600); }
 .section-title > iconify-icon.metric-icon,
 .section-title > img.metric-icon--asset,
 .metric-card-label iconify-icon.metric-icon,
@@ -1867,11 +1868,11 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .section-pulse {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--space-4);
   margin: 10px 0 14px;
 }
 .section-pulse:has(.section-pulse-fix) {
-  grid-template-columns: minmax(0, 1.2fr) minmax(180px, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 .section-pulse-callout {
   display: flex; flex-direction: column; gap: var(--space-1);

@@ -292,7 +292,7 @@
 {% endif %}
 
 {% set window_scope_option = game_window_options | selectattr('key', 'equalto', game_window_default) | list | first %}
-{% set window_scope_label = (window_scope_option.label ~ ' games') if window_scope_option else 'All games' %}
+{% set window_scope_label = (window_scope_option.label ~ ' games') if (window_scope_option and window_scope_option.key != 'all') else '' %}
 
 <div class="report-category-panel is-active" id="category-summary" data-category="summary" role="tabpanel" aria-labelledby="tab-summary">
 
@@ -716,7 +716,7 @@
 <div class="report-category-panel" id="category-games" data-category="games" role="tabpanel" aria-labelledby="tab-games" hidden>
 
 <section id="game-review" class="report-section report-section--games">
-  {{ section_title("Game Review", "layout-list", "win", category='games', scope='Last 10 games') }}
+  {{ section_title("Game Review", "layout-list", "win", category='games') }}
   <p class="sub sub--lead" id="game-review-subtitle">{{ game_review_subtitle or 'Last 10 games' }} — follows queue filter.</p>
   <div id="game-review-unavailable" class="form-empty"{% if game_review_available | default(false) %} style="display:none"{% endif %}>
     <p>No ranked games in this queue for Game Review.</p>

@@ -37,6 +37,7 @@ VIEWPORT = {"width": 1600, "height": 6000}
 # clicking by id is reliable since we know the exact generated markup.
 ACTUAL_TABS = [
     ("tab-summary", "summary"),
+    ("tab-career", "career"),
     ("tab-performance", "performance"),
     ("tab-games", "game-review"),
     ("tab-champion", "champion"),

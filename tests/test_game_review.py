@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -664,7 +665,7 @@ def test_report_has_game_review_category_tab(tmp_path: Path) -> None:
     assert 'game-review-layout' in html
     assert 'game-review-skill-grid' in html
     assert 'Skill progression' in html
-    assert 'Last 10 games' in html
+    assert re.search(r'id="game-review-subtitle">Last \d+ games? — follows queue filter\.', html)
     assert 'GAME_REVIEW_VISIBLE_N' in html
     assert 'report-tab--games' in html
     assert 'report-tab--summary' in html

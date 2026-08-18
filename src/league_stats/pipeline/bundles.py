@@ -452,6 +452,8 @@ def bundle_to_template_context(
         "queue_label": bundle.get("queue_label", "ranked solo queue"),
         "overview": bundle["overview"],
         "score": bundle["score"],
+        "score_color": bundle.get("score_color", "var(--color-text)"),
+        "score_verdict_label": bundle.get("score_verdict_label", "Solid"),
         "score_components": bundle["score_components"],
         "figures": bundle["figures"],
         "overview_cards": bundle.get("overview_cards", []),

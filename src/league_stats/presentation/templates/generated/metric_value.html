@@ -1,1 +1,1 @@
-<div class="value {{ card.value_class }}" style="color: {{ card.value_color }}">{{ card.value }}</div>
+<div class="value {{ card.value_class }}" style="color: {{ card.value_color or 'var(--color-text)' }}">{{ card.value }}</div>

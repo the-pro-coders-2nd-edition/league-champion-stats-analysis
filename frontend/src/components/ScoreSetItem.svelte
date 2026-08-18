@@ -27,6 +27,12 @@
 <style>
   /* :global -- renderScoreSetItem() in report.html rebuilds this markup on
      queue/window filter changes, so these classes must not be scoped/hashed. */
+  :global(.score-set-item) {
+    display: grid;
+    align-content: start;
+    gap: var(--space-2);
+    min-width: 0;
+  }
   :global(.score-set-item-head) {
     display: flex;
     align-items: baseline;
@@ -45,7 +51,6 @@
   }
   :global(.score-set-item-bar) {
     position: relative;
-    margin-top: var(--space-2);
     height: 6px;
     border-radius: 3px;
     background: var(--color-neutral-800);
@@ -68,14 +73,15 @@
   :global(.score-set-item-foot) {
     display: flex;
     align-items: baseline;
-    gap: var(--space-3);
-    margin-top: var(--space-2);
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 2px var(--space-3);
   }
   :global(.score-set-item-verdict) {
     font-size: 11px;
   }
   :global(.score-set-item-sub) {
-    margin-left: auto;
+    text-align: right;
     font-size: 11px;
     color: var(--color-neutral-600);
     font-variant-numeric: tabular-nums;

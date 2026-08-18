@@ -38,7 +38,7 @@
     grid-template-columns: 40px minmax(0, 1fr);
     gap: 10px;
     align-items: start;
-    color: var(--text);
+    color: var(--color-text);
   }
   :global(.career-node--compact) { grid-template-columns: 30px minmax(0, 1fr); }
 

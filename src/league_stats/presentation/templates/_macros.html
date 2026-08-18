@@ -66,11 +66,7 @@
   {{ metric_icon(icon, tone, iconify_id, icon_href) }}
   <span>{{ label }}</span>
   {%- if scope %}
-  {% if scope_kind == 'window' %}
-  {% include "generated/pill_scope_chip_window.html" %}
-  {% else %}
-  {% include "generated/pill_scope_chip.html" %}
-  {% endif %}
+  <span class="section-title-scope">{{ scope }}</span>
   {%- endif %}
 </h2>
 {%- endmacro %}

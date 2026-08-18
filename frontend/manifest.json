@@ -8,7 +8,7 @@
      "tone": "{% if card.value_class == 'win' %}good{% elif card.value_class == 'loss' %}bad{% else %}stat{% endif %}",
      "label": "{{ card.label }}",
      "value": "{{ card.value }}",
-     "valueColor": "{{ card.value_color }}"
+     "valueColor": "{{ card.value_color or 'var(--color-text)' }}"
     }
    }
   ]
@@ -175,7 +175,7 @@
      "label": "{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}",
      "values": "{{ row.yours }} vs {{ row.peer_avg }}",
      "gap": "{{ row.gap }}",
-     "gapColor": "{{ row.gap_color }}"
+     "gapColor": "{{ row.gap_color or 'var(--color-text)' }}"
     }
    },
    {
@@ -185,7 +185,7 @@
      "label": "{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}",
      "values": "{{ row.yours }} vs {{ row.peer_avg }}",
      "gap": "{{ row.gap }}",
-     "gapColor": "{{ row.gap_color }}"
+     "gapColor": "{{ row.gap_color or 'var(--color-text)' }}"
     }
    }
   ]
@@ -255,7 +255,7 @@
     "props": {
      "value": "{{ card.value }}",
      "valueClass": "{{ card.value_class }}",
-     "valueColor": "{{ card.value_color }}"
+     "valueColor": "{{ card.value_color or 'var(--color-text)' }}"
     }
    }
   ]
@@ -268,7 +268,7 @@
     "props": {
      "benchmark": "{{ card.benchmark }}",
      "benchmarkTone": "{{ card.benchmark_tone | default('inline') }}",
-     "benchmarkColor": "{{ card.benchmark_color }}"
+     "benchmarkColor": "{{ card.benchmark_color or 'var(--color-text)' }}"
     }
    }
   ]
@@ -745,7 +745,7 @@
      "label": "{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}",
      "values": "{{ row.baseline }} \u2192 {{ row.recent }}",
      "gap": "{{ row.gap }}",
-     "gapColor": "{{ row.gap_color }}"
+     "gapColor": "{{ row.gap_color or 'var(--color-text)' }}"
     }
    },
    {
@@ -755,7 +755,7 @@
      "label": "{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}",
      "values": "{{ row.baseline }} \u2192 {{ row.recent }}",
      "gap": "{{ row.gap }}",
-     "gapColor": "{{ row.gap_color }}"
+     "gapColor": "{{ row.gap_color or 'var(--color-text)' }}"
     }
    }
   ]

@@ -143,3 +143,24 @@ def test_discover_reports_lists_all_builds(tmp_path: Path) -> None:
     assert "Viktor" in champions
     assert "Ahri" in champions
     assert all("reports/" in report["href"] for report in reports)
+
+
+def test_improvement_score_renders_a_resolved_tone_colour(tmp_path: Path) -> None:
+    """score_color must reach the template, not render as an empty style."""
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75)
+    records = _make_records()
+    peer = _peer(records)
+
+    report = run_analysis(
+        _config(tmp_path, champion="Viktor", role="MIDDLE"),
+        records,
+        peer_comparison=peer,
+        ranked=ranked,
+    )
+    html = report.read_text(encoding="utf-8")
+
+    assert 'style="color: "' not in html
+    assert 'id="score-value"' in html
+    for marker in ('id="score-value"', 'id="score-verdict-label"'):
+        tag = html[html.index(marker) : html.index(">", html.index(marker))]
+        assert "var(--" in tag, f"{marker} has no resolved colour: {tag}"
