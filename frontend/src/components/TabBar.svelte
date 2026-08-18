@@ -62,7 +62,9 @@
     border: 1px solid var(--color-divider); background: var(--color-surface-2); color: var(--color-text);
     border-radius: 999px; padding: 8px 14px; cursor: pointer; font-size: 13px; font-weight: 600;
   }
+  /* Interaction is neutral: active tabs use a neutral surface, never the
+     accent/status palette (verified against TabBar.dc.html). */
   .form-tab.is-active, .game-review-tab.is-active {
-    border-color: var(--color-accent); color: #fff; background: var(--color-accent);
+    border-color: var(--color-neutral-500); color: var(--color-neutral-100); background: var(--color-surface-2);
   }
 </style>

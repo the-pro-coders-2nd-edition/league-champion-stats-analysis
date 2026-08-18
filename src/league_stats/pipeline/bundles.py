@@ -202,6 +202,20 @@ _CHIP_STRONG_SCORE = 65.0
 _CHIP_FOCUS_SCORE = 45.0
 
 
+def _overall_score_verdict(score: float) -> tuple[str, str]:
+    """CSS color + verdict label for the top-level Improvement score.
+
+    Mirrors report-tones.js's verdict(): only strong/weak scores get a
+    status color, mid-range scores stay neutral (interaction/status color
+    is never applied indiscriminately).
+    """
+    if score >= _CHIP_STRONG_SCORE:
+        return "var(--tone-good-fg)", "Strength"
+    if score >= _CHIP_FOCUS_SCORE:
+        return "var(--color-text)", "Solid"
+    return "var(--tone-bad-fg)", "Focus"
+
+
 def _annotate_score_components(
     score_components: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -459,6 +473,8 @@ def build_window_bundle(
         "overview_cards": [],
         "section_verdicts": {},
         "score": 0,
+        "score_color": "var(--color-text)",
+        "score_verdict_label": "Solid",
         "score_components": [],
         "lane_cards": [],
         "early_section_title": "Laning",
@@ -596,6 +612,8 @@ def build_window_bundle(
         "early_section_title": profile.early_section_title,
         "section_order": list(profile.section_order),
         "score": score,
+        "score_color": _overall_score_verdict(score)[0],
+        "score_verdict_label": _overall_score_verdict(score)[1],
         "score_components": [
             {
                 **asdict(component),

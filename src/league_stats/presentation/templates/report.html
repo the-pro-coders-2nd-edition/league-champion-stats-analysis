@@ -374,10 +374,13 @@
 
     <div class="summary-grid-side">
       <div class="hero-score-panel" id="improvement-score-card">
-        <div class="hero-score-label">Improvement score</div>
-        <div class="hero-score-value" id="score-value" data-score="{{ score }}">{{ score }}<span>/100</span></div>
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px">
+          <div class="hero-score-label">Improvement score</div>
+          <span id="score-verdict-label" style="font-size: 11px; color: {{ score_color }}">{{ score_verdict_label }}</span>
+        </div>
+        <div class="hero-score-value" id="score-value" data-score="{{ score }}" style="color: {{ score_color }}">{{ score }}<span>/100</span></div>
         <div style="position: relative; height: 6px; border-radius: 3px; background: var(--color-neutral-800); margin-top: 8px">
-          <i style="position: absolute; inset: 0 auto 0 0; width: {{ score }}%; border-radius: 3px; background: var(--color-accent); display: block"></i>
+          <i style="position: absolute; inset: 0 auto 0 0; width: {{ score }}%; border-radius: 3px; background: {{ score_color }}; display: block"></i>
           <i style="position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: var(--color-neutral-400); display: block"></i>
         </div>
       </div>
@@ -1177,16 +1180,25 @@
   function renderScore(bundle) {
     var scoreNode = document.getElementById('score-value');
     var compsNode = document.getElementById('score-comps');
+    var scoreColor = bundle.score_color || 'var(--color-text)';
     if (scoreNode) {
       // Always sync data-score so a later entrance animation (or peer reload
       // restore) cannot re-animate the server-default window's score.
       scoreNode.setAttribute('data-score', String(bundle.score));
+      scoreNode.style.color = scoreColor;
       if (window.reportAnimateScore) {
         window.reportAnimateScore(scoreNode, bundle.score);
       } else {
         scoreNode.setAttribute('data-display', String(bundle.score));
         scoreNode.innerHTML = String(bundle.score) + '<span>/100</span>';
       }
+    }
+    var scoreFill = document.querySelector('#improvement-score-card i[style*="position: absolute; inset"]');
+    if (scoreFill) scoreFill.style.background = scoreColor;
+    var verdictLabel = document.getElementById('score-verdict-label');
+    if (verdictLabel) {
+      verdictLabel.style.color = scoreColor;
+      verdictLabel.textContent = bundle.score_verdict_label || 'Solid';
     }
     if (!compsNode) return;
     compsNode.innerHTML = (bundle.score_components || []).map(renderScoreSetItem).join('');

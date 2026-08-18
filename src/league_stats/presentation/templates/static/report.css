@@ -352,21 +352,24 @@ h3 { font-size: 15px; margin: 24px 0 12px; color: var(--color-neutral-400); }
 .accounts-panel-rank, .accounts-panel-lp, .accounts-panel-region { text-align: right; font-size: 12px; color: var(--color-neutral-400); }
 .hero-score-panel {
   display: flex; flex-direction: column; align-items: stretch; gap: 8px;
-  padding: 18px 20px;
-  background: linear-gradient(180deg, rgba(65, 183, 140, 0.16), var(--color-surface-2));
-  border: 1px solid rgba(65, 183, 140, 0.4); border-radius: 12px;
+  padding: var(--space-6);
+  background: var(--color-surface); box-shadow: var(--shadow-sm); border-radius: var(--radius-md);
 }
 .hero-score-label {
-  font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--color-neutral-400);
+  font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--color-neutral-500);
 }
 .hero-score-value {
+  /* Color is set inline per-request from score_color (verdict-driven, only
+     strong/weak scores get a status color -- mid-range stays neutral). */
   text-align: left;
-  font-size: 52px; font-weight: 800; color: var(--color-accent); line-height: 1; letter-spacing: -.03em;
+  font-size: 34px; font-weight: 700; line-height: 1; letter-spacing: -.02em;
+  font-family: var(--font-heading);
 }
 .hero-score-value span { font-size: 20px; color: var(--color-neutral-400); font-weight: 500; }
 .score-breakdown-title {
-  font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--color-neutral-400); margin: 0 0 12px;
+  /* Matches the other h2 section titles (Key metrics, Coaching) -- this used
+     to be a small uppercase caption, inconsistent with the rest of the tab. */
+  margin: 0 0 12px;
 }
 .score-set {
   background: var(--color-surface); box-shadow: var(--shadow-sm); border-radius: var(--radius-md);
@@ -579,9 +582,16 @@ tr:last-child td { border-bottom: none; }
 }
 .rec { background: var(--color-surface); box-shadow: var(--shadow-sm); border-radius: var(--radius-md); padding: var(--space-6); margin: 12px 0; }
 .rec-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 24px; align-items: start; }
-.rec-column h3 { margin: 0 0 12px; text-transform: uppercase; letter-spacing: .06em; }
-.rec-column-positive h3 { color: var(--tone-good-fg); }
-.rec-column-negative h3 { color: var(--tone-bad-fg); }
+.rec-column h3 {
+  margin: 0 0 12px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--color-neutral-400); display: flex; align-items: center; gap: 8px;
+}
+/* Only a small dash carries the keep/work tone -- the heading text itself
+   stays neutral, matching the reference (interaction/status color never
+   applies to a whole label, only to a small mark). */
+.rec-column h3::before { content: ""; display: inline-block; width: 14px; height: 2px; flex: none; }
+.rec-column-positive h3::before { background: var(--tone-good-line); }
+.rec-column-negative h3::before { background: var(--tone-bad-line); }
 .rec-empty { color: var(--color-neutral-400); font-size: 14px; margin: 8px 0 0; }
 .rec-more { display: none; }
 .rec-more.is-open { display: block; }
@@ -1501,7 +1511,7 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 }
 .game-review-toggle:hover { color: var(--color-text); background: rgba(255, 255, 255, 0.04); }
 .game-review-toggle.is-active {
-  color: #fff; background: var(--color-accent);
+  color: var(--color-neutral-100); background: var(--color-surface-2);
 }
 .game-review-timeline-chart { min-height: 320px; }
 

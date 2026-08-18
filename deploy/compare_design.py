@@ -128,6 +128,9 @@ def main() -> int:
         )
         return 1
 
+    if OUT_DIR.exists():
+        for stale in OUT_DIR.glob("*.png"):
+            stale.unlink()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as p:
