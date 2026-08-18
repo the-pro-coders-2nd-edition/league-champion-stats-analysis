@@ -4,6 +4,7 @@
   import PeerBalanceChip from '../components/PeerBalanceChip.svelte';
   import UiChipBadge from '../components/UiChipBadge.svelte';
   import TrendRow from '../components/TrendRow.svelte';
+  import Disclosure from '../components/Disclosure.svelte';
   import DataTableHead from '../components/DataTableHead.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
   import { escapeHtml, metricLabelFromRow } from '../lib/html.js';
@@ -100,8 +101,8 @@
         </div>
       </div>
     </div>
-    <details class="peer-all-metrics">
-      <summary>All metrics</summary>
+    <Disclosure variant="box" chevron="leading">
+      <svelte:fragment slot="summary">All metrics</svelte:fragment>
       <div class="table-scroll">
         <table>
           <DataTableHead columns={tableColumns} />
@@ -112,7 +113,7 @@
           </tbody>
         </table>
       </div>
-    </details>
+    </Disclosure>
   </div>
 </section>
 {:else if pending}

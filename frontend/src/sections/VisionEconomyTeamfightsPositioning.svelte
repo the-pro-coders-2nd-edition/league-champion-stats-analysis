@@ -1,5 +1,6 @@
 <script>
   import Pill from '../components/Pill.svelte';
+  import Disclosure from '../components/Disclosure.svelte';
   import SectionPulse from '../components/SectionPulse.svelte';
   import TieredCards from '../components/TieredCards.svelte';
   import PositioningHint from '../components/PositioningHint.svelte';
@@ -21,13 +22,13 @@
   </h2>
   <SectionPulse sectionId="vision" verdict={data.section_verdicts?.vision} />
   <div id="vision-cards"><TieredCards cards={data.vision_cards || []} moreLabel="More vision stats" /></div>
-  <details class="section-details">
-    <summary>Show charts</summary>
+  <Disclosure variant="pill" chevron="leading">
+    <svelte:fragment slot="summary">Show charts</svelte:fragment>
     <div class="figure-block">
       <PlotlyFigure id="fig-vision_trend" html={data.figures?.vision_trend || ''} />
       <p class="figure-caption">Vision score per minute over time — compare win and loss trajectories to spot when vision drops off.</p>
     </div>
-  </details>
+  </Disclosure>
 </section>
 
 <section id="economy" class="report-section report-section--deepdive">
@@ -38,13 +39,13 @@
   </h2>
   <SectionPulse sectionId="economy" verdict={data.section_verdicts?.economy} />
   <div id="economy-cards"><TieredCards cards={data.economy_cards || []} moreLabel="More economy stats" /></div>
-  <details class="section-details">
-    <summary>Show charts</summary>
+  <Disclosure variant="pill" chevron="leading">
+    <svelte:fragment slot="summary">Show charts</svelte:fragment>
     <div class="figure-block">
       <PlotlyFigure id="fig-dpm_scatter" html={data.figures?.dpm_scatter || ''} />
       <p class="figure-caption">Damage vs gold income per game — dots above the trend line punch above their gold weight.</p>
     </div>
-  </details>
+  </Disclosure>
 </section>
 
 <section id="teamfights" class="report-section report-section--deepdive">

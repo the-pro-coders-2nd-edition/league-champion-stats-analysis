@@ -1,6 +1,6 @@
 <script>
   import RecCard from '../components/RecCard.svelte';
-  import RecExtendButton from '../components/RecExtendButton.svelte';
+  import ShowMore from '../components/ShowMore.svelte';
   import Pill from '../components/Pill.svelte';
   import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
@@ -39,17 +39,11 @@
           <RecCard {rec} />
         {/each}
         {#if positiveMore.length}
-          <div class="rec-more" id="rec-more-positive" class:is-open={showAllPositive}>
+          <ShowMore bind:open={showAllPositive} triggerClass="rec-extend" label={positiveMoreLabel} openLabel="Show less" id="rec-more-positive">
             {#each positiveMore as rec (rec.anchor || rec.title)}
               <RecCard {rec} />
             {/each}
-          </div>
-          <RecExtendButton
-            targetId="rec-more-positive"
-            label={positiveMoreLabel}
-            expanded={showAllPositive}
-            on:click={() => (showAllPositive = !showAllPositive)}
-          />
+          </ShowMore>
         {/if}
       {:else}
         <p class="rec-empty">No clear strengths surfaced yet — keep playing more games.</p>
@@ -62,17 +56,11 @@
           <RecCard {rec} />
         {/each}
         {#if negativeMore.length}
-          <div class="rec-more" id="rec-more-negative" class:is-open={showAllNegative}>
+          <ShowMore bind:open={showAllNegative} triggerClass="rec-extend" label={negativeMoreLabel} openLabel="Show less" id="rec-more-negative">
             {#each negativeMore as rec (rec.anchor || rec.title)}
               <RecCard {rec} />
             {/each}
-          </div>
-          <RecExtendButton
-            targetId="rec-more-negative"
-            label={negativeMoreLabel}
-            expanded={showAllNegative}
-            on:click={() => (showAllNegative = !showAllNegative)}
-          />
+          </ShowMore>
         {/if}
       {:else}
         <p class="rec-empty">Nothing critical flagged — solid performance overall.</p>

@@ -1,5 +1,6 @@
 <script>
   import Pill from '../components/Pill.svelte';
+  import Disclosure from '../components/Disclosure.svelte';
   import SectionPulse from '../components/SectionPulse.svelte';
   import TieredCards from '../components/TieredCards.svelte';
   import DataTableHead from '../components/DataTableHead.svelte';
@@ -73,8 +74,8 @@
   </h2>
   <SectionPulse sectionId="lane" verdict={data.section_verdicts?.lane} />
   <div id="lane-cards"><TieredCards cards={data.lane_cards || []} moreLabel={laneMoreLabel} /></div>
-  <details class="section-details">
-    <summary>Show charts</summary>
+  <Disclosure variant="pill" chevron="leading">
+    <svelte:fragment slot="summary">Show charts</svelte:fragment>
     <div class="figure-block">
       <PlotlyFigure id="fig-gd10_histogram" html={data.figures?.gd10_histogram || ''} />
       <p class="figure-caption">Gold diff @10 distribution — a right-skewed shape means you often win lane; left-skewed means you fall behind early.</p>
@@ -89,7 +90,7 @@
         <p class="figure-caption">CS @10 spread across games — tighter clusters mean more consistent farming.</p>
       </div>
     {/if}
-  </details>
+  </Disclosure>
 </section>
 
 <section id="objectives" class="report-section report-section--deepdive">
@@ -112,13 +113,13 @@
       </tbody>
     </table>
   </div>
-  <details class="section-details">
-    <summary>Show charts</summary>
+  <Disclosure variant="pill" chevron="leading">
+    <svelte:fragment slot="summary">Show charts</svelte:fragment>
     <div class="figure-block">
       <PlotlyFigure id="fig-objective_timing" html={data.figures?.objective_timing || ''} />
       <p class="figure-caption">When objectives are taken — early arrivals and ward placement before spawn improve take rates.</p>
     </div>
-  </details>
+  </Disclosure>
 </section>
 
 <section id="deaths" class="report-section report-section--deepdive">
@@ -129,8 +130,8 @@
   </h2>
   <SectionPulse sectionId="deaths" verdict={data.section_verdicts?.deaths} />
   <div id="death-cards"><TieredCards cards={data.death_cards || []} moreLabel="More death stats" /></div>
-  <details class="section-details">
-    <summary>Show charts &amp; danger zones</summary>
+  <Disclosure variant="pill" chevron="leading">
+    <svelte:fragment slot="summary">Show charts &amp; danger zones</svelte:fragment>
     <div class="figure-block">
       <PlotlyFigure id="fig-death_heatmap" html={data.figures?.death_heatmap || ''} />
       <p class="figure-caption">Where you die on the map — red-side games are mirrored across the river (perpendicular to mid) so bot-lane deaths stay on the bottom edge. Hot zones without nearby team vision are prime gank or face-check risks.</p>
@@ -164,5 +165,5 @@
         </div>
       </div>
     {/if}
-  </details>
+  </Disclosure>
 </section>

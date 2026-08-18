@@ -11,6 +11,7 @@
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
   import { resizePlotlySoon } from '../lib/plotlyResize.js';
   import TrendRow from '../components/TrendRow.svelte';
+  import Disclosure from '../components/Disclosure.svelte';
   import { escapeHtml, metricLabelFromRow } from '../lib/html.js';
 
   export let data;
@@ -167,8 +168,8 @@
           <PlotlyFigure id="fig-form_metric_delta_bar" html={(data.form_figures && data.form_figures.form_metric_delta_bar) || ''} />
           <p class="figure-caption">Largest metric shifts between recent games and your baseline period.</p>
         </div>
-        <details class="form-all-metrics">
-          <summary>All metrics</summary>
+        <Disclosure variant="box" chevron="leading">
+          <svelte:fragment slot="summary">All metrics</svelte:fragment>
           <div class="table-scroll">
             <table>
               <DataTableHead columns={tableColumns} />
@@ -179,7 +180,7 @@
               </tbody>
             </table>
           </div>
-        </details>
+        </Disclosure>
       </div>
     </div>
   </div>
