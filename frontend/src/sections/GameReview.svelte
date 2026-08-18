@@ -5,10 +5,10 @@
   import TabBar from '../components/TabBar.svelte';
   import Panel from '../components/Panel.svelte';
   import GameSummaryHeader from '../components/GameSummaryHeader.svelte';
+  import ScoreDisclosure from '../components/ScoreDisclosure.svelte';
   import GameReviewKeyMoments from './GameReviewKeyMoments.svelte';
   import { escapeHtml, soloIconCellHtml } from '../lib/html.js';
   import { formatGameTime, pct } from '../lib/format.js';
-  import { gameReviewBarStyle } from '../lib/metricColors.js';
   import { resizePlotlySoon } from '../lib/plotlyResize.js';
 
   export let data;
@@ -17,7 +17,6 @@
   let activeTab = 'overview';
   let moreOpen = false;
   let moreOpenInitialized = false;
-  let scoreDetailsOpen = false;
   let timelineMode = 'lane';
   let timelineMetric = 'gold';
   let chartEl;
@@ -102,37 +101,6 @@
       return '';
     }
     return '';
-  }
-
-  function formatScoreIngredientValue(column, value) {
-    if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—';
-    const num = Number(value);
-    const rateKeys = {
-      kill_participation: 1, damage_share: 1, gold_share: 1, damage_taken_share: 1,
-      tf_participation: 1, tf_won_share: 1, lane_priority: 1, objectives_present_rate: 1, kp15: 1,
-    };
-    if (rateKeys[column] || (column && String(column).slice(-5) === '_rate')) {
-      return (num * 100).toFixed(0) + '%';
-    }
-    if (column === 'vspm' || column === 'ccpm' || column === 'first_item_min') {
-      return num.toFixed(1);
-    }
-    if (column === 'avg_unspent_gold' || column === 'gd10' || column === 'gd15' || column === 'xpd10') {
-      return String(Math.round(num));
-    }
-    if (Math.abs(num - Math.round(num)) < 1e-6) return String(Math.round(num));
-    return num.toFixed(1);
-  }
-
-  function scoreIngredientRowHtml(item) {
-    const subPct = Math.max(0, Math.min(100, Math.round(Number(item.score) || 0)));
-    const gameTxt = formatScoreIngredientValue(item.column, item.game_value);
-    const baseTxt = formatScoreIngredientValue(item.column, item.baseline_value);
-    return `<div class="comp-ingredient">` +
-      `<div class="comp-ingredient-head"><span class="comp-ingredient-label">${escapeHtml(item.label || item.column || '')}</span>` +
-      `<span class="comp-ingredient-score">${subPct}</span></div>` +
-      `<div class="comp-ingredient-meta">${escapeHtml(gameTxt)} vs your avg ${escapeHtml(baseTxt)}</div>` +
-      `<div class="bar bar--sm" aria-hidden="true"><i style="${gameReviewBarStyle(subPct)}"></i></div></div>`;
   }
 
   function renderGameReviewRunesHtml(build) {
@@ -565,7 +533,6 @@
       : '');
 
   $: selectedGame = games.find((g) => g.match_id === selectedMatchId) || games[0];
-  $: selectedGame, (scoreDetailsOpen = false);
 
   $: tooltips = data.game_review_tooltips || {};
   $: score = selectedGame?.score || {};
@@ -664,33 +631,12 @@
               <div class="gr-score-list">
                 {#if dimensions.length}
                   {#each dimensions as dim (dim.name)}
-                    {@const dimPct = Math.max(0, Math.min(100, Math.round(Number(dim.score) || 0)))}
-                    {@const hint = dim.hint || (tooltips.score || {})[dim.name] || ''}
-                    {#if (dim.ingredients || []).length}
-                      <details class="gr-score gr-score--expandable" title={hint || null} open={scoreDetailsOpen} on:toggle={(e) => (scoreDetailsOpen = e.target.open)}>
-                        <summary>
-                          <span class="gr-score-chevron" aria-hidden="true"></span>
-                          <div class="gr-score-summary">
-                            <span class="gr-score-name">{dim.name || 'Score'}</span>
-                            <span class="gr-score-value">{dimPct}</span>
-                            <div class="gr-score-bar" aria-hidden="true"><i style={gameReviewBarStyle(dimPct)}></i></div>
-                          </div>
-                        </summary>
-                        <div class="gr-score-details">
-                          {#each dim.ingredients as item}
-                            {@html scoreIngredientRowHtml(item)}
-                          {/each}
-                        </div>
-                      </details>
-                    {:else}
-                      <div class="gr-score" title={hint || null}>
-                        <div class="gr-score-summary">
-                          <span class="gr-score-name">{dim.name || 'Score'}</span>
-                          <span class="gr-score-value">{dimPct}</span>
-                          <div class="gr-score-bar" aria-hidden="true"><i style={gameReviewBarStyle(dimPct)}></i></div>
-                        </div>
-                      </div>
-                    {/if}
+                    <ScoreDisclosure
+                      name={dim.name}
+                      score={dim.score}
+                      hint={dim.hint || (tooltips.score || {})[dim.name] || ''}
+                      ingredients={dim.ingredients || []}
+                    />
                   {/each}
                 {:else}
                   <p class="game-review-verdict-empty">No score dimensions available.</p>
