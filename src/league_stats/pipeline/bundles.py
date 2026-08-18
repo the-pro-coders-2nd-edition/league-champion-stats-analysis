@@ -6,7 +6,7 @@ import json
 import math
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pandas as pd
 
@@ -28,13 +28,18 @@ from league_stats.core.config import (
     QUEUE_FILTER_OPTIONS,
     QUEUE_LABELS,
     RANKED_FLEX_QUEUE_ID,
+    RANKED_QUEUE_IDS,
     RANKED_SOLO_QUEUE_ID,
     AppConfig,
 )
 from league_stats.core.models import MatchRecord, PeerComparisonResult
 from league_stats.infra.career_store import CareerStore, build_key
 from league_stats.infra.ddragon_assets import DDragonAssets
-from league_stats.presentation.career import build_career_view, empty_career_view
+from league_stats.presentation.career import (
+    build_career_view,
+    career_scope_view,
+    empty_career_view,
+)
 from league_stats.pipeline.frames import AnalysisFrames, build_analysis_frames, build_overview
 from league_stats.utils import get_logger
 from league_stats.pipeline.summaries import ReportStats, build_domain_summaries, generate_recommendations
@@ -413,6 +418,48 @@ def _peer_p75(peer_comparison: PeerComparisonResult | None) -> dict[str, float]:
     }
 
 
+# Career spans every ranked game, so only the "all ranked" views carry a ladder.
+CAREER_QUEUE_KEY: Final[str] = "all"
+
+
+def ranked_career_records(records: list[Any]) -> list[Any]:
+    """Every ranked game, solo and flex, in input order.
+
+    The ladder spans both queues, so it is built from this set rather than from
+    any one queue/window slice.
+    """
+    return [record for record in records if record.queue_id in RANKED_QUEUE_IDS]
+
+
+def build_all_ranked_ladder(
+    config: AppConfig,
+    records: list[Any],
+    peer_comparison: PeerComparisonResult | None,
+) -> dict[str, Any]:
+    """Advance the one Career ladder, from every ranked game at full history.
+
+    Built once per report rather than once per queue/window slice. Nine slices
+    each advancing the same ladder key meant the last one to run owned the
+    persisted goal states, and a slice from one queue could retire a goal whose
+    rungs came from another.
+    """
+    career_records = ranked_career_records(records)
+    if not career_records:
+        return empty_career_view()
+    frames = build_analysis_frames(career_records)
+    if frames.matches_df.empty:
+        return empty_career_view()
+    _, components = improvement_score(frames.matches_df, role=config.role)
+    return build_career_bundle(config, frames, peer_comparison, components)
+
+
+def career_view_for_queue(queue_key: str, ladder: dict[str, Any]) -> dict[str, Any]:
+    """The ladder for the all-ranked views, a scope notice for the filtered ones."""
+    if queue_key == CAREER_QUEUE_KEY:
+        return ladder
+    return career_scope_view()
+
+
 def build_career_bundle(
     config: AppConfig,
     frames: AnalysisFrames,
@@ -570,7 +617,6 @@ def build_window_bundle(
     )
 
     score, components = improvement_score(frames.matches_df, role=config.role)
-    career = build_career_bundle(config, frames, window_peer, components)
     matchups_export = frames.matchups_df.copy()
     if not matchups_export.empty:
         matchups_export["recommendation"] = matchups_export.apply(
@@ -729,7 +775,6 @@ def build_window_bundle(
         "rune_rows": rune_setup_stats(frames.runes_df).to_dict("records"),
         "matchup_rows": matchup_rows,
         "figures": figures,
-        "career": career,
     }
     recommendation_payloads = [_recommendation_payload(rec) for rec in recommendations]
     bundle["weak_recommendations"] = [

@@ -67,7 +67,18 @@ def _career_payload(tmp_path: Path) -> dict:
         ranked=RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75),
     )
     payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
-    return payload["career"]
+    return _all_ranked_career(payload)
+
+
+def _all_ranked_career(payload: dict) -> dict:
+    """The ladder as the reader sees it, from the all-ranked views.
+
+    Career spans both ranked queues and is only rendered on the "all ranked"
+    filter, so the queue-filtered slices (and the default-slice payload, which
+    follows DEFAULT_QUEUE_FILTER) carry a scope notice instead of a ladder.
+    """
+    windows = payload["report_views"]["all"]["windows"]
+    return windows[next(iter(windows))]["career"]
 
 
 def test_report_json_has_a_career_block(tmp_path: Path) -> None:
@@ -121,3 +132,23 @@ def test_career_styles_and_tokens_are_published() -> None:
     assert "--cat-career:" in report_css
     assert ".career-blocks" in report_css
     assert "career-ring--at-risk" in components_css
+
+
+def test_queue_filtered_views_do_not_render_a_ladder(tmp_path: Path) -> None:
+    """Career is one ladder over all ranked games, so Solo/Duo has none of its own."""
+    records = _records()
+    config = _config(tmp_path)
+    run_analysis(
+        config,
+        records,
+        peer_comparison=_peer_with_percentiles(records),
+        ranked=RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75),
+    )
+    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+
+    for queue_key in ("solo", "flex"):
+        windows = payload["report_views"][queue_key]["windows"]
+        for window in windows.values():
+            assert window["career"]["has_career"] is False
+            assert window["career"]["tracks_all_ranked"] is True
+    assert _all_ranked_career(payload)["has_career"] is True

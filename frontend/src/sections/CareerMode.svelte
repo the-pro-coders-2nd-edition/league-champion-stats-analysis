@@ -1,4 +1,6 @@
 <script>
+  import { flip } from 'svelte/animate';
+  import { fade, fly } from 'svelte/transition';
   import CareerNode from '../components/CareerNode.svelte';
   import Pill from '../components/Pill.svelte';
   import { dropCareerBlock } from '../lib/api.js';
@@ -10,6 +12,10 @@
   // acting on a ladder that is mid-rebuild would target the wrong block.
   export let busy = false;
   export let onDropped = () => {};
+  export let onShowAllRanked = null;
+  // Slot awaiting its replacement from the regenerate a drop kicked off. Rendered
+  // as a skeleton until the rebuilt report lands and the real block takes over.
+  export let pendingSlot = null;
 
   let confirmSlot = null;
   let droppingSlot = null;
@@ -17,6 +23,13 @@
 
   $: career = data.career || { has_career: false, blocks: [], rules: [], legend: [], congrats: null };
   $: canDrop = !!(playerSlug && buildSlug);
+  // A queue-filtered slice has no ladder of its own: there is one ladder over
+  // every ranked game, and only the all-ranked views render it.
+  $: tracksAllRanked = !career.has_career && career.tracks_all_ranked === true;
+  $: visibleBlocks = career.blocks.filter(
+    (block, index) => (block.slot ?? index) !== pendingSlot
+  );
+  $: awaitingReplacement = pendingSlot !== null;
 
   function askDrop(slot) {
     dropError = '';
@@ -25,6 +38,10 @@
 
   function cancelDrop() {
     confirmSlot = null;
+  }
+
+  function blockSlot(block, index) {
+    return block.slot ?? index;
   }
 
   async function confirmDrop(slot) {
@@ -45,7 +62,20 @@
 <section id="career" class="report-section report-section--career">
   <h2 class="career-heading">Career mode</h2>
 
-  {#if career.has_career}
+  {#if tracksAllRanked}
+    <div class="career-scope-notice">
+      <p class="career-scope-notice-text">
+        Career tracks <strong>all ranked games</strong>, Solo/Duo and Flex together, so it does not
+        follow the queue filter. Switch to <strong>All ranked</strong> to see your ladder.
+      </p>
+      {#if onShowAllRanked}
+        <button type="button" class="career-scope-switch" on:click={onShowAllRanked}>
+          Show all ranked
+        </button>
+      {/if}
+    </div>
+  {:else if career.has_career}
+    <p class="career-scope-caption">Tracking all ranked games, Solo/Duo and Flex together.</p>
     <div class="career-rules">
       {#each career.rules as rule}
         <div class="career-rule">
@@ -80,9 +110,13 @@
     </div>
 
     <div class="career-blocks">
-      {#each career.blocks as block, index}
-        {@const slot = block.slot ?? index}
-        <div class="career-block">
+      {#each visibleBlocks as block, index (block.name)}
+        {@const slot = blockSlot(block, index)}
+        <div
+          class="career-block"
+          animate:flip={{ duration: 420 }}
+          in:fly={{ x: 24, duration: 320 }}
+        >
           <div class="career-block-head">
             <span class="career-block-state">
               <Pill tone={block.tone} label={block.state_label} />
@@ -155,6 +189,19 @@
           {/if}
         </div>
       {/each}
+      {#if awaitingReplacement}
+        <div
+          class="career-block career-block--skeleton"
+          aria-hidden="true"
+          in:fade={{ duration: 200 }}
+        >
+          <div class="career-skeleton-head"></div>
+          <div class="career-skeleton-title"></div>
+          <div class="career-skeleton-line"></div>
+          <div class="career-skeleton-line career-skeleton-line--short"></div>
+          <p class="career-skeleton-note">Generating your next block…</p>
+        </div>
+      {/if}
     </div>
   {:else}
     <p class="career-empty">
@@ -226,6 +273,82 @@
     cursor: not-allowed;
   }
   .career-drop-error { margin: 0; font-size: 12px; color: var(--tone-bad-fg); }
+
+  .career-scope-notice {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+    margin: 0 0 var(--space-4);
+    padding: var(--space-4);
+    border: 1px solid var(--color-divider);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
+  }
+  .career-scope-notice-text {
+    margin: 0;
+    min-width: 0;
+    flex: 1 1 260px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-neutral-400);
+  }
+  .career-scope-switch {
+    border: 1px solid var(--color-accent);
+    background: transparent;
+    color: var(--color-accent);
+    border-radius: 8px;
+    padding: 7px 14px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .career-scope-switch:hover { background: rgba(65, 183, 140, 0.08); }
+  .career-scope-caption {
+    margin: 0 0 var(--space-4);
+    font-size: 12px;
+    color: var(--color-neutral-500);
+  }
+
+  .career-block--skeleton {
+    display: grid;
+    align-content: start;
+    gap: 10px;
+    pointer-events: none;
+    border-style: dashed;
+  }
+  .career-skeleton-head { width: 96px; height: 19px; border-radius: 6px; }
+  .career-skeleton-title { width: 62%; height: 17px; border-radius: 6px; }
+  .career-skeleton-line { width: 100%; height: 11px; border-radius: 6px; }
+  .career-skeleton-line--short { width: 45%; }
+  .career-skeleton-head,
+  .career-skeleton-title,
+  .career-skeleton-line {
+    background: linear-gradient(
+      90deg,
+      var(--color-surface-2) 0%,
+      var(--color-neutral-800) 50%,
+      var(--color-surface-2) 100%
+    );
+    background-size: 200% 100%;
+    animation: career-shimmer 1.4s ease-in-out infinite;
+  }
+  .career-skeleton-note {
+    margin: 4px 0 0;
+    font-size: 11px;
+    color: var(--color-neutral-600);
+  }
+  @keyframes career-shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .career-skeleton-head,
+    .career-skeleton-title,
+    .career-skeleton-line { animation: none; }
+  }
 
   .career-drop-notice {
     margin: 0 0 var(--space-4);

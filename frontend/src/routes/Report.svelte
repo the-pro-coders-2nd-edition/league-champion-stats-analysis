@@ -43,6 +43,7 @@
   let statusBannerText = '';
   let refreshing = false;
   let jobActive = false;
+  let careerPendingSlot = null;
 
   function statusSlugFromEndpoint(endpoint) {
     if (!endpoint) return null;
@@ -59,6 +60,7 @@
     report = createReportState(payload, {
       fetchAccountViews: (accounts) => fetchAccountViews(params.slug, params.buildSlug, accounts),
     });
+    careerPendingSlot = null;
     if (prevQueue) report.selectQueue(prevQueue);
     if (prevWindow) report.selectWindow(prevWindow);
     if (prevAccount) await report.selectAccountKey(prevAccount);
@@ -150,11 +152,17 @@
     // The drop is performed by the regenerate job it enqueued, so the ladder only
     // changes once that run rewrites the report. pollStatus already reloads on a
     // new generated_at; this just drops it to the fast cadence so the new block
-    // appears on its own instead of waiting out the 30s idle poll.
+    // appears on its own instead of waiting out the 30s idle poll. Until then the
+    // dropped slot renders as a skeleton rather than a block that is already gone.
+    careerPendingSlot = result?.dropped_slot ?? null;
     jobActive = true;
     statusBannerVisible = true;
     statusBannerText = result?.job?.stage_detail || 'Rebuilding your Career ladder…';
     startStatusPoll(3000);
+  }
+
+  function showAllRankedQueue() {
+    if (report) report.selectQueue('all');
   }
 
   async function handleRefresh() {
@@ -506,7 +514,9 @@
       playerSlug={params.slug}
       buildSlug={params.buildSlug}
       busy={jobActive || refreshing}
+      pendingSlot={careerPendingSlot}
       onDropped={handleCareerDropped}
+      onShowAllRanked={showAllRankedQueue}
     />
   </div>
 
