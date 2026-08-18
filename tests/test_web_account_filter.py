@@ -73,7 +73,7 @@ def _seed_group_report(tmp_path: Path, *, alice_games: int = 6, bob_games: int =
         ),
         encoding="utf-8",
     )
-    (report_dir / "report.html").write_text("<html></html>", encoding="utf-8")
+    (report_dir / "report.json").write_text("{}", encoding="utf-8")
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)

@@ -1,8 +1,12 @@
-"""Builds a synthetic multi-report set for Netlify preview deploys.
+"""Builds a synthetic multi-report set (report.json + manifest.json).
 
 Reuses the same fixture helpers the test suite relies on (tests/fixtures.py)
-so previews render real report structure without hitting the Riot API or
+so this can generate real report structure without hitting the Riot API or
 needing any secrets in CI.
+
+Not wired into the Netlify preview build: the preview now proxies /api and
+/out to the real deployed app (see netlify.toml) instead of serving fixture
+data, so this script is a standalone tool for local testing/dev only.
 """
 
 from __future__ import annotations
@@ -24,8 +28,6 @@ from league_stats.ingest.parser import ItemCatalog, MatchParser
 from league_stats.pipeline.orchestrator import run_analysis
 from league_stats.presentation.report import build_manifest_entry, refresh_report_indexes
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
-
-TEMPLATE_DIR = REPO_ROOT / "src" / "league_stats" / "presentation" / "templates"
 
 @dataclass(frozen=True)
 class PreviewBuild:
@@ -314,17 +316,16 @@ def _config(output_dir: Path, *, champion: str, role: str) -> AppConfig:
         role=role,
         output_dir=output_dir,
         cache_dir=output_dir.parent / "preview-cache",
-        template_dir=TEMPLATE_DIR,
     )
     config.ensure_directories()
     return config
 
 
 def build_preview(output_dir: Path) -> Path:
-    """Render a full synthetic multi-report index into ``output_dir``.
+    """Write a full synthetic multi-report set (report.json + manifest.json) to ``output_dir``.
 
     Returns:
-        Path to the generated report hub (index) page.
+        Path to the generated player manifest (``manifest.json``).
     """
     ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75)
 
@@ -360,13 +361,7 @@ def build_preview(output_dir: Path) -> Path:
         player_label="Preview#EUW",
     )
     if hub is None:
-        raise RuntimeError("expected a report hub page after building preview reports")
-
-    hub_relative_url = hub.relative_to(output_dir).as_posix()
-    (output_dir / "index.html").write_text(
-        f'<meta http-equiv="refresh" content="0; url={hub_relative_url}">',
-        encoding="utf-8",
-    )
+        raise RuntimeError("expected a player manifest after building preview reports")
     return hub
 
 

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import shutil
+import json
+import os
 from dataclasses import dataclass, field
 from itertools import combinations
 from pathlib import Path
@@ -75,17 +76,14 @@ from league_stats.presentation.brand_assets import brand_context
 from league_stats.presentation.export import Exporter
 from league_stats.presentation.graphs import ChartIconResolver, GraphFactory
 from league_stats.presentation.report import (
-    ReportBuilder,
     build_manifest_entry,
     build_player_builds_nav,
     discover_player_builds,
     refresh_report_indexes,
+    utc_now_iso,
     write_report_meta,
 )
-from league_stats.presentation.report_static import (
-    ensure_report_static_assets,
-    report_stylesheet_hrefs,
-)
+from league_stats.presentation.report_json import context_to_json
 from league_stats.utils import get_logger
 
 
@@ -206,14 +204,14 @@ def should_skip_unchanged_build(
     """
     if new_match_ids is None:
         return False
-    report_html = (
+    report_json = (
         config.output_dir
         / "reports"
         / config.reports_group_slug
         / champion_slug(pool.champion, pool.role)
-        / "report.html"
+        / "report.json"
     )
-    if not report_html.is_file():
+    if not report_json.is_file():
         return False
     return new_match_ids.isdisjoint(record.match_id for record in records)
 
@@ -664,24 +662,13 @@ def run_analysis(
             from_dir=run_dir,
         )
 
-    # Shared + per-build stylesheet publish (keeps skipped sibling reports from
-    # serving stale CSS against newer button markup after template changes).
-    ensure_report_static_assets(
-        config.output_dir, config.template_dir, sync_existing=False
-    )
-    static_src = config.template_dir / "static"
-    if static_src.is_dir():
-        shutil.copytree(static_src, run_dir / "static", dirs_exist_ok=True)
-    context.update(
-        report_stylesheet_hrefs(
-            from_dir=run_dir,
-            output_dir=config.output_dir,
-            template_dir=config.template_dir,
-        )
-    )
+    context.setdefault("generated_at", utc_now_iso())
 
-    builder = ReportBuilder(config.template_dir)
-    report_path = builder.render(run_dir / "report.html", context)
+    report_json_path = run_dir / "report.json"
+    tmp_json_path = report_json_path.with_suffix(".json.tmp")
+    tmp_json_path.write_text(json.dumps(context_to_json(context)), encoding="utf-8")
+    os.replace(tmp_json_path, report_json_path)
+
     generated_at = context.get("generated_at", "")
     primary_icon = next(
         (
@@ -718,10 +705,10 @@ def run_analysis(
         assets=asset_catalog,
     )
     if player_hub is not None:
-        log.info("Done. Open %s (player hub: %s)", report_path, player_hub)
+        log.info("Done. Wrote %s (player hub manifest: %s)", report_json_path, player_hub)
     else:
-        log.info("Done. Open %s", report_path)
-    return report_path
+        log.info("Done. Wrote %s", report_json_path)
+    return report_json_path
 
 
 def ensure_platform(client: RiotApiClient, records: list[MatchRecord], config: AppConfig) -> None:
@@ -990,7 +977,7 @@ def run_all_builds(
         raise NoEligibleBuildsError("No reports could be analysed.")
     if last_report is None:
         # Every eligible build was already up to date; refresh hubs so nav stays valid.
-        last_report = player_dir / "index.html"
+        last_report = player_dir / "manifest.json"
 
     hub_path = refresh_report_indexes(
         services.config.output_dir,
@@ -999,7 +986,7 @@ def run_all_builds(
         player_label=player_label,
         assets=services.assets,
     )
-    hub_path = hub_path or player_dir / "index.html"
+    hub_path = hub_path or player_dir / "manifest.json"
     log.info(
         "Generated %d report(s) (≥%d games). Open %s",
         len(batch.manifest_builds),

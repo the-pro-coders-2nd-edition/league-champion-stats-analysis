@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 from league_stats.core.config import DEFAULT_QUEUE_FILTER, RANKED_FLEX_QUEUE_ID
@@ -65,7 +64,7 @@ def test_queue_filter_options_disable_empty_queues() -> None:
 
 
 def test_report_contains_queue_filter_toggle(tmp_path: Path) -> None:
-    """Generated HTML embeds the queue toggle and nested view snapshots."""
+    """report.json carries the queue toggle's default and nested view snapshots."""
     config = _config(tmp_path)
     records = _make_records(25)
     peer = _peer(records)
@@ -73,28 +72,14 @@ def test_report_contains_queue_filter_toggle(tmp_path: Path) -> None:
 
     run_analysis(config, records, peer_comparison=peer, ranked=ranked)
 
-    html = (config.report_dir / "report.html").read_text(encoding="utf-8")
-    assert 'id="queue-filter-bar"' in html
-    assert 'id="report-views-data"' in html
-    assert "Solo/Duo" in html
-    assert "Flex" in html
-    assert 'data-queue="all"' in html
+    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    assert payload["queue_filter_default"] == "solo"
 
-    match = re.search(
-        r'<script type="application/json" id="report-views-data">(.*?)</script>',
-        html,
-        re.S,
-    )
-    assert match is not None
-    views = json.loads(match.group(1))
+    views = payload["report_views"]
     assert set(views) == {"solo", "flex", "all"}
     assert set(views["solo"]["windows"]) == {"50", "100", "all"}
     assert views["solo"]["windows"]["all"]["total_games"] == 25
     assert views["flex"]["windows"]["all"]["total_games"] == 0
-    assert re.search(
-        r'class="queue-filter-btn game-window-btn is-active"[^>]*data-queue="solo"',
-        html.replace("\n", " "),
-    )
 
 
 def test_flex_records_appear_in_flex_view(tmp_path: Path) -> None:
@@ -105,21 +90,12 @@ def test_flex_records_appear_in_flex_view(tmp_path: Path) -> None:
 
     run_analysis(config, records, peer_comparison=peer, ranked=None)
 
-    html = (config.report_dir / "report.html").read_text(encoding="utf-8")
-    match = re.search(
-        r'<script type="application/json" id="report-views-data">(.*?)</script>',
-        html,
-        re.S,
-    )
-    assert match is not None
-    views = json.loads(match.group(1))
+    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    assert payload["queue_filter_default"] == "flex"
+    views = payload["report_views"]
     assert views["flex"]["windows"]["all"]["total_games"] == 12
     assert views["solo"]["windows"]["all"]["total_games"] == 0
     assert views["flex"]["windows"]["all"].get("peer") is None
-    assert re.search(
-        r'class="queue-filter-btn game-window-btn is-active"[^>]*data-queue="flex"',
-        html.replace("\n", " "),
-    )
 
 
 def test_mixed_queues_have_different_window_options(tmp_path: Path) -> None:
@@ -130,14 +106,8 @@ def test_mixed_queues_have_different_window_options(tmp_path: Path) -> None:
 
     run_analysis(config, records, peer_comparison=peer, ranked=None)
 
-    html = (config.report_dir / "report.html").read_text(encoding="utf-8")
-    match = re.search(
-        r'<script type="application/json" id="report-views-data">(.*?)</script>',
-        html,
-        re.S,
-    )
-    assert match is not None
-    views = json.loads(match.group(1))
+    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    views = payload["report_views"]
     solo_options = {opt["key"]: opt["enabled"] for opt in views["solo"]["window_options"]}
     flex_options = {opt["key"]: opt["enabled"] for opt in views["flex"]["window_options"]}
     assert solo_options["50"] is True

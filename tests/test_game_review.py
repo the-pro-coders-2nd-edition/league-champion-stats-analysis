@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import re
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -649,46 +649,23 @@ def test_pipeline_enriches_game_review_icons(tmp_path: Path) -> None:
 
 
 def test_report_has_game_review_category_tab(tmp_path: Path) -> None:
+    """The report.json payload carries all the data the game-review tab needs.
+
+    The Svelte SPA now owns the tab/category DOM layout and ordering (Summary ->
+    Performance -> Game Review -> Champion -> Deep Dive, with Advanced merged into
+    Deep Dive) as hardcoded component structure with no JSON equivalent to assert
+    against; this test now covers the underlying data that layout renders.
+    """
     config = _config(tmp_path)
     records = _make_records(5)
     run_analysis(config, records, peer_comparison=None, ranked=None)
 
-    html = (config.report_dir / "report.html").read_text(encoding="utf-8")
-    assert 'id="category-games"' in html
-    assert 'data-category="games"' in html
-    assert 'id="game-review-data"' in html
-    assert 'id="game-review-matchup"' in html
-    assert 'data-tab="story"' in html
-    assert 'data-tab="key-moments"' in html
-    assert 'id="game-review-panel-key-moments"' in html
-    assert 'Mistakes' not in html
-    assert 'game-review-layout' in html
-    assert 'game-review-skill-grid' in html
-    assert 'Skill progression' in html
-    assert re.search(r'id="game-review-subtitle">Last \d+ games? — follows queue filter\.', html)
-    assert 'GAME_REVIEW_VISIBLE_N' in html
-    assert 'report-tab--games' in html
-    assert 'report-tab--summary' in html
-    assert 'report-tab--performance' in html
-    assert 'report-tab--deepdive' in html
-    # Advanced merged into Deep Dive: no dedicated tab or panel remains.
-    assert 'report-tab--advanced' not in html
-    assert 'id="category-summary"' in html
-    assert 'id="category-performance"' in html
-    assert 'id="category-deepdive"' in html
-    assert 'id="category-advanced"' not in html
-    assert 'id="graphs"' in html
-    assert 'id="form-tracker"' in html
-    assert 'id="fig-winrate_trend"' not in html
-    assert 'graphs-details' not in html
-    assert 'id="category-laning"' not in html
-    assert 'id="category-impact"' not in html
-    assert 'id="category-analysis"' not in html
-    # Tab order: Summary → Performance → Game Review → Champion → Deep Dive
-    assert html.index('id="tab-summary"') < html.index('id="tab-performance"')
-    assert html.index('id="tab-performance"') < html.index('id="tab-games"')
-    assert html.index('id="tab-games"') < html.index('id="tab-champion"')
-    assert html.index('id="tab-champion"') < html.index('id="tab-deepdive"')
-    assert html.index('id="category-performance"') < html.index('id="form-tracker"')
-    assert html.index('id="form-tracker"') < html.index('id="category-games"')
-    assert html.index('id="category-champion"') < html.index('id="category-deepdive"')
+    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    game_review = payload["game_review"]
+    assert "all" in game_review
+    games = game_review["all"]["games"]
+    assert len(games) == 5
+    assert games[0]["build"]["skill_levels_by_level"]
+    assert isinstance(games[0]["key_moments"], list)
+    assert "form_snapshot" in payload
+    assert "figures" in payload

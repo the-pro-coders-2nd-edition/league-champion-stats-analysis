@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -148,18 +149,16 @@ def test_run_all_builds_generates_player_hub(tmp_path: Path, monkeypatch: pytest
         http_cache.close()
 
     assert hub_path.exists()
-    hub_html = hub_path.read_text(encoding="utf-8")
-    assert "Redirecting" in hub_html
-    assert (config.player_reports_dir / "manifest.json").exists()
+    assert hub_path == config.player_reports_dir / "manifest.json"
     builds = discover_player_builds(config.player_reports_dir)
     champions = {build["champion"] for build in builds}
     assert "Viktor" in champions
     assert "Ahri" in champions
-    assert (config.player_reports_dir / "viktor_middle" / "report.html").exists()
-    assert (config.player_reports_dir / "ahri_middle" / "report.html").exists()
+    assert (config.player_reports_dir / "viktor_middle" / "report.json").exists()
+    assert (config.player_reports_dir / "ahri_middle" / "report.json").exists()
 
-    report_html = (config.player_reports_dir / "viktor_middle" / "report.html").read_text(
-        encoding="utf-8"
+    report_json = json.loads(
+        (config.player_reports_dir / "viktor_middle" / "report.json").read_text(encoding="utf-8")
     )
-    assert 'class="build-card' in report_html
-    assert "../ahri_middle/report.html" in report_html
+    assert report_json["player_builds"]
+    assert any(build["champion"] == "Ahri" for build in report_json["player_builds"])

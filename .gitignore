@@ -15,6 +15,7 @@ config.toml
 .env
 dist/
 build/
+spa_dist/
 *.egg-info/
 data/*
 !data/benchmarks/

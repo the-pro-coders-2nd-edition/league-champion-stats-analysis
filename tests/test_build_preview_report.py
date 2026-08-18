@@ -25,7 +25,7 @@ def test_build_preview_writes_index_and_player_reports(tmp_path: Path) -> None:
     assert hub_path.exists()
     assert hub_path.read_text(encoding="utf-8")
 
-    report_files = list((tmp_path / "output" / "reports").rglob("report.html"))
+    report_files = list((tmp_path / "output" / "reports").rglob("report.json"))
     assert len(report_files) == len(module.PREVIEW_BUILDS)
 
 
@@ -42,6 +42,8 @@ def test_build_preview_reports_cover_configured_champions(tmp_path: Path) -> Non
 
 
 def test_preview_reports_can_switch_between_every_build(tmp_path: Path) -> None:
+    import json
+
     module = _load_build_preview_report()
     output = tmp_path / "output"
 
@@ -50,11 +52,15 @@ def test_preview_reports_can_switch_between_every_build(tmp_path: Path) -> None:
     player_dir = output / "reports" / "preview_euw"
     slugs = ["viktor_middle", "jinx_bottom", "thresh_utility"]
     for slug in slugs:
-        html = (player_dir / slug / "report.html").read_text(encoding="utf-8")
-        assert "nav-builds" in html, f"{slug} has no champion switcher"
+        payload = json.loads((player_dir / slug / "report.json").read_text(encoding="utf-8"))
+        builds = payload["player_builds"]
+        assert builds, f"{slug} has no champion switcher"
+        hrefs = {build["href"] for build in builds}
         for target in slugs:
-            assert f'href="../{target}/report.html"' in html, f"{slug} cannot reach {target}"
-        assert f'build-card is-default" href="../{slug}/report.html"' in html
+            assert f"../{target}/report.json" in hrefs, f"{slug} cannot reach {target}"
+        selected = [build for build in builds if build["selected"]]
+        assert len(selected) == 1
+        assert selected[0]["href"] == f"../{slug}/report.json"
 
 
 def test_preview_hub_defaults_to_the_most_played_build(tmp_path: Path) -> None:

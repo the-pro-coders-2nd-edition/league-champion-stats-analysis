@@ -1,7 +1,8 @@
-"""Career mode rendering inside the generated report."""
+"""Career mode surfaced through the pipeline's report.json payload."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -56,83 +57,67 @@ def _peer_with_percentiles(records: list[MatchRecord]) -> PeerComparisonResult:
     )
 
 
-def _render(tmp_path: Path) -> str:
+def _career_payload(tmp_path: Path) -> dict:
     records = _records()
-    path = run_analysis(
-        _config(tmp_path),
+    config = _config(tmp_path)
+    run_analysis(
+        config,
         records,
         peer_comparison=_peer_with_percentiles(records),
         ranked=RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75),
     )
-    return Path(path).read_text(encoding="utf-8")
+    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    return payload["career"]
 
 
-def test_report_has_a_career_tab_and_panel(tmp_path: Path) -> None:
-    html = _render(tmp_path)
-    assert 'id="tab-career"' in html
-    assert 'data-category="career"' in html
-    assert 'id="category-career"' in html
-    assert ">Career</button>" in html
+def test_report_json_has_a_career_block(tmp_path: Path) -> None:
+    career = _career_payload(tmp_path)
+    assert career["has_career"] is True
+    assert len(career["blocks"]) == BLOCK_SLOTS
 
 
-def test_career_is_the_second_tab_and_panel(tmp_path: Path) -> None:
-    html = _render(tmp_path)
-    assert html.index('id="tab-career"') < html.index('id="tab-performance"')
-    assert html.index('id="category-career"') < html.index('id="category-performance"')
-    assert html.index('id="tab-summary"') < html.index('id="tab-career"')
+def test_career_rules_and_legend_are_present(tmp_path: Path) -> None:
+    career = _career_payload(tmp_path)
+    assert any("p50 toward peer p75" in rule["value"] for rule in career["rules"])
+    legend_states = [entry["name"] for entry in career["legend"]]
+    assert legend_states == ["Locked", "In progress", "At risk", "Cleared", "Revoked"]
 
 
-def test_report_renders_the_career_rules_and_legend(tmp_path: Path) -> None:
-    html = _render(tmp_path)
-    assert "Career mode" in html
-    assert "Two blocks of three goals; only the left block is live." in html
-    assert "The five states a goal can be in" in html
-    for state in ("Locked", "In progress", "At risk", "Cleared", "Revoked"):
-        assert f'career-legend-name--{state.lower().replace(" ", "-")}' in html
-    assert "your p50 toward peer p75" in html
+def test_first_block_is_active_with_goal_nodes(tmp_path: Path) -> None:
+    career = _career_payload(tmp_path)
+    live_block = career["blocks"][0]
+    assert live_block["is_active"] is True
+    assert live_block["is_locked"] is False
+    assert live_block["position"] == "Block 1"
+    assert live_block["state_label"].startswith("Live · ")
+    assert len(live_block["goals"]) > 0
 
 
-def test_report_renders_a_live_block_with_goal_nodes(tmp_path: Path) -> None:
-    html = _render(tmp_path)
-    assert "career-blocks" in html
-    assert "Block 1" in html
-    assert "career-ring career-ring--in-progress" in html
-    assert "in 15 of 20 games" in html
-    assert "Live · " in html
+def test_remaining_blocks_are_locked_with_steps(tmp_path: Path) -> None:
+    career = _career_payload(tmp_path)
+    for block in career["blocks"][1:]:
+        assert block["is_active"] is False
+        assert block["is_locked"] is True
+        assert block["state_label"] == "Locked"
+        assert block["unlock"].endswith("is complete.")
+        assert len(block["steps"]) > 0
 
 
-def test_report_renders_locked_blocks_as_steps(tmp_path: Path) -> None:
-    html = _render(tmp_path)
-    assert "career-step-text" in html
-    assert " is complete." in html
+def test_widget_mirrors_the_live_block_goals(tmp_path: Path) -> None:
+    career = _career_payload(tmp_path)
+    live_block = career["blocks"][0]
+    assert len(career["widget"]) == len(live_block["goals"])
+    for item in career["widget"]:
+        assert item["note"].startswith(f"{live_block['name']} · ")
 
 
-def test_report_renders_exactly_the_configured_block_count(tmp_path: Path) -> None:
-    import re
-
-    html = _render(tmp_path)
-    panel = html[html.index('id="category-career"') : html.index('id="category-performance"')]
-    assert len(re.findall(r'class="career-block"', panel)) == BLOCK_SLOTS
-
-
-def test_summary_tab_shows_the_live_block_widget(tmp_path: Path) -> None:
-    html = _render(tmp_path)
-    assert 'id="career-widget"' in html
-    assert "career-node--compact" in html
-    assert ">Live block</span>" in html
-    assert 'id="career-widget-link"' in html
-
-
-def test_career_styles_and_tokens_are_published(tmp_path: Path) -> None:
-    _render(tmp_path)
-    css = (
-        Path(__file__).resolve().parent.parent
-        / "src/league_stats/presentation/templates/static/report.css"
+def test_career_styles_and_tokens_are_published() -> None:
+    report_css = (
+        Path(__file__).resolve().parent.parent / "frontend/src/styles/report.css"
     ).read_text(encoding="utf-8")
-    components = (
-        Path(__file__).resolve().parent.parent
-        / "src/league_stats/presentation/templates/static/components.css"
+    components_css = (
+        Path(__file__).resolve().parent.parent / "frontend/src/styles/components.css"
     ).read_text(encoding="utf-8")
-    assert "--cat-career:" in css
-    assert ".career-blocks" in css
-    assert "career-ring--at-risk" in components
+    assert "--cat-career:" in report_css
+    assert ".career-blocks" in report_css
+    assert "career-ring--at-risk" in components_css

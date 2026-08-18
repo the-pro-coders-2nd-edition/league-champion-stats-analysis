@@ -20,6 +20,6 @@
     font-size: 13px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
     background: var(--color-surface); color: var(--color-neutral-400);
   }
-  :global(.form-wr-delta--up) { color: var(--tone-good-fg); background: rgba(63, 182, 139, 0.12); }
-  :global(.form-wr-delta--down) { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.12); }
+  :global(.form-wr-delta--up) { color: var(--tone-good-fg); background: var(--win-tint-12); }
+  :global(.form-wr-delta--down) { color: var(--tone-bad-fg); background: var(--loss-tint-12); }
 </style>

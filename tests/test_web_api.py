@@ -15,7 +15,7 @@ from league_stats.web import jobs
 
 
 def _write_report(output_dir: Path, slug: str, build_slug: str, **meta: Any) -> Path:
-    """Create a minimal on-disk report (meta.json + report.html + summary.json)."""
+    """Create a minimal on-disk report (meta.json + report.json + summary.json)."""
     report_dir = output_dir / "reports" / slug / build_slug
     report_dir.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -32,7 +32,7 @@ def _write_report(output_dir: Path, slug: str, build_slug: str, **meta: Any) -> 
         **meta,
     }
     (report_dir / "meta.json").write_text(json.dumps(payload), encoding="utf-8")
-    (report_dir / "report.html").write_text("<html>report</html>", encoding="utf-8")
+    (report_dir / "report.json").write_text(json.dumps(payload), encoding="utf-8")
     (report_dir / "summary.json").write_text(
         json.dumps({"player": "Test#EUW", "build_label": "Viktor mid", "games": 42}),
         encoding="utf-8",
@@ -69,13 +69,11 @@ def test_riot_txt_verification(client: TestClient) -> None:
 
 def test_landing_page_lists_reports(client: TestClient) -> None:
     _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
-    response = client.get("/")
-    assert response.status_code == 200
-    assert "Test#EUW" in response.text
-    assert 'name="min_games"' in response.text
-    assert "20 games" in response.text
-    assert 'value="20" selected' in response.text
-    assert "minimum ranked games" in response.text.lower()
+    groups = client.get("/api/groups").json()["groups"]
+    by_slug = {group["slug"]: group for group in groups}
+    assert by_slug["test_euw"]["player"] == "Test#EUW"
+    assert by_slug["test_euw"]["has_report"] is True
+    assert by_slug["test_euw"]["build_count"] == 1
 
 
 def test_landing_page_shows_profile_icons(client: TestClient) -> None:
@@ -95,23 +93,38 @@ def test_landing_page_shows_profile_icons(client: TestClient) -> None:
             {"riot_id": "Bob", "tagline": "EUW", "profile_icon_id": 789},
         ],
     )
-    response = client.get("/")
-    assert response.status_code == 200
-    assert "Alice#EUW" in response.text
-    assert "Bob#EUW" in response.text
-    assert "player-card-member" in response.text
-    assert 'src="/out/assets/profile_icons/456.png"' in response.text
-    assert 'src="/out/assets/profile_icons/789.png"' in response.text
-    assert "Alice#EUW, Bob#EUW" not in response.text
+    groups = client.get("/api/groups").json()["groups"]
+    group = next(group for group in groups if group["slug"] == "alice_euw__bob_euw")
+    labels = {member["label"] for member in group["players"]}
+    assert labels == {"Alice#EUW", "Bob#EUW"}
+    icons = {member["profile_icon"] for member in group["players"]}
+    assert icons == {"/out/assets/profile_icons/456.png", "/out/assets/profile_icons/789.png"}
+    assert group["is_group"] is True
+
+
+def test_groups_endpoint_matches_landing_page_data(client: TestClient) -> None:
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    client.post("/api/analyses", json={"riot_id": "New#EUW", "region": "euw1"})
+
+    groups = client.get("/api/groups").json()["groups"]
+    slugs = {group["slug"] for group in groups}
+    assert slugs == {"test_euw", "new_euw"}
+    by_slug = {group["slug"]: group for group in groups}
+    assert by_slug["test_euw"]["has_report"] is True
+    assert by_slug["test_euw"]["busy"] is False
+    assert by_slug["new_euw"]["has_report"] is False
+    assert by_slug["new_euw"]["busy"] is True
+    assert by_slug["new_euw"]["job_state"] == jobs.QUEUED
 
 
 def test_landing_shows_busy_dot_for_active_jobs(client: TestClient) -> None:
     _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
     client.post("/api/analyses", json={"riot_id": "Test#EUW", "region": "euw1"})
-    response = client.get("/")
-    assert response.status_code == 200
-    assert 'data-slug="test_euw"' in response.text
-    assert "is-busy" in response.text
+
+    groups = client.get("/api/groups").json()["groups"]
+    group = next(group for group in groups if group["slug"] == "test_euw")
+    assert group["busy"] is True
+    assert group["job_state"] == jobs.QUEUED
 
     activity = client.get("/api/activity").json()
     assert activity["items"][0]["slug"] == "test_euw"
@@ -124,11 +137,13 @@ def test_activity_includes_queued_players_without_reports(client: TestClient) ->
     activity = client.get("/api/activity").json()
     assert activity["items"][0]["slug"] == "new_euw"
     assert activity["items"][0]["has_report"] is False
+    assert activity["items"][0]["player_label"] == "New#EUW"
+    assert activity["items"][0]["state"] == jobs.QUEUED
 
-    landing = client.get("/")
-    assert "New#EUW" in landing.text
-    assert "is-busy" in landing.text
-    assert "Queued for analysis" in landing.text
+    groups = client.get("/api/groups").json()["groups"]
+    group = next(group for group in groups if group["slug"] == "new_euw")
+    assert group["busy"] is True
+    assert group["has_report"] is False
 
 
 def test_submit_analysis_creates_job_and_dedups(client: TestClient) -> None:
@@ -301,7 +316,7 @@ def test_cancel_keeps_existing_base_report(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["job"]["state"] == jobs.CANCELLED
 
-    report = client.web_config.output_dir / "reports/test_euw/viktor_middle/report.html"
+    report = client.web_config.output_dir / "reports/test_euw/viktor_middle/report.json"
     assert report.is_file()
     status = client.get("/api/players/test_euw").json()
     assert status["has_report"] is True
@@ -315,11 +330,30 @@ def test_player_status_serves_existing_reports(client: TestClient) -> None:
     body = response.json()
     assert body["has_report"] is True
     assert body["builds"][0]["slug"] == "viktor_middle"
-    assert body["builds"][0]["href"] == "/out/reports/test_euw/viktor_middle/report.html"
+    assert body["builds"][0]["href"] == "/out/reports/test_euw/viktor_middle/report.json"
     assert body["builds"][0]["peers_ready"] is False
     assert body["active_job"] is None
 
     assert client.get("/api/players/unknown_player").status_code == 404
+
+
+def test_get_build_payload_returns_report_json(client: TestClient) -> None:
+    report_dir = _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    (report_dir / "report.json").write_text('{"champion": "Viktor"}', encoding="utf-8")
+
+    response = client.get("/api/players/test_euw/builds/viktor_middle")
+
+    assert response.status_code == 200
+    assert response.json() == {"champion": "Viktor"}
+
+
+def test_get_build_payload_404_when_missing(client: TestClient) -> None:
+    assert client.get("/api/players/test_euw/builds/nonexistent").status_code == 404
+
+
+def test_get_build_payload_rejects_path_traversal(client: TestClient) -> None:
+    response = client.get("/api/players/test_euw/builds/%2e%2e")
+    assert response.status_code == 400
 
 
 def test_player_builds_expose_per_build_peers_ready(client: TestClient) -> None:
@@ -366,9 +400,9 @@ def test_player_builds_expose_per_build_peers_ready(client: TestClient) -> None:
 
 def test_report_served_statically(client: TestClient) -> None:
     _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
-    response = client.get("/out/reports/test_euw/viktor_middle/report.html")
+    response = client.get("/out/reports/test_euw/viktor_middle/report.json")
     assert response.status_code == 200
-    assert "report" in response.text
+    assert response.json()["champion"] == "Viktor"
 
 
 def test_refresh_recovers_identity_from_disk(client: TestClient) -> None:
@@ -442,15 +476,18 @@ def test_regenerate_queues_from_disk(client: TestClient) -> None:
 
 
 def test_player_page_renders(client: TestClient) -> None:
+    """The SPA's player page hydrates from /api/players/{slug}; the refresh/regenerate/
+    cancel actions it renders are driven by the /api/players/{slug}/refresh,
+    /api/players/{slug}/regenerate and /api/jobs/{id}/cancel endpoints exercised
+    elsewhere in this file.
+    """
     _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
-    response = client.get("/players/test_euw")
+    response = client.get("/api/players/test_euw")
     assert response.status_code == 200
-    assert "test_euw" in response.text
-    assert "Refresh with latest games" in response.text
-    assert "Regenerate with same games" in response.text
-    assert "Cancel run" in response.text
-    assert "/api/jobs/" in response.text
-    assert "/cancel" in response.text
+    body = response.json()
+    assert body["slug"] == "test_euw"
+    assert body["has_report"] is True
+    assert body["builds"][0]["slug"] == "viktor_middle"
 
 
 def test_chat_proxy(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -567,18 +604,10 @@ def test_regenerate_recovers_group_from_player_label(client: TestClient) -> None
         "Bob#EUW",
     ]
 
-    page = client.get("/players/alice_euw__bob_euw")
+    page = client.get("/api/players/alice_euw__bob_euw")
     assert page.status_code == 200
-    assert "player-member" in page.text
-    assert "Alice#EUW" in page.text
-    assert "Bob#EUW" in page.text
-
-
-def test_landing_page_mentions_group_reports(client: TestClient) -> None:
-    response = client.get("/")
-    assert response.status_code == 200
-    assert "Add another account" in response.text
-    assert "players" in response.text
+    member_labels = [player["label"] for player in page.json()["players"]]
+    assert member_labels == ["Alice#EUW", "Bob#EUW"]
 
 
 def test_chat_rejects_bad_requests(client: TestClient) -> None:

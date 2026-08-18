@@ -17,7 +17,7 @@ from league_stats.presentation.report import build_manifest_entry
 def _write_meta(player_dir: Path, slug: str, *, champion: str, role: str, games: int) -> None:
     report_dir = player_dir / slug
     report_dir.mkdir(parents=True, exist_ok=True)
-    (report_dir / "report.html").write_text("<html></html>", encoding="utf-8")
+    (report_dir / "report.json").write_text("{}", encoding="utf-8")
     (report_dir / "meta.json").write_text(
         json.dumps(
             {
