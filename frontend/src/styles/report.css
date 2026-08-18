@@ -1177,48 +1177,6 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .game-review-skill-progression {
   margin-top: 4px;
 }
-.game-review-skill-grid-wrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-.game-review-skill-grid {
-  border-collapse: collapse;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  min-width: 100%;
-}
-.game-review-skill-grid th,
-.game-review-skill-grid td {
-  border: 1px solid var(--color-divider);
-  text-align: center;
-  padding: 0;
-  width: 18px;
-  min-width: 18px;
-  height: 18px;
-}
-.game-review-skill-grid th {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--color-neutral-400);
-  background: rgba(255, 255, 255, 0.03);
-}
-.game-review-skill-grid .game-review-skill-ability {
-  width: 36px;
-  min-width: 36px;
-  padding: 4px;
-  background: rgba(255, 255, 255, 0.03);
-}
-.game-review-skill-grid .game-review-skill-ability .game-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-}
-.game-review-skill-grid td.game-review-skill-cell--gain {
-  background: rgba(65, 183, 140, 0.35);
-}
-.game-review-skill-grid td.game-review-skill-cell--empty {
-  background: transparent;
-}
 
 .game-review-loadout-utilities {
   display: flex;

@@ -1,6 +1,7 @@
 <script>
   import { tick } from 'svelte';
   import Pill from '../components/Pill.svelte';
+  import SkillGrid from '../components/SkillGrid.svelte';
   import TabBar from '../components/TabBar.svelte';
   import GameReviewKeyMoments from './GameReviewKeyMoments.svelte';
   import { escapeHtml, soloIconCellHtml } from '../lib/html.js';
@@ -175,32 +176,6 @@
     return `<span class="game-review-summoners">` +
       spells.map((name, index) => iconCellHtml(name, icons[index] || null)).join('<span class="game-review-summoner-sep" aria-hidden="true">+</span>') +
       '</span>';
-  }
-
-  function renderGameReviewSkillProgressionHtml(build) {
-    build = build || {};
-    const levels = build.skill_levels_by_level || [];
-    const icons = build.ability_icons || {};
-    const slots = ['Q', 'W', 'E', 'R'];
-    const maxLevel = build.skill_max_level || (build.skill_sequence || []).length;
-    if (!maxLevel || !levels.length) {
-      return '<p class="sub game-review-verdict-empty">No skill data for this game.</p>';
-    }
-    const visibleLevels = levels.slice(0, maxLevel);
-    const header = '<tr><th class="game-review-skill-ability" scope="col" aria-label="Ability"></th>' +
-      Array.from({ length: maxLevel }, (_, index) => `<th scope="col">${index + 1}</th>`).join('') + '</tr>';
-    const body = slots.map((slot) => {
-      const rowCells = visibleLevels.map((row, levelIndex) => {
-        const value = (row && row[slot]) || 0;
-        const prev = levelIndex > 0 ? ((visibleLevels[levelIndex - 1] && visibleLevels[levelIndex - 1][slot]) || 0) : 0;
-        const gained = value > prev;
-        const classes = 'game-review-skill-cell' + (gained ? ' game-review-skill-cell--gain' : '') + (!value ? ' game-review-skill-cell--empty' : '');
-        return `<td class="${classes}"${gained ? ` aria-label="Level ${levelIndex + 1} ${slot}"` : ''}></td>`;
-      }).join('');
-      return `<tr><th class="game-review-skill-ability" scope="row">${iconCellHtml(slot, icons[slot] || null)}</th>${rowCells}</tr>`;
-    }).join('');
-    return '<div class="game-review-skill-progression"><div class="game-review-skill-grid-wrap">' +
-      `<table class="game-review-skill-grid" aria-label="Skill points by level"><thead>${header}</thead><tbody>${body}</tbody></table></div></div>`;
   }
 
   function primaryBehaviorSignal(game) {
@@ -787,7 +762,7 @@
                   <div class="game-review-loadout-section"><div class="label">Summoners</div><div class="value">{@html renderGameReviewSummonersHtml(build)}</div></div>
                   <div class="game-review-loadout-section"><div class="label">Item path</div><div class="value core-cell">{@html itemsHtml || '—'}</div></div>
                 </div>
-                <div class="card card--full"><div class="label">Skill progression</div><div class="value">{@html renderGameReviewSkillProgressionHtml(build)}</div></div>
+                <div class="card card--full"><div class="label">Skill progression</div><div class="value"><SkillGrid build={build} /></div></div>
               </div>
             </div>
           </div>
