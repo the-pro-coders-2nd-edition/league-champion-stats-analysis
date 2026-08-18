@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from league_stats.analysis.career.tracks import (
+    MAX_BLOCK_STRETCH,
     TRACK_SPECS,
     TRACKS_BY_KEY,
     TrackContext,
@@ -38,14 +39,28 @@ def _ctx(matches: pd.DataFrame, **kwargs: object) -> TrackContext:
 
 
 def test_laning_income_steps_proportionally_from_p50_to_peer_p75() -> None:
-    ctx = _ctx(_matches(cspm=[6.0, 6.0, 6.0]), peer_p75={"cspm": 7.5})
+    # Peer p75 is +16.7% over the player's median, inside the per-block cap, so
+    # the top rung lands exactly on it.
+    ctx = _ctx(_matches(cspm=[6.0, 6.0, 6.0]), peer_p75={"cspm": 7.0})
     rungs = build_rungs(TRACKS_BY_KEY["laning_income"], ctx)
 
     assert rungs is not None
-    assert [r.target for r in rungs] == [6.5, 7.0, 7.5]
+    assert [r.target for r in rungs] == [6.3, 6.7, 7.0]
     assert [r.need for r in rungs] == [15, 15, 15]
     assert rungs[0].comparator == "at_least"
-    assert rungs[2].text == "7.5 CS per minute in 15 of 20 games"
+    assert rungs[2].text == "7.0 CS per minute in 15 of 20 games"
+
+
+def test_one_block_never_asks_for_more_than_the_stretch_cap() -> None:
+    # Peer p75 is +74% over this player's median. Demanding that inside a single
+    # 20-game window is not achievable, so the block caps at +20% and the track
+    # walks the player up over successive blocks instead.
+    ctx = _ctx(_matches(vspm=[0.72, 0.72, 0.72]), role="UTILITY", peer_p75={"vspm": 1.25})
+    rungs = build_rungs(TRACKS_BY_KEY["vision_uptime"], ctx)
+
+    assert rungs is not None
+    assert [r.target for r in rungs] == [0.77, 0.82, 0.86]
+    assert rungs[2].target <= 0.72 * (1 + MAX_BLOCK_STRETCH)
 
 
 def test_laning_income_falls_back_to_the_players_own_p75() -> None:
@@ -82,13 +97,13 @@ def test_laning_income_ineligible_when_the_player_has_zero_variance() -> None:
 
 def test_vision_uptime_builds_for_any_role_but_only_flags_for_support() -> None:
     matches = _matches(vspm=[0.60, 0.60, 0.60])
-    mid = _ctx(matches, peer_p75={"vspm": 0.9})
-    support = _ctx(matches, role="UTILITY", peer_p75={"vspm": 0.9})
+    mid = _ctx(matches, peer_p75={"vspm": 0.66})
+    support = _ctx(matches, role="UTILITY", peer_p75={"vspm": 0.66})
 
     for ctx in (mid, support):
         rungs = build_rungs(TRACKS_BY_KEY["vision_uptime"], ctx)
         assert rungs is not None
-        assert [r.target for r in rungs] == [0.7, 0.8, 0.9]
+        assert [r.target for r in rungs] == [0.62, 0.64, 0.66]
 
     # Only the support coach rule exists, so only support treats it as a finding.
     assert is_significant(TRACKS_BY_KEY["vision_uptime"], support)
@@ -96,7 +111,7 @@ def test_vision_uptime_builds_for_any_role_but_only_flags_for_support() -> None:
 
 
 def test_fight_impact_renders_whole_percentages() -> None:
-    ctx = _ctx(_matches(damage_share=[0.20, 0.20]), peer_p75={"damage_share": 0.29})
+    ctx = _ctx(_matches(damage_share=[0.25, 0.25]), peer_p75={"damage_share": 0.29})
     rungs = build_rungs(TRACKS_BY_KEY["fight_impact"], ctx)
 
     assert rungs is not None

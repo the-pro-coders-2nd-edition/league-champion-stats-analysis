@@ -10,6 +10,13 @@ by the coach's significance signals, but a track that is not currently flagged i
 still offered as a stretch goal rather than leaving a slot empty. The queue is
 kept deliberately short so a newly generated block reflects what the player is
 actually weakest at right now.
+
+All three goals in the live block are measured at once, not unlocked one after
+another: three sequential 20-game windows would take 60 games to clear a block.
+Each block also records the timestamp it was generated at, so it only ever
+counts games played *after* it appeared -- otherwise a block would inherit
+credit from games that were already in the bag and could complete the moment it
+was created.
 """
 
 from __future__ import annotations
@@ -21,7 +28,7 @@ from league_stats.analysis.career.models import (
     StoredGoal,
     WINDOW,
 )
-from league_stats.analysis.career.state import apply_lock_overlay, block_is_complete, transition
+from league_stats.analysis.career.state import block_is_complete, transition
 from league_stats.analysis.career.tracks import (
     TRACKS_BY_KEY,
     TrackContext,
@@ -30,7 +37,7 @@ from league_stats.analysis.career.tracks import (
     rank_track_keys,
     track_spec,
 )
-from league_stats.analysis.career.window import count_hits, recent_window
+from league_stats.analysis.career.window import count_hits, newest_game_ms, recent_window
 from league_stats.infra.career_store import CareerStore
 from league_stats.utils import get_logger
 
@@ -65,23 +72,22 @@ def advance_career(
 ) -> CareerSnapshot:
     """Seed or advance a ladder and return its post-run state."""
     log = get_logger("career")
-    window_df = recent_window(ctx.matches_df)
 
     _fill_empty_slots(store, key, ctx, components)
     if not store.load_goals(key):
         log.info("No eligible Career tracks for %s yet", key)
         return CareerSnapshot()
 
-    _measure_live_block(store, key, window_df)
+    _measure_live_block(store, key, ctx)
 
     live = _slot_goals(store, key, 0)
     if live and block_is_complete([goal.state for goal in live]):
         retired = live[0].track_key
         _retire_live_block(store, key, ctx, components, retired)
         log.info("Career block %s retired for %s", retired, key)
-        _measure_live_block(store, key, window_df)
+        _measure_live_block(store, key, ctx)
 
-    return _snapshot(store, key, window_df)
+    return _snapshot(store, key, ctx)
 
 
 def _fill_empty_slots(
@@ -102,6 +108,7 @@ def _fill_empty_slots(
     if not empty:
         return
     used = store.used_track_keys(key)
+    since_ms = newest_game_ms(ctx.matches_df)
     for track_key in _candidate_order(components, ctx, taken, used):
         if not empty:
             break
@@ -110,7 +117,14 @@ def _fill_empty_slots(
         rungs = _rungs_for(track_key, ctx)
         if rungs is None:
             continue
-        store.write_slot(key, empty.pop(0), track_key, rungs, ["In progress"] * len(rungs))
+        store.write_slot(
+            key,
+            empty.pop(0),
+            track_key,
+            rungs,
+            ["In progress"] * len(rungs),
+            since_ms=since_ms,
+        )
         taken.add(track_key)
 
 
@@ -150,14 +164,20 @@ def _slot_goals(store: CareerStore, key: str, slot: int) -> list[StoredGoal]:
     return [goal for goal in store.load_goals(key) if goal.slot == slot]
 
 
-def _measure_live_block(store: CareerStore, key: str, window_df: Any) -> None:
-    """Recompute and persist states for slot 0; later slots are not measured."""
+def _goal_hits(goal: StoredGoal, ctx: TrackContext) -> int:
+    """Games meeting this goal, counted only from when its block was generated."""
+    window_df = recent_window(ctx.matches_df, since_ms=goal.since_ms)
+    return count_hits(window_df, goal.rung)
+
+
+def _measure_live_block(store: CareerStore, key: str, ctx: TrackContext) -> None:
+    """Recompute and persist every slot-0 state; later slots are not measured."""
     live = _slot_goals(store, key, 0)
     if not live:
         return
     states = {
         (goal.slot, goal.goal_index): transition(
-            goal.state, count_hits(window_df, goal.rung), goal.rung.need
+            goal.state, _goal_hits(goal, ctx), goal.rung.need
         )
         for goal in live
     }
@@ -171,17 +191,26 @@ def _retire_live_block(
     components: Sequence[Any],
     retired: str,
 ) -> None:
-    """Drop the finished block, shift the rest left, generate a new last slot."""
+    """Drop the finished block, shift the rest left, generate a new last slot.
+
+    Promotion re-stamps the start line so a block that has been sitting queued
+    starts counting from now, not from whenever it was first generated.
+    """
     store.record_used_track(key, retired)
     store.set_pending_congrats(key, retired)
     store.delete_slot(key, 0)
+    promoted_since = newest_game_ms(ctx.matches_df)
     for slot in range(1, BLOCK_SLOTS):
-        store.move_slot(key, slot, slot - 1)
+        store.move_slot(key, slot, slot - 1, since_ms=promoted_since)
     _fill_empty_slots(store, key, ctx, components)
 
 
-def _snapshot(store: CareerStore, key: str, window_df: Any) -> CareerSnapshot:
-    """Assemble the display view: live block measured and overlaid, rest inert."""
+def _snapshot(store: CareerStore, key: str, ctx: TrackContext) -> CareerSnapshot:
+    """Assemble the display view: live block measured, queued blocks inert.
+
+    Every goal in the live block reports its own count -- there is no
+    within-block lock cascade, so all three progress in parallel.
+    """
     goals = store.load_goals(key)
     blocks: list[CareerBlockState] = []
     for slot in range(BLOCK_SLOTS):
@@ -189,8 +218,8 @@ def _snapshot(store: CareerStore, key: str, window_df: Any) -> CareerSnapshot:
         if not slot_goals:
             continue
         if slot == 0:
-            hits = [count_hits(window_df, goal.rung) for goal in slot_goals]
-            display = apply_lock_overlay([goal.state for goal in slot_goals])
+            hits = [_goal_hits(goal, ctx) for goal in slot_goals]
+            display = [goal.state for goal in slot_goals]
         else:
             hits = [0] * len(slot_goals)
             display = ["Locked"] * len(slot_goals)

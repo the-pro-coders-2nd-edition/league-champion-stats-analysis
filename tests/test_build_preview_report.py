@@ -38,4 +38,4 @@ def test_build_preview_reports_cover_configured_champions(tmp_path: Path) -> Non
 
     entries = discover_reports(tmp_path / "output")
     champions = {entry["champion"] for entry in entries}
-    assert champions == {build["champion"] for build in module.PREVIEW_BUILDS}
+    assert champions == {build.champion for build in module.PREVIEW_BUILDS}

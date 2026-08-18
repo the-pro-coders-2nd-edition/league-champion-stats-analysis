@@ -46,10 +46,16 @@ class Rung:
 
 @dataclass(frozen=True)
 class StoredGoal:
-    """A persisted goal: where it sits, what it asks for, and its state."""
+    """A persisted goal: where it sits, what it asks for, and its state.
+
+    ``since_ms`` is the game-creation timestamp the block was generated at.
+    Only games newer than that count toward it, so a block never inherits
+    credit from games played before it existed.
+    """
 
     slot: int
     goal_index: int
     track_key: str
     rung: Rung
     state: str
+    since_ms: int = 0

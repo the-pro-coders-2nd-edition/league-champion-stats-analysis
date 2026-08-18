@@ -38,11 +38,13 @@ COMPONENTS = [
 ]
 
 
-def _matches(cspm: float = 6.0) -> pd.DataFrame:
-    games = 20
+HOUR = 3_600_000
+
+
+def _batch(games: int = 20, *, start: int = 0, cspm: float = 6.0) -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "game_creation_ms": list(range(games)),
+            "game_creation_ms": [(start + i) * HOUR for i in range(games)],
             "cspm": [cspm] * games,
             "deaths_pre20": [3.0] * games,
             "deaths_before_neutral_objective": [0.0] * games,
@@ -57,9 +59,9 @@ def _matches(cspm: float = 6.0) -> pd.DataFrame:
     )
 
 
-def _ctx(cspm: float = 6.0) -> TrackContext:
+def _ctx(matches: pd.DataFrame | None = None) -> TrackContext:
     return TrackContext(
-        matches_df=_matches(cspm),
+        matches_df=_batch() if matches is None else matches,
         objectives_df=pd.DataFrame({"present": [1, 0, 0, 0, 1, 0]}),
         role="MIDDLE",
         peer_p75={"cspm": 7.5, "damage_share": 0.29},
@@ -143,21 +145,26 @@ def test_node_props_are_template_ready(view: dict) -> None:
     assert first["need"] == 15
     assert first["hold"] == 11
     assert first["last"] is False
-    assert second["state"] == "Locked"
-    assert second["count"] == "blocked"
+    # All three goals in the live block count in parallel; none is locked behind
+    # the one above it.
+    assert second["state"] == "In progress"
+    assert second["count"] == "0 of 20"
+    assert third["state"] == "In progress"
     assert third["last"] is True
 
 
 def test_widget_notes_name_the_live_track(view: dict) -> None:
     assert len(view["widget"]) == 3
     assert view["widget"][0]["note"] == "Laning income · 0 of 20"
-    assert view["widget"][1]["note"] == "Laning income · blocked"
+    assert view["widget"][1]["note"] == "Laning income · 0 of 20"
 
 
 def test_cleared_goals_get_a_check_mark(tmp_path: Path) -> None:
+    history = _batch(20, start=0, cspm=6.0)
+    improved = pd.concat([history, _batch(20, start=20, cspm=6.6)], ignore_index=True)
     with CareerStore(tmp_path / "career.sqlite") as store:
-        advance_career(store, KEY, _ctx(6.0), COMPONENTS)
-        snapshot = advance_career(store, KEY, _ctx(6.6), COMPONENTS)
+        advance_career(store, KEY, _ctx(history), COMPONENTS)
+        snapshot = advance_career(store, KEY, _ctx(improved), COMPONENTS)
     view = build_career_view(snapshot)
 
     first = view["blocks"][0]["goals"][0]
@@ -169,9 +176,11 @@ def test_cleared_goals_get_a_check_mark(tmp_path: Path) -> None:
 
 
 def test_congrats_banner_names_the_retired_and_next_block(tmp_path: Path) -> None:
+    history = _batch(20, start=0, cspm=6.0)
+    cleared = pd.concat([history, _batch(20, start=20, cspm=9.0)], ignore_index=True)
     with CareerStore(tmp_path / "career.sqlite") as store:
-        advance_career(store, KEY, _ctx(6.0), COMPONENTS)
-        snapshot = advance_career(store, KEY, _ctx(9.0), COMPONENTS)
+        advance_career(store, KEY, _ctx(history), COMPONENTS)
+        snapshot = advance_career(store, KEY, _ctx(cleared), COMPONENTS)
     view = build_career_view(snapshot)
 
     assert view["congrats"] is not None

@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS career_goals (
     target      REAL NOT NULL,
     need        INTEGER NOT NULL,
     state       TEXT NOT NULL,
+    since_ms    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (build_key, slot, goal_index)
 );
 CREATE TABLE IF NOT EXISTS career_used_tracks (
@@ -65,6 +66,17 @@ class CareerStore:
         self._conn.execute("PRAGMA busy_timeout=30000")
         self._conn.executescript(_SCHEMA)
         self._log = get_logger("career_store")
+        self._migrate_schema()
+
+    def _migrate_schema(self) -> None:
+        """Add columns that post-date a ladder already on disk."""
+        columns = {row[1] for row in self._conn.execute("PRAGMA table_info(career_goals)")}
+        if "since_ms" not in columns:
+            self._log.info("Adding career_goals.since_ms")
+            self._conn.execute(
+                "ALTER TABLE career_goals ADD COLUMN since_ms INTEGER NOT NULL DEFAULT 0"
+            )
+            self._conn.commit()
 
     def __enter__(self) -> "CareerStore":
         """Enter a context manager scope."""
@@ -87,7 +99,7 @@ class CareerStore:
         """Every persisted goal for a ladder, ordered by slot then goal index."""
         rows = self._conn.execute(
             "SELECT slot, goal_index, track_key, text, column_name, comparator, "
-            "target, need, state FROM career_goals WHERE build_key = ? "
+            "target, need, state, since_ms FROM career_goals WHERE build_key = ? "
             "ORDER BY slot, goal_index",
             (key,),
         ).fetchall()
@@ -104,6 +116,7 @@ class CareerStore:
                     need=int(row[7]),
                 ),
                 state=str(row[8]),
+                since_ms=int(row[9]),
             )
             for row in rows
         ]
@@ -115,13 +128,14 @@ class CareerStore:
         track_key: str,
         rungs: Sequence[Rung],
         states: Sequence[str],
+        since_ms: int = 0,
     ) -> None:
         """Replace a slot with a freshly generated track and its frozen rungs."""
         self.delete_slot(key, slot)
         self._conn.executemany(
             "INSERT INTO career_goals (build_key, slot, goal_index, track_key, text, "
-            "column_name, comparator, target, need, state) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "column_name, comparator, target, need, state, since_ms) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     key,
@@ -134,6 +148,7 @@ class CareerStore:
                     float(rung.target),
                     int(rung.need),
                     states[index],
+                    int(since_ms),
                 )
                 for index, rung in enumerate(rungs)
             ],
@@ -158,13 +173,25 @@ class CareerStore:
         )
         self._conn.commit()
 
-    def move_slot(self, key: str, src: int, dst: int) -> None:
-        """Shift a slot's goals left, replacing whatever sat at the destination."""
+    def move_slot(self, key: str, src: int, dst: int, *, since_ms: int | None = None) -> None:
+        """Shift a slot's goals left, replacing whatever sat at the destination.
+
+        ``since_ms`` re-stamps the start line, which matters on promotion to the
+        live slot: a queued block must not inherit credit from the games that
+        cleared the block ahead of it.
+        """
         self.delete_slot(key, dst)
-        self._conn.execute(
-            "UPDATE career_goals SET slot = ? WHERE build_key = ? AND slot = ?",
-            (dst, key, src),
-        )
+        if since_ms is None:
+            self._conn.execute(
+                "UPDATE career_goals SET slot = ? WHERE build_key = ? AND slot = ?",
+                (dst, key, src),
+            )
+        else:
+            self._conn.execute(
+                "UPDATE career_goals SET slot = ?, since_ms = ? "
+                "WHERE build_key = ? AND slot = ?",
+                (dst, int(since_ms), key, src),
+            )
         self._conn.commit()
 
     def record_used_track(self, key: str, track_key: str) -> None:

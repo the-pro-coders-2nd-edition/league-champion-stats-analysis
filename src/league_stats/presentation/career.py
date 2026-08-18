@@ -14,29 +14,33 @@ CAREER_RULES: Final[tuple[dict[str, str], ...]] = (
         "key": "Window",
         "value": "20 games",
         "note": (
-            "Every goal reads the same rolling window, so progress moves with "
-            "your recent form."
+            "Every goal reads the same rolling window, and a new block only "
+            "counts games played after it appeared."
         ),
     },
     {
         "key": "Clear bar",
         "value": "15 of 20",
-        "note": "Hit the target in 15 games of the window and the goal clears.",
+        "note": (
+            "Hit the target in 15 games of the window and the goal clears. All "
+            "three goals count at once, so a strong run clears the block in one "
+            "window."
+        ),
     },
     {
         "key": "Hold bar",
         "value": "75% of the clear bar",
         "note": (
-            "Drop below 11 of 20 and a cleared goal is revoked — the rest of its "
-            "block blocks until you re-earn it."
+            "Drop below 11 of 20 and a cleared goal is revoked — the block "
+            "cannot complete until you re-earn it."
         ),
     },
     {
         "key": "Target",
         "value": "your p50 toward peer p75",
         "note": (
-            "Each rung is computed from your own distribution, so it is always one "
-            "step ahead. Clear the live block and a new one is generated."
+            "Each rung is computed from your own distribution and capped at a "
+            "reachable step, so clearing a block moves the next one up."
         ),
     },
 )
@@ -46,8 +50,8 @@ _LEGEND_SOURCE: Final[tuple[tuple[str, int, int, str], ...]] = (
         "Locked",
         0,
         15,
-        "Not measured yet. Either an earlier goal in the block is still open, or "
-        "the whole block sits to the right of the live one.",
+        "Not measured yet — this block sits to the right of the live one, so "
+        "nothing in it counts until it becomes live.",
     ),
     (
         "In progress",
@@ -67,16 +71,15 @@ _LEGEND_SOURCE: Final[tuple[tuple[str, int, int, str], ...]] = (
         "Cleared",
         16,
         15,
-        "Held at or above the clear bar across the current window. Counts toward the "
-        "block, and unlocks the next goal in it.",
+        "Held at or above the clear bar across the current window. Counts toward "
+        "the block; the other goals in it are counting in parallel.",
     ),
     (
         "Revoked",
         8,
         15,
-        "Was cleared, then fell below the hold bar. It goes back in play, the block "
-        "cannot complete, and later goals in that block are blocked until you earn "
-        "it again.",
+        "Was cleared, then fell below the hold bar. It goes back in play and the "
+        "block cannot complete until you earn it again.",
     ),
 )
 

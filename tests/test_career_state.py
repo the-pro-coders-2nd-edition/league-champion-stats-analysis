@@ -1,9 +1,9 @@
-"""Career goal state machine and lock cascade."""
+"""Career goal state machine."""
 
 from __future__ import annotations
 
 from league_stats.analysis.career.models import CLEAR_BAR, SETUP_CLEAR_BAR, hold_bar
-from league_stats.analysis.career.state import apply_lock_overlay, block_is_complete, transition
+from league_stats.analysis.career.state import block_is_complete, transition
 
 
 def test_hold_bar_is_three_quarters_of_the_clear_bar() -> None:
@@ -37,30 +37,6 @@ def test_transition_never_returns_locked() -> None:
     for old in ("Locked", "In progress", "At risk", "Cleared", "Revoked"):
         for hit in range(0, 21):
             assert transition(old, hit, 15) != "Locked"
-
-
-def test_lock_overlay_matches_the_design_fixture() -> None:
-    assert apply_lock_overlay(["At risk", "Revoked", "Cleared"]) == [
-        "At risk",
-        "Revoked",
-        "Locked",
-    ]
-
-
-def test_lock_overlay_leaves_a_satisfied_block_untouched() -> None:
-    assert apply_lock_overlay(["Cleared", "At risk", "Cleared"]) == [
-        "Cleared",
-        "At risk",
-        "Cleared",
-    ]
-
-
-def test_lock_overlay_never_locks_the_first_goal() -> None:
-    assert apply_lock_overlay(["In progress", "In progress", "In progress"]) == [
-        "In progress",
-        "Locked",
-        "Locked",
-    ]
 
 
 def test_block_is_complete() -> None:

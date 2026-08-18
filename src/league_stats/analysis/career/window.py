@@ -9,15 +9,34 @@ import pandas as pd
 from league_stats.analysis.career.models import WINDOW, Rung
 
 
-def recent_window(matches_df: pd.DataFrame, window: int = WINDOW) -> pd.DataFrame:
-    """The most recent ``window`` games, newest first."""
+def recent_window(
+    matches_df: pd.DataFrame,
+    window: int = WINDOW,
+    *,
+    since_ms: int = 0,
+) -> pd.DataFrame:
+    """The most recent ``window`` games newer than ``since_ms``, newest first.
+
+    ``since_ms`` is what stops a freshly generated block from completing on
+    games that were already in the bag when it was created.
+    """
     if matches_df.empty:
         return matches_df
-    if "game_creation_ms" in matches_df.columns:
-        ordered = matches_df.sort_values("game_creation_ms", ascending=False)
-    else:
-        ordered = matches_df
-    return ordered.head(window)
+    if "game_creation_ms" not in matches_df.columns:
+        return matches_df.head(window)
+    frame = matches_df
+    if since_ms:
+        created = pd.to_numeric(frame["game_creation_ms"], errors="coerce")
+        frame = frame[created > since_ms]
+    return frame.sort_values("game_creation_ms", ascending=False).head(window)
+
+
+def newest_game_ms(matches_df: pd.DataFrame) -> int:
+    """Timestamp of the most recent game, used as a new block's start line."""
+    if matches_df.empty or "game_creation_ms" not in matches_df.columns:
+        return 0
+    created = pd.to_numeric(matches_df["game_creation_ms"], errors="coerce").dropna()
+    return int(created.max()) if not created.empty else 0
 
 
 def count_hits(window_df: pd.DataFrame, rung: Rung) -> int:

@@ -7,8 +7,10 @@ import pandas as pd
 from league_stats.analysis.career.models import Rung
 from league_stats.analysis.career.window import (
     count_hits,
+    newest_game_ms,
     player_mean,
     player_median,
+    player_quantile,
     recent_window,
 )
 
@@ -54,3 +56,19 @@ def test_player_median_and_mean() -> None:
     assert player_mean(frame, "cspm") == 7.0
     assert player_median(frame, "nope") is None
     assert player_mean(pd.DataFrame(), "cspm") is None
+
+
+def test_recent_window_ignores_games_at_or_before_the_start_line() -> None:
+    frame = _frame([1.0, 2.0, 3.0, 4.0, 5.0])
+    window = recent_window(frame, since_ms=2)
+    assert list(window["cspm"]) == [5.0, 4.0]
+
+
+def test_recent_window_with_no_games_after_the_start_line_is_empty() -> None:
+    frame = _frame([1.0, 2.0, 3.0])
+    assert recent_window(frame, since_ms=99).empty
+
+
+def test_newest_game_ms() -> None:
+    assert newest_game_ms(_frame([1.0, 2.0, 3.0])) == 2
+    assert newest_game_ms(pd.DataFrame()) == 0

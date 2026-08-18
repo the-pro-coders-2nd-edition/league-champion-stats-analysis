@@ -6,7 +6,8 @@ Two separate questions, deliberately not conflated:
   from the player's own numbers? Almost always yes, so the ladder can always
   fill every block. Peer-driven tracks step toward peer p75 when peer
   percentiles exist and toward the player's own p75 otherwise ("do what your
-  good games already do, every game").
+  good games already do, every game"), and never ask for more than
+  ``MAX_BLOCK_STRETCH`` above the player's median in one block.
 * ``is_significant`` -- *should* this track go first? This is the coach's own
   gate (the thresholds its tied rules already use). It decides ordering, never
   whether a block exists: a healthy player still gets a full ladder, just one
@@ -36,6 +37,14 @@ from league_stats.core.role_metrics import normalize_role
 
 DEFAULT_CATEGORY_WEIGHT: Final[float] = 50.0
 GOLD_STEP: Final[int] = 100
+
+# How far above their own median a single block may ask a player to go.
+# Peer p75 is the long-run destination, not a one-block demand: a player at
+# 0.72 vision/min asked straight for a 1.25 peer p75 has no realistic path
+# inside one 20-game window. Capping each block at +20% and letting the track
+# recycle walks the same player up 0.72 -> 0.86 -> 1.04 -> 1.24 across
+# successive blocks, so the target stays "one step ahead" instead of unreachable.
+MAX_BLOCK_STRETCH: Final[float] = 0.20
 
 
 @dataclass(frozen=True)
@@ -161,6 +170,7 @@ def _stepped_rungs(
         ceiling = player_quantile(ctx.matches_df, column, 0.75)
     if ceiling is None:
         return None
+    ceiling = min(ceiling, p50 * (1 + MAX_BLOCK_STRETCH))
     gap = ceiling - p50
     if gap <= 0:
         return None

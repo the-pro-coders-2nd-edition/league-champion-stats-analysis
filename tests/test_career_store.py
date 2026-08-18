@@ -95,3 +95,56 @@ def test_ladders_are_isolated_per_build(tmp_path: Path) -> None:
     with _store(tmp_path) as store:
         store.write_slot(mid, 0, "laning_income", _rungs("a"), ["In progress"] * 3)
         assert store.load_goals(top) == []
+
+
+def test_since_ms_round_trips_and_defaults_to_zero(tmp_path: Path) -> None:
+    key = build_key("p", "Viktor", "MIDDLE")
+    with _store(tmp_path) as store:
+        store.write_slot(key, 0, "laning_income", _rungs("a"), ["In progress"] * 3)
+        assert {g.since_ms for g in store.load_goals(key)} == {0}
+
+        store.write_slot(
+            key, 1, "map_presence", _rungs("b"), ["In progress"] * 3, since_ms=1234
+        )
+        queued = [g for g in store.load_goals(key) if g.slot == 1]
+        assert {g.since_ms for g in queued} == {1234}
+
+
+def test_move_slot_can_restamp_the_start_line(tmp_path: Path) -> None:
+    key = build_key("p", "Viktor", "MIDDLE")
+    with _store(tmp_path) as store:
+        store.write_slot(
+            key, 1, "map_presence", _rungs("b"), ["In progress"] * 3, since_ms=100
+        )
+        store.move_slot(key, 1, 0, since_ms=500)
+        promoted = store.load_goals(key)
+
+        assert {g.slot for g in promoted} == {0}
+        assert {g.since_ms for g in promoted} == {500}
+
+
+def test_since_ms_is_added_to_a_pre_existing_database(tmp_path: Path) -> None:
+    import sqlite3
+
+    path = tmp_path / "legacy.sqlite"
+    legacy = sqlite3.connect(str(path))
+    legacy.executescript(
+        "CREATE TABLE career_goals (build_key TEXT NOT NULL, slot INTEGER NOT NULL, "
+        "goal_index INTEGER NOT NULL, track_key TEXT NOT NULL, text TEXT NOT NULL, "
+        "column_name TEXT NOT NULL, comparator TEXT NOT NULL, target REAL NOT NULL, "
+        "need INTEGER NOT NULL, state TEXT NOT NULL, "
+        "PRIMARY KEY (build_key, slot, goal_index));"
+    )
+    legacy.execute(
+        "INSERT INTO career_goals VALUES ('k', 0, 0, 'laning_income', 'old', "
+        "'cspm', 'at_least', 7.0, 15, 'Cleared')"
+    )
+    legacy.commit()
+    legacy.close()
+
+    with CareerStore(path) as store:
+        goals = store.load_goals("k")
+
+    assert len(goals) == 1
+    assert goals[0].since_ms == 0
+    assert goals[0].state == "Cleared"
