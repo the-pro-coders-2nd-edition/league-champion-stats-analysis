@@ -352,20 +352,23 @@
           {% else %}
           <span class="accounts-panel-icon accounts-panel-icon--placeholder"></span>
           {% endif %}
-          <span class="accounts-panel-name">{{ member.label }}</span>
-          <span class="accounts-panel-rank">{{ member.solo_rank_label or "Unranked" }}</span>
+          <span class="accounts-panel-name">
+            {{ member.label }}
+            {% if member.is_main %}<span class="pill pill--good pill--soft"><span>Main</span></span>{% endif %}
+          </span>
+          <span class="accounts-panel-rank">{{ member.solo_rank_division or "Unranked" }}</span>
+          <span class="accounts-panel-lp">{{ (member.solo_lp ~ ' LP') if member.solo_lp is not none else "—" }}</span>
+          <span class="accounts-panel-region">{{ member.region or "—" }}</span>
         </div>
         {% endfor %}
       </div>
       {% endif %}
 
-      <div class="score-breakdown" id="score-breakdown">
-        <div class="score-breakdown-title">Score breakdown</div>
-        <div class="score-comps" id="score-comps">
-          {% for comp in score_components %}
-          {% include "generated/score_set_item.html" %}
-          {% endfor %}
-        </div>
+      <h2 class="score-breakdown-title" id="score-breakdown">Score breakdown</h2>
+      <div class="score-set" id="score-comps">
+        {% for comp in score_components %}
+        {% include "generated/score_set_item.html" %}
+        {% endfor %}
       </div>
     </div>
 
@@ -1059,44 +1062,6 @@
     return '<span class="' + cls + '"' + attrs + '>' + escapeHtml(label) + '</span>';
   }
 
-  function renderScoreCard(opts) {
-    opts = opts || {};
-    var tone = opts.tone || 'solid';
-    var verdict = opts.verdict || 'Solid';
-    var name = opts.name || '';
-    var score = Math.max(0, Math.min(100, Math.round(Number(opts.score) || 0)));
-    var value = opts.value || '';
-    var hint = opts.hint || '';
-    var titleAttr = hint ? ' title="' + escapeHtml(hint) + '"' : '';
-    var inner =
-      '<span class="comp-verdict">' + escapeHtml(verdict) + '</span>' +
-      '<div class="comp-head">' +
-        '<span class="comp-name">' + escapeHtml(name) + '</span>' +
-        '<span class="comp-score">' + score + '</span>' +
-      '</div>' +
-      (value ? '<div class="comp-value">' + escapeHtml(value) + '</div>' : '') +
-      '<div class="bar" aria-hidden="true"><i style="width:' + score + '%"></i></div>';
-    if (opts.expandableBody) {
-      return '<details class="comp comp--expandable comp--' + tone + '"' + titleAttr + '>' +
-        '<summary>' + inner + '</summary>' + opts.expandableBody + '</details>';
-    }
-    return '<div class="comp comp--' + tone + '"' + titleAttr + '>' + inner + '</div>';
-  }
-
-  function renderScoreCardRow(opts) {
-    opts = opts || {};
-    var card = renderScoreCard(opts);
-    if (!opts.fix || !opts.fix.title) {
-      return card;
-    }
-    var href = '#' + (opts.fix.anchor || 'coaching');
-    return '<div class="score-card-row score-card-row--with-fix">' + card +
-      '<a class="score-card-fix" href="' + href + '">' +
-        '<span class="score-card-fix-kicker">Try this</span>' +
-        '<span class="score-card-fix-title">' + escapeHtml(opts.fix.title) + '</span>' +
-      '</a></div>';
-  }
-
   function metricCardLabel(card) {
     var labelHtml = metricLabel(card.label, card.iconify, card.icon_tone, card.icon_href, card.role_icon_href);
     if (!card.tooltip) {
@@ -1224,16 +1189,31 @@
       }
     }
     if (!compsNode) return;
-    compsNode.innerHTML = (bundle.score_components || []).map(function (comp) {
-      return renderScoreCard({
-        name: comp.name,
-        score: comp.score,
-        verdict: comp.verdict || 'Solid',
-        tone: comp.tone || 'solid',
-        value: comp.value || '',
-        hint: comp.hint || ''
-      });
-    }).join('');
+    compsNode.innerHTML = (bundle.score_components || []).map(renderScoreSetItem).join('');
+  }
+
+  function renderScoreSetItem(comp) {
+    var tone = comp.tone || 'flat';
+    var color = tone === 'flat' ? 'var(--color-text)' : 'var(--tone-' + tone + '-fg)';
+    var fill = 'var(--tone-' + tone + '-line)';
+    var score = Math.max(0, Math.min(100, Number(comp.score) || 0));
+    var scoreLabel = String(Math.round(score));
+    var titleAttr = comp.hint ? ' title="' + escapeHtml(comp.hint) + '"' : '';
+    var subHtml = comp.value ? '<span class="score-set-item-sub">' + escapeHtml(String(comp.value)) + '</span>' : '';
+    return '<div class="score-set-item"' + titleAttr + '>' +
+      '<div class="score-set-item-head">' +
+        '<span class="score-set-item-name">' + escapeHtml(comp.name) + '</span>' +
+        '<span class="score-set-item-score" style="color: ' + color + '">' + scoreLabel + '</span>' +
+      '</div>' +
+      '<div class="score-set-item-bar">' +
+        '<i class="score-set-item-fill" style="width: ' + score + '%; background: ' + fill + '"></i>' +
+        '<i class="score-set-item-tick"></i>' +
+      '</div>' +
+      '<div class="score-set-item-foot">' +
+        '<span class="score-set-item-verdict" style="color: ' + color + '">' + escapeHtml(comp.verdict || 'Solid') + '</span>' +
+        subHtml +
+      '</div>' +
+    '</div>';
   }
 
   function peerDriverRowHtml(row, tone) {
@@ -1561,19 +1541,25 @@
 
   function renderRecommendations(bundle) {
     function renderRec(rec) {
-      var pValue = rec.p_value != null ? ' · p = ' + Number(rec.p_value).toFixed(4) : '';
-      var sample = rec.sample_size ? ' · ' + rec.sample_size + ' games' : '';
       var idAttr = rec.anchor ? (' id="' + rec.anchor + '"') : '';
       var priority = rec.priority_label || 'Medium';
-      var summary = rec.evidence_summary
-        ? '<p class="rec-evidence-summary">' + escapeHtml(rec.evidence_summary) + '</p>'
-        : '';
-      return '<div class="rec ' + rec.badge + '"' + idAttr + '>' +
-        '<div class="rec-head"><span class="badge badge--priority badge--' + rec.badge + '">' + priority +
-        '</span><span class="badge">' + escapeHtml(rec.category) + '</span><strong>' + escapeHtml(rec.title) + '</strong></div>' +
-        '<p>' + escapeHtml(rec.detail) + '</p>' +
-        '<details class="rec-evidence"><summary>Why this?</summary>' + summary +
-        '<p class="meta">Stats: ' + escapeHtml(rec.evidence) + pValue + sample + '</p></details></div>';
+      var priorityTone = rec.priority_tone || 'flat';
+      var confidence = rec.confidence || 'descriptive';
+      var evidenceRows = (rec.evidence_rows || []).map(function (row) {
+        return '<div class="rec-evidence-row">' +
+          '<span class="rec-evidence-key">' + escapeHtml(String(row.label)) + '</span>' +
+          '<span class="rec-evidence-value">' + escapeHtml(String(row.value)) + '</span></div>';
+      }).join('');
+      return '<div class="rec"' + idAttr + '>' +
+        '<div class="rec-head">' +
+          '<span class="pill pill--' + priorityTone + ' pill--soft"><i class="pill__dot"></i><span>' + escapeHtml(priority) + '</span></span>' +
+          '<span class="pill pill--flat pill--soft"><span>' + escapeHtml(rec.category) + '</span></span>' +
+          '<span class="rec-confidence">' + escapeHtml(confidence) + '</span>' +
+        '</div>' +
+        '<strong class="rec-title">' + escapeHtml(rec.title) + '</strong>' +
+        '<p class="rec-body">' + escapeHtml(rec.detail) + '</p>' +
+        '<details class="rec-evidence"><summary class="rec-evidence-summary">Evidence</summary>' +
+        '<div class="rec-evidence-rows">' + evidenceRows + '</div></details></div>';
     }
     function extendButton(targetId, count, noun) {
       var label = 'Show ' + count + ' more ' + noun;

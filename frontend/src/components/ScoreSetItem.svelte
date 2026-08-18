@@ -1,76 +1,87 @@
 <script lang="ts">
-  type Tone = 'strong' | 'focus' | 'solid';
-
   export let name: string;
   export let scoreLabel: string;
   export let scoreValue: number;
-  export let value: string;
-  export let tone: Tone;
+  // Resolved CSS color/gradient values, not a tone name -- the flat/good/warn/bad
+  // branch (scoreColor === var(--color-text) when tone is 'flat') is decided by
+  // the caller (Jinja token in manifest.json, or real JS in report.html) since
+  // this component is SSR'd once per literal-token props, not per real value.
+  export let valueColor: string;
+  export let fillColor: string;
   export let verdict: string;
-  export let hint: string;
+  export let sub: string = '';
+  export let hint: string = '';
 </script>
 
-<div class="comp comp--{tone}" title="{hint}">
-  <span class="comp-verdict">{verdict}</span>
-  <div class="comp-head">
-    <span class="comp-name">{name}</span>
-    <span class="comp-score">{scoreLabel}</span>
+<div class="score-set-item" title={hint || null}>
+  <div class="score-set-item-head">
+    <span class="score-set-item-name">{name}</span>
+    <span class="score-set-item-score" style="color: {valueColor}">{scoreLabel}</span>
   </div>
-  <div class="comp-value">{value}</div>
-  <div class="bar"><i style="width: {scoreValue}%"></i></div>
+  <div class="score-set-item-bar">
+    <i class="score-set-item-fill" style="width: {scoreValue}%; background: {fillColor}"></i>
+    <i class="score-set-item-tick"></i>
+  </div>
+  <div class="score-set-item-foot">
+    <span class="score-set-item-verdict" style="color: {valueColor}">{verdict}</span>
+    {#if sub}<span class="score-set-item-sub">{sub}</span>{/if}
+  </div>
 </div>
 
 <style>
-  :global(.comp) {
+  /* :global -- renderScoreSetItem() in report.html rebuilds this markup on
+     queue/window filter changes, so these classes must not be scoped/hashed. */
+  :global(.score-set-item-head) {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+  }
+  :global(.score-set-item-name) {
+    font-size: 13px;
+    color: var(--color-neutral-300);
+  }
+  :global(.score-set-item-score) {
+    margin-left: auto;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+  }
+  :global(.score-set-item-bar) {
     position: relative;
-    background: var(--color-surface-2); border: 1px solid var(--color-divider);
-    border-radius: 12px; padding: 14px 14px 12px;
+    margin-top: var(--space-2);
+    height: 6px;
+    border-radius: 3px;
+    background: var(--color-neutral-800);
   }
-  :global(.comp--strong) {
-    border-color: rgba(63, 182, 139, 0.45);
-    background: linear-gradient(180deg, rgba(63, 182, 139, 0.12), var(--color-surface-2));
+  :global(.score-set-item-fill) {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 3px;
+    display: block;
   }
-  :global(.comp--focus) {
-    border-color: rgba(224, 85, 99, 0.45);
-    background: linear-gradient(180deg, rgba(224, 85, 99, 0.12), var(--color-surface-2));
+  :global(.score-set-item-tick) {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    left: 50%;
+    width: 1px;
+    background: var(--color-neutral-500);
+    display: block;
   }
-  :global(.comp--solid) {
-    border-color: rgba(154, 160, 181, 0.40);
-    background: linear-gradient(180deg, rgba(154, 160, 181, 0.10), var(--color-surface-2));
+  :global(.score-set-item-foot) {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
   }
-  :global(.comp-verdict) {
-    position: absolute; top: 10px; right: 10px;
-    font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-    padding: 3px 8px; border-radius: 999px;
-    background: var(--color-surface); color: var(--color-neutral-400); border: 1px solid var(--color-divider);
+  :global(.score-set-item-verdict) {
+    font-size: 11px;
   }
-  :global(.comp--strong .comp-verdict) {
-    color: var(--tone-good-fg); background: rgba(63, 182, 139, 0.14);
-    border-color: rgba(63, 182, 139, 0.35);
-  }
-  :global(.comp--focus .comp-verdict) {
-    color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.14);
-    border-color: rgba(224, 85, 99, 0.35);
-  }
-  :global(.comp--solid .comp-verdict) {
-    color: #b0b6c9; background: rgba(154, 160, 181, 0.12);
-    border-color: rgba(154, 160, 181, 0.30);
-  }
-  :global(.comp-head) {
-    display: flex; align-items: baseline; gap: 8px;
-    padding-right: 78px;
-  }
-  :global(.comp-name) { font-size: 13px; font-weight: 600; color: var(--color-text); min-width: 0; }
-  :global(.comp-score) { font-size: 13px; font-weight: 700; color: var(--color-accent); flex-shrink: 0; }
-  :global(.comp-value) { font-size: 12px; color: var(--color-neutral-400); line-height: 1.35; margin-top: 4px; }
-  :global(.comp .bar) {
-    height: 6px; background: rgba(0, 0, 0, 0.28); border-radius: 3px;
-    margin-top: 8px; overflow: hidden; container-type: inline-size;
-  }
-  :global(.comp .bar i) {
-    display: block; height: 100%;
-    background-image: var(--score-fill-gradient);
-    background-size: 100cqw 100%;
-    background-repeat: no-repeat;
+  :global(.score-set-item-sub) {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--color-neutral-600);
+    font-variant-numeric: tabular-nums;
   }
 </style>

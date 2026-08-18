@@ -1,30 +1,49 @@
 <script lang="ts">
-  type Badge = 'high' | 'medium' | 'low';
+  type Tone = 'good' | 'warn' | 'bad' | 'flat';
 
-  export let badge: Badge;
+  export let priorityTone: Tone;
   export let priorityLabel: string;
   export let category: string;
+  export let confidence: string;
   export let title: string;
   export let detail: string;
 </script>
 
 <div class="rec-head">
-  <span class="badge badge--priority badge--{badge}">{priorityLabel}</span>
-  <span class="badge">{category}</span>
-  <strong>{title}</strong>
+  <span class="pill pill--{priorityTone} pill--soft"><i class="pill__dot"></i><span>{priorityLabel}</span></span>
+  <span class="pill pill--flat pill--soft"><span>{category}</span></span>
+  <span class="rec-confidence">{confidence}</span>
 </div>
-<p>{detail}</p>
+<strong class="rec-title">{title}</strong>
+<p class="rec-body">{detail}</p>
 
 <style>
-  :global(.rec-head) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
-  :global(.rec-head strong) { flex: 1 1 100%; font-size: 15px; }
-  :global(.badge) {
-    display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px;
-    background: var(--color-surface-2); color: var(--color-neutral-400); margin-right: 8px;
-    text-transform: uppercase; letter-spacing: .05em;
+  /* :global -- renderRec() in report.html rebuilds this markup on queue/window
+     filter changes, and .pill/.pill__dot come from Pill.svelte's own global
+     styles, so nothing here can be scoped/hashed either. */
+  :global(.rec-head) {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-2);
   }
-  :global(.badge--priority) { font-weight: 700; }
-  :global(.badge--high) { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.12); }
-  :global(.badge--medium) { color: #e0b155; background: rgba(224, 177, 85, 0.12); }
-  :global(.badge--low) { color: var(--color-neutral-400); }
+  :global(.rec-confidence) {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--color-neutral-600);
+    font-variant-numeric: tabular-nums;
+  }
+  :global(.rec-title) {
+    display: block;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 14px;
+  }
+  :global(.rec-body) {
+    margin: var(--space-2) 0 0;
+    color: var(--color-neutral-400);
+    font-size: 12px;
+    line-height: 1.55;
+  }
 </style>

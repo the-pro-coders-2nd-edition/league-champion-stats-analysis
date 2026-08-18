@@ -246,9 +246,10 @@
       {
         "file": "rec_card_head.html",
         "props": {
-          "badge": "{{ rec.badge }}",
+          "priorityTone": "{{ rec.priority_tone or 'flat' }}",
           "priorityLabel": "{{ rec.priority_label }}",
           "category": "{{ rec.category }}",
+          "confidence": "{{ rec.confidence }}",
           "title": "{{ rec.title }}",
           "detail": "{{ rec.detail }}"
         }
@@ -526,9 +527,10 @@
           "name": "{{ comp.name }}",
           "scoreLabel": "{{ '%.0f' % comp.score }}",
           "scoreValue": "{{ comp.score }}",
-          "value": "{{ comp.value }}",
-          "tone": "{{ comp.tone or 'solid' }}",
+          "valueColor": "{{ 'var(--color-text)' if (comp.tone or 'flat') == 'flat' else 'var(--tone-' + (comp.tone or 'flat') + '-fg)' }}",
+          "fillColor": "var(--tone-{{ comp.tone or 'flat' }}-line)",
           "verdict": "{{ comp.verdict or 'Solid' }}",
+          "sub": "{{ comp.value }}",
           "hint": "{{ comp.hint }}"
         }
       }

@@ -93,6 +93,10 @@ class NoEligibleBuildsError(RuntimeError):
     """Raised when no champion+lane build has enough qualifying games."""
 
 
+# Tiers with no division, ranked by league points alone (mirrors RankedEntry).
+_APEX_TIERS = frozenset({"MASTER", "GRANDMASTER", "CHALLENGER"})
+
+
 def _merge_manifest_with_disk(
     manifest_builds: list[dict[str, Any]], player_dir: Path
 ) -> list[dict[str, Any]]:
@@ -522,8 +526,9 @@ def run_analysis(
         for queue_key, bundle in game_review.queues.items()
     }
 
+    region_display = config.routing_platform.upper()
     report_players: list[dict[str, Any]] = []
-    for player in meta_players:
+    for index, player in enumerate(meta_players):
         icon_href = None
         raw_icon = player.get("profile_icon_id")
         if raw_icon is not None:
@@ -538,15 +543,22 @@ def run_analysis(
             "tagline": str(player["tagline"]),
             "label": f"{player['riot_id']}#{player['tagline']}",
             "profile_icon": icon_href,
+            # Index 0 is the primary player everywhere else in this file
+            # (primary_puuid / player_contexts[0]); mirror that here for the
+            # accounts-in-this-pool table's "Main" tag.
+            "is_main": index == 0,
+            "region": region_display,
         }
         rank = solo_rank_fields(player)
         if rank:
             tier = str(rank["solo_tier"])
-            entry["solo_rank_label"] = format_solo_rank_label(
-                tier,
-                str(rank.get("solo_rank") or ""),
-                rank.get("solo_lp"),
+            division = str(rank.get("solo_rank") or "")
+            lp = rank.get("solo_lp")
+            entry["solo_rank_label"] = format_solo_rank_label(tier, division, lp)
+            entry["solo_rank_division"] = (
+                tier.title() if tier in _APEX_TIERS else f"{tier.title()} {division}".strip()
             )
+            entry["solo_lp"] = lp
             asset_catalog.ensure_rank_emblem(tier)
             rank_icon = asset_catalog.rank_emblem_href(tier, from_dir=run_dir)
             if rank_icon:
