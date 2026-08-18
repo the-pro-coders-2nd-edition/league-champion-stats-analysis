@@ -823,24 +823,6 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
   margin-top: 16px;
 }
 .form-stories-empty { margin: 4px 0 0; }
-.form-story {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--color-divider);
-  border-left-width: 3px;
-  background: var(--color-surface-2);
-}
-.form-story--keep {
-  border-left-color: var(--tone-good-line);
-  background: var(--color-surface);
-}
-.form-story--fix {
-  border-left-color: var(--tone-bad-line);
-  background: var(--color-surface);
-}
 
 .form-movers {
   display: grid;
@@ -1055,26 +1037,6 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 10px;
 }
-.game-review-callout {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 12px 14px; border-radius: 12px; border: 1px solid var(--color-divider);
-  background: var(--color-surface-2);
-}
-.game-review-callout--keep {
-  border-color: var(--color-divider);
-  background: var(--color-surface);
-}
-.game-review-callout--fix {
-  border-color: var(--color-divider);
-  background: var(--color-surface);
-}
-.game-review-callout-label {
-  font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--color-neutral-400);
-}
-.game-review-callout--keep .game-review-callout-label { color: var(--tone-good-fg); }
-.game-review-callout--fix .game-review-callout-label { color: var(--tone-bad-fg); }
-.game-review-callout-title { font-size: 14px; font-weight: 700; line-height: 1.3; }
-.game-review-callout-detail { font-size: 12px; color: var(--color-neutral-400); line-height: 1.4; }
 .game-review-verdict-empty { margin: 0; }
 
 .game-review-scoreboard { margin-bottom: 0; }

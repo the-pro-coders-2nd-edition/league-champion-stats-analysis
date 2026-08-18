@@ -2,7 +2,7 @@
   import SectionHeader from '../components/SectionHeader.svelte';
   import SectionPulse from '../components/SectionPulse.svelte';
   import TieredCards from '../components/TieredCards.svelte';
-  import PositioningHint from '../components/PositioningHint.svelte';
+  import Callout from '../components/Callout.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
 
   export let data;
@@ -52,7 +52,7 @@
   {#if positioningHints.length}
     <div class="positioning-hints" id="positioning-hints">
       {#each positioningHints as hint}
-        <PositioningHint tone={hint.tone} text={hint.text} />
+        <Callout tone={hint.tone === 'positive' ? 'good' : 'bad'} edge body={hint.text} />
       {/each}
     </div>
   {:else}
