@@ -544,6 +544,11 @@ def _player_builds(output_dir: Path, slug: str) -> list[dict[str, Any]]:
     return shaped
 
 
+def _is_report_slug(value: str) -> bool:
+    """Whether a path segment is safe to use in a reports-dir filesystem path."""
+    return bool(value) and all(ch.isalnum() or ch == "_" for ch in value)
+
+
 def _build_peers_ready(meta: dict[str, Any], report_dir: Path) -> bool:
     """Whether this build's on-disk report already includes peer comparison."""
     if "has_peer_comparison" in meta:
@@ -889,6 +894,8 @@ def create_app(
 
     @app.get("/api/players/{slug}/builds/{build_slug}")
     def build_payload(slug: str, build_slug: str) -> dict[str, Any]:
+        if not (_is_report_slug(slug) and _is_report_slug(build_slug)):
+            raise HTTPException(status_code=400, detail="Invalid report reference.")
         report_json_path = config.reports_dir / slug / build_slug / "report.json"
         if not report_json_path.is_file():
             raise HTTPException(status_code=404, detail="Unknown build")
@@ -1021,9 +1028,6 @@ def create_app(
         precomputed into the HTML (groups above the precompute limit). Views
         are rebuilt from the local match store and cached beside the report.
         """
-
-        def _is_report_slug(value: str) -> bool:
-            return bool(value) and all(ch.isalnum() or ch == "_" for ch in value)
 
         if not (_is_report_slug(slug) and _is_report_slug(build_slug)):
             raise HTTPException(status_code=400, detail="Invalid report reference.")

@@ -336,6 +336,11 @@ def test_get_build_payload_404_when_missing(client: TestClient) -> None:
     assert client.get("/api/players/test_euw/builds/nonexistent").status_code == 404
 
 
+def test_get_build_payload_rejects_path_traversal(client: TestClient) -> None:
+    response = client.get("/api/players/test_euw/builds/%2e%2e")
+    assert response.status_code == 400
+
+
 def test_player_builds_expose_per_build_peers_ready(client: TestClient) -> None:
     ready = _write_report(
         client.web_config.output_dir,
