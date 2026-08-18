@@ -241,3 +241,55 @@ def test_peer_report_marks_meta_ready_and_keeps_export(tmp_path: Path) -> None:
     meta = json.loads((report_path.parent / "meta.json").read_text(encoding="utf-8"))
     assert meta["has_peer_comparison"] is False
     assert not (report_path.parent / "rank_comparison.csv").exists()
+
+
+def test_pipeline_writes_report_json_alongside_report_html(tmp_path: Path) -> None:
+    """run_analysis writes a JSON-safe report.json next to report.html."""
+    config = AppConfig(
+        riot_id="Test",
+        tagline="EUW",
+        region="europe",
+        api_key="RGAPI-test",
+        champion="Viktor",
+        role="MIDDLE",
+        output_dir=tmp_path / "output",
+        graphs_dir=tmp_path / "graphs",
+        cache_dir=tmp_path / "cache",
+        template_dir=Path(__file__).resolve().parent.parent / "src/league_stats/presentation/templates",
+    )
+    config.ensure_directories()
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75)
+    peer_metrics = {
+        "win": 0.5,
+        "kda": 2.4,
+        "dpm": 640.0,
+        "cspm": 7.0,
+        "deaths": 5.0,
+        "vspm": 1.0,
+        "control_wards": 2.0,
+        "kill_participation": 0.6,
+        "damage_share": 0.2,
+    }
+    peer = PeerComparisonResult(
+        rank_label=ranked.label,
+        tier=ranked.tier,
+        source="test benchmark",
+        peer_games=0,
+        peer_players=0,
+        comparisons=build_comparisons(
+            pd.DataFrame([r.to_row() for r in _make_records()]).mean(numeric_only=True).to_dict(),
+            peer_metrics,
+        ),
+    )
+    report_path = run_analysis(
+        config, _make_records(), peer_comparison=peer, ranked=ranked
+    )
+
+    assert report_path.exists()
+    run_dir = report_path.parent
+    report_json_path = run_dir / "report.json"
+    assert report_json_path.exists()
+
+    payload = json.loads(report_json_path.read_text(encoding="utf-8"))
+    assert payload["champion"] == "Viktor"
+    assert "report_views" in payload

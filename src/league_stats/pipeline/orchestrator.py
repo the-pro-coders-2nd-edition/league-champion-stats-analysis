@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import shutil
 from dataclasses import dataclass, field
 from itertools import combinations
@@ -82,6 +84,7 @@ from league_stats.presentation.report import (
     refresh_report_indexes,
     write_report_meta,
 )
+from league_stats.presentation.report_json import context_to_json
 from league_stats.presentation.report_static import (
     ensure_report_static_assets,
     report_stylesheet_hrefs,
@@ -674,6 +677,12 @@ def run_analysis(
 
     builder = ReportBuilder(config.template_dir)
     report_path = builder.render(run_dir / "report.html", context)
+
+    report_json_path = run_dir / "report.json"
+    tmp_json_path = report_json_path.with_suffix(".json.tmp")
+    tmp_json_path.write_text(json.dumps(context_to_json(context)), encoding="utf-8")
+    os.replace(tmp_json_path, report_json_path)
+
     generated_at = context.get("generated_at", "")
     primary_icon = next(
         (
