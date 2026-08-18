@@ -212,13 +212,6 @@ section { margin-bottom: 64px; scroll-margin-top: var(--report-sticky-offset); }
 .category-divider--champion .category-divider-label { color: var(--cat-champion); }
 .category-divider--deepdive .category-divider-label { color: var(--cat-deepdive); }
 .category-divider--advanced .category-divider-label { color: var(--cat-advanced); }
-.section-title--summary { border-left: 3px solid var(--cat-summary); padding-left: 12px; }
-.section-title--performance { border-left: 3px solid var(--cat-performance); padding-left: 12px; }
-.section-title--games { border-left: 3px solid var(--cat-games); padding-left: 12px; }
-.section-title--champion { border-left: 3px solid var(--cat-champion); padding-left: 12px; }
-.section-title--deepdive { border-left: 3px solid var(--cat-deepdive); padding-left: 12px; }
-.section-title--advanced { border-left: 3px solid var(--cat-advanced); padding-left: 12px; }
-.report-title.section-title--summary { border-left: 3px solid var(--cat-summary); padding-left: 12px; }
 h2 { font-size: 17px; margin-bottom: 6px; }
 .report-page-title { font-size: 30px; font-weight: 700; line-height: 1.15; margin: 0; }
 .report-player-name { color: var(--color-neutral-400); font-size: 14px; margin-top: 4px; }
@@ -228,8 +221,6 @@ h2 { font-size: 17px; margin-bottom: 6px; }
 h3 { font-size: 15px; margin: 24px 0 12px; color: var(--color-neutral-400); }
 .sub { color: var(--color-neutral-400); margin-bottom: 20px; }
 .sub--lead { color: var(--color-text); font-size: 15px; margin-bottom: 16px; }
-/* Align with section-title border (3px) + padding-left (12px) */
-.section-title + .sub { padding-left: 15px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; margin: 18px 0; }
 .cards--headline { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
 .card--headline { border-color: rgba(65, 183, 140, 0.35); background: linear-gradient(180deg, rgba(65, 183, 140, 0.08), var(--color-surface)); }
@@ -489,6 +480,9 @@ img.metric-icon--asset { width: 14px; height: 14px; object-fit: contain; flex-sh
 .metric-icon--purple { color: #b48cff; }
 .metric-icon--muted { color: var(--color-neutral-400); }
 .section-title { display: flex; align-items: center; gap: 10px; }
+/* Reference design's section headers are plain bold text, no icon. */
+.section-title > iconify-icon.metric-icon,
+.section-title > img.metric-icon--asset { display: none; }
 .section-title iconify-icon.metric-icon { width: 18px; height: 18px; }
 .figure {
   background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-md);

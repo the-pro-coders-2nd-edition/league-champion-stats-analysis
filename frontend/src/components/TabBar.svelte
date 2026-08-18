@@ -49,12 +49,6 @@
     color: var(--color-text); background: var(--color-surface);
     border-bottom-color: var(--color-accent);
   }
-  .report-tab--summary.is-active { border-bottom-color: var(--cat-summary); }
-  .report-tab--performance.is-active { border-bottom-color: var(--cat-performance); }
-  .report-tab--games.is-active { border-bottom-color: var(--cat-games); }
-  .report-tab--champion.is-active { border-bottom-color: var(--cat-champion); }
-  .report-tab--deepdive.is-active { border-bottom-color: var(--cat-deepdive); }
-  .report-tab--advanced.is-active { border-bottom-color: var(--cat-advanced); }
 
   .form-tabs, .game-review-tabs {
     position: sticky;
