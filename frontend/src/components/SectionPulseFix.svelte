@@ -23,7 +23,7 @@
 </a>
 
 <style>
-  :global(.section-pulse-fix) {
+  .section-pulse-fix {
     display: grid; align-content: center; gap: var(--space-1);
     max-width: 220px; padding: var(--space-4);
     border: 1px solid var(--color-divider); border-radius: 10px;
@@ -31,14 +31,14 @@
     color: var(--color-text); text-decoration: none;
     transition: border-color .15s, transform .15s, background .15s;
   }
-  :global(.section-pulse-fix:hover) {
+  .section-pulse-fix:hover {
     border-color: var(--color-accent);
     background: rgba(65, 183, 140, 0.08);
     transform: translateX(2px);
   }
-  :global(.section-pulse-fix-kicker) {
+  .section-pulse-fix-kicker {
     font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
     color: var(--color-accent);
   }
-  :global(.section-pulse-fix-title) { font-size: 12px; line-height: 1.4; color: var(--color-text); }
+  .section-pulse-fix-title { font-size: 12px; line-height: 1.4; color: var(--color-text); }
 </style>

@@ -40,10 +40,10 @@
     font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
     background: var(--tone-flat-soft); color: var(--tone-flat-fg);
   }
-  :global(.section-pulse--strong) .section-pulse-label {
+  .section-pulse--strong .section-pulse-label {
     background: var(--tone-good-soft); color: var(--tone-good-fg);
   }
-  :global(.section-pulse--focus) .section-pulse-label {
+  .section-pulse--focus .section-pulse-label {
     background: var(--tone-bad-soft); color: var(--tone-bad-fg);
   }
   .section-pulse-head {
@@ -57,6 +57,6 @@
     flex-shrink: 0; font-family: var(--font-heading); font-size: 23px; font-weight: 700;
     letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--color-text);
   }
-  :global(.section-pulse--strong) .section-pulse-score { color: var(--tone-good-fg); }
-  :global(.section-pulse--focus) .section-pulse-score { color: var(--tone-bad-fg); }
+  .section-pulse--strong .section-pulse-score { color: var(--tone-good-fg); }
+  .section-pulse--focus .section-pulse-score { color: var(--tone-bad-fg); }
 </style>
