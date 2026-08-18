@@ -24,11 +24,11 @@
     confirmSlot = null;
   }
 
-  async function confirmDrop(block) {
+  async function confirmDrop(slot) {
     dropping = true;
     dropError = '';
     try {
-      await dropCareerBlock(playerSlug, buildSlug, block.slot);
+      await dropCareerBlock(playerSlug, buildSlug, slot);
       dropped = true;
       confirmSlot = null;
     } catch (err) {
@@ -84,27 +84,28 @@
     </div>
 
     <div class="career-blocks">
-      {#each career.blocks as block}
+      {#each career.blocks as block, index}
+        {@const slot = block.slot ?? index}
         <div class="career-block">
           <div class="career-block-head">
             <span class="career-block-position">{block.position}</span>
             <span class="career-block-state">
               <Pill tone={block.tone} label={block.state_label} />
             </span>
-            {#if canDrop && block.slot != null}
+            {#if canDrop}
               <button
                 type="button"
                 class="career-drop-btn"
                 aria-label="Drop {block.name}"
                 disabled={dropping || dropped}
-                on:click={() => askDrop(block.slot)}
+                on:click={() => askDrop(slot)}
               >Drop block</button>
             {/if}
           </div>
           <h3 class="career-block-name">{block.name}</h3>
           <p class="career-block-metric">{block.metric}</p>
 
-          {#if confirmSlot === block.slot}
+          {#if confirmSlot === slot}
             <div class="career-drop-confirm" role="alertdialog" aria-label="Confirm dropping {block.name}">
               <p class="career-drop-confirm-text">
                 Drop <strong>{block.name}</strong>? Its progress is lost. Any block behind it moves
@@ -116,7 +117,7 @@
                   type="button"
                   class="career-drop-confirm-yes"
                   disabled={dropping}
-                  on:click={() => confirmDrop(block)}
+                  on:click={() => confirmDrop(slot)}
                 >{dropping ? 'Dropping…' : 'Yes, drop it'}</button>
                 <button type="button" class="career-drop-confirm-no" disabled={dropping} on:click={cancelDrop}>
                   Keep it
