@@ -161,9 +161,6 @@
     startStatusPoll(3000);
   }
 
-  function showAllRankedQueue() {
-    if (report) report.selectQueue('all');
-  }
 
   async function handleRefresh() {
     if (refreshing || jobActive || !payload?.refresh_champion || !payload?.refresh_role) return;
@@ -515,7 +512,6 @@
       busy={jobActive || refreshing}
       pendingSlot={careerPendingSlot}
       onDropped={handleCareerDropped}
-      onShowAllRanked={showAllRankedQueue}
     />
   </div>
 

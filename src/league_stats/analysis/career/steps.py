@@ -25,7 +25,12 @@ from dataclasses import dataclass
 from typing import Callable, Final, Sequence
 
 from league_stats.analysis.career.models import CLEAR_BAR, SETUP_CLEAR_BAR, Rung
-from league_stats.analysis.career.window import player_mean, player_median, player_quantile
+from league_stats.analysis.career.window import (
+    player_mean,
+    player_median,
+    player_quantile,
+    recent_window,
+)
 from league_stats.core.role_metrics import normalize_role
 
 # Canonical category ids. Role profiles name the same idea differently -- laners
@@ -39,8 +44,26 @@ CATEGORY_FIGHT: Final[str] = "fight"
 CATEGORY_ECONOMY: Final[str] = "economy"
 CATEGORY_UTILITY: Final[str] = "utility"
 
-# How far past their own median a single block may ask a player to go.
-MAX_STEP_STRETCH: Final[float] = 0.20
+# How far past the anchor a single block may ask a player to go.
+MAX_STEP_STRETCH: Final[float] = 0.15
+
+# Where a target is anchored, as a quantile of the baseline games.
+#
+# The clear bar asks for the target in 15 of 20 games -- three quarters of them.
+# Anchoring on the median made that incoherent: a player exceeds their own median
+# in about half their games by definition, so a median-plus-stretch target quietly
+# demanded a level increase *and* a jump in consistency from under half your games
+# to three quarters. A live report asked one player for 60% pit presence in 15 of
+# 20 games while they were hitting 60% in 2 of their last 10.
+#
+# Anchoring low means the anchor is a level the player already reaches in most
+# games, so the stretch is the only thing being asked for.
+ANCHOR_QUANTILE: Final[float] = 0.35
+
+# Games the anchor is computed over. Deliberately wider than the 20-game
+# measurement window: a percentile taken from 20 games swings hard on one bad run,
+# and a frozen target that moved with the noise would be unfair either way.
+BASELINE_GAMES: Final[int] = 100
 
 # Severity a step must clear before its declared specificity counts. Below this
 # the evidence did not really fire, and a step that claimed to diagnose a habit
@@ -72,6 +95,11 @@ StepContext = object
 # --- single-rung shapes ----------------------------------------------------
 
 
+def _baseline(ctx, column: str, quantile: float) -> float | None:
+    """A quantile of a column over the most recent :data:`BASELINE_GAMES` games."""
+    return player_quantile(recent_window(ctx.matches_df, BASELINE_GAMES), column, quantile)
+
+
 def _stepped(
     ctx,
     *,
@@ -83,26 +111,30 @@ def _stepped(
     display_precision: int | None = None,
     need: int = CLEAR_BAR,
 ) -> Rung | None:
-    """One rung a stretch above the player's median, toward peer p75 when it exists.
+    """One rung a stretch above the level the player already reaches in most games.
 
-    Peer percentiles cover 16 metrics (``BENCHMARK_METRIC_KEYS``), so most steps in
-    the bank have no peer ceiling and fall back to an intrinsic one: the median
-    plus ``MAX_STEP_STRETCH``. That keeps every step buildable instead of silently
-    dropping out, which is what the own-p75 fallback did to consistent players.
+    Anchored at :data:`ANCHOR_QUANTILE` of the last :data:`BASELINE_GAMES` games,
+    stretched by :data:`MAX_STEP_STRETCH`. Peer p75 only pulls the target *down*,
+    so a player is never asked to go past their rank's 75th percentile merely
+    because the stretch said so; a peer number at or below the anchor is ignored,
+    since it would ask for nothing.
+
+    Peer percentiles cover 16 metrics (``BENCHMARK_METRIC_KEYS``), so most steps
+    in the bank have no peer number at all and the stretch is the whole story.
     """
-    p50 = player_median(ctx.matches_df, column)
-    if p50 is None or p50 <= 0:
+    anchor = _baseline(ctx, column, ANCHOR_QUANTILE)
+    if anchor is None or anchor <= 0:
         return None
-    ceiling = ctx.peer_p75.get(column)
-    if ceiling is None or ceiling <= p50:
-        ceiling = p50 * (1 + MAX_STEP_STRETCH)
-    ceiling = min(ceiling, p50 * (1 + MAX_STEP_STRETCH))
+    ceiling = anchor * (1 + MAX_STEP_STRETCH)
+    peer = ctx.peer_p75.get(column)
+    if peer is not None and anchor < peer < ceiling:
+        ceiling = peer
     if cap is not None:
         ceiling = min(ceiling, cap)
-    if ceiling <= p50:
+    if ceiling <= anchor:
         return None
     target = round(ceiling, precision)
-    if target <= round(p50, precision):
+    if target <= round(anchor, precision):
         return None
     shown = display_precision if display_precision is not None else precision
     return Rung(
@@ -124,12 +156,17 @@ def _stepped_under(
     display_precision: int | None = None,
     need: int = CLEAR_BAR,
 ) -> Rung | None:
-    """One rung a stretch below the player's median, for lower-is-better metrics."""
-    p50 = player_median(ctx.matches_df, column)
-    if p50 is None or p50 <= 0:
+    """One rung a stretch below the level the player already stays under.
+
+    The mirror of :func:`_stepped`: for a lower-is-better metric the value you are
+    already under in most games is the *upper* quantile, so the anchor is
+    ``1 - ANCHOR_QUANTILE`` and the stretch subtracts.
+    """
+    anchor = _baseline(ctx, column, 1 - ANCHOR_QUANTILE)
+    if anchor is None or anchor <= 0:
         return None
-    target = round(p50 * (1 - MAX_STEP_STRETCH), precision)
-    if target <= 0 or target >= round(p50, precision):
+    target = round(anchor * (1 - MAX_STEP_STRETCH), precision)
+    if target <= 0 or target >= round(anchor, precision):
         return None
     shown = display_precision if display_precision is not None else precision
     return Rung(

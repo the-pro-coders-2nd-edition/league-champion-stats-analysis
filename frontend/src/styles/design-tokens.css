@@ -96,11 +96,15 @@
 
   /* Win/loss solid colors, plus background tints at two opacities. Components
      previously hardcoded these rgba() triplets inline at slightly different
-     opacities. */
-  --color-win: #3fb68b;
+     opacities. --color-win is intentionally the same value as --tone-good-line
+     (#41b78c) -- "won this game" and "this score is good" are different concepts
+     that used to render as two visibly different greens (#3fb68b vs #41b78c)
+     before this fix; keeping them as separate tokens preserves the semantic
+     distinction while guaranteeing they never drift apart in color again. */
+  --color-win: #41b78c;
   --color-loss: #e05563;
-  --win-tint-06: rgba(63, 182, 139, 0.06);
-  --win-tint-12: rgba(63, 182, 139, 0.12);
+  --win-tint-06: rgba(65, 183, 140, 0.06);
+  --win-tint-12: rgba(65, 183, 140, 0.12);
   --loss-tint-06: rgba(224, 85, 99, 0.06);
   --loss-tint-12: rgba(224, 85, 99, 0.12);
 }

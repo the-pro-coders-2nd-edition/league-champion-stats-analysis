@@ -45,31 +45,31 @@ def test_career_view_declares_its_all_ranked_scope() -> None:
     assert build_career_view(CareerSnapshot()).get("tracks_all_ranked") is not True
 
 
-@pytest.mark.parametrize(
-    ("queue_key", "expects_ladder"),
-    [("solo", False), ("flex", False), ("all", True)],
-)
-def test_only_the_all_ranked_views_carry_the_ladder(
-    queue_key: str, expects_ladder: bool
-) -> None:
+@pytest.mark.parametrize("queue_key", ["solo", "flex", "all"])
+def test_every_view_carries_the_same_ladder(queue_key: str) -> None:
+    """Career is not a function of the queue filter, so it shows in every view.
+
+    Gating it behind the all-ranked filter made it invisible in the view the report
+    opens on, because DEFAULT_QUEUE_FILTER is solo.
+    """
     from league_stats.pipeline.bundles import career_view_for_queue
 
     ladder = {"has_career": True, "blocks": [{"slot": 0}], "widget": [], "rules": [],
               "legend": [], "congrats": None}
     view = career_view_for_queue(queue_key, ladder)
 
-    assert view["has_career"] is expects_ladder
-    if not expects_ladder:
-        assert view["tracks_all_ranked"] is True
+    assert view["has_career"] is True
+    assert view["blocks"] == ladder["blocks"]
 
 
-def test_all_ranked_view_passes_the_ladder_through_untouched() -> None:
+@pytest.mark.parametrize("queue_key", ["solo", "flex", "all"])
+def test_every_view_is_captioned_with_the_scope_it_covers(queue_key: str) -> None:
     from league_stats.pipeline.bundles import career_view_for_queue
 
-    ladder = {"has_career": True, "blocks": [{"slot": 0}], "widget": [], "rules": [],
+    ladder = {"has_career": True, "blocks": [], "widget": [], "rules": [],
               "legend": [], "congrats": None}
 
-    assert career_view_for_queue("all", ladder) is ladder
+    assert career_view_for_queue(queue_key, ladder)["tracks_all_ranked"] is True
 
 
 def test_ranked_records_for_the_ladder_span_both_queues() -> None:
@@ -145,7 +145,7 @@ def test_the_ladder_sees_every_ranked_game_not_a_window(
     assert seen == [len(bundles_module.ranked_career_records(records))]
 
 
-def test_filtered_queue_views_show_the_scope_notice(tmp_path) -> None:
+def test_the_ladder_reaches_every_queue_view(tmp_path) -> None:
     from league_stats.pipeline.orchestrator import build_report_views
     from tests.test_reports import _config, _make_records, _peer
 
@@ -158,9 +158,8 @@ def test_filtered_queue_views_show_the_scope_notice(tmp_path) -> None:
         config, records, graphs, peer_comparison=_peer(records)
     )
 
-    for queue_key in ("solo", "flex"):
+    for queue_key in ("solo", "flex", "all"):
         for window in views[queue_key]["windows"].values():
-            assert window["career"]["tracks_all_ranked"] is True
-            assert window["career"]["has_career"] is False
-    for window in views["all"]["windows"].values():
-        assert window["career"].get("tracks_all_ranked") is not True
+            career = window["career"]
+            assert career["tracks_all_ranked"] is True
+            assert career["has_career"] is True

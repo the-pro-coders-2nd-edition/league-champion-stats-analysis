@@ -13,7 +13,6 @@
   // acting on a ladder that is mid-rebuild would target the wrong block.
   export let busy = false;
   export let onDropped = () => {};
-  export let onShowAllRanked = null;
   // Slot awaiting its replacement from the regenerate a drop kicked off. Rendered
   // as a skeleton until the rebuilt report lands and the real block takes over.
   export let pendingSlot = null;
@@ -24,9 +23,9 @@
 
   $: career = data.career || { has_career: false, blocks: [], rules: [], legend: [], congrats: null };
   $: canDrop = !!(playerSlug && buildSlug);
-  // A queue-filtered slice has no ladder of its own: there is one ladder over
-  // every ranked game, and only the all-ranked views render it.
-  $: tracksAllRanked = !career.has_career && career.tracks_all_ranked === true;
+  // Career spans every ranked game, so it does not follow the queue filter. The
+  // caption says so rather than the ladder disappearing on a filtered view.
+  $: tracksAllRanked = career.tracks_all_ranked === true;
   $: visibleBlocks = career.blocks.filter(
     (block, index) => (block.slot ?? index) !== pendingSlot
   );
@@ -63,20 +62,13 @@
 <section id="career" class="report-section report-section--career">
   <SectionHeader id="career" title="Career mode" icon="trending-up" />
 
-  {#if tracksAllRanked}
-    <div class="career-scope-notice">
-      <p class="career-scope-notice-text">
-        Career tracks <strong>all ranked games</strong>, Solo/Duo and Flex together, so it does not
-        follow the queue filter. Switch to <strong>All ranked</strong> to see your ladder.
+  {#if career.has_career}
+    {#if tracksAllRanked}
+      <p class="career-scope-caption">
+        Tracking <strong>all ranked games</strong>, Solo/Duo and Flex together — Career does not
+        follow the queue filter above.
       </p>
-      {#if onShowAllRanked}
-        <button type="button" class="career-scope-switch" on:click={onShowAllRanked}>
-          Show all ranked
-        </button>
-      {/if}
-    </div>
-  {:else if career.has_career}
-    <p class="career-scope-caption">Tracking all ranked games, Solo/Duo and Flex together.</p>
+    {/if}
     <div class="career-rules">
       {#each career.rules as rule}
         <div class="career-rule">
@@ -275,38 +267,10 @@
   }
   .career-drop-error { margin: 0; font-size: 12px; color: var(--tone-bad-fg); }
 
-  .career-scope-notice {
-    display: flex;
-    align-items: center;
-    gap: var(--space-4);
-    flex-wrap: wrap;
-    margin: 0 0 var(--space-4);
-    padding: var(--space-4);
-    border: 1px solid var(--color-divider);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-2);
-  }
-  .career-scope-notice-text {
-    margin: 0;
-    min-width: 0;
-    flex: 1 1 260px;
-    font-size: 13px;
-    line-height: 1.5;
-    color: var(--color-neutral-400);
-  }
-  .career-scope-switch {
-    border: 1px solid var(--color-accent);
-    background: transparent;
-    color: var(--color-accent);
-    border-radius: 8px;
-    padding: 7px 14px;
-    font: inherit;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .career-scope-switch:hover { background: rgba(65, 183, 140, 0.08); }
+  
+  
+  
+  
   .career-scope-caption {
     margin: 0 0 var(--space-4);
     font-size: 12px;

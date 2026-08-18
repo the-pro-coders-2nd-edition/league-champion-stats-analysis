@@ -472,8 +472,8 @@ tr:last-child td { border-bottom: none; }
   border-radius: 999px; letter-spacing: .04em; text-transform: uppercase;
   background: var(--color-surface-2); color: var(--color-neutral-400); white-space: nowrap;
 }
-.matchup-verdict--favorable { color: var(--tone-good-fg); background: rgba(63, 182, 139, 0.14); }
-.matchup-verdict--lean_favorable { color: var(--tone-good-fg); background: rgba(63, 182, 139, 0.08); }
+.matchup-verdict--favorable { color: var(--tone-good-fg); background: rgba(65, 183, 140, 0.14); }
+.matchup-verdict--lean_favorable { color: var(--tone-good-fg); background: rgba(65, 183, 140, 0.08); }
 .matchup-verdict--even { color: var(--tone-warn-line); background: rgba(224, 177, 85, 0.12); }
 .matchup-verdict--lean_unfavorable { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.08); }
 .matchup-verdict--unfavorable { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.14); }
@@ -489,7 +489,7 @@ tr:last-child td { border-bottom: none; }
 .matchup-focus--snowball,
 .matchup-focus--press,
 .matchup-focus--edge {
-  color: #7ee0b8; background: rgba(63, 182, 139, 0.16); border-color: rgba(63, 182, 139, 0.35);
+  color: var(--tone-good-fg); background: rgba(65, 183, 140, 0.16); border-color: rgba(65, 183, 140, 0.35);
 }
 /* Danger / respect the lane */
 .matchup-focus--survive,
@@ -860,7 +860,7 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .game-review-result {
   font-weight: 700; text-align: center; border-radius: 8px; padding: 4px 0;
 }
-.game-review-result--win { color: var(--tone-good-fg); background: rgba(63, 182, 139, 0.12); }
+.game-review-result--win { color: var(--tone-good-fg); background: var(--win-tint-12); }
 .game-review-result--loss { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.12); }
 /* Still global: `.game-review-stage-matchup` and its children now live in GameSummaryHeader.svelte,
    but the icon markup inside arrives through a slot, so this descendant rule can't move into the
@@ -1042,7 +1042,7 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .game-review-event--good { border-left-color: var(--tone-good-line); }
 .game-review-event--bad { border-left-color: var(--tone-bad-line); }
 .game-review-event--mixed { border-left-color: var(--tone-warn-line); }
-.game-review-event--good:not(.game-review-event--subtle) { background: rgba(63, 182, 139, 0.06); }
+.game-review-event--good:not(.game-review-event--subtle) { background: var(--win-tint-06); }
 .game-review-event--bad:not(.game-review-event--subtle):not(.game-review-event--death) {
   background: rgba(224, 85, 99, 0.06);
 }
@@ -1075,7 +1075,7 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .game-review-champ-stack .game-icon {
   width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent;
 }
-.game-review-champ-stack--ally .game-icon { border-color: rgba(63, 182, 139, 0.85); }
+.game-review-champ-stack--ally .game-icon { border-color: rgba(65, 183, 140, 0.85); }
 .game-review-champ-stack--enemy .game-icon { border-color: rgba(224, 85, 99, 0.85); }
 .game-review-fight-vs {
   font-size: 11px; font-weight: 700; color: var(--color-neutral-400); text-transform: uppercase;
@@ -1216,7 +1216,7 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
   width: 22px; height: 22px; border-radius: 999px;
 }
 .game-review-bool iconify-icon { width: 14px; height: 14px; }
-.game-review-bool--yes { color: var(--tone-good-fg); background: rgba(63, 182, 139, 0.15); }
+.game-review-bool--yes { color: var(--tone-good-fg); background: rgba(65, 183, 140, 0.15); }
 .game-review-bool--no { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.15); }
 .key-moment-layout { display: grid; grid-template-columns: minmax(220px, 280px) auto; gap: 16px; align-items: start; }
 .key-moment-viewer { width: min(100%, 300px); }
@@ -1236,7 +1236,7 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .key-moment-headline { grid-column: 2 / 4; font-size: 14px; font-weight: 600; color: var(--color-text); line-height: 1.35; }
 .key-moment-sub { grid-column: 2 / 4; font-size: 12px; color: var(--color-neutral-400); line-height: 1.35; }
 .key-moment-badge { font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 2px 6px; border-radius: 6px; }
-.key-moment-badge--ally { color: var(--tone-good-fg); background: rgba(63, 182, 139, 0.12); }
+.key-moment-badge--ally { color: var(--tone-good-fg); background: var(--win-tint-12); }
 .key-moment-badge--enemy { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.12); }
 .key-moment-note {
   margin-bottom: 12px; padding: 10px 12px; border-radius: 10px;
@@ -1370,7 +1370,7 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
   background: var(--color-surface-2); color: var(--color-neutral-400);
   white-space: nowrap;
 }
-.ui-chip--good, .game-review-chip--good { color: var(--tone-good-fg); border-color: rgba(63, 182, 139, 0.35); background: rgba(63, 182, 139, 0.08); }
+.ui-chip--good, .game-review-chip--good { color: var(--tone-good-fg); border-color: rgba(65, 183, 140, 0.35); background: rgba(65, 183, 140, 0.08); }
 .ui-chip--bad, .game-review-chip--bad { color: var(--tone-bad-fg); border-color: rgba(224, 85, 99, 0.35); background: rgba(224, 85, 99, 0.08); }
 .ui-chip--warn, .game-review-chip--warn { color: var(--tone-warn-line); border-color: rgba(224, 177, 85, 0.35); background: rgba(224, 177, 85, 0.08); }
 .ui-chip--stat, .ui-chip--neutral,
@@ -1406,7 +1406,7 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 }
 .ui-chip--meta, .peer-meta-chip { text-transform: uppercase; background: var(--color-surface); }
 .ui-chip--confidence, .peer-meta-chip--confidence { color: var(--color-text); text-transform: uppercase; }
-.ui-chip--improving, .form-badge--improving { color: var(--tone-good-fg); background: rgba(63, 182, 139, 0.12); text-transform: uppercase; }
+.ui-chip--improving, .form-badge--improving { color: var(--tone-good-fg); background: var(--win-tint-12); text-transform: uppercase; }
 .ui-chip--declining, .form-badge--declining { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.12); text-transform: uppercase; }
 .ui-chip--stable, .form-badge--stable { color: var(--color-neutral-400); text-transform: uppercase; }
 .ui-chip-row, .game-review-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -465,10 +465,14 @@ def build_all_ranked_ladder(
 
 
 def career_view_for_queue(queue_key: str, ladder: dict[str, Any]) -> dict[str, Any]:
-    """The ladder for the all-ranked views, a scope notice for the filtered ones."""
-    if queue_key == CAREER_QUEUE_KEY:
-        return ladder
-    return career_scope_view()
+    """The same ladder in every view, flagged with the scope it covers.
+
+    Career spans every ranked game, so it is not a function of the queue filter.
+    Hiding it behind the "all ranked" filter meant it was invisible in the view the
+    report opens on, since DEFAULT_QUEUE_FILTER is solo. Every slice now carries
+    the ladder and ``tracks_all_ranked`` captions it.
+    """
+    return {**ladder, "tracks_all_ranked": True}
 
 
 def build_career_bundle(
