@@ -51,6 +51,24 @@ export async function submitAnalysis({ players, region, minGames }) {
   return data;
 }
 
+export async function refreshPlayer(slug, { champion, role } = {}) {
+  const response = await fetch(`/api/players/${slug}/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ champion: champion || '', role: role || '' }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(detailMessage(data, `Refresh failed: ${response.status}`));
+  return data;
+}
+
+export async function regeneratePlayer(slug) {
+  const response = await fetch(`/api/players/${slug}/regenerate`, { method: 'POST' });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(detailMessage(data, `Regenerate failed: ${response.status}`));
+  return data;
+}
+
 export async function fetchJob(jobId) {
   const response = await fetch(`/api/jobs/${jobId}`);
   if (!response.ok) throw new Error(`Failed to load job: ${response.status}`);

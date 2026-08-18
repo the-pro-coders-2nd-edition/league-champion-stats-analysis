@@ -1,4 +1,310 @@
 <script>
+  import { onDestroy, onMount } from 'svelte';
+  import { link } from 'svelte-spa-router';
+  import { fetchPlayerStatus, refreshPlayer, regeneratePlayer, cancelJob } from '../lib/api.js';
+
   export let params = {};
+
+  const STATE_LABELS = {
+    queued: 'Queued',
+    fetching: 'Downloading matches',
+    analyzing: 'Analyzing',
+    report_ready: 'Report ready — comparing you to players at your rank',
+    peer_running: 'Comparing you to players at your rank',
+    done: 'Complete',
+    failed: 'Failed',
+    cancelled: 'Cancelled',
+  };
+  const ACTIVE_STATES = ['queued', 'fetching', 'analyzing', 'report_ready', 'peer_running'];
+  const STAGE_ORDER = ['queued', 'fetching', 'analyzing', 'report_ready', 'peer_running'];
+
+  let status = null;
+  let subtitle = 'Loading…';
+  let timer = null;
+  let cancelling = false;
+  let retrying = false;
+  let busy = false;
+  let actionHint = '';
+
+  function formatEta(seconds) {
+    if (seconds == null) return '';
+    const minutes = Math.max(1, Math.round(seconds / 60));
+    return `~${minutes} min estimated wait`;
+  }
+
+  function formatUpdated(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value).slice(0, 16).replace('T', ' ');
+    try {
+      return date.toLocaleString('en-US', {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      });
+    } catch {
+      return date.toISOString().slice(0, 16).replace('T', ' ');
+    }
+  }
+
+  function winratePct(build) {
+    return build.winrate != null ? Math.round(build.winrate * 100) : null;
+  }
+
+  function winrateClass(build) {
+    const pct = winratePct(build);
+    return pct == null ? '' : (pct >= 50 ? 'win' : 'loss');
+  }
+
+  async function poll() {
+    try {
+      const data = await fetchPlayerStatus(params.slug);
+      status = data;
+      const job = data.active_job;
+      const active = !!(job && ACTIVE_STATES.includes(job.state));
+      const builds = data.builds || [];
+      const peersPending = active
+        && (job.state === 'report_ready' || job.state === 'peer_running')
+        && builds.length > 0;
+      const anyPeersPending = peersPending && builds.some((build) => !build.peers_ready);
+      if (data.has_report) {
+        subtitle = active
+          ? (anyPeersPending
+            ? 'Reports are ready — the comparison to players at your rank is still loading.'
+            : 'Reports below update as the analysis progresses.')
+          : data.peer_failed
+            ? 'Reports ready (rank comparison failed — refresh to retry).'
+            : 'Pick a champion + lane report below.';
+      } else {
+        subtitle = active
+          ? 'Your report is being prepared — this page updates automatically.'
+          : (job && job.state === 'failed')
+            ? 'Analysis failed.'
+            : 'No reports yet.';
+      }
+      if (!active && timer) {
+        clearInterval(timer);
+        timer = setInterval(poll, 30000);
+      }
+    } catch {
+      subtitle = 'Could not reach the server — retrying…';
+    }
+  }
+
+  function restartFastPoll() {
+    if (timer) clearInterval(timer);
+    timer = setInterval(poll, 3000);
+    return poll();
+  }
+
+  onMount(() => {
+    timer = setInterval(poll, 3000);
+    poll();
+  });
+
+  onDestroy(() => {
+    if (timer) clearInterval(timer);
+  });
+
+  async function handleRefresh() {
+    busy = true;
+    actionHint = '';
+    try {
+      await refreshPlayer(params.slug);
+      await restartFastPoll();
+    } catch (err) {
+      actionHint = err.message || 'Refresh failed.';
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function handleRegenerate() {
+    busy = true;
+    actionHint = '';
+    try {
+      await regeneratePlayer(params.slug);
+      await restartFastPoll();
+    } catch (err) {
+      actionHint = err.message || 'Regenerate failed.';
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function handleRetry() {
+    retrying = true;
+    try {
+      await refreshPlayer(params.slug);
+      await restartFastPoll();
+    } catch (err) {
+      jobErrorText = err.message || 'Retry failed.';
+    } finally {
+      retrying = false;
+    }
+  }
+
+  async function handleCancel() {
+    if (!activeJobId || cancelling) return;
+    cancelling = true;
+    try {
+      await cancelJob(activeJobId);
+      await restartFastPoll();
+    } catch (err) {
+      jobErrorText = err.message || 'Cancel failed.';
+    } finally {
+      cancelling = false;
+    }
+  }
+
+  let jobErrorText = '';
+
+  $: job = status ? status.active_job : null;
+  $: activeJobId = job ? job.id : null;
+  $: active = !!(job && ACTIVE_STATES.includes(job.state));
+  $: builds = status ? status.builds || [] : [];
+  $: peersPending = !!(active && job
+    && (job.state === 'report_ready' || job.state === 'peer_running') && builds.length > 0);
+  $: playerLabel = status ? status.player_label : params.slug;
+  $: members = status ? status.players || [] : [];
+  $: showJobCard = !!(job && (active || job.state === 'failed' || job.state === 'cancelled' || job.error));
+  $: showSkeleton = active && job && job.state !== 'queued' && job.state !== 'failed' && builds.length === 0;
+  $: showBuilds = builds.length > 0 && !showSkeleton;
+  $: showRetry = !!(job && (job.state === 'failed' || job.state === 'cancelled'));
+  $: showActions = !!(status && status.has_report && !active);
+  $: jobDetailText = job
+    ? (job.state === 'queued' && job.queue_position != null
+      ? (job.queue_position === 0 ? 'Next in line.' : `${job.queue_position} job(s) ahead of you.`)
+      : (job.stage_detail || ''))
+    : '';
+  $: jobEtaText = job && job.state === 'queued' && job.queue_position != null ? formatEta(job.eta_s) : '';
+  $: stageState = job ? (active ? job.state : (job.state === 'done' ? 'peer_running' : '')) : '';
+  $: stageIdx = STAGE_ORDER.indexOf(stageState);
+  $: {
+    if (job && job.error) jobErrorText = job.error;
+    else if (!showJobCard) jobErrorText = '';
+  }
+
+  function stageClass(i) {
+    if (!job) return '';
+    if (job.state === 'done') return ' is-done';
+    if (stageIdx < 0) return '';
+    if (i < stageIdx) return ' is-done';
+    if (i === stageIdx) return ' is-active';
+    return '';
+  }
 </script>
-<h1>Player hub: {params.slug}</h1>
+
+<header class="page-header">
+  <h1 class="page-title" id="player-title" hidden={members.length > 0}>{playerLabel}</h1>
+  <div class="player-members" id="player-members" hidden={members.length === 0}>
+    {#each members as member (member.label)}
+      <div class="player-member">
+        {#if member.profile_icon}
+          <img class="player-member-icon" src={member.profile_icon} alt="" width="32" height="32">
+        {/if}
+        <span class="player-member-label">{member.label}</span>
+        {#if member.solo_rank_label}
+          <span class="player-member-rank">
+            {#if member.solo_rank_icon}
+              <img class="player-member-rank-icon" src={member.solo_rank_icon} alt="" width="40" height="40">
+            {/if}
+            <span class="player-member-rank-label">{member.solo_rank_label}</span>
+          </span>
+        {/if}
+      </div>
+    {/each}
+  </div>
+  <p class="page-sub" id="player-subtitle">{subtitle}</p>
+</header>
+
+{#if showJobCard}
+  <div class="panel panel--elevated panel--job" id="job-card">
+    <div class="status-line">
+      <span class="dot{active ? ' pulse' : (job.state === 'failed' || job.state === 'cancelled') ? ' err' : ' ok'}" id="job-dot"></span>
+      <strong id="job-state">{STATE_LABELS[job.state] || job.state}</strong>
+      <span class="muted" id="job-eta">{jobEtaText}</span>
+      {#if active}
+        <button class="btn-ghost" id="cancel-btn" type="button" on:click={handleCancel} disabled={cancelling}>
+          {cancelling ? 'Cancelling…' : 'Cancel run'}
+        </button>
+      {/if}
+    </div>
+    <div class="muted job-detail" id="job-detail">{jobDetailText}</div>
+    <ol class="job-stages" id="job-stages" aria-label="Analysis progress">
+      <li class="job-stage{stageClass(0)}" data-stage="queued">Queued</li>
+      <li class="job-stage{stageClass(1)}" data-stage="fetching">Download matches</li>
+      <li class="job-stage{stageClass(2)}" data-stage="analyzing">Analyze reports</li>
+      <li class="job-stage{stageClass(3)}" data-stage="report_ready">Report ready</li>
+      <li class="job-stage{stageClass(4)}" data-stage="peer_running">Rank comparison</li>
+    </ol>
+    {#if job.stage_current != null && job.stage_total}
+      <div class="progress-track" id="job-progress">
+        <div class="progress-fill" id="job-progress-fill" style="width: {Math.min(100, 100 * job.stage_current / job.stage_total)}%"></div>
+      </div>
+    {/if}
+    <div class="error" id="job-error">{jobErrorText}</div>
+    {#if showRetry}
+      <div class="actions-row" id="retry-row">
+        <button class="btn-primary" id="retry-btn" type="button" on:click={handleRetry} disabled={retrying}>Retry analysis</button>
+      </div>
+    {/if}
+  </div>
+{/if}
+
+{#if showSkeleton}
+  <div id="builds-section">
+    <h2 class="section-label">Reports</h2>
+    <div class="build-grid" id="builds-grid">
+      <div class="build-card build-card--skeleton" aria-hidden="true"></div>
+      <div class="build-card build-card--skeleton" aria-hidden="true"></div>
+      <div class="build-card build-card--skeleton" aria-hidden="true"></div>
+    </div>
+  </div>
+{:else if showBuilds}
+  <div id="builds-section">
+    <h2 class="section-label">Reports</h2>
+    <div class="build-grid" id="builds-grid">
+      {#each builds as build (build.slug)}
+        <a class="build-card" href="/players/{params.slug}/{build.slug}" use:link>
+          {#if build.champion_icon}
+            <img src={build.champion_icon} alt="" class="game-icon">
+          {/if}
+          <div class="build-card-body">
+            <strong>
+              {build.champion || build.build_label || 'Report'}
+              {#if build.role_display || build.role}
+                <span class="build-card-role">
+                  {#if build.role_icon}
+                    <img src={build.role_icon} alt="" title={build.role_display || build.role} class="role-icon role-icon--sm">
+                  {/if}
+                  {build.role_display || build.role}
+                </span>
+              {/if}
+            </strong>
+            <div class="meta">
+              {build.games || 0} games
+              {#if build.winrate != null}
+                · <span class={winrateClass(build)}>{winratePct(build)}% WR</span>
+              {/if}
+            </div>
+            {#if formatUpdated(build.generated_at)}
+              <div class="build-card-updated">Updated {formatUpdated(build.generated_at)}</div>
+            {/if}
+            {#if peersPending && !build.peers_ready}
+              <span class="build-card-badge">Ready — rank comparison loading</span>
+            {/if}
+          </div>
+        </a>
+      {/each}
+    </div>
+  </div>
+{/if}
+
+{#if showActions}
+  <div class="panel" id="actions-card" style="margin-top:24px;">
+    <div class="actions-row">
+      <button class="btn-primary" id="refresh-btn" type="button" on:click={handleRefresh} disabled={busy}>Refresh with latest games</button>
+      <button class="btn-ghost" id="regenerate-btn" type="button" on:click={handleRegenerate} disabled={busy}>Regenerate with same games</button>
+      <span class="muted" id="refresh-hint">{actionHint}</span>
+    </div>
+  </div>
+{/if}
