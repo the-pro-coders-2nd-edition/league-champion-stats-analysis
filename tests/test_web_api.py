@@ -105,6 +105,21 @@ def test_landing_page_shows_profile_icons(client: TestClient) -> None:
     assert "Alice#EUW, Bob#EUW" not in response.text
 
 
+def test_groups_endpoint_matches_landing_page_data(client: TestClient) -> None:
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    client.post("/api/analyses", json={"riot_id": "New#EUW", "region": "euw1"})
+
+    groups = client.get("/api/groups").json()["groups"]
+    slugs = {group["slug"] for group in groups}
+    assert slugs == {"test_euw", "new_euw"}
+    by_slug = {group["slug"]: group for group in groups}
+    assert by_slug["test_euw"]["has_report"] is True
+    assert by_slug["test_euw"]["busy"] is False
+    assert by_slug["new_euw"]["has_report"] is False
+    assert by_slug["new_euw"]["busy"] is True
+    assert by_slug["new_euw"]["job_state"] == jobs.QUEUED
+
+
 def test_landing_shows_busy_dot_for_active_jobs(client: TestClient) -> None:
     _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
     client.post("/api/analyses", json={"riot_id": "Test#EUW", "region": "euw1"})

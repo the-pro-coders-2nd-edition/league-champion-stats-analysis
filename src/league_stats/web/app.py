@@ -835,6 +835,11 @@ def create_app(
             )
         return {"job": _job_public(store, cancelled)}
 
+    @app.get("/api/groups")
+    def groups() -> dict[str, Any]:
+        """Report groups for the landing page (same shape as the ``groups`` template var)."""
+        return {"groups": _report_groups(config.reports_dir, store)}
+
     @app.get("/api/activity")
     def activity() -> dict[str, Any]:
         """Active jobs for the landing-page status dots."""
