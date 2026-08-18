@@ -9,8 +9,8 @@
     { label: firstColumnLabel },
     { label: 'Games' },
     { label: 'Win rate' },
-    { label: 'Avg DPM', iconify: 'lucide:flame', iconTone: 'orange' },
-    { label: 'Avg deaths', iconify: 'lucide:skull', iconTone: 'danger' },
+    { label: 'Avg DPM', iconify: 'lucide:flame' },
+    { label: 'Avg deaths', iconify: 'lucide:skull' },
   ];
 </script>
 

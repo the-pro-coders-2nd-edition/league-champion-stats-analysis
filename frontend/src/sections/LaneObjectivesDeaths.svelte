@@ -33,7 +33,7 @@
 
   $: blindSpotColumns = [
     { label: 'Zone' },
-    { label: 'Deaths', iconify: 'lucide:skull', iconTone: 'danger' },
+    { label: 'Deaths', iconify: 'lucide:skull' },
   ];
 
 
@@ -115,7 +115,7 @@
       <p class="figure-caption">Deaths per game spread — a high median with a long upper tail means volatile survival.</p>
     </div>
     <div id="blind-spots-block" style={blindSpots.length ? null : 'display:none'}>
-      <h3>{@html metricLabelWithIconify('Most dangerous zones (solo deaths without recent team vision)', 'lucide:skull', 'danger')}</h3>
+      <h3>{@html metricLabelWithIconify('Most dangerous zones (solo deaths without recent team vision)', 'lucide:skull')}</h3>
       <DataTable columns={blindSpotColumns} rows={blindSpots}>
         <svelte:fragment slot="cells" let:row>
           <td>{row.zone}</td>

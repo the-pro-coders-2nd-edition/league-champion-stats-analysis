@@ -28,8 +28,7 @@ export function soloIconCellHtml(name, iconHref) {
 // ever rendered here in practice — only `icon_href` produces a visible icon. Replicated as-is.
 function metricIconHtml(row) {
   if (!row.icon_href) return '';
-  const tone = row.icon_tone || 'muted';
-  return `<img src="${row.icon_href}" alt="" class="metric-icon metric-icon--asset metric-icon--${tone}" aria-hidden="true">`;
+  return `<img src="${row.icon_href}" alt="" class="metric-icon metric-icon--asset" aria-hidden="true">`;
 }
 
 // Row-object variant: label + icon both come from the row (form/rank-peer delta tables).
@@ -37,7 +36,7 @@ export function metricLabelFromRow(row) {
   return `<span class="metric-label">${metricIconHtml(row)}<span>${escapeHtml(row.label)}</span></span>`;
 }
 
-// Static variant: label/iconify-key/tone are passed explicitly (table headers).
-export function metricLabelWithIconify(label, iconify, tone) {
-  return `<span class="metric-label"><iconify-icon icon="${iconify}" class="metric-icon metric-icon--${tone}" aria-hidden="true"></iconify-icon><span>${escapeHtml(label)}</span></span>`;
+// Static variant: label/iconify-key are passed explicitly (table headers).
+export function metricLabelWithIconify(label, iconify) {
+  return `<span class="metric-label"><iconify-icon icon="${iconify}" class="metric-icon" aria-hidden="true"></iconify-icon><span>${escapeHtml(label)}</span></span>`;
 }

@@ -40,7 +40,6 @@
   $: deltaRows = (data.form_delta_rows || []).map((row) => ({
     label: row.label,
     icon_href: row.icon_href,
-    icon_tone: row.icon_tone,
     value: row.recent,
     baseline: row.baseline,
     gap: row.gap,

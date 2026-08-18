@@ -7,12 +7,11 @@
   export let card;
 
   function metricIconHtml(card) {
-    const tone = card.icon_tone || 'muted';
     if (card.icon_href) {
-      return `<img src="${card.icon_href}" alt="" class="metric-icon metric-icon--asset metric-icon--${tone}" aria-hidden="true">`;
+      return `<img src="${card.icon_href}" alt="" class="metric-icon metric-icon--asset" aria-hidden="true">`;
     }
     if (card.iconify) {
-      return `<iconify-icon icon="${card.iconify}" class="metric-icon metric-icon--${tone}" aria-hidden="true"></iconify-icon>`;
+      return `<iconify-icon icon="${card.iconify}" class="metric-icon" aria-hidden="true"></iconify-icon>`;
     }
     return '';
   }
