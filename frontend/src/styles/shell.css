@@ -11,7 +11,7 @@
 }
 .app-brand:hover { text-decoration: none; }
 .app-brand--page .app-brand-title {
-  font-size: clamp(26px, 4vw, 34px); font-weight: 800; color: var(--color-accent);
+  font-size: clamp(26px, 4vw, 34px); font-weight: 800; color: var(--color-text);
   line-height: 1.15; letter-spacing: -.02em;
 }
 .app-logo {
