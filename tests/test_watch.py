@@ -298,7 +298,11 @@ def test_career_banner_ack_route(tmp_path: Path) -> None:
     )
 
     app_config = load_config(
-        riot_id="Hugros", tagline="EUW", region="europe", output_dir=config.output_dir
+        require_api_key=False,
+        riot_id="Hugros",
+        tagline="EUW",
+        region="europe",
+        output_dir=config.output_dir,
     )
     key = career_build_key(player_slug("Hugros", "EUW"), "Viktor", "MIDDLE")
     with CareerStore(app_config.career_db_path) as career:
@@ -322,3 +326,17 @@ def test_career_banner_ack_404s_on_unknown_build(tmp_path: Path) -> None:
             handle.post(f"/api/players/{SLUG}/builds/nope_mid/career/ack").status_code
             == 404
         )
+
+
+def test_player_status_exposes_watch_state(client: TestClient) -> None:
+    """The player hub toggle reads its state from here."""
+    before = client.get(f"/api/players/{SLUG}").json()
+    assert before["can_watch"] is True
+    assert before["watch_enabled"] is False
+    assert before["watch_interval_s"] == 180
+    assert before["last_watch_error"] == ""
+
+    client.post(f"/api/players/{SLUG}/watch", json={"interval_s": 600})
+    after = client.get(f"/api/players/{SLUG}").json()
+    assert after["watch_enabled"] is True
+    assert after["watch_interval_s"] == 600

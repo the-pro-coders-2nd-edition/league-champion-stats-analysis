@@ -21,6 +21,28 @@ from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 PUUID = MY_PUUID
 
 
+@pytest.fixture()
+def make_services(request: pytest.FixtureRequest):
+    """Factory that closes every MatchStore it opens.
+
+    Windows cannot remove a SQLite file that is still open, so leaking stores
+    turns tmp_path cleanup into a CI-only failure.
+    """
+    opened: list[MatchStore] = []
+
+    def factory(tmp_path: Path, match_count: int = 6) -> Services:
+        services = _services(tmp_path, match_count)
+        opened.append(services.store)
+        return services
+
+    def close_all() -> None:
+        for store in opened:
+            store.close()
+
+    request.addfinalizer(close_all)
+    return factory
+
+
 def _services(tmp_path: Path, match_count: int = 6) -> Services:
     config = AppConfig(
         riot_id="Test",
@@ -55,8 +77,8 @@ def _dump(records: list[MatchRecord]) -> list[dict[str, Any]]:
     return [record.model_dump(mode="json") for record in records]
 
 
-def test_cached_records_are_identical_to_freshly_parsed_ones(tmp_path: Path) -> None:
-    services = _services(tmp_path)
+def test_cached_records_are_identical_to_freshly_parsed_ones(tmp_path: Path, make_services) -> None:
+    services = make_services(tmp_path)
 
     cold = load_all_records(services, PUUID)
     warm = load_all_records(services, PUUID)
@@ -65,8 +87,10 @@ def test_cached_records_are_identical_to_freshly_parsed_ones(tmp_path: Path) -> 
     assert _dump(warm) == _dump(cold)
 
 
-def test_second_run_does_not_reparse(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    services = _services(tmp_path)
+def test_second_run_does_not_reparse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_services
+) -> None:
+    services = make_services(tmp_path)
     load_all_records(services, PUUID)
 
     calls = {"n": 0}
@@ -83,8 +107,10 @@ def test_second_run_does_not_reparse(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert calls["n"] == 0
 
 
-def test_only_new_games_are_parsed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    services = _services(tmp_path, match_count=5)
+def test_only_new_games_are_parsed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_services
+) -> None:
+    services = make_services(tmp_path, match_count=5)
     first = load_all_records(services, PUUID)
 
     match = make_match()
@@ -107,9 +133,9 @@ def test_only_new_games_are_parsed(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
 
 def test_a_code_change_forces_a_reparse(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_services
 ) -> None:
-    services = _services(tmp_path)
+    services = make_services(tmp_path)
     load_all_records(services, PUUID)
 
     monkeypatch.setattr(
@@ -129,9 +155,9 @@ def test_a_code_change_forces_a_reparse(
 
 
 def test_an_item_catalog_change_forces_a_reparse(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_services
 ) -> None:
-    services = _services(tmp_path)
+    services = make_services(tmp_path)
     load_all_records(services, PUUID)
 
     bumped = {**FAKE_ITEMS, 9999: "Brand New Item"}
@@ -150,8 +176,8 @@ def test_an_item_catalog_change_forces_a_reparse(
     assert calls["n"] > 0, "item renames change parse output, so must invalidate"
 
 
-def test_account_label_is_not_baked_into_the_cache(tmp_path: Path) -> None:
-    services = _services(tmp_path)
+def test_account_label_is_not_baked_into_the_cache(tmp_path: Path, make_services) -> None:
+    services = make_services(tmp_path)
 
     # Cold run stamps a label; the warm run must not inherit it from the cache,
     # so one cached record can serve solo and group reports alike.
@@ -163,8 +189,8 @@ def test_account_label_is_not_baked_into_the_cache(tmp_path: Path) -> None:
     assert "Smurf#EUW" not in {record.account for record in warm}
 
 
-def test_a_corrupt_cached_record_is_recovered(tmp_path: Path) -> None:
-    services = _services(tmp_path)
+def test_a_corrupt_cached_record_is_recovered(tmp_path: Path, make_services) -> None:
+    services = make_services(tmp_path)
     load_all_records(services, PUUID)
 
     with DerivedStore(services.config.derived_db_path) as derived:

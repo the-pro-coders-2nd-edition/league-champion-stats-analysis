@@ -332,12 +332,25 @@ def _missing_api_key_hint() -> str:
     )
 
 
-def load_config(config_file: Path | None = None, **overrides: Any) -> AppConfig:
+# Stand-in for callers that only resolve paths; never sent to Riot.
+_PATHS_ONLY_API_KEY: Final[str] = "RGAPI-paths-only"
+
+
+def load_config(
+    config_file: Path | None = None,
+    *,
+    require_api_key: bool = True,
+    **overrides: Any,
+) -> AppConfig:
     """Build an :class:`AppConfig` from file, environment and overrides.
 
     Args:
         config_file: Optional path to a ``config.toml``; defaults to
             ``./config.toml`` when present.
+        require_api_key: Set ``False`` when the caller only needs resolved paths
+            (cache locations, report directories) and will never call Riot. A
+            placeholder key is substituted so path resolution stays in one place
+            instead of being duplicated by keyless callers.
         **overrides: CLI-level overrides; ``None`` values are ignored.
 
     Returns:
@@ -383,7 +396,9 @@ def load_config(config_file: Path | None = None, **overrides: Any) -> AppConfig:
             if src in progression_table:
                 data[dest] = progression_table[src]
     if not data.get("api_key"):
-        raise ValueError(_missing_api_key_hint())
+        if require_api_key:
+            raise ValueError(_missing_api_key_hint())
+        data["api_key"] = _PATHS_ONLY_API_KEY
     return AppConfig(**data)
 
 

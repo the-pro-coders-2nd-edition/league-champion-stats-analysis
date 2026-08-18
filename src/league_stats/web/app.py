@@ -840,6 +840,8 @@ def create_app(
             "peer_failed": bool(player["peer_failed"]) if player else False,
             "base_completed_at": player["base_completed_at"] if player else None,
             "peer_completed_at": player["peer_completed_at"] if player else None,
+            "can_watch": player is not None,
+            **watch_public_fields(player or {}),
         }
 
     @app.post("/api/players/{slug}/builds/{build_slug}/career/ack")
@@ -861,7 +863,10 @@ def create_app(
         tagline = str(meta.get("tagline", ""))
         if not (champion and role and riot_id and tagline):
             raise HTTPException(status_code=409, detail="Build metadata is incomplete.")
+        # Only the career database path is needed here, so no Riot key is
+        # required -- this route never talks to the API.
         app_config = load_config(
+            require_api_key=False,
             riot_id=riot_id,
             tagline=tagline,
             region=str(meta.get("region", "europe")) or "europe",
