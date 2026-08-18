@@ -8,6 +8,7 @@
   import ItemsRunes from '../sections/ItemsRunes.svelte';
   import LaneObjectivesDeaths from '../sections/LaneObjectivesDeaths.svelte';
   import VisionEconomyTeamfightsPositioning from '../sections/VisionEconomyTeamfightsPositioning.svelte';
+  import GameReview from '../sections/GameReview.svelte';
 
   export let params = {};
 
@@ -32,4 +33,5 @@
   <ItemsRunes data={payload} />
   <LaneObjectivesDeaths data={payload} />
   <VisionEconomyTeamfightsPositioning data={payload} />
+  <GameReview data={payload} />
 {/if}
