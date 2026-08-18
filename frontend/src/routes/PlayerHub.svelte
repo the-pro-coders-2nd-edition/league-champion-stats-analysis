@@ -186,6 +186,16 @@
   }
 </script>
 
+<div class="shell">
+<a class="app-brand app-brand--page" href="/" use:link title="Home">
+  <img src="/out/assets/brand/logo.png" alt="" class="app-logo" aria-hidden="true">
+  <span class="app-brand-title">League Champion Analyser</span>
+</a>
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="/" use:link>Home</a>
+  <span class="breadcrumb-sep" aria-hidden="true">/</span>
+  <span class="breadcrumb-current" id="breadcrumb-current">{playerLabel}</span>
+</nav>
 <header class="page-header">
   <h1 class="page-title" id="player-title" hidden={members.length > 0}>{playerLabel}</h1>
   <div class="player-members" id="player-members" hidden={members.length === 0}>
@@ -301,3 +311,4 @@
     </div>
   </div>
 {/if}
+</div>

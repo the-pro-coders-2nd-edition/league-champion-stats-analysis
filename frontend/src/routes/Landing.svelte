@@ -152,6 +152,11 @@
   $: hasNoMatch = groupsLoaded && groups.length > 0 && normalizedQuery !== '' && filteredGroups.length === 0;
 </script>
 
+<div class="shell">
+<a class="app-brand app-brand--page" href="/" use:link title="Home">
+  <img src="/out/assets/brand/logo.png" alt="" class="app-logo" aria-hidden="true">
+  <span class="app-brand-title">League Champion Analyser</span>
+</a>
 <p class="home-lead">Coaching reports from your ranked games.</p>
 
 <div class="panel panel--form panel--elevated">
@@ -277,3 +282,4 @@
     </a>
   {/each}
 </section>
+</div>
