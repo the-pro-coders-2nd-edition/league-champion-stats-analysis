@@ -90,3 +90,21 @@
   --loss-tint-06: rgba(224, 85, 99, 0.06);
   --loss-tint-12: rgba(224, 85, 99, 0.12);
 }
+
+/* Shared toggle-switch geometry (RFC-001 SwitchTrack consolidation).
+   Two call sites -- .watch-toggle-track (shell.css) and .account-filter-switch
+   (report.css) -- independently reimplemented the same 30x18 track / 12x12 knob.
+   This holds only the shared geometry; each caller keeps its own colors/tones
+   since they draw from different token namespaces (shell.css's --panel-2/--border
+   vs report.css's --color-surface-2/--color-divider). */
+.switch-track {
+  position: relative; display: block; flex: 0 0 auto;
+  width: 30px; height: 18px; border-radius: 999px;
+  border-width: 1px; border-style: solid;
+  transition: background .15s, border-color .15s;
+}
+.switch-track-knob, .account-filter-switch::after {
+  position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 50%;
+  transition: transform .15s, background .15s;
+}

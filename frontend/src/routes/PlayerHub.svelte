@@ -359,7 +359,7 @@
           disabled={watchBusy}
           title={watching ? watchLabel(watchInterval) : 'Refresh automatically after each new game'}
         >
-          <span class="watch-toggle-track" aria-hidden="true"><span class="watch-toggle-knob"></span></span>
+          <span class="watch-toggle-track switch-track" aria-hidden="true"><span class="watch-toggle-knob switch-track-knob"></span></span>
           <span class="watch-toggle-label">{watching ? 'Watching this player' : 'Watch this player'}</span>
         </button>
       {/if}
