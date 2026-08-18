@@ -1,10 +1,44 @@
 <script lang="ts">
   export let label: string;
   export let tooltip: string;
+
+  let open = false;
+
+  function toggle() {
+    open = !open;
+  }
+
+  function close() {
+    open = false;
+  }
+
+  function handleWindowKeydown(event: KeyboardEvent) {
+    if (open && event.key === 'Escape') close();
+  }
+
+  function clickOutside(node: HTMLElement, onOutside: () => void) {
+    function handleDocumentClick(event: MouseEvent) {
+      if (!node.contains(event.target as Node)) onOutside();
+    }
+    document.addEventListener('click', handleDocumentClick, true);
+    return {
+      destroy() {
+        document.removeEventListener('click', handleDocumentClick, true);
+      },
+    };
+  }
 </script>
 
-<span class="metric-tooltip-wrap">
-  <button type="button" class="metric-tooltip-btn" aria-label="How {label} is calculated" aria-expanded="false">?</button>
+<svelte:window on:keydown={handleWindowKeydown} />
+
+<span class="metric-tooltip-wrap" class:is-open={open} use:clickOutside={close}>
+  <button
+    type="button"
+    class="metric-tooltip-btn"
+    aria-label="How {label} is calculated"
+    aria-expanded={open}
+    on:click={toggle}
+  >?</button>
   <span class="metric-tooltip-panel" role="tooltip">{tooltip}</span>
 </span>
 

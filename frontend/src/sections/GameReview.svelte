@@ -431,6 +431,12 @@
     <div id="game-review-content">
       <div class="game-review-layout">
         <aside class="game-review-rail" aria-label="Recent games">
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <!-- Each row is a real <button> (see gameReviewRowHtml) with native keyboard support;
+               this on:click is a single delegated listener over the raw-HTML-rendered rows, not
+               an interactive element in its own right, so it takes no role/tabindex/keydown of
+               its own. -->
           <div class="game-review-list" id="game-review-list" on:click={handleListClick}>
             {@html listHtml}
             {#if extraGames.length}
