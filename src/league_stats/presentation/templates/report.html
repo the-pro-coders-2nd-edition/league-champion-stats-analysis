@@ -348,6 +348,21 @@
       {% endfor %}
     </div>
   </div>
+  {% if career.has_career %}
+  <div class="career-widget" id="career-widget">
+    <div class="career-widget-head">
+      <span class="career-widget-label">Live block</span>
+      <button type="button" class="career-widget-link" id="career-widget-link">All goals</button>
+    </div>
+    {% for goal in career.widget %}
+    {% if goal.last %}
+    {% include "generated/career_node_compact_last.html" %}
+    {% else %}
+    {% include "generated/career_node_compact.html" %}
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
   <div id="overview-cards" class="cards">
     {% for card in overview_cards %}
     {{ metric_card(card) }}
@@ -799,6 +814,85 @@
     <p class="figure-caption">Game archetypes in a compressed stat space — look for clusters of throws or comeback wins to spot patterns.</p>
   </div>
   </details>
+</section>
+
+</div>
+
+<div class="report-category-panel" id="category-career" data-category="career" role="tabpanel" aria-labelledby="tab-career" hidden>
+
+<section class="report-section report-section--career">
+  <h2 class="career-heading">Career mode</h2>
+  <p class="sub sub--lead">Three blocks of three goals; only the left block is live.</p>
+
+  {% if career.has_career %}
+  <div class="career-rules">
+    {% for rule in career.rules %}
+    <div class="career-rule">
+      <div class="career-rule-key">{{ rule.key }}</div>
+      <div class="career-rule-value">{{ rule.value }}</div>
+      <p class="career-rule-note">{{ rule.note }}</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if career.congrats %}
+  <div class="career-congrats" id="career-congrats">
+    <div class="career-congrats-copy">
+      <div class="career-congrats-label">Block complete</div>
+      <div class="career-congrats-title">{{ career.congrats.title }}</div>
+      <p class="career-congrats-body">{{ career.congrats.body }}</p>
+    </div>
+    <button type="button" class="career-congrats-dismiss" id="career-congrats-dismiss">Continue</button>
+  </div>
+  {% endif %}
+
+  <div class="career-legend">
+    <div class="career-legend-title">The five states a goal can be in</div>
+    {% for entry in career.legend %}
+    <div class="career-legend-row">
+      <div class="career-ring career-ring--{{ entry.state_class }}" style="--career-pct: {{ entry.pct }}%">
+        <div class="career-mark career-mark--{{ entry.state_class }}">{{ entry.mark }}</div>
+      </div>
+      <span class="career-legend-name career-legend-name--{{ entry.state_class }}">{{ entry.name }}</span>
+      <span class="career-legend-text">{{ entry.text }}</span>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="career-blocks">
+    {% for blk in career.blocks %}
+    <section class="career-block" style="opacity: {{ blk.opacity }}">
+      <div class="career-block-head">
+        <span class="career-block-position">{{ blk.position }}</span>
+        <span class="career-block-state">{% include "generated/pill_career_block_state.html" %}</span>
+      </div>
+      <h3 class="career-block-name">{{ blk.name }}</h3>
+      <div class="career-block-metric">{{ blk.metric }}</div>
+      {% if blk.is_active %}
+      {% for goal in blk.goals %}
+      {% if goal.last %}
+      {% include "generated/career_node_last.html" %}
+      {% else %}
+      {% include "generated/career_node.html" %}
+      {% endif %}
+      {% endfor %}
+      {% else %}
+      <div class="career-steps">
+        {% for step in blk.steps %}
+        <div class="career-step">
+          <i class="career-step-bullet"></i>
+          <span class="career-step-text">{{ step }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="career-block-unlock">{{ blk.unlock }}</div>
+      {% endif %}
+    </section>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="career-empty">Career mode starts once your numbers show something worth chasing — play a few more games on this build, or wait for peer comparison to finish.</p>
+  {% endif %}
 </section>
 
 </div>
@@ -3345,6 +3439,27 @@
 
   window.reportSetCategory = setActiveCategory;
   window.reportCategoryForSection = categoryForSection;
+})();
+</script>
+<script>
+(function () {
+  var link = document.getElementById('career-widget-link');
+  if (link) {
+    link.addEventListener('click', function () {
+      if (window.reportSetCategory) {
+        window.reportSetCategory('career', { scrollTop: true });
+      }
+    });
+  }
+  // Nothing to persist: a static report has no round-trip, and the pipeline
+  // already consumed the pending-banner flag when it built this page.
+  var dismiss = document.getElementById('career-congrats-dismiss');
+  if (dismiss) {
+    dismiss.addEventListener('click', function () {
+      var banner = document.getElementById('career-congrats');
+      if (banner) banner.hidden = true;
+    });
+  }
 })();
 </script>
 <script>

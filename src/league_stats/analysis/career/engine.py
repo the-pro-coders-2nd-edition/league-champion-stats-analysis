@@ -59,11 +59,10 @@ def advance_career(
     log = get_logger("career")
     window_df = recent_window(ctx.matches_df)
 
+    _fill_empty_slots(store, key, ctx, components)
     if not store.load_goals(key):
-        seeded = _seed(store, key, ctx, components)
-        if not seeded:
-            log.info("No eligible Career tracks for %s yet", key)
-            return CareerSnapshot()
+        log.info("No eligible Career tracks for %s yet", key)
+        return CareerSnapshot()
 
     _measure_live_block(store, key, window_df)
 
@@ -77,23 +76,46 @@ def advance_career(
     return _snapshot(store, key, window_df)
 
 
-def _seed(
+def _fill_empty_slots(
     store: CareerStore,
     key: str,
     ctx: TrackContext,
     components: Sequence[Any],
-) -> bool:
-    """Fill the three empty slots with the weakest eligible tracks."""
-    written = 0
-    for track_key in rank_track_keys(components):
-        if written >= BLOCK_SLOTS:
+) -> None:
+    """Top the ladder up to three blocks, weakest eligible category first.
+
+    This runs every time rather than only on the first report: a build whose peer
+    comparison had not landed yet, or whose pool was briefly thin, would otherwise
+    stay short of three blocks forever.
+    """
+    goals = store.load_goals(key)
+    taken = {goal.track_key for goal in goals}
+    empty = [slot for slot in range(BLOCK_SLOTS) if not any(g.slot == slot for g in goals)]
+    if not empty:
+        return
+    used = store.used_track_keys(key)
+    for track_key in _candidate_order(components, taken, used):
+        if not empty:
             break
+        if track_key in taken:
+            continue
         rungs = _rungs_for(track_key, ctx)
         if rungs is None:
             continue
-        store.write_slot(key, written, track_key, rungs, ["In progress"] * len(rungs))
-        written += 1
-    return written > 0
+        store.write_slot(key, empty.pop(0), track_key, rungs, ["In progress"] * len(rungs))
+        taken.add(track_key)
+
+
+def _candidate_order(
+    components: Sequence[Any],
+    taken: set[str],
+    used: set[str],
+) -> list[str]:
+    """Weakest-first candidates, fresh tracks before ones already retired once."""
+    ranked = rank_track_keys(components, exclude=taken)
+    fresh = [key for key in ranked if key not in used]
+    recycled = [key for key in ranked if key in used]
+    return fresh + recycled
 
 
 def _rungs_for(track_key: str, ctx: TrackContext) -> tuple[Any, ...] | None:
@@ -134,31 +156,7 @@ def _retire_live_block(
     store.delete_slot(key, 0)
     for slot in range(1, BLOCK_SLOTS):
         store.move_slot(key, slot, slot - 1)
-
-    remaining = {goal.track_key for goal in store.load_goals(key)}
-    fresh = _pick_next_track(store, key, ctx, components, remaining)
-    if fresh is None:
-        return
-    track_key, rungs = fresh
-    store.write_slot(key, BLOCK_SLOTS - 1, track_key, rungs, ["In progress"] * len(rungs))
-
-
-def _pick_next_track(
-    store: CareerStore,
-    key: str,
-    ctx: TrackContext,
-    components: Sequence[Any],
-    remaining: set[str],
-) -> tuple[str, tuple[Any, ...]] | None:
-    """Best unused eligible track, recycling only once the fresh pool is dry."""
-    ranked = rank_track_keys(components, exclude=remaining)
-    used = store.used_track_keys(key)
-    for pool in ([k for k in ranked if k not in used], ranked):
-        for track_key in pool:
-            rungs = _rungs_for(track_key, ctx)
-            if rungs is not None:
-                return track_key, rungs
-    return None
+    _fill_empty_slots(store, key, ctx, components)
 
 
 def _snapshot(store: CareerStore, key: str, window_df: Any) -> CareerSnapshot:

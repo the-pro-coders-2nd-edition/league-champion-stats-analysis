@@ -406,6 +406,9 @@ def peer_comparison_for_window(
         Updated comparison with window-specific user averages.
     """
     peer_avgs = {comp.metric: comp.peer_avg for comp in base.comparisons}
+    # The peer side is window-independent, so percentiles carry over untouched.
+    peer_p50 = {c.metric: c.peer_p50 for c in base.comparisons if c.peer_p50 is not None}
+    peer_p75 = {c.metric: c.peer_p75 for c in base.comparisons if c.peer_p75 is not None}
     avg_damage_share = None
     if "damage_share" in matches_df.columns and matches_df["damage_share"].notna().any():
         avg_damage_share = float(
@@ -421,7 +424,12 @@ def peer_comparison_for_window(
                     pd.to_numeric(matches_df[key], errors="coerce").dropna().mean()
                 )
     comparisons = build_comparisons(
-        user_avgs, peer_avgs, role=base.role, avg_damage_share=avg_damage_share
+        user_avgs,
+        peer_avgs,
+        role=base.role,
+        avg_damage_share=avg_damage_share,
+        peer_p50=peer_p50,
+        peer_p75=peer_p75,
     )
     strengths = [
         _comparison_summary_line(comp) for comp in comparisons if comp.verdict == "above"

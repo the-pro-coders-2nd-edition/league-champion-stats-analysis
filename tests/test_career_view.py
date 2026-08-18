@@ -111,9 +111,9 @@ def test_view_has_one_live_block_and_two_locked(view: dict) -> None:
 
 def test_live_block_carries_nodes_and_locked_blocks_carry_steps(view: dict) -> None:
     live, second, _ = view["blocks"]
-    assert len(live["items"]) == 3
+    assert len(live["goals"]) == 3
     assert live["steps"] == []
-    assert second["items"] == []
+    assert second["goals"] == []
     assert len(second["steps"]) == 3
     assert all(isinstance(step, str) and step for step in second["steps"])
 
@@ -132,7 +132,7 @@ def test_locked_blocks_explain_their_unlock(view: dict) -> None:
 
 
 def test_node_props_are_template_ready(view: dict) -> None:
-    first, second, third = view["blocks"][0]["items"]
+    first, second, third = view["blocks"][0]["goals"]
     assert first["state"] == "In progress"
     assert first["state_class"] == "in-progress"
     assert first["tone"] == "warn"
@@ -159,7 +159,7 @@ def test_cleared_goals_get_a_check_mark(tmp_path: Path) -> None:
         snapshot = advance_career(store, KEY, _ctx(6.6), COMPONENTS)
     view = build_career_view(snapshot)
 
-    first = view["blocks"][0]["items"][0]
+    first = view["blocks"][0]["goals"][0]
     assert first["state"] == "Cleared"
     assert first["mark"] == "✓"
     assert first["tone"] == "good"

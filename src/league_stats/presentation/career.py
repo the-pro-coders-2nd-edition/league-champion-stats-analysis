@@ -151,7 +151,7 @@ def _active_block(block: CareerBlockState, *, window: int) -> dict[str, Any]:
         "tone": "bad" if revoked else "warn",
         "state_label": f"Live · {done} of {GOALS_PER_BLOCK} cleared",
         "unlock": "",
-        "items": items,
+        "goals": items,
         "steps": [],
     }
 
@@ -167,7 +167,7 @@ def _locked_block(block: CareerBlockState, previous_name: str) -> dict[str, Any]
         "tone": "flat",
         "state_label": "Locked",
         "unlock": f"Opens when {previous_name} is complete.",
-        "items": [],
+        "goals": [],
         "steps": [goal.rung.text for goal in block.goals],
     }
 
@@ -188,7 +188,7 @@ def build_career_view(snapshot: CareerSnapshot, *, window: int = WINDOW) -> dict
     track_name = live["name"]
     widget = [
         {**item, "note": f"{track_name} · {item['count']}"}
-        for item in live["items"]
+        for item in live["goals"]
     ]
 
     congrats = None

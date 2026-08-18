@@ -57,3 +57,30 @@ def test_metric_comparison_percentiles_default_to_none() -> None:
     )
     assert row.peer_p50 is None
     assert row.peer_p75 is None
+
+
+def test_window_slicing_preserves_peer_percentiles() -> None:
+    import pandas as pd
+
+    from league_stats.analysis.peer import build_comparisons, peer_comparison_for_window
+    from league_stats.core.models import PeerComparisonResult
+
+    base = PeerComparisonResult(
+        rank_label="GOLD II",
+        tier="GOLD",
+        source="test",
+        peer_games=0,
+        peer_players=0,
+        comparisons=build_comparisons(
+            {"cspm": 6.0, "deaths": 5.0},
+            {"cspm": 6.5, "deaths": 5.2},
+            peer_p50={"cspm": 6.4},
+            peer_p75={"cspm": 7.5},
+        ),
+    )
+    sliced = peer_comparison_for_window(
+        base, pd.DataFrame([{"cspm": 6.2, "deaths": 4.0, "win": 1}]), []
+    )
+    by_metric = {row.metric: row for row in sliced.comparisons}
+    assert by_metric["cspm"].peer_p75 == 7.5
+    assert by_metric["cspm"].peer_p50 == 6.4
