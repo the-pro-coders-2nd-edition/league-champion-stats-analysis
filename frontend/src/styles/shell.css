@@ -268,7 +268,7 @@ input::placeholder { color: var(--color-neutral-400); }
   content: ""; display: block; width: 6px; height: 6px; border-radius: 50%;
   background: var(--color-divider); margin-bottom: 6px;
 }
-.job-stage.is-done { color: var(--color-text); border-color: rgba(63, 182, 139, .35); }
+.job-stage.is-done { color: var(--color-text); border-color: rgba(65, 183, 140, .35); }
 .job-stage.is-done::before { background: var(--color-win); }
 .job-stage.is-active {
   color: var(--color-text); border-color: rgba(124, 108, 240, .55);

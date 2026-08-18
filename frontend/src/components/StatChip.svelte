@@ -82,7 +82,7 @@
     font-size: 16px;
     font-weight: 800;
   }
-  :global(.stat-chip--pill[data-tone="good"]) { color: var(--tone-good-fg); background: rgba(63, 182, 139, 0.12); }
+  :global(.stat-chip--pill[data-tone="good"]) { color: var(--tone-good-fg); background: var(--win-tint-12); }
   :global(.stat-chip--pill[data-tone="bad"]) { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.12); }
   :global(.stat-chip--pill[data-tone="good"] .stat-chip__value) { color: var(--tone-good-fg); }
   :global(.stat-chip--pill[data-tone="bad"] .stat-chip__value) { color: var(--tone-bad-fg); }

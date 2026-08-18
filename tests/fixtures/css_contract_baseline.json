@@ -48,8 +48,8 @@
     ]
   },
   "rule6_raw_colors": {
-    "occurrences": 23,
-    "lines": 20
+    "occurrences": 21,
+    "lines": 18
   },
   "rule7_generated_css": {
     "components_css_present": true,

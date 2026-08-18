@@ -305,8 +305,8 @@
     return [
       {
         x: minutes, y: ahead, type: 'scatter', mode: 'lines', name: 'Ahead',
-        line: { color: 'rgba(63, 182, 139, 0.85)', width: 2 }, fill: 'tozeroy',
-        fillgradient: { type: 'vertical', colorscale: [[0, 'rgba(63, 182, 139, 0.02)'], [1, 'rgba(63, 182, 139, 0.45)']], start: 0, stop: maxAbs },
+        line: { color: 'rgba(65, 183, 140, 0.85)', width: 2 }, fill: 'tozeroy',
+        fillgradient: { type: 'vertical', colorscale: [[0, 'rgba(65, 183, 140, 0.02)'], [1, 'rgba(65, 183, 140, 0.45)']], start: 0, stop: maxAbs },
         hoverinfo: 'skip', showlegend: false,
       },
       {
