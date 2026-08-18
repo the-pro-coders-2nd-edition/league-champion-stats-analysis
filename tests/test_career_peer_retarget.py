@@ -296,3 +296,80 @@ def test_career_view_exposes_the_slot_index_for_each_block(store: CareerStore) -
     view = build_career_view(snapshot)
 
     assert [block["slot"] for block in view["blocks"]] == list(range(BLOCK_SLOTS))
+
+
+def test_block_on_a_retired_track_is_replaced(store: CareerStore) -> None:
+    """A track removed from TRACK_SPECS leaves a block nothing can regenerate."""
+    matches = _matches()
+    advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)
+    # Simulate a track that was dropped from the pool between releases, the way
+    # preview-cache/career.sqlite still holds `economy_discipline` goals.
+    store.write_slot(
+        KEY,
+        0,
+        "economy_discipline",
+        [goal.rung for goal in store.load_goals(KEY) if goal.slot == 0],
+        ["In progress"] * 3,
+        since_ms=0,
+        peer_seeded=True,
+    )
+
+    advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)
+
+    tracks = {goal.track_key for goal in store.load_goals(KEY)}
+    assert "economy_discipline" not in tracks
+    assert len({goal.slot for goal in store.load_goals(KEY)}) == BLOCK_SLOTS
+
+
+def test_retired_track_is_not_recorded_as_used_when_purged(store: CareerStore) -> None:
+    matches = _matches()
+    advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)
+    store.write_slot(
+        KEY, 1, "economy_discipline",
+        [goal.rung for goal in store.load_goals(KEY) if goal.slot == 1],
+        ["In progress"] * 3, since_ms=0, peer_seeded=True,
+    )
+
+    advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)
+
+    assert "economy_discipline" not in store.used_track_keys(KEY)
+
+
+def test_purging_a_retired_track_raises_no_congrats_banner(store: CareerStore) -> None:
+    matches = _matches()
+    advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)
+    store.write_slot(
+        KEY, 0, "economy_discipline",
+        [goal.rung for goal in store.load_goals(KEY) if goal.slot == 0],
+        ["In progress"] * 3, since_ms=0, peer_seeded=True,
+    )
+
+    snapshot = advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)
+
+    assert snapshot.pending_congrats == ""
+
+
+def test_purging_a_live_orphan_keeps_the_queued_block_queued(store: CareerStore) -> None:
+    """The freed slot is refilled by current ranking, not by promoting the queue.
+
+    Unlike a retire or a manual drop, an orphaned block was never a legitimate
+    goal, so there is nothing to reward with a promotion. Refilling slot 0 from
+    the live track ranking puts the most relevant track in front of the player.
+    """
+    matches = _matches()
+    advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)
+    queued = next(
+        goal.track_key for goal in store.load_goals(KEY) if goal.slot == 1
+    )
+    store.write_slot(
+        KEY, 0, "economy_discipline",
+        [goal.rung for goal in store.load_goals(KEY) if goal.slot == 0],
+        ["In progress"] * 3, since_ms=0, peer_seeded=True,
+    )
+
+    advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)
+
+    still_queued = {goal.track_key for goal in store.load_goals(KEY) if goal.slot == 1}
+    live = {goal.track_key for goal in store.load_goals(KEY) if goal.slot == 0}
+    assert still_queued == {queued}
+    assert live and live != {queued}

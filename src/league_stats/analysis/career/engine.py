@@ -86,6 +86,7 @@ def advance_career(
         if store.load_goals(key):
             return drop_block(store, key, requested, ctx, components)
 
+    _drop_orphaned_blocks(store, key)
     _drop_provisional_blocks(store, key, ctx)
     _fill_empty_slots(store, key, ctx, components)
     if not store.load_goals(key):
@@ -132,6 +133,27 @@ def drop_block(
 
     _measure_live_block(store, key, ctx)
     return _snapshot(store, key, ctx)
+
+
+def _drop_orphaned_blocks(store: CareerStore, key: str) -> None:
+    """Discard blocks whose track no longer exists in the pool.
+
+    A track removed from ``TRACK_SPECS`` between releases leaves goals on disk
+    that nothing can regenerate or retarget: :func:`_rungs_for` returns None for
+    it, and if its column went away with it the block can never clear either, so
+    it would hold its slot forever. Dropping it frees the slot for a live track.
+
+    It is not recorded as used -- it is not in the pool to recycle.
+    """
+    orphaned = sorted(
+        {goal.slot for goal in store.load_goals(key) if goal.track_key not in TRACKS_BY_KEY}
+    )
+    if not orphaned:
+        return
+    log = get_logger("career")
+    for slot in orphaned:
+        log.info("Dropping Career slot %d for %s: track left the pool", slot, key)
+        store.delete_slot(key, slot)
 
 
 def _drop_provisional_blocks(store: CareerStore, key: str, ctx: TrackContext) -> None:
@@ -195,6 +217,27 @@ def drop_block(
 
     _measure_live_block(store, key, ctx)
     return _snapshot(store, key, ctx)
+
+
+def _drop_orphaned_blocks(store: CareerStore, key: str) -> None:
+    """Discard blocks whose track no longer exists in the pool.
+
+    A track removed from ``TRACK_SPECS`` between releases leaves goals on disk
+    that nothing can regenerate or retarget: :func:`_rungs_for` returns None for
+    it, and if its column went away with it the block can never clear either, so
+    it would hold its slot forever. Dropping it frees the slot for a live track.
+
+    It is not recorded as used -- it is not in the pool to recycle.
+    """
+    orphaned = sorted(
+        {goal.slot for goal in store.load_goals(key) if goal.track_key not in TRACKS_BY_KEY}
+    )
+    if not orphaned:
+        return
+    log = get_logger("career")
+    for slot in orphaned:
+        log.info("Dropping Career slot %d for %s: track left the pool", slot, key)
+        store.delete_slot(key, slot)
 
 
 def _drop_provisional_blocks(store: CareerStore, key: str, ctx: TrackContext) -> None:
