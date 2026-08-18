@@ -1,0 +1,105 @@
+{
+  "_comment": "Ratchet baselines for tests/test_css_contract.py (RFC-001 step 5). Each value was measured against the real tree at seed time -- not copied from the RFC doc, which may be stale. A value may only go DOWN (or, for the map fields, keys may only be removed / counts per key may only shrink). Lowering a value here in the same diff that earns the improvement is expected and correct; raising one, or a regression the test catches without a matching baseline edit, means a real regression.",
+  "rule1_markup_or_class_props": {
+    "count": 5,
+    "props": [
+      "components/DataTableRow.svelte:cellsHtml",
+      "components/MetricLabelSpan.svelte:iconHtml",
+      "components/MetricLabelSpan.svelte:roleIconHtml",
+      "components/Pill.svelte:extraClass",
+      "components/TrendRow.svelte:label"
+    ]
+  },
+  "rule2_markup_builders": {
+    "total": 75,
+    "per_file": {
+      "components/MetricCard.svelte": 3,
+      "sections/GameReview.svelte": 59,
+      "sections/Matchups.svelte": 8,
+      "lib/html.js": 5
+    }
+  },
+  "rule3_html_sites": {
+    "total": 23,
+    "permanent_allowlist": {
+      "sections/Chatbot.svelte": 1
+    },
+    "per_file": {
+      "components/DataTableRow.svelte": 1,
+      "components/MetricLabelSpan.svelte": 2,
+      "components/TrendRow.svelte": 1,
+      "sections/Chatbot.svelte": 1,
+      "sections/GameReview.svelte": 15,
+      "sections/GameReviewKeyMoments.svelte": 2,
+      "sections/LaneObjectivesDeaths.svelte": 1
+    }
+  },
+  "rule4_global_outside_allowlist": {
+    "files": 15,
+    "rules": 103,
+    "per_file": {
+      "components/CareerNode.svelte": 26,
+      "components/FormWrBridge.svelte": 6,
+      "components/HeroAction.svelte": 4,
+      "components/HeroChip.svelte": 3,
+      "components/MetricBenchmark.svelte": 3,
+      "components/MetricLabelSpan.svelte": 2,
+      "components/MetricTooltip.svelte": 7,
+      "components/MetricValue.svelte": 4,
+      "components/Pill.svelte": 23,
+      "components/RecCardHead.svelte": 3,
+      "components/RecEvidenceSummary.svelte": 1,
+      "components/SectionPulse.svelte": 4,
+      "components/SectionPulseFix.svelte": 4,
+      "components/SectionPulseHint.svelte": 1,
+      "components/TrendRow.svelte": 12
+    }
+  },
+  "rule5_root_token_collisions": {
+    "count": 5,
+    "tokens": [
+      "focus-ring",
+      "radius-lg",
+      "scrollbar-thumb",
+      "scrollbar-thumb-hover",
+      "scrollbar-track"
+    ]
+  },
+  "rule6_raw_colors": {
+    "occurrences": 20,
+    "lines": 17
+  },
+  "rule7_generated_css": {
+    "components_css_present": true,
+    "stale_hash_count": 38
+  },
+  "rule8_underused_components": {
+    "count": 19,
+    "names": [
+      "DataTableRow",
+      "FormWrBridge",
+      "GameSummaryHeader",
+      "HeroAction",
+      "HeroChip",
+      "IconStatTable",
+      "MetricBenchmark",
+      "MetricLabelSpan",
+      "MetricValue",
+      "PeerBalanceChip",
+      "PeerRankValue",
+      "RecCard",
+      "RecCardHead",
+      "RecEvidenceSummary",
+      "ReportPlayerChip",
+      "ScoreDisclosure",
+      "SectionPulseFix",
+      "SectionPulseHint",
+      "SkillGrid"
+    ]
+  },
+  "rule9_dead_modules": {
+    "tones_js_present": true,
+    "delta_tone_non_test_callers": 0,
+    "delta_label_non_test_callers": 0
+  }
+}
