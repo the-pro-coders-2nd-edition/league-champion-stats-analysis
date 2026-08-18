@@ -7,21 +7,21 @@
     ]
   },
   "rule2_markup_builders": {
-    "total": 65,
+    "total": 28,
     "per_file": {
-      "sections/GameReview.svelte": 59,
+      "sections/GameReview.svelte": 22,
       "lib/html.js": 6
     }
   },
   "rule3_html_sites": {
-    "total": 20,
+    "total": 8,
     "permanent_allowlist": {
       "sections/Chatbot.svelte": 1
     },
     "per_file": {
       "components/TrendRow.svelte": 1,
       "sections/Chatbot.svelte": 1,
-      "sections/GameReview.svelte": 15,
+      "sections/GameReview.svelte": 3,
       "sections/GameReviewKeyMoments.svelte": 2,
       "sections/LaneObjectivesDeaths.svelte": 1
     }
@@ -66,9 +66,13 @@
     "stale_hash_count": 38
   },
   "rule8_underused_components": {
-    "count": 18,
+    "count": 22,
     "names": [
+      "ChampionIconStack",
       "FormWrBridge",
+      "GameReviewIconRow",
+      "GameReviewRunePage",
+      "GameReviewSummoners",
       "GameSummaryHeader",
       "HeroAction",
       "IconCell",
