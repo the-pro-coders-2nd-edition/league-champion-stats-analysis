@@ -7,20 +7,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+import pandas as pd
+
 try:
     from pydantic import BaseModel
 except ImportError:
     BaseModel = None  # type: ignore
-
-try:
-    import numpy as np
-except ImportError:
-    np = None  # type: ignore
-
-try:
-    import pandas as pd
-except ImportError:
-    pd = None  # type: ignore
 
 
 def _convert(value: Any) -> Any:
@@ -30,11 +23,11 @@ def _convert(value: Any) -> Any:
         return {k: _convert(v) for k, v in dataclasses.asdict(value).items()}
     if isinstance(value, Path):
         return str(value)
-    if np is not None and isinstance(value, np.generic):
+    if isinstance(value, np.generic):
         return value.item()
-    if np is not None and isinstance(value, np.ndarray):
+    if isinstance(value, np.ndarray):
         return _convert(value.tolist())
-    if pd is not None and isinstance(value, pd.Timestamp):
+    if isinstance(value, pd.Timestamp):
         return value.isoformat()
     if isinstance(value, dict):
         return {k: _convert(v) for k, v in value.items()}
