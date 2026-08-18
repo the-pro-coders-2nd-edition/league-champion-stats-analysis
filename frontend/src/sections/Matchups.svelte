@@ -1,8 +1,7 @@
 <script>
   import SectionHeader from '../components/SectionHeader.svelte';
-  import DataTableRow from '../components/DataTableRow.svelte';
+  import DataTable from '../components/DataTable.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
-  import { escapeHtml, iconCellHtml } from '../lib/html.js';
   import { pct } from '../lib/format.js';
 
   export let data;
@@ -16,20 +15,24 @@
     { key: 'verdict', type: 'verdict', label: 'Verdict', title: 'Win-rate read, softer below 3 games' },
     { key: 'avg_gd10', type: 'number', label: 'Gold@10', title: 'Average gold difference at 10 minutes' },
     { key: 'avg_csd10', type: 'number', label: 'CS@10', title: 'Average CS difference at 10 minutes', csOnly: true },
-    { key: 'avg_deaths_pre14', type: 'number', label: 'Deaths <14', title: 'Average deaths before 14 minutes' },
+    { key: 'avg_deaths_pre14', type: 'number', label: 'Deaths <14', title: 'Average deaths before 14 minutes' },
   ];
 
   let sortKey = 'verdict';
   let sortDir = 'desc';
   let sortType = 'verdict';
 
-  function signedMetric(value, color, digits) {
-    if (value == null || value === '') return '—';
+  function signedMetricText(value, digits) {
+    if (value == null || value === '') return null;
     const num = Number(value);
-    if (!Number.isFinite(num)) return '—';
-    const text = (num > 0 ? '+' : '') + num.toFixed(digits == null ? 0 : digits);
-    if (color) return `<span class="matchup-metric" style="color: ${color}">${text}</span>`;
-    return text;
+    if (!Number.isFinite(num)) return null;
+    return (num > 0 ? '+' : '') + num.toFixed(digits == null ? 0 : digits);
+  }
+
+  function deathsText(value) {
+    if (value == null || value === '') return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num.toFixed(1) : null;
   }
 
   function sortValue(value, type) {
@@ -72,33 +75,10 @@
     }
   }
 
-  function matchupRowCellsHtml(row) {
-    const wrHtml = pct(row.winrate);
-    const deaths = row.avg_deaths_pre14;
-    let deathsHtml = '—';
-    if (deaths != null && deaths !== '' && Number.isFinite(Number(deaths))) {
-      deathsHtml = Number(deaths).toFixed(1);
-      if (row.deaths_pre14_color) {
-        deathsHtml = `<span class="matchup-metric" style="color: ${row.deaths_pre14_color}">${deathsHtml}</span>`;
-      }
-    }
-    const verdict = escapeHtml(row.verdict_label || 'Even');
-    const verdictKey = escapeHtml(row.verdict || 'even');
-    const focusKey = escapeHtml(row.focus_key || 'standard');
-    const focus = row.focus
-      ? `<span class="matchup-focus matchup-focus--${focusKey}">${escapeHtml(row.focus)}</span>`
-      : '';
-    const tip = `<span class="matchup-tip">${escapeHtml(row.recommendation || '')}</span>`;
-    const csCell = showCsStats ? `<td>${signedMetric(row.avg_csd10, row.csd10_color, 0)}</td>` : '';
-    return `<td>${iconCellHtml(row.opponent, row.opponent_icon)}</td><td>${row.games}</td><td>${wrHtml}</td>` +
-      `<td><span class="matchup-verdict matchup-verdict--${verdictKey}">${verdict}</span></td><td>` +
-      `${signedMetric(row.avg_gd10, row.gd10_color, 0)}</td>${csCell}<td>${deathsHtml}</td>` +
-      `<td class="matchup-plan">${focus}${tip}</td>`;
-  }
-
   $: showCsStats = data.show_cs_stats !== false;
   $: matchupRows = data.matchup_rows || [];
   $: visibleColumns = COLUMNS.filter((col) => !col.csOnly || showCsStats);
+  $: tableColumns = [...visibleColumns, { label: 'Play plan' }];
   $: sortedRows = sortRows(matchupRows, sortKey, sortDir, sortType);
 </script>
 
@@ -110,33 +90,40 @@
     <PlotlyFigure id="fig-matchup_bar" html={(data.figures && data.figures.matchup_bar) || ''} />
     <p class="figure-caption">Win rate vs lane opponents — bar length shows sample size; color shows above/below 50% WR.</p>
   </div>
-  <div class="table-scroll">
-  <table class="sortable-table matchup-table" id="matchup-table" data-sortable="matchups">
-    <thead>
-      <tr>
-        {#each visibleColumns as column}
-        <th aria-sort={sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-          <button
-            type="button"
-            class="sort-btn"
-            class:is-sorted={sortKey === column.key}
-            class:is-sorted-asc={sortKey === column.key && sortDir === 'asc'}
-            class:is-sorted-desc={sortKey === column.key && sortDir === 'desc'}
-            data-sort-key={column.key}
-            data-sort-type={column.type}
-            title={column.title || null}
-            on:click={() => handleSort(column)}
-          >{column.label}</button>
-        </th>
-        {/each}
-        <th>Play plan</th>
-      </tr>
-    </thead>
-    <tbody id="matchup-rows-body">
-    {#each sortedRows as row}
-    <DataTableRow cellsHtml={matchupRowCellsHtml(row)} />
-    {/each}
-    </tbody>
-  </table>
-  </div>
+  <DataTable
+    columns={tableColumns}
+    rows={sortedRows}
+    wrapClass="matchup-table"
+    {sortKey}
+    {sortDir}
+    on:sort={(event) => handleSort(event.detail)}
+  >
+    <svelte:fragment slot="cells" let:row>
+      <td>
+        {#if row.opponent_icon}
+          <span class="icon-cell"><img src={row.opponent_icon} alt="" class="game-icon game-icon--sm"><span>{row.opponent}</span></span>
+        {:else}
+          {row.opponent}
+        {/if}
+      </td>
+      <td>{row.games}</td>
+      <td>{pct(row.winrate)}</td>
+      <td><span class="matchup-verdict matchup-verdict--{row.verdict || 'even'}">{row.verdict_label || 'Even'}</span></td>
+      <td>
+        {#if signedMetricText(row.avg_gd10, 0) == null}—{:else if row.gd10_color}<span class="matchup-metric" style="color: {row.gd10_color}">{signedMetricText(row.avg_gd10, 0)}</span>{:else}{signedMetricText(row.avg_gd10, 0)}{/if}
+      </td>
+      {#if showCsStats}
+        <td>
+          {#if signedMetricText(row.avg_csd10, 0) == null}—{:else if row.csd10_color}<span class="matchup-metric" style="color: {row.csd10_color}">{signedMetricText(row.avg_csd10, 0)}</span>{:else}{signedMetricText(row.avg_csd10, 0)}{/if}
+        </td>
+      {/if}
+      <td>
+        {#if deathsText(row.avg_deaths_pre14) == null}—{:else if row.deaths_pre14_color}<span class="matchup-metric" style="color: {row.deaths_pre14_color}">{deathsText(row.avg_deaths_pre14)}</span>{:else}{deathsText(row.avg_deaths_pre14)}{/if}
+      </td>
+      <td class="matchup-plan">
+        {#if row.focus}<span class="matchup-focus matchup-focus--{row.focus_key || 'standard'}">{row.focus}</span>{/if}
+        <span class="matchup-tip">{row.recommendation || ''}</span>
+      </td>
+    </svelte:fragment>
+  </DataTable>
 </section>
