@@ -9,7 +9,7 @@
 </script>
 
 <div class="form-mover form-mover--{tone}">
-  <span class="form-mover-label">{label}</span>
+  <span class="form-mover-label">{@html label}</span>
   <span class="form-mover-values">{values}</span>
   <span class="form-mover-gap" style="color: {gapColor}">{gap}</span>
 </div>

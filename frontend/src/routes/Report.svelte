@@ -2,6 +2,7 @@
   import { fetchBuild } from '../lib/api.js';
   import Overview from '../sections/Overview.svelte';
   import Coaching from '../sections/Coaching.svelte';
+  import FormTracker from '../sections/FormTracker.svelte';
 
   export let params = {};
 
@@ -20,4 +21,5 @@
 {:else}
   <Overview data={payload} />
   <Coaching data={payload} />
+  <FormTracker data={payload} />
 {/if}
