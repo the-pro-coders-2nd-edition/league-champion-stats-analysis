@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from league_stats.analysis.career.steps import BLOCK_CATEGORY_KEYS
 from league_stats.analysis.career.tracks import (
     MAX_BLOCK_STRETCH,
     TRACK_SPECS,
@@ -227,23 +228,19 @@ def test_rank_track_keys_puts_the_weakest_category_first() -> None:
         _Component("Vision", 90.0),
         _Component("Objectives", 33.0),
     ]
-    assert rank_track_keys(components)[:3] == [
-        "item_spike",
-        "map_presence",
-        "death_discipline",
-    ]
+    assert rank_track_keys(components)[:3] == ["economy", "objectives", "survival"]
 
 
 def test_rank_track_keys_uses_the_jungle_category_name() -> None:
     components = [_Component("Early game", 5.0), _Component("Vision", 95.0)]
-    assert rank_track_keys(components)[0] == "laning_income"
+    assert rank_track_keys(components)[0] == "laning"
 
 
 def test_rank_track_keys_excludes_and_defaults_missing_categories() -> None:
     components = [_Component("Economy", 10.0)]
-    ranked = rank_track_keys(components, exclude={"item_spike"})
-    assert "item_spike" not in ranked
-    assert len(ranked) == 5
+    ranked = rank_track_keys(components, exclude={"economy"})
+    assert "economy" not in ranked
+    assert len(ranked) == len(BLOCK_CATEGORY_KEYS) - 1
 
 
 def test_track_spec_lookup() -> None:

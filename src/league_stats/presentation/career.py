@@ -163,7 +163,7 @@ def _active_block(block: CareerBlockState, *, window: int) -> dict[str, Any]:
         "is_locked": False,
         "opacity": "1",
         "tone": "bad" if revoked else "warn",
-        "state_label": f"Live · {done} of {GOALS_PER_BLOCK} cleared",
+        "state_label": f"Live · {done} of {len(block.goals)} cleared",
         "unlock": "",
         "goals": items,
         "steps": [],

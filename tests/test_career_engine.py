@@ -35,7 +35,60 @@ WEAK_LANING = [
 HOUR = 3_600_000
 
 
-def _batch(games: int = 20, *, start: int = 0, cspm: float = 6.0, deaths: float = 3.0) -> pd.DataFrame:
+# Values that clear any "at least" rung and any "under" rung the bank can build,
+# and values that fail both. A block's goals now depend on which steps the bank
+# ranked highest, so these tests state the outcome they want rather than nudging
+# one metric and hoping it is the one the block picked.
+def _apply_outcome(frame: pd.DataFrame, outcome: str) -> pd.DataFrame:
+    override = {"clears": _CLEARS, "fails": _FAILS}.get(outcome)
+    if override is None:
+        return frame
+    for column, value in override.items():
+        if column in frame.columns:
+            frame[column] = value
+    return frame
+
+
+_CLEARS: dict[str, float] = {
+    "cspm": 20.0, "cs10": 200.0, "gd10": 5000.0, "gd15": 5000.0, "gd20": 5000.0,
+    "xpd10": 5000.0, "damage_share": 0.9, "vspm": 5.0, "vspm10": 5.0,
+    "wards_killed": 40.0, "wards_placed": 60.0, "avg_wards_before_objective": 10.0,
+    "control_wards": 20.0, "objectives_present_rate": 1.0, "tf_participation": 1.0,
+    "objective_trade_success_rate": 1.0, "towers_taken": 20.0, "kp15": 1.0,
+    "tf_won_share": 1.0, "pct_advantaged_fights": 1.0, "ccpm": 60.0, "hpm": 3000.0,
+    "early_ganks": 20.0, "roams_pre15": 20.0, "gold10": 20000.0,
+    "deaths_pre20": 0.0, "deaths_pre14": 0.0, "greed_deaths": 0.0,
+    "solo_deaths": 0.0, "outnumbered_deaths": 0.0, "shutdown_given": 0.0,
+    "time_dead_s": 0.0, "deaths_before_neutral_objective": 0.0,
+    "first_item_min": 1.0, "avg_unspent_gold": 0.0, "avg_gold_at_death": 0.0,
+    "unproductive_absence_rate": 0.0, "first_recall_min": 1.0,
+    "under_enemy_tower_laning_deaths": 0.0, "gank_deaths_laning": 0.0,
+}
+_FAILS: dict[str, float] = {
+    "cspm": 0.5, "cs10": 5.0, "gd10": -5000.0, "gd15": -5000.0, "gd20": -5000.0,
+    "xpd10": -5000.0, "damage_share": 0.01, "vspm": 0.01, "vspm10": 0.01,
+    "wards_killed": 0.0, "wards_placed": 0.0, "avg_wards_before_objective": 0.0,
+    "control_wards": 0.0, "objectives_present_rate": 0.0, "tf_participation": 0.0,
+    "objective_trade_success_rate": 0.0, "towers_taken": 0.0, "kp15": 0.0,
+    "tf_won_share": 0.0, "pct_advantaged_fights": 0.0, "ccpm": 0.0, "hpm": 0.0,
+    "early_ganks": 0.0, "roams_pre15": 0.0, "gold10": 0.0,
+    "deaths_pre20": 30.0, "deaths_pre14": 30.0, "greed_deaths": 30.0,
+    "solo_deaths": 30.0, "outnumbered_deaths": 30.0, "shutdown_given": 9000.0,
+    "time_dead_s": 9000.0, "deaths_before_neutral_objective": 30.0,
+    "first_item_min": 90.0, "avg_unspent_gold": 90000.0, "avg_gold_at_death": 90000.0,
+    "unproductive_absence_rate": 1.0, "first_recall_min": 90.0,
+    "under_enemy_tower_laning_deaths": 30.0, "gank_deaths_laning": 30.0,
+}
+
+
+def _batch(
+    games: int = 20,
+    *,
+    start: int = 0,
+    cspm: float = 6.0,
+    deaths: float = 3.0,
+    outcome: str = "",
+) -> pd.DataFrame:
     """One run of games, timestamped so later batches really are newer."""
     return pd.DataFrame(
         {
@@ -51,8 +104,38 @@ def _batch(games: int = 20, *, start: int = 0, cspm: float = 6.0, deaths: float 
             "tf_participation": [0.62] * games,
             "control_wards": [0.0] * games,
             "objectives_present_rate": [0.4] * games,
+            "deaths_pre14": [1.0] * games,
+            "greed_deaths": [0.0] * games,
+            "solo_deaths": [0.0] * games,
+            "outnumbered_deaths": [0.0] * games,
+            "shutdown_given": [150.0] * games,
+            "time_dead_s": [60.0] * games,
+            "gd10": [250.0] * games,
+            "gd15": [400.0] * games,
+            "gd20": [500.0] * games,
+            "xpd10": [200.0] * games,
+            "cs10": [70.0] * games,
+            "gold10": [3600.0] * games,
+            "first_item_min": [10.0] * games,
+            "pct_advantaged_fights": [0.55] * games,
+            "kp15": [0.6] * games,
+            "tf_won_share": [0.55] * games,
+            "ccpm": [8.0] * games,
+            "vspm10": [0.9] * games,
+            "wards_killed": [3.0] * games,
+            "wards_placed": [11.0] * games,
+            "avg_wards_before_objective": [1.5] * games,
+            "objective_trade_success_rate": [0.6] * games,
+            "unproductive_absence_rate": [0.1] * games,
+            "towers_taken": [2.0] * games,
+            "first_recall_min": [5.0] * games,
+            "early_ganks": [1.5] * games,
+            "roams_pre15": [2.0] * games,
+            "hpm": [200.0] * games,
+            "under_enemy_tower_laning_deaths": [0.0] * games,
+            "gank_deaths_laning": [0.0] * games,
         }
-    )
+    ).pipe(_apply_outcome, outcome)
 
 
 def _matches(*batches: pd.DataFrame) -> pd.DataFrame:
@@ -81,8 +164,8 @@ def test_first_run_seeds_a_full_ladder_weakest_first(store: CareerStore) -> None
     assert len(snapshot.blocks) == BLOCK_SLOTS
     assert [block.slot for block in snapshot.blocks] == list(range(BLOCK_SLOTS))
     assert [block.track_key for block in snapshot.blocks] == [
-        "laning_income",
-        "death_discipline",
+        "laning",
+        "survival",
     ]
     assert snapshot.pending_congrats == ""
 
@@ -125,15 +208,15 @@ def test_a_promoted_block_does_not_inherit_the_previous_blocks_games(
     # clearing one block would cascade straight through the next.
     history = _batch(20, start=0, cspm=6.0, deaths=3.0)
     seeded = advance_career(store, KEY, _ctx(history), WEAK_LANING)
-    assert seeded.blocks[1].track_key == "death_discipline"
+    assert seeded.blocks[1].track_key == "survival"
 
     # 20 games with high CS and zero early deaths: clears laning_income, and
     # would clear every death_discipline rung too if they counted.
-    cleared = _matches(history, _batch(20, start=20, cspm=9.0, deaths=0.0))
+    cleared = _matches(history, _batch(20, start=20, outcome="clears"))
     snapshot = advance_career(store, KEY, _ctx(cleared), WEAK_LANING)
 
-    assert snapshot.pending_congrats == "laning_income"
-    assert snapshot.blocks[0].track_key == "death_discipline"
+    assert snapshot.pending_congrats == "laning"
+    assert snapshot.blocks[0].track_key == "survival"
     assert snapshot.blocks[0].hits == [0, 0, 0]
     assert snapshot.blocks[0].display_states == ["In progress"] * 3
 
@@ -142,39 +225,39 @@ def test_a_block_clears_on_games_played_after_it_appeared(store: CareerStore) ->
     history = _batch(20, start=0, cspm=6.0)
     advance_career(store, KEY, _ctx(history), WEAK_LANING)
 
-    played_since = _matches(history, _batch(20, start=20, cspm=9.0))
+    played_since = _matches(history, _batch(20, start=20, outcome="clears"))
     snapshot = advance_career(store, KEY, _ctx(played_since), WEAK_LANING)
 
-    assert snapshot.pending_congrats == "laning_income"
+    assert snapshot.pending_congrats == "laning"
 
 
 def test_clearing_the_live_block_retires_shifts_and_regenerates(store: CareerStore) -> None:
     history = _batch(20, start=0, cspm=6.0)
     advance_career(store, KEY, _ctx(history), WEAK_LANING)
 
-    # 20 fresh games well above every laning_income rung clear the whole block.
-    cleared_ctx = _ctx(_matches(history, _batch(20, start=20, cspm=9.0)))
+    # 20 fresh games well above every laning rung clear the whole block.
+    cleared_ctx = _ctx(_matches(history, _batch(20, start=20, outcome="clears")))
     snapshot = advance_career(store, KEY, cleared_ctx, WEAK_LANING)
 
-    assert snapshot.pending_congrats == "laning_income"
+    assert snapshot.pending_congrats == "laning"
     assert len(snapshot.blocks) == BLOCK_SLOTS
     # The queued block shifted left and became live; a fresh one filled its place.
-    assert snapshot.blocks[0].track_key == "death_discipline"
-    assert snapshot.blocks[1].track_key not in {"laning_income", "death_discipline"}
-    assert store.used_track_keys(KEY) == {"laning_income"}
+    assert snapshot.blocks[0].track_key == "survival"
+    assert snapshot.blocks[1].track_key not in {"laning", "survival"}
+    assert store.used_track_keys(KEY) == {"laning"}
 
 
 def test_the_congrats_banner_survives_until_acknowledged(store: CareerStore) -> None:
     # Under group watch a background rebuild the reader never opens must not
     # swallow the milestone, so the flag persists until it is explicitly cleared.
     history = _batch(20, start=0, cspm=6.0)
-    cleared = _matches(history, _batch(20, start=20, cspm=9.0))
+    cleared = _matches(history, _batch(20, start=20, outcome="clears"))
     advance_career(store, KEY, _ctx(history), WEAK_LANING)
     first = advance_career(store, KEY, _ctx(cleared), WEAK_LANING)
     second = advance_career(store, KEY, _ctx(cleared), WEAK_LANING)
 
-    assert first.pending_congrats == "laning_income"
-    assert second.pending_congrats == "laning_income"
+    assert first.pending_congrats == "laning"
+    assert second.pending_congrats == "laning"
 
     store.clear_pending_congrats(KEY)
     third = advance_career(store, KEY, _ctx(cleared), WEAK_LANING)
@@ -186,25 +269,34 @@ def test_rung_targets_are_frozen_across_runs(store: CareerStore) -> None:
     first = advance_career(store, KEY, _ctx(history), WEAK_LANING)
     frozen = [goal.rung.target for goal in first.blocks[0].goals]
 
-    improved = _ctx(_matches(history, _batch(10, start=20, cspm=7.0)))
+    improved = _ctx(_matches(history, _batch(10, start=20, outcome="clears")))
     second = advance_career(store, KEY, improved, WEAK_LANING)
 
     assert [goal.rung.target for goal in second.blocks[0].goals] == frozen
 
 
 def test_a_cleared_goal_drifting_below_the_hold_bar_is_revoked(store: CareerStore) -> None:
-    # Rungs freeze at 6.5 / 7.0 / 7.5, so 6.6 clears goal 1 only, leaving the
-    # other two counting in parallel and the block still live.
-    history = _batch(20, start=0, cspm=6.0)
+    """Clear one goal only, so the block stays live, then let it drift.
+
+    A block's goals are three different metrics drawn from its category bank, so
+    the batch has to satisfy the first goal's column and fail the rest -- clearing
+    all three would retire the block and the drift would land on its replacement.
+    """
+    history = _batch(20, start=0)
     advance_career(store, KEY, _ctx(history), WEAK_LANING)
+    live = [goal for goal in store.load_goals(KEY) if goal.slot == 0]
+    first = live[0].rung
 
-    good = _matches(history, _batch(20, start=20, cspm=6.6))
+    one_goal = _batch(20, start=20, outcome="fails")
+    one_goal[first.column] = _CLEARS[first.column]
+    good = _matches(history, one_goal)
     cleared = advance_career(store, KEY, _ctx(good), WEAK_LANING)
-    assert cleared.blocks[0].display_states == ["Cleared", "In progress", "In progress"]
+    assert cleared.blocks[0].display_states[0] == "Cleared"
+    assert "In progress" in cleared.blocks[0].display_states[1:]
 
-    slump = _matches(good, _batch(20, start=40, cspm=5.0))
+    slump = _matches(good, _batch(20, start=40, outcome="fails"))
     dropped = advance_career(store, KEY, _ctx(slump), WEAK_LANING)
-    assert dropped.blocks[0].track_key == "laning_income"
+    assert dropped.blocks[0].track_key == "laning"
     assert dropped.blocks[0].display_states[0] == "Revoked"
 
 
@@ -252,11 +344,17 @@ def test_a_full_ladder_without_any_peer_percentiles(store: CareerStore) -> None:
     assert len(snapshot.blocks) == BLOCK_SLOTS
 
 
-def test_significant_tracks_are_handed_out_first(store: CareerStore) -> None:
-    # deaths_pre20 is 3.0 (>= the early-deaths signal) while every peer-driven
-    # metric sits above peer p75, so only death_discipline is a real finding.
+def test_the_weakest_category_becomes_the_live_block(store: CareerStore) -> None:
+    """Blocks are categories, ordered by improvement-score weakness.
+
+    Which *goals* land inside the block is the step bank's job, and a diagnosed
+    habit outranking a stretch goal is covered in tests/test_career_step_bank.py.
+    """
+    weakest = min(WEAK_LANING, key=lambda comp: comp.score).name
     snapshot = advance_career(store, KEY, _healthy_ctx(), WEAK_LANING)
-    assert snapshot.blocks[0].track_key == "death_discipline"
+
+    assert weakest == "Laning"
+    assert snapshot.blocks[0].track_key == "laning"
 
 
 def test_an_empty_match_table_yields_an_empty_ladder(store: CareerStore) -> None:

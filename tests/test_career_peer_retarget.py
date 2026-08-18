@@ -25,7 +25,10 @@ HOUR = 3_600_000
 
 # Peers are well ahead on cspm and vspm; the player is flat, so their own p75
 # equals their p50 and every peer-driven track loses its ceiling without peers.
-PEERS = {"cspm": 7.5, "vspm": 1.25, "damage_share": 0.29}
+# Deliberately just under the +20% stretch cap on this player's medians: peer p75
+# only moves a target when it sits *below* p50 x (1 + MAX_STEP_STRETCH), otherwise
+# the cap decides and a peer-seeded rung is numerically identical to a blind one.
+PEERS = {"cspm": 6.3, "vspm": 0.76, "damage_share": 0.26}
 
 
 @dataclass(frozen=True)
@@ -57,6 +60,34 @@ def _matches(games: int = 20, *, start: int = 0) -> pd.DataFrame:
             "tf_participation": [0.6] * games,
             "control_wards": [1.0] * games,
             "first_item_min": [12.0] * games,
+            "deaths_pre14": [0.5] * games,
+            "greed_deaths": [0.0] * games,
+            "solo_deaths": [0.0] * games,
+            "outnumbered_deaths": [0.0] * games,
+            "shutdown_given": [100.0] * games,
+            "time_dead_s": [50.0] * games,
+            "gd10": [200.0] * games,
+            "gd15": [300.0] * games,
+            "gd20": [400.0] * games,
+            "xpd10": [150.0] * games,
+            "cs10": [65.0] * games,
+            "objectives_present_rate": [0.5] * games,
+            "pct_advantaged_fights": [0.5] * games,
+            "kp15": [0.55] * games,
+            "tf_won_share": [0.5] * games,
+            "ccpm": [7.0] * games,
+            "vspm10": [0.7] * games,
+            "wards_killed": [2.0] * games,
+            "wards_placed": [10.0] * games,
+            "avg_wards_before_objective": [1.2] * games,
+            "objective_trade_success_rate": [0.5] * games,
+            "unproductive_absence_rate": [0.15] * games,
+            "towers_taken": [1.5] * games,
+            "first_recall_min": [5.0] * games,
+            "avg_unspent_gold": [900.0] * games,
+            "avg_gold_at_death": [800.0] * games,
+            "under_enemy_tower_laning_deaths": [0.0] * games,
+            "gank_deaths_laning": [0.0] * games,
         }
     )
 
@@ -92,8 +123,10 @@ def test_stage_a_ladder_is_retargeted_once_peers_land(store: CareerStore) -> Non
 
     assert _ladder(store) != seeded_blind
     live = [row for row in _ladder(store) if row[0] == 0]
-    assert {row[1] for row in live} == {"laning_income"}
-    assert [row[2] for row in live] == [6.4, 6.8, 7.2]
+    assert {row[1] for row in live} == {"laning"}
+    # cspm p50 is 6.0 and the peer p75 of 6.3 sits under the +20% stretch cap of
+    # 7.2, so the peer number is what a retargeted rung actually lands on.
+    assert 6.3 in [row[2] for row in live]
 
 
 def test_retargeted_ladder_matches_one_seeded_with_peers_from_the_start(
@@ -112,10 +145,12 @@ def test_retarget_leaves_a_block_the_player_has_already_started(store: CareerSto
     """Progress is the line: a started block keeps its frozen targets."""
     advance_career(store, KEY, _ctx(_matches(), {}), WEAK_LANING)
     started = _ladder(store)
+    first = [goal for goal in store.load_goals(KEY) if goal.slot == 0][0].rung
 
-    # Twenty more games that clear the live block's presence rung.
+    # Twenty more games that bank progress on whichever goal went live.
     later = _matches(games=40)
-    later.loc[20:, "objectives_present_rate"] = 1.0
+    hit = first.target * 2 if first.comparator == "at_least" else 0.0
+    later.loc[20:, first.column] = hit
     advance_career(store, KEY, _ctx(later, PEERS), WEAK_LANING)
 
     live_before = [row for row in started if row[0] == 0]
@@ -134,12 +169,20 @@ def test_peer_seeded_ladder_is_not_retargeted_twice(store: CareerStore) -> None:
 
 
 def _retire_the_live_block(store: CareerStore) -> pd.DataFrame:
-    """Seed with peers, then clear the live block on a peer-blind refresh."""
+    """Seed with peers, then clear the live block on a peer-blind refresh.
+
+    A block's goals are three different metrics chosen by its category bank, so
+    the follow-up games have to satisfy every one of them rather than nudging a
+    named column and hoping the block picked it.
+    """
     advance_career(store, KEY, _ctx(_matches(), PEERS), WEAK_LANING)
+    live = [goal for goal in store.load_goals(KEY) if goal.slot == 0]
     cleared = _matches(games=40)
-    cleared.loc[20:, "cspm"] = 9.0
-    cleared.loc[20:, "objectives_present_rate"] = 1.0
-    cleared.loc[20:, "vspm"] = 2.0
+    for goal in live:
+        rung = goal.rung
+        cleared.loc[20:, rung.column] = (
+            rung.target * 2 + 1 if rung.comparator == "at_least" else 0.0
+        )
     advance_career(store, KEY, _ctx(cleared, {}), WEAK_LANING)
     return cleared
 

@@ -13,6 +13,7 @@ from league_stats.analysis.career.models import BLOCK_SLOTS
 from league_stats.analysis.career.tracks import TrackContext
 from league_stats.infra.career_store import CareerStore, build_key
 from league_stats.presentation.career import (
+    _track_name,
     CAREER_RULES,
     build_career_view,
     empty_career_view,
@@ -55,6 +56,33 @@ def _batch(games: int = 20, *, start: int = 0, cspm: float = 6.0) -> pd.DataFram
             "tf_participation": [0.62] * games,
             "control_wards": [0.0] * games,
             "objectives_present_rate": [0.4] * games,
+            "deaths_pre14": [1.0] * games,
+            "greed_deaths": [0.0] * games,
+            "solo_deaths": [0.0] * games,
+            "outnumbered_deaths": [0.0] * games,
+            "shutdown_given": [150.0] * games,
+            "time_dead_s": [60.0] * games,
+            "gd10": [250.0] * games,
+            "gd15": [400.0] * games,
+            "gd20": [500.0] * games,
+            "xpd10": [200.0] * games,
+            "cs10": [70.0] * games,
+            "first_item_min": [10.0] * games,
+            "pct_advantaged_fights": [0.55] * games,
+            "kp15": [0.6] * games,
+            "tf_won_share": [0.55] * games,
+            "ccpm": [8.0] * games,
+            "vspm": [0.8] * games,
+            "vspm10": [0.9] * games,
+            "wards_killed": [3.0] * games,
+            "wards_placed": [11.0] * games,
+            "avg_wards_before_objective": [1.5] * games,
+            "objective_trade_success_rate": [0.6] * games,
+            "unproductive_absence_rate": [0.1] * games,
+            "towers_taken": [2.0] * games,
+            "first_recall_min": [5.0] * games,
+            "under_enemy_tower_laning_deaths": [0.0] * games,
+            "gank_deaths_laning": [0.0] * games,
         }
     )
 
@@ -130,7 +158,7 @@ def test_live_block_state_label_and_tone(view: dict) -> None:
 
 
 def test_locked_blocks_explain_their_unlock(view: dict) -> None:
-    assert view["blocks"][1]["unlock"] == "Opens when Laning income is complete."
+    assert view["blocks"][1]["unlock"] == "Opens when Lane and early game is complete."
     assert view["blocks"][1]["state_label"] == "Locked"
 
 
@@ -155,15 +183,21 @@ def test_node_props_are_template_ready(view: dict) -> None:
 
 def test_widget_notes_name_the_live_track(view: dict) -> None:
     assert len(view["widget"]) == 3
-    assert view["widget"][0]["note"] == "Laning income · 0 of 20"
-    assert view["widget"][1]["note"] == "Laning income · 0 of 20"
+    assert view["widget"][0]["note"] == "Lane and early game · 0 of 20"
+    assert view["widget"][1]["note"] == "Lane and early game · 0 of 20"
 
 
 def test_cleared_goals_get_a_check_mark(tmp_path: Path) -> None:
     history = _batch(20, start=0, cspm=6.0)
-    improved = pd.concat([history, _batch(20, start=20, cspm=6.6)], ignore_index=True)
     with CareerStore(tmp_path / "career.sqlite") as store:
         advance_career(store, KEY, _ctx(history), COMPONENTS)
+        # A block's goals are three different metrics from its category bank, so
+        # satisfy the first one specifically rather than nudging a named column.
+        first = [goal for goal in store.load_goals(KEY) if goal.slot == 0][0].rung
+        improved = pd.concat([history, _batch(20, start=20)], ignore_index=True)
+        improved.loc[20:, first.column] = (
+            first.target * 2 + 1 if first.comparator == "at_least" else 0.0
+        )
         snapshot = advance_career(store, KEY, _ctx(improved), COMPONENTS)
     view = build_career_view(snapshot)
 
@@ -172,20 +206,34 @@ def test_cleared_goals_get_a_check_mark(tmp_path: Path) -> None:
     assert first["mark"] == "✓"
     assert first["tone"] == "good"
     assert first["pct"] == 100
-    assert view["blocks"][0]["state_label"] == "Live · 1 of 3 cleared"
+    # Some goals in a category block can already be satisfied by the baseline
+    # games, so count what actually cleared rather than assuming exactly one.
+    cleared_count = sum(
+        1 for goal in view["blocks"][0]["goals"] if goal["state"] in {"Cleared", "At risk"}
+    )
+    assert view["blocks"][0]["state_label"] == f"Live · {cleared_count} of 3 cleared"
 
 
 def test_congrats_banner_names_the_retired_and_next_block(tmp_path: Path) -> None:
     history = _batch(20, start=0, cspm=6.0)
-    cleared = pd.concat([history, _batch(20, start=20, cspm=9.0)], ignore_index=True)
     with CareerStore(tmp_path / "career.sqlite") as store:
         advance_career(store, KEY, _ctx(history), COMPONENTS)
+        live = [goal for goal in store.load_goals(KEY) if goal.slot == 0]
+        queued_name = _track_name(
+            [goal for goal in store.load_goals(KEY) if goal.slot == 1][0].track_key
+        )
+        cleared = pd.concat([history, _batch(20, start=20)], ignore_index=True)
+        for goal in live:
+            rung = goal.rung
+            cleared.loc[20:, rung.column] = (
+                rung.target * 2 + 1 if rung.comparator == "at_least" else 0.0
+            )
         snapshot = advance_career(store, KEY, _ctx(cleared), COMPONENTS)
     view = build_career_view(snapshot)
 
     assert view["congrats"] is not None
-    assert view["congrats"]["title"] == "Laning income complete"
-    assert "Death discipline moves left" in view["congrats"]["body"]
+    assert view["congrats"]["title"] == "Lane and early game complete"
+    assert f"{queued_name} moves left" in view["congrats"]["body"]
 
 
 def test_no_blocks_falls_back_to_the_empty_view() -> None:

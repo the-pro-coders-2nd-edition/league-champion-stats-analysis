@@ -33,7 +33,6 @@ from league_stats.analysis.career.tracks import (
     TRACKS_BY_KEY,
     TrackContext,
     build_rungs,
-    is_significant,
     rank_track_keys,
     track_spec,
 )
@@ -291,7 +290,7 @@ def _fill_empty_slots(
         return
     used = store.used_track_keys(key)
     since_ms = newest_game_ms(ctx.matches_df)
-    for track_key in _candidate_order(components, ctx, taken, used):
+    for track_key in candidate_step_keys(components, ctx, taken, used):
         if not empty:
             break
         if track_key in taken:
@@ -311,29 +310,21 @@ def _fill_empty_slots(
         taken.add(track_key)
 
 
-def _candidate_order(
+def candidate_step_keys(
     components: Sequence[Any],
     ctx: TrackContext,
     taken: set[str],
     used: set[str],
 ) -> list[str]:
-    """Candidates in the order the ladder should hand them out.
+    """Block keys in the order the ladder should hand them out.
 
-    Fresh before recycled, then tracks whose coaching signal is currently firing
-    before ones that are only stretch goals, then weakest improvement-score
-    category first. Significance no longer decides *whether* a track can be
-    offered -- only where it lands in this queue -- so the ladder always fills
-    every slot.
+    Fresh before recycled, then weakest improvement-score category first. Every
+    category the role has is offered, so the ladder always fills; which *goals*
+    land inside a block is decided by the step bank at build time.
     """
-    ranked = rank_track_keys(components, exclude=taken)
-    return sorted(
-        ranked,
-        key=lambda key: (
-            key in used,
-            not is_significant(TRACKS_BY_KEY[key], ctx),
-            ranked.index(key),
-        ),
-    )
+    ranked = rank_track_keys(components, exclude=taken, role=ctx.role)
+    return sorted(ranked, key=lambda key: (key in used, ranked.index(key)))
+
 
 
 def _rungs_for(track_key: str, ctx: TrackContext) -> tuple[Any, ...] | None:
