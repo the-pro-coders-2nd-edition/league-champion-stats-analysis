@@ -266,6 +266,11 @@ class AppConfig(BaseModel):
         return self.cache_dir / "career.sqlite"
 
     @property
+    def derived_db_path(self) -> Path:
+        """Path of the SQLite cache of derived analysis artifacts."""
+        return self.cache_dir / "derived.sqlite"
+
+    @property
     def http_cache_dir(self) -> Path:
         """Directory of the diskcache HTTP cache."""
         return self.cache_dir / "http"
