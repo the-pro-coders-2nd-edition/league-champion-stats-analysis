@@ -1,10 +1,16 @@
 """The Career track pool: what a block can be about, and how its rungs are set.
 
-A track is eligible exactly when it can produce three strictly-increasing rungs
-from the player's own current numbers, so ``build_rungs`` returning ``None`` is
-the eligibility answer. Peer-driven tracks need ``peer_p75``; the curated tracks
-gate on the same thresholds their tied coach rules already use, so the ladder
-never offers a goal the coaching engine would not have flagged.
+Two separate questions, deliberately not conflated:
+
+* ``build_rungs`` -- *can* this track produce three strictly-increasing rungs
+  from the player's own numbers? Almost always yes, so the ladder can always
+  show three blocks. Peer-driven tracks step toward peer p75 when peer
+  percentiles exist and toward the player's own p75 otherwise ("do what your
+  good games already do, every game").
+* ``is_significant`` -- *should* this track go first? This is the coach's own
+  gate (the thresholds its tied rules already use). It decides ordering, never
+  whether a block exists: a healthy player still gets a full ladder, just one
+  built from stretch goals rather than flagged weaknesses.
 """
 
 from __future__ import annotations
@@ -20,8 +26,11 @@ from league_stats.analysis.career.models import (
     SETUP_CLEAR_BAR,
     Rung,
 )
-from league_stats.analysis.career.window import player_mean, player_median
-from league_stats.analysis.coach.engine import MIN_GOLD_AT_DEATH, MIN_OBJECTIVE_PRESENCE
+from league_stats.analysis.career.window import player_mean, player_median, player_quantile
+from league_stats.analysis.coach.engine import (
+    MIN_GOLD_AT_DEATH,
+    MIN_OBJECTIVE_PRESENCE,
+)
 from league_stats.analysis.economy import RECALL_GOLD_COMPONENT_MAX, recall_gold_severity
 from league_stats.core.role_metrics import normalize_role
 
@@ -145,10 +154,14 @@ def _stepped_rungs(
 ) -> tuple[Rung, ...] | None:
     """Rungs stepping a single metric from the player's p50 toward peer p75."""
     p50 = player_median(ctx.matches_df, column)
-    peer_p75 = ctx.peer_p75.get(column)
-    if p50 is None or peer_p75 is None:
+    if p50 is None:
         return None
-    gap = peer_p75 - p50
+    ceiling = ctx.peer_p75.get(column)
+    if ceiling is None or ceiling <= p50:
+        ceiling = player_quantile(ctx.matches_df, column, 0.75)
+    if ceiling is None:
+        return None
+    gap = ceiling - p50
     if gap <= 0:
         return None
     step = gap / 3
@@ -178,8 +191,6 @@ def _laning_income(ctx: TrackContext) -> tuple[Rung, ...] | None:
 
 
 def _vision_uptime(ctx: TrackContext) -> tuple[Rung, ...] | None:
-    if normalize_role(ctx.role) != "UTILITY":
-        return None
     return _stepped_rungs(
         ctx,
         column="vspm",
@@ -235,8 +246,13 @@ def _death_discipline(ctx: TrackContext) -> tuple[Rung, ...] | None:
 
 
 def _next_decile(rate: float) -> float:
-    """Round a 0-1 rate up to the next decile and add one more, capped at 1.0."""
-    percent = min(100, int(math.ceil(rate * 100 / 10) * 10) + 10)
+    """The next whole decile strictly above a 0-1 rate, capped at 1.0.
+
+    Nudging by one point before rounding keeps the ask monotonic: a player on
+    exactly 60% is asked for 70%, and one on 61% is asked for 70% too rather
+    than being jumped to 80%.
+    """
+    percent = min(100, int(math.ceil((rate * 100 + 1) / 10) * 10))
     return percent / 100
 
 
@@ -244,7 +260,7 @@ def _map_presence(ctx: TrackContext) -> tuple[Rung, ...] | None:
     if ctx.objectives_df.empty or "present" not in ctx.objectives_df.columns:
         return None
     presence = float(pd.to_numeric(ctx.objectives_df["present"], errors="coerce").dropna().mean())
-    if not math.isfinite(presence) or presence >= MIN_OBJECTIVE_PRESENCE:
+    if not math.isfinite(presence):
         return None
     fights = player_mean(ctx.matches_df, "tf_participation")
     if fights is None or "control_wards" not in ctx.matches_df.columns:
@@ -277,8 +293,16 @@ def _map_presence(ctx: TrackContext) -> tuple[Rung, ...] | None:
 
 
 def _gold_target(average: float, floor: int) -> int:
-    """One 100g step below the player's current average, never under the floor."""
-    return max(floor, int(average // GOLD_STEP) * GOLD_STEP - GOLD_STEP)
+    """One 100g step below the player's current average.
+
+    The floor is a "don't demand the unreasonable" guard for players above the
+    norm; a player already under it gets a genuinely tighter target instead of
+    one loosened back up to the norm.
+    """
+    stepped = int(average // GOLD_STEP) * GOLD_STEP - GOLD_STEP
+    if average > floor:
+        return max(floor, stepped)
+    return max(GOLD_STEP, stepped)
 
 
 def _economy_discipline(ctx: TrackContext) -> tuple[Rung, ...] | None:
@@ -286,8 +310,6 @@ def _economy_discipline(ctx: TrackContext) -> tuple[Rung, ...] | None:
     fights = player_mean(ctx.matches_df, "avg_unspent_gold_per_fight")
     death = player_mean(ctx.matches_df, "avg_gold_at_death")
     if recall is None or fights is None or death is None:
-        return None
-    if recall_gold_severity(recall) is None:
         return None
     recall_target = _gold_target(recall, RECALL_GOLD_COMPONENT_MAX)
     fight_target = _gold_target(fights, RECALL_GOLD_COMPONENT_MAX)
@@ -315,6 +337,65 @@ def _economy_discipline(ctx: TrackContext) -> tuple[Rung, ...] | None:
             need=CLEAR_BAR,
         ),
     )
+
+
+# The deaths-per-game split point _rule_early_deaths tests on.
+EARLY_DEATHS_SIGNAL: Final[float] = 2.0
+
+
+def is_significant(spec: TrackSpec, ctx: TrackContext) -> bool:
+    """Whether this track's tied coaching signal currently fires for this build.
+
+    Purely a priority signal. A track that is not significant is still offered --
+    it just queues behind every track that is.
+    """
+    checker = _SIGNIFICANCE.get(spec.key)
+    return bool(checker(ctx)) if checker is not None else False
+
+
+def _behind_peers(ctx: TrackContext, column: str) -> bool:
+    peer_p75 = ctx.peer_p75.get(column)
+    p50 = player_median(ctx.matches_df, column)
+    return peer_p75 is not None and p50 is not None and p50 < peer_p75
+
+
+def _significant_laning_income(ctx: TrackContext) -> bool:
+    return _behind_peers(ctx, "cspm")
+
+
+def _significant_fight_impact(ctx: TrackContext) -> bool:
+    return _behind_peers(ctx, "damage_share")
+
+
+def _significant_vision_uptime(ctx: TrackContext) -> bool:
+    return normalize_role(ctx.role) == "UTILITY" and _behind_peers(ctx, "vspm")
+
+
+def _significant_death_discipline(ctx: TrackContext) -> bool:
+    avg = player_mean(ctx.matches_df, "deaths_pre20")
+    return avg is not None and avg >= EARLY_DEATHS_SIGNAL
+
+
+def _significant_map_presence(ctx: TrackContext) -> bool:
+    if ctx.objectives_df.empty or "present" not in ctx.objectives_df.columns:
+        return False
+    presence = pd.to_numeric(ctx.objectives_df["present"], errors="coerce").dropna()
+    return not presence.empty and float(presence.mean()) < MIN_OBJECTIVE_PRESENCE
+
+
+def _significant_economy_discipline(ctx: TrackContext) -> bool:
+    recall = player_mean(ctx.matches_df, "avg_unspent_gold")
+    return recall is not None and recall_gold_severity(recall) is not None
+
+
+_SIGNIFICANCE: Final[dict[str, Any]] = {
+    "laning_income": _significant_laning_income,
+    "death_discipline": _significant_death_discipline,
+    "map_presence": _significant_map_presence,
+    "vision_uptime": _significant_vision_uptime,
+    "fight_impact": _significant_fight_impact,
+    "economy_discipline": _significant_economy_discipline,
+}
 
 
 _BUILDERS: Final[dict[str, Any]] = {

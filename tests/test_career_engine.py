@@ -74,6 +74,7 @@ def test_first_run_seeds_three_blocks_weakest_first(store: CareerStore) -> None:
         "death_discipline",
         "economy_discipline",
     ]
+    assert len(snapshot.blocks) == 3
     assert snapshot.pending_congrats == ""
 
 
@@ -141,27 +142,63 @@ def test_a_cleared_goal_drifting_below_the_hold_bar_is_revoked(store: CareerStor
     assert dropped.blocks[0].display_states == ["Revoked", "Locked", "Locked"]
 
 
-def test_no_eligible_tracks_yields_an_empty_ladder(store: CareerStore) -> None:
+def _healthy_ctx() -> TrackContext:
     healthy = pd.DataFrame(
         {
             "game_creation_ms": list(range(20)),
-            "cspm": [9.0] * 20,
-            "deaths_pre20": [1.0] * 20,
+            "cspm": [8.0 + i * 0.1 for i in range(20)],
+            "vspm": [1.0 + i * 0.02 for i in range(20)],
+            "deaths_pre20": [3.0] * 20,
             "deaths_before_neutral_objective": [0.0] * 20,
             "avg_unspent_gold": [400.0] * 20,
             "avg_unspent_gold_per_fight": [300.0] * 20,
             "avg_gold_at_death": [200.0] * 20,
-            "damage_share": [0.40] * 20,
+            "damage_share": [0.40 + i * 0.002 for i in range(20)],
             "tf_participation": [0.9] * 20,
             "control_wards": [2.0] * 20,
             "objectives_present_rate": [0.9] * 20,
         }
     )
-    ctx = TrackContext(
+    return TrackContext(
         matches_df=healthy,
         objectives_df=pd.DataFrame({"present": [1, 1, 1, 1]}),
         role="MIDDLE",
         peer_p75={"cspm": 7.5, "damage_share": 0.29},
+    )
+
+
+def test_a_healthy_player_still_gets_three_blocks(store: CareerStore) -> None:
+    snapshot = advance_career(store, KEY, _healthy_ctx(), WEAK_LANING)
+
+    assert len(snapshot.blocks) == 3
+    assert [block.slot for block in snapshot.blocks] == [0, 1, 2]
+
+
+def test_three_blocks_without_any_peer_percentiles(store: CareerStore) -> None:
+    ctx = TrackContext(
+        matches_df=_healthy_ctx().matches_df,
+        objectives_df=_healthy_ctx().objectives_df,
+        role="MIDDLE",
+        peer_p75={},
+    )
+    snapshot = advance_career(store, KEY, ctx, WEAK_LANING)
+
+    assert len(snapshot.blocks) == 3
+
+
+def test_significant_tracks_are_handed_out_first(store: CareerStore) -> None:
+    # deaths_pre20 is 3.0 (>= the early-deaths signal) while every peer-driven
+    # metric sits above peer p75, so only death_discipline is a real finding.
+    snapshot = advance_career(store, KEY, _healthy_ctx(), WEAK_LANING)
+    assert snapshot.blocks[0].track_key == "death_discipline"
+
+
+def test_an_empty_match_table_yields_an_empty_ladder(store: CareerStore) -> None:
+    ctx = TrackContext(
+        matches_df=pd.DataFrame(),
+        objectives_df=pd.DataFrame(),
+        role="MIDDLE",
+        peer_p75={},
     )
     snapshot = advance_career(store, KEY, ctx, WEAK_LANING)
 

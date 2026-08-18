@@ -42,6 +42,21 @@ def player_mean(matches_df: pd.DataFrame, column: str) -> float | None:
     return _statistic(matches_df, column, "mean")
 
 
+def player_quantile(matches_df: pd.DataFrame, column: str, q: float) -> float | None:
+    """Quantile of a column, or ``None`` when it is missing or unusable.
+
+    Used as the rung ceiling when no peer percentile is available: the player's
+    own good games become the target to reproduce consistently.
+    """
+    if matches_df.empty or column not in matches_df.columns:
+        return None
+    series = pd.to_numeric(matches_df[column], errors="coerce").dropna()
+    if series.empty:
+        return None
+    value = float(series.quantile(q))
+    return value if math.isfinite(value) else None
+
+
 def _statistic(matches_df: pd.DataFrame, column: str, kind: str) -> float | None:
     if matches_df.empty or column not in matches_df.columns:
         return None
