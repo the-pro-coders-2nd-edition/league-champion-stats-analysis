@@ -1,7 +1,7 @@
 <script>
   import Meter from './Meter.svelte';
   import SectionPulseHint from './SectionPulseHint.svelte';
-  import SectionPulseFix from './SectionPulseFix.svelte';
+  import NavLink from './NavLink.svelte';
 
   export let sectionId;
   export let verdict = undefined;
@@ -28,7 +28,7 @@
     {/if}
   </div>
   {#if v.fix && v.fix.title}
-    <SectionPulseFix anchor={v.fix.anchor || 'coaching'} title={v.fix.title} />
+    <NavLink anchor={v.fix.anchor || 'coaching'} label={v.fix.title} kicker="Try this" variant="card" />
   {/if}
 </div>
 

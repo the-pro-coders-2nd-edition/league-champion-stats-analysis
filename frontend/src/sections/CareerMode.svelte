@@ -1,6 +1,7 @@
 <script>
   import CareerNode from '../components/CareerNode.svelte';
   import Chip from '../components/Chip.svelte';
+  import SectionHeader from '../components/SectionHeader.svelte';
   import { dropCareerBlock } from '../lib/api.js';
 
   export let data;
@@ -40,7 +41,7 @@
 </script>
 
 <section id="career" class="report-section report-section--career">
-  <h2 class="career-heading">Career mode</h2>
+  <SectionHeader id="career" title="Career mode" icon="trending-up" />
 
   {#if career.has_career}
     <div class="career-rules">
