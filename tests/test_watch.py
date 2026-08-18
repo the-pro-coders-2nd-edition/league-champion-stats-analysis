@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from league_stats.core.config import WebConfig
+from league_stats.core.config import RANKED_FLEX_QUEUE_ID, RANKED_SOLO_QUEUE_ID, WebConfig
 from league_stats.web.app import create_app
 from league_stats.web.jobs import JOB_KIND_REFRESH, JobStore
 from league_stats.web.watch import _Budget, WatchPoller, _backoff_for
@@ -18,21 +18,29 @@ SLUG = "hugros_euw"
 
 
 class FakeClient:
-    """Minimal stand-in for the Riot client the poller needs."""
+    """Minimal stand-in for the Riot client the poller needs.
 
-    def __init__(self, newest: dict[str, list[str]] | None = None) -> None:
+    ``newest`` maps ``puuid -> {queue_id: [match_ids]}`` so tests can control
+    the solo and flex queues independently.
+    """
+
+    def __init__(self, newest: dict[str, dict[int, list[str]]] | None = None) -> None:
         self.newest = newest or {}
         self.match_id_calls = 0
+        self.use_cache_calls: list[bool] = []
         self.fail = False
 
     def resolve_puuid(self, riot_id: str, tagline: str) -> str:
         return f"puuid-{riot_id.lower()}"
 
-    def fetch_ranked_match_ids(self, puuid: str, count: int) -> list[str]:
+    def fetch_match_ids(
+        self, puuid: str, count: int, *, queue_id: int, use_cache: bool = True
+    ) -> list[str]:
         self.match_id_calls += 1
+        self.use_cache_calls.append(use_cache)
         if self.fail:
             raise RuntimeError("riot is down")
-        return self.newest.get(puuid, [])
+        return self.newest.get(puuid, {}).get(queue_id, [])[:count]
 
 
 @pytest.fixture()
@@ -104,7 +112,7 @@ def test_list_watched_only_returns_watched(store: JobStore) -> None:
 
 def test_first_tick_only_records_a_baseline(store: JobStore) -> None:
     store.set_watch(SLUG, enabled=True)
-    client = FakeClient({"puuid-hugros": ["EUW1_1"]})
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
     clock = Clock()
 
     refreshed = _tick(_poller(store, client, clock))
@@ -117,12 +125,12 @@ def test_first_tick_only_records_a_baseline(store: JobStore) -> None:
 
 def test_a_new_match_id_enqueues_a_refresh(store: JobStore) -> None:
     store.set_watch(SLUG, enabled=True, interval_s=60)
-    client = FakeClient({"puuid-hugros": ["EUW1_1"]})
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
     clock = Clock()
     poller = _poller(store, client, clock)
 
     _tick(poller)  # baseline
-    client.newest["puuid-hugros"] = ["EUW1_2"]
+    client.newest["puuid-hugros"] = {RANKED_SOLO_QUEUE_ID: ["EUW1_2"]}
     clock.advance(120)
     refreshed = _tick(poller)
 
@@ -132,9 +140,61 @@ def test_a_new_match_id_enqueues_a_refresh(store: JobStore) -> None:
     assert jobs[0]["kind"] == JOB_KIND_REFRESH
 
 
+def test_a_new_flex_match_id_enqueues_a_refresh(store: JobStore) -> None:
+    """A player's solo queue is unchanged but their flex queue has a new game.
+
+    Regression test: the merged ``fetch_ranked_match_ids`` list always sorted
+    solo first, so comparing only its first element made flex games invisible
+    to watch.
+    """
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient(
+        {"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"], RANKED_FLEX_QUEUE_ID: ["EUW1_F1"]}}
+    )
+    clock = Clock()
+    poller = _poller(store, client, clock)
+
+    _tick(poller)  # baseline
+    client.newest["puuid-hugros"][RANKED_FLEX_QUEUE_ID] = ["EUW1_F2"]
+    clock.advance(120)
+    refreshed = _tick(poller)
+
+    assert refreshed == [SLUG]
+    jobs = store.list_active_jobs()
+    assert len(jobs) == 1
+    assert jobs[0]["kind"] == JOB_KIND_REFRESH
+
+
+def test_watch_detection_bypasses_the_http_cache(store: JobStore) -> None:
+    """Detection must read live data; a 15-minute HTTP cache would make the
+    configured watch_interval_s a lie."""
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    _tick(_poller(store, client, Clock()))
+
+    assert client.use_cache_calls
+    assert all(used is False for used in client.use_cache_calls)
+
+
+def test_legacy_flat_watch_seen_is_migrated_without_crashing(store: JobStore) -> None:
+    """A pre-per-queue-tracking ``watch_seen_json`` row (``{puuid: match_id}``)
+    must not crash the poller; it is treated as an empty baseline."""
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    store.record_watch_tick(SLUG, seen={"puuid-hugros": "EUW1_LEGACY"}, at=1_000.0)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    clock = Clock()
+
+    refreshed = _tick(_poller(store, client, clock))
+
+    assert refreshed == [], "re-establishing the baseline is not itself a new game"
+    row = store.get_player(SLUG)
+    seen = row["watch_seen_json"]
+    assert "puuid-hugros" in seen
+
+
 def test_no_new_match_id_does_nothing(store: JobStore) -> None:
     store.set_watch(SLUG, enabled=True, interval_s=60)
-    client = FakeClient({"puuid-hugros": ["EUW1_1"]})
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
     clock = Clock()
     poller = _poller(store, client, clock)
 
@@ -147,7 +207,7 @@ def test_no_new_match_id_does_nothing(store: JobStore) -> None:
 
 def test_an_active_job_blocks_enqueueing(store: JobStore) -> None:
     store.set_watch(SLUG, enabled=True, interval_s=60)
-    client = FakeClient({"puuid-hugros": ["EUW1_1"]})
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
     clock = Clock()
     poller = _poller(store, client, clock)
     _tick(poller)
@@ -160,7 +220,7 @@ def test_an_active_job_blocks_enqueueing(store: JobStore) -> None:
         player_slug=SLUG,
     )
     before = client.match_id_calls
-    client.newest["puuid-hugros"] = ["EUW1_2"]
+    client.newest["puuid-hugros"] = {RANKED_SOLO_QUEUE_ID: ["EUW1_2"]}
     clock.advance(120)
 
     assert _tick(poller) == []
@@ -169,7 +229,7 @@ def test_an_active_job_blocks_enqueueing(store: JobStore) -> None:
 
 def test_a_group_is_not_checked_before_its_interval(store: JobStore) -> None:
     store.set_watch(SLUG, enabled=True, interval_s=600)
-    client = FakeClient({"puuid-hugros": ["EUW1_1"]})
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
     clock = Clock()
     poller = _poller(store, client, clock)
 
@@ -183,7 +243,7 @@ def test_a_group_is_not_checked_before_its_interval(store: JobStore) -> None:
 
 def test_an_api_failure_backs_off_and_is_surfaced(store: JobStore) -> None:
     store.set_watch(SLUG, enabled=True, interval_s=60)
-    client = FakeClient({"puuid-hugros": ["EUW1_1"]})
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
     clock = Clock()
     poller = _poller(store, client, clock)
     _tick(poller)
@@ -203,7 +263,7 @@ def test_an_api_failure_backs_off_and_is_surfaced(store: JobStore) -> None:
 
 
 def test_unwatched_groups_are_never_polled(store: JobStore) -> None:
-    client = FakeClient({"puuid-hugros": ["EUW1_1"]})
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
     assert _tick(_poller(store, client, Clock())) == []
     assert client.match_id_calls == 0
 
@@ -223,7 +283,7 @@ def test_backoff_grows_then_caps() -> None:
 
 def test_budget_exhaustion_defers_instead_of_failing(store: JobStore) -> None:
     store.set_watch(SLUG, enabled=True, interval_s=60)
-    client = FakeClient({"puuid-hugros": ["EUW1_1"]})
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
     poller = WatchPoller(
         store, lambda region: client, now=Clock(), budget=_Budget(limit=0)
     )

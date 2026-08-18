@@ -490,7 +490,7 @@
   </div>
 
   <div class="report-category-panel{activeCategory === 'career' ? ' is-active' : ''}" id="category-career" data-category="career">
-    <CareerMode data={$view} />
+    <CareerMode data={$view} playerSlug={params.slug} buildSlug={params.buildSlug} />
   </div>
 
   <div class="report-category-panel{activeCategory === 'performance' ? ' is-active' : ''}" id="category-performance" data-category="performance">

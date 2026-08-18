@@ -73,6 +73,20 @@ def advance_career(
     """Seed or advance a ladder and return its post-run state."""
     log = get_logger("career")
 
+    requested = store.peek_pending_drop(key)
+    if requested is not None:
+        store.clear_pending_drop(key)
+        if store.load_goals(key):
+            return drop_block(store, key, requested, ctx, components)
+
+    _drop_provisional_blocks(store, key, ctx)
+    requested = store.peek_pending_drop(key)
+    if requested is not None:
+        store.clear_pending_drop(key)
+        if store.load_goals(key):
+            return drop_block(store, key, requested, ctx, components)
+
+    _drop_provisional_blocks(store, key, ctx)
     _fill_empty_slots(store, key, ctx, components)
     if not store.load_goals(key):
         log.info("No eligible Career tracks for %s yet", key)
@@ -88,6 +102,131 @@ def advance_career(
         _measure_live_block(store, key, ctx)
 
     return _snapshot(store, key, ctx)
+
+
+def drop_block(
+    store: CareerStore,
+    key: str,
+    slot: int,
+    ctx: TrackContext,
+    components: Sequence[Any],
+) -> CareerSnapshot:
+    """Discard one block by hand, shift the queue left and generate a replacement.
+
+    Unlike a retire this does not record the track as used and raises no
+    block-complete banner, so a dropped track stays fully eligible. If it is
+    still the best fit for this build it comes straight back, with rungs
+    recomputed against whatever peer data exists now.
+    """
+    log = get_logger("career")
+    if not _slot_goals(store, key, slot):
+        return _snapshot(store, key, ctx)
+
+    dropped = _slot_goals(store, key, slot)[0].track_key
+    store.delete_slot(key, slot)
+    promoted_since = newest_game_ms(ctx.matches_df)
+    for source in range(slot + 1, BLOCK_SLOTS):
+        store.move_slot(key, source, source - 1, since_ms=promoted_since)
+    _fill_empty_slots(store, key, ctx, components)
+    log.info("Career block %s dropped from slot %d for %s", dropped, slot, key)
+
+    _measure_live_block(store, key, ctx)
+    return _snapshot(store, key, ctx)
+
+
+def _drop_provisional_blocks(store: CareerStore, key: str, ctx: TrackContext) -> None:
+    """Discard blocks frozen before peer percentiles existed, if unstarted.
+
+    Stage A of the web pipeline renders with ``peer_comparison=None``, so a
+    ladder seeded then stepped toward the player's own p75 and its track order
+    never saw the peer significance signals. Deleting those slots here lets
+    :func:`_fill_empty_slots` rebuild them against peers on the same run.
+
+    A block the player has already made progress on is left alone: rung targets
+    must never move under someone closing in on them.
+    """
+    if not ctx.peer_p75:
+        return
+    stale = sorted(
+        {
+            goal.slot
+            for goal in store.load_goals(key)
+            if not goal.peer_seeded and not _slot_started(store, key, goal.slot, ctx)
+        }
+    )
+    for slot in stale:
+        store.delete_slot(key, slot)
+
+
+def _slot_started(store: CareerStore, key: str, slot: int, ctx: TrackContext) -> bool:
+    """Whether any goal in a slot has banked a game or left its opening state."""
+    return any(
+        goal.state != "In progress" or _goal_hits(goal, ctx) > 0
+        for goal in _slot_goals(store, key, slot)
+    )
+
+
+def drop_block(
+    store: CareerStore,
+    key: str,
+    slot: int,
+    ctx: TrackContext,
+    components: Sequence[Any],
+) -> CareerSnapshot:
+    """Discard one block by hand, shift the queue left and generate a replacement.
+
+    Unlike a retire this does not record the track as used and raises no
+    block-complete banner, so a dropped track stays fully eligible. If it is
+    still the best fit for this build it comes straight back, with rungs
+    recomputed against whatever peer data exists now.
+    """
+    log = get_logger("career")
+    existing = _slot_goals(store, key, slot)
+    if not existing:
+        return _snapshot(store, key, ctx)
+
+    dropped = existing[0].track_key
+    store.delete_slot(key, slot)
+    promoted_since = newest_game_ms(ctx.matches_df)
+    for source in range(slot + 1, BLOCK_SLOTS):
+        store.move_slot(key, source, source - 1, since_ms=promoted_since)
+    _fill_empty_slots(store, key, ctx, components)
+    log.info("Career block %s dropped from slot %d for %s", dropped, slot, key)
+
+    _measure_live_block(store, key, ctx)
+    return _snapshot(store, key, ctx)
+
+
+def _drop_provisional_blocks(store: CareerStore, key: str, ctx: TrackContext) -> None:
+    """Discard blocks frozen before peer percentiles existed, if unstarted.
+
+    Stage A of the web pipeline renders with ``peer_comparison=None``, so a
+    ladder seeded then stepped toward the player's own p75 and its track order
+    never saw the peer significance signals. Deleting those slots here lets
+    :func:`_fill_empty_slots` rebuild them against peers on the same run.
+
+    A block the player has already made progress on is left alone: rung targets
+    must never move under someone closing in on them.
+    """
+    if not ctx.peer_p75:
+        return
+    stale = sorted(
+        {
+            goal.slot
+            for goal in store.load_goals(key)
+            if not goal.peer_seeded and not _slot_started(store, key, goal.slot, ctx)
+        }
+    )
+    for slot in stale:
+        store.delete_slot(key, slot)
+
+
+def _slot_started(store: CareerStore, key: str, slot: int, ctx: TrackContext) -> bool:
+    """Whether any goal in a slot has banked a game or left its opening state."""
+    return any(
+        goal.state != "In progress" or _goal_hits(goal, ctx) > 0
+        for goal in _slot_goals(store, key, slot)
+    )
 
 
 def _fill_empty_slots(
@@ -124,6 +263,7 @@ def _fill_empty_slots(
             rungs,
             ["In progress"] * len(rungs),
             since_ms=since_ms,
+            peer_seeded=bool(ctx.peer_p75),
         )
         taken.add(track_key)
 

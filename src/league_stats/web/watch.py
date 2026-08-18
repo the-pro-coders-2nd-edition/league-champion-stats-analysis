@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
+from league_stats.core.config import RANKED_QUEUE_IDS
 from league_stats.web.jobs import JOB_KIND_REFRESH, JobStore
 from league_stats.utils import get_logger
 
@@ -37,8 +38,10 @@ BACKOFF_MAX_S: float = 1800.0
 class MatchIdSource(Protocol):
     """The one Riot capability watching needs."""
 
-    def fetch_ranked_match_ids(self, puuid: str, count: int) -> list[str]:
-        """Newest ranked match ids for a player."""
+    def fetch_match_ids(
+        self, puuid: str, count: int, *, queue_id: int, use_cache: bool = True
+    ) -> list[str]:
+        """Newest match ids for a player in one ranked queue."""
         ...
 
     def resolve_puuid(self, riot_id: str, tagline: str) -> str:
@@ -159,10 +162,22 @@ class WatchPoller:
         )
 
     async def _check_group(self, row: dict[str, Any], slug: str) -> bool:
-        """Look for a new game; enqueue a refresh when one is found."""
+        """Look for a new game in either ranked queue; enqueue a refresh when one is found.
+
+        Each account's newest match id is tracked per queue (``{puuid: {"420":
+        id, "440": id}}``), because a player's newest solo game and newest flex
+        game are independent -- collapsing them into one merged "newest" id
+        would make whichever queue sorts first permanently shadow the other.
+        A pre-existing ``watch_seen`` entry from before per-queue tracking is a
+        flat ``{puuid: match_id}`` string value; it is treated as an empty
+        baseline for that puuid rather than crashing, at the cost of one extra
+        skipped detection cycle for it.
+        """
         region = str(row.get("region") or "euw1")
         players = list(row.get("players") or [])
-        seen: dict[str, str] = dict(row.get("watch_seen") or {})
+        seen: dict[str, dict[str, str]] = {}
+        for puuid, value in dict(row.get("watch_seen") or {}).items():
+            seen[puuid] = dict(value) if isinstance(value, dict) else {}
         try:
             client = self._client_factory(region)
         except Exception as exc:  # noqa: BLE001
@@ -171,21 +186,34 @@ class WatchPoller:
 
         found_new = False
         for player in players:
-            if not self._budget.take(self._now()):
-                self._log.debug("Watch budget spent; deferring %s", slug)
-                return False
             label = f"{player.get('riot_id', '')}#{player.get('tagline', '')}"
             try:
                 puuid = await self._puuid_for(client, label, player)
-                newest = await asyncio.to_thread(client.fetch_ranked_match_ids, puuid, 1)
             except Exception as exc:  # noqa: BLE001 - any API failure backs off
                 self._note_failure(slug, str(exc))
                 return False
-            if not newest:
-                continue
-            if seen.get(puuid) != newest[0]:
-                seen[puuid] = newest[0]
-                found_new = True
+            queues_seen = seen.setdefault(puuid, {})
+            for queue_id in RANKED_QUEUE_IDS:
+                if not self._budget.take(self._now()):
+                    self._log.debug("Watch budget spent; deferring %s", slug)
+                    return False
+                try:
+                    newest = await asyncio.to_thread(
+                        client.fetch_match_ids,
+                        puuid,
+                        1,
+                        queue_id=queue_id,
+                        use_cache=False,
+                    )
+                except Exception as exc:  # noqa: BLE001 - any API failure backs off
+                    self._note_failure(slug, str(exc))
+                    return False
+                if not newest:
+                    continue
+                key = str(queue_id)
+                if queues_seen.get(key) != newest[0]:
+                    queues_seen[key] = newest[0]
+                    found_new = True
 
         self._failures.pop(slug, None)
         first_look = row.get("last_watch_at") is None

@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS career_goals (
     need        INTEGER NOT NULL,
     state       TEXT NOT NULL,
     since_ms    INTEGER NOT NULL DEFAULT 0,
+    peer_seeded INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (build_key, slot, goal_index)
 );
 CREATE TABLE IF NOT EXISTS career_used_tracks (
@@ -41,7 +42,8 @@ CREATE TABLE IF NOT EXISTS career_used_tracks (
 );
 CREATE TABLE IF NOT EXISTS career_flags (
     build_key TEXT PRIMARY KEY,
-    pending_congrats_track TEXT NOT NULL DEFAULT ''
+    pending_congrats_track TEXT NOT NULL DEFAULT '',
+    pending_drop_slot INTEGER NOT NULL DEFAULT -1
 );
 """
 
@@ -77,6 +79,21 @@ class CareerStore:
                 "ALTER TABLE career_goals ADD COLUMN since_ms INTEGER NOT NULL DEFAULT 0"
             )
             self._conn.commit()
+        # Defaults to 0, so every block already on disk reads as peer-blind and
+        # gets retargeted on the next run that has peer percentiles.
+        if "peer_seeded" not in columns:
+            self._log.info("Adding career_goals.peer_seeded")
+            self._conn.execute(
+                "ALTER TABLE career_goals ADD COLUMN peer_seeded INTEGER NOT NULL DEFAULT 0"
+            )
+            self._conn.commit()
+        flag_columns = {row[1] for row in self._conn.execute("PRAGMA table_info(career_flags)")}
+        if "pending_drop_slot" not in flag_columns:
+            self._log.info("Adding career_flags.pending_drop_slot")
+            self._conn.execute(
+                "ALTER TABLE career_flags ADD COLUMN pending_drop_slot INTEGER NOT NULL DEFAULT -1"
+            )
+            self._conn.commit()
 
     def __enter__(self) -> "CareerStore":
         """Enter a context manager scope."""
@@ -99,7 +116,7 @@ class CareerStore:
         """Every persisted goal for a ladder, ordered by slot then goal index."""
         rows = self._conn.execute(
             "SELECT slot, goal_index, track_key, text, column_name, comparator, "
-            "target, need, state, since_ms FROM career_goals WHERE build_key = ? "
+            "target, need, state, since_ms, peer_seeded FROM career_goals WHERE build_key = ? "
             "ORDER BY slot, goal_index",
             (key,),
         ).fetchall()
@@ -117,6 +134,7 @@ class CareerStore:
                 ),
                 state=str(row[8]),
                 since_ms=int(row[9]),
+                peer_seeded=bool(row[10]),
             )
             for row in rows
         ]
@@ -129,13 +147,19 @@ class CareerStore:
         rungs: Sequence[Rung],
         states: Sequence[str],
         since_ms: int = 0,
+        peer_seeded: bool = False,
     ) -> None:
-        """Replace a slot with a freshly generated track and its frozen rungs."""
+        """Replace a slot with a freshly generated track and its frozen rungs.
+
+        ``peer_seeded`` records whether peer percentiles were available when the
+        rungs were frozen. A slot written without them is provisional: the next
+        run that has peers rebuilds it, unless the player has already started it.
+        """
         self.delete_slot(key, slot)
         self._conn.executemany(
             "INSERT INTO career_goals (build_key, slot, goal_index, track_key, text, "
-            "column_name, comparator, target, need, state, since_ms) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "column_name, comparator, target, need, state, since_ms, peer_seeded) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     key,
@@ -149,6 +173,7 @@ class CareerStore:
                     int(rung.need),
                     states[index],
                     int(since_ms),
+                    1 if peer_seeded else 0,
                 )
                 for index, rung in enumerate(rungs)
             ],
@@ -237,5 +262,36 @@ class CareerStore:
         self._conn.execute(
             "UPDATE career_flags SET pending_congrats_track = '' WHERE build_key = ?",
             (key,),
+        )
+        self._conn.commit()
+
+    def request_drop(self, key: str, slot: int) -> None:
+        """Queue a manual block drop for the next analysis run.
+
+        The HTTP route that offers the button has no match data, so it cannot
+        restamp a promoted block's window or generate a replacement itself.
+        Recording the intent here lets :func:`advance_career` perform the drop
+        with the real ``TrackContext`` on the run the request kicks off.
+        """
+        self._conn.execute(
+            "INSERT INTO career_flags (build_key, pending_drop_slot) VALUES (?, ?) "
+            "ON CONFLICT(build_key) DO UPDATE SET pending_drop_slot = excluded.pending_drop_slot",
+            (key, int(slot)),
+        )
+        self._conn.commit()
+
+    def peek_pending_drop(self, key: str) -> int | None:
+        """The slot a reader asked to drop, or ``None`` when nothing is queued."""
+        row = self._conn.execute(
+            "SELECT pending_drop_slot FROM career_flags WHERE build_key = ?", (key,)
+        ).fetchone()
+        if row is None or int(row[0]) < 0:
+            return None
+        return int(row[0])
+
+    def clear_pending_drop(self, key: str) -> None:
+        """Mark a queued drop as performed."""
+        self._conn.execute(
+            "UPDATE career_flags SET pending_drop_slot = -1 WHERE build_key = ?", (key,)
         )
         self._conn.commit()

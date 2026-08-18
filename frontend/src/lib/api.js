@@ -110,3 +110,14 @@ export async function sendChatMessage(reportRef, history) {
   const data = await response.json();
   return data.text || '';
 }
+
+export async function dropCareerBlock(slug, buildSlug, slot) {
+  const response = await fetch(`/api/players/${slug}/builds/${buildSlug}/career/drop`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slot }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(detailMessage(data, `Drop failed: ${response.status}`));
+  return data;
+}

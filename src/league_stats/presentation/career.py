@@ -145,6 +145,7 @@ def _active_block(block: CareerBlockState, *, window: int) -> dict[str, Any]:
     done = sum(1 for state in block.display_states if state in {"Cleared", "At risk"})
     revoked = "Revoked" in block.display_states
     return {
+        "slot": block.slot,
         "position": f"Block {block.slot + 1}",
         "name": _track_name(block.track_key),
         "metric": _track_metric(block.track_key),
@@ -161,6 +162,7 @@ def _active_block(block: CareerBlockState, *, window: int) -> dict[str, Any]:
 
 def _locked_block(block: CareerBlockState, previous_name: str) -> dict[str, Any]:
     return {
+        "slot": block.slot,
         "position": f"Block {block.slot + 1}",
         "name": _track_name(block.track_key),
         "metric": _track_metric(block.track_key),

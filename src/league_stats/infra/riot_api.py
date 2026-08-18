@@ -395,7 +395,12 @@ class RiotApiClient:
     # --------------------------------------------------------------- Matches
 
     def fetch_match_ids(
-        self, puuid: str, count: int, *, queue_id: int | None = None
+        self,
+        puuid: str,
+        count: int,
+        *,
+        queue_id: int | None = None,
+        use_cache: bool = True,
     ) -> list[str]:
         """Fetch up to ``count`` ranked match ids for one queue, paging by 100.
 
@@ -403,6 +408,9 @@ class RiotApiClient:
             puuid: The player's PUUID.
             count: Maximum number of match ids to fetch.
             queue_id: Riot queue id (defaults to ``config.queue_id``).
+            use_cache: Whether to read/populate the HTTP cache. Live-freshness
+                callers (watch detection) pass ``False`` so a 15-minute cache
+                entry cannot mask a game that just finished.
 
         Returns:
             Match ids ordered most-recent first (fewer if history is shorter).
@@ -417,6 +425,7 @@ class RiotApiClient:
                 url,
                 params={"queue": queue, "start": start, "count": page_size},
                 ttl_s=MATCH_IDS_TTL_S,
+                use_cache=use_cache,
             )
             if not page:
                 break

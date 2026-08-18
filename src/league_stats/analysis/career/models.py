@@ -51,6 +51,10 @@ class StoredGoal:
     ``since_ms`` is the game-creation timestamp the block was generated at.
     Only games newer than that count toward it, so a block never inherits
     credit from games played before it existed.
+
+    ``peer_seeded`` is False for a block frozen before peer percentiles existed.
+    Its rungs stepped toward the player's own p75 instead of peer p75, so it is
+    provisional until a run with peers either rebuilds it or the player starts it.
     """
 
     slot: int
@@ -59,3 +63,4 @@ class StoredGoal:
     rung: Rung
     state: str
     since_ms: int = 0
+    peer_seeded: bool = False
