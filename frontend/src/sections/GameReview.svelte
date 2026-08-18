@@ -1,7 +1,7 @@
 <script>
   import { tick } from 'svelte';
   import Pill from '../components/Pill.svelte';
-  import TabBar from '../components/TabBar.svelte';
+  import SegmentedControl from '../components/SegmentedControl.svelte';
   import GameReviewKeyMoments from './GameReviewKeyMoments.svelte';
   import { escapeHtml, soloIconCellHtml } from '../lib/html.js';
   import { formatGameTime, pct } from '../lib/format.js';
@@ -615,11 +615,21 @@
   $: hasTimeline = !!(selectedGame?.timeline || []).length;
   $: if (chartEl && selectedGame && hasTimeline && timelineTraces) tick().then(paintTimeline);
 
-  $: gameReviewTabs = [
-    { value: 'overview', label: 'Overview', active: activeTab === 'overview' },
-    { value: 'story', label: 'Story', active: activeTab === 'story' },
-    { value: 'key-moments', label: 'Key Moments', active: activeTab === 'key-moments' },
-    { value: 'loadout', label: 'Loadout', active: activeTab === 'loadout' },
+  const gameReviewTabs = [
+    { value: 'overview', label: 'Overview' },
+    { value: 'story', label: 'Story' },
+    { value: 'key-moments', label: 'Key Moments' },
+    { value: 'loadout', label: 'Loadout' },
+  ];
+
+  $: timelineModeItems = [
+    { value: 'lane', label: 'You vs opponent' },
+    { value: 'team', label: 'Your team vs their team' },
+  ];
+  $: timelineMetricItems = [
+    { value: 'gold', label: 'Gold' },
+    { value: 'xp', label: 'XP' },
+    ...(csStats ? [{ value: 'cs', label: 'CS' }] : []),
   ];
 </script>
 
@@ -735,12 +745,14 @@
               </div>
             </div>
 
-            <TabBar
-              containerId="game-review-tabs"
-              buttonClass="game-review-tab"
-              dataAttr="data-tab"
-              tabs={gameReviewTabs}
-              on:select={(e) => selectGameReviewTab(e.detail)}
+            <SegmentedControl
+              id="game-review-tabs"
+              variant="pill"
+              as="tablist"
+              sticky
+              items={gameReviewTabs}
+              value={activeTab}
+              on:select={(e) => selectGameReviewTab(e.detail.value)}
             />
 
             <div class="game-review-panel" id="game-review-panel-overview" role="tabpanel" hidden={activeTab !== 'overview'}>
@@ -757,17 +769,20 @@
                   <p class="sub">Timeline unavailable.</p>
                 {:else}
                   <div class="game-review-timeline-toolbar">
-                    <div class="game-review-toggle-group" role="group" aria-label="Compare mode">
-                      <button type="button" class="game-review-toggle{timelineMode === 'lane' ? ' is-active' : ''}" data-timeline-mode="lane" on:click={() => (timelineMode = 'lane')}>You vs opponent</button>
-                      <button type="button" class="game-review-toggle{timelineMode === 'team' ? ' is-active' : ''}" data-timeline-mode="team" on:click={() => (timelineMode = 'team')}>Your team vs their team</button>
-                    </div>
-                    <div class="game-review-toggle-group" role="group" aria-label="Resource">
-                      <button type="button" class="game-review-toggle{timelineMetric === 'gold' ? ' is-active' : ''}" data-timeline-metric="gold" on:click={() => (timelineMetric = 'gold')}>Gold</button>
-                      <button type="button" class="game-review-toggle{timelineMetric === 'xp' ? ' is-active' : ''}" data-timeline-metric="xp" on:click={() => (timelineMetric = 'xp')}>XP</button>
-                      {#if csStats}
-                        <button type="button" class="game-review-toggle{timelineMetric === 'cs' ? ' is-active' : ''}" data-timeline-metric="cs" on:click={() => (timelineMetric = 'cs')}>CS</button>
-                      {/if}
-                    </div>
+                    <SegmentedControl
+                      variant="inset"
+                      ariaLabel="Compare mode"
+                      items={timelineModeItems}
+                      value={timelineMode}
+                      on:select={(e) => (timelineMode = e.detail.value)}
+                    />
+                    <SegmentedControl
+                      variant="inset"
+                      ariaLabel="Resource"
+                      items={timelineMetricItems}
+                      value={timelineMetric}
+                      on:select={(e) => (timelineMetric = e.detail.value)}
+                    />
                   </div>
                   <div class="game-review-timeline-chart" id="game-review-timeline-chart" bind:this={chartEl}>
                     {#if !plotlyReady}<p class="sub">Chart library still loading…</p>{/if}

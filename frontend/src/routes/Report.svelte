@@ -12,7 +12,7 @@
   } from '../lib/api.js';
   import { createReportState } from '../lib/reportState.js';
   import { createPoller } from '../lib/poller.js';
-  import FilterButton from '../components/FilterButton.svelte';
+  import SegmentedControl from '../components/SegmentedControl.svelte';
   import AccountFilter from '../sections/AccountFilter.svelte';
   import Chatbot from '../sections/Chatbot.svelte';
   import Overview from '../sections/Overview.svelte';
@@ -26,7 +26,6 @@
   import GameReview from '../sections/GameReview.svelte';
   import Graphs from '../sections/Graphs.svelte';
   import CareerMode from '../sections/CareerMode.svelte';
-  import TabBar from '../components/TabBar.svelte';
   import { bindPlotlyDetailsResize, resizePlotlySoon } from '../lib/plotlyResize.js';
 
   export let params = {};
@@ -306,9 +305,6 @@
   let activeCategory = 'summary';
   $: categoryTabs = REPORT_CATEGORIES.map((category) => ({
     ...category,
-    modifierClass: category.value,
-    active: category.value === activeCategory,
-    id: `tab-${category.value}`,
     ariaControls: `category-${category.value}`,
   }));
   function selectCategory(value) {
@@ -329,21 +325,26 @@
   $: activeSource = report ? report.activeSource : null;
   $: view = report ? report.view : null;
 
-  $: queueButtons = (payload && $activeSource)
+  $: queueItems = (payload && $activeSource)
     ? (payload.queue_filter_options || []).map((option) => ({
-        ...option,
-        enabled: !!($activeSource.report_views[option.key] && $activeSource.report_views[option.key].total_games),
+        value: option.key,
+        label: option.label,
+        disabled: !($activeSource.report_views[option.key] && $activeSource.report_views[option.key].total_games),
       }))
     : [];
 
+  $: windowItems = ($view ? $view.game_window_options || [] : []).map((option) => ({
+    value: option.key,
+    label: option.label,
+    disabled: !option.enabled,
+  }));
+
   function selectQueue(option) {
-    if (!option.enabled) return;
-    report.selectQueue(option.key);
+    report.selectQueue(option.value);
   }
 
   function selectWindow(option) {
-    if (!option.enabled) return;
-    report.selectWindow(option.key);
+    report.selectWindow(option.value);
   }
 </script>
 
@@ -420,31 +421,23 @@
     <div class="report-filter-bar" id="report-filter-bar">
       <div class="filter-group" id="queue-filter-bar">
         <span class="game-window-label">Queue</span>
-        {#each queueButtons as option}
-          <FilterButton
-            dataAttr="data-queue"
-            buttonClass="queue-filter-btn game-window-btn"
-            value={option.key}
-            label={option.label}
-            activeClass={option.key === $view.queue_filter_default ? 'is-active' : ''}
-            disabled={!option.enabled}
-            on:click={() => selectQueue(option)}
-          />
-        {/each}
+        <SegmentedControl
+          items={queueItems}
+          value={$view.queue_filter_default}
+          variant="pill"
+          size="sm"
+          on:select={(event) => selectQueue(event.detail)}
+        />
       </div>
       <div class="filter-group" id="game-window-bar">
         <span class="game-window-label">Games</span>
-        {#each $view.game_window_options || [] as option}
-          <FilterButton
-            dataAttr="data-window"
-            buttonClass="game-window-btn"
-            value={option.key}
-            label={option.label}
-            activeClass={option.key === $view.game_window_default ? 'is-active' : ''}
-            disabled={!option.enabled}
-            on:click={() => selectWindow(option)}
-          />
-        {/each}
+        <SegmentedControl
+          items={windowItems}
+          value={$view.game_window_default}
+          variant="pill"
+          size="sm"
+          on:select={(event) => selectWindow(event.detail)}
+        />
       </div>
       <AccountFilter
         data={payload.account_filter || {}}
@@ -470,13 +463,14 @@
       {/if}
     </div>
 
-    <TabBar
-      containerId="report-category-tabs"
+    <SegmentedControl
+      id="report-category-tabs"
       ariaLabel="Report categories"
-      buttonClass="report-tab"
-      dataAttr="data-category"
-      tabs={categoryTabs}
-      on:select={(event) => selectCategory(event.detail)}
+      variant="underline"
+      as="tablist"
+      items={categoryTabs}
+      value={activeCategory}
+      on:select={(event) => selectCategory(event.detail.value)}
     />
   </div>
 

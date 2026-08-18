@@ -46,7 +46,7 @@ button {
   background: var(--color-surface-2); border: 1px solid var(--color-divider);
   border-radius: 8px; padding: 8px 12px; cursor: pointer;
 }
-button:focus-visible, .game-window-btn:focus-visible, .report-tab:focus-visible,
+button:focus-visible,
 .report-refresh-btn:focus-visible,
 .metric-tooltip-btn:focus-visible, .rec-extend:focus-visible {
   outline: none; box-shadow: var(--focus-ring); border-color: var(--color-accent);
@@ -820,8 +820,6 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
   .card--wide { grid-column: span 1; }
   .cards-tiered-head > .card--wide,
   .cards-tiered-more > .card--wide { flex: 1 1 190px; }
-  .report-category-tabs { gap: 2px; }
-  .report-tab { font-size: 12px; padding: 8px; }
 }
 
 .form-dossier {
@@ -1443,20 +1441,6 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .game-review-timeline-toolbar {
   display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;
   margin-bottom: 12px;
-}
-.game-review-toggle-group {
-  display: inline-flex; flex-wrap: wrap; gap: 6px;
-  padding: 4px; border-radius: 10px; border: 1px solid var(--color-divider);
-  background: var(--color-surface-2);
-}
-.game-review-toggle {
-  border: 0; background: transparent; color: var(--color-neutral-400);
-  border-radius: 8px; padding: 7px 12px; cursor: pointer;
-  font-size: 12px; font-weight: 600;
-}
-.game-review-toggle:hover { color: var(--color-text); background: rgba(255, 255, 255, 0.04); }
-.game-review-toggle.is-active {
-  color: var(--color-neutral-100); background: var(--color-surface-2);
 }
 .game-review-timeline-chart { min-height: 320px; }
 
