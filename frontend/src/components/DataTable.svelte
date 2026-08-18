@@ -7,7 +7,6 @@
     type?: string;
     label: string;
     iconify?: string;
-    iconTone?: string;
     tooltip?: string;
     title?: string;
   };
@@ -47,20 +46,20 @@
                 title={col.title || undefined}
                 on:click={() => dispatch('sort', col)}
               >
-                {#if col.iconify}<iconify-icon icon={col.iconify} class="metric-icon metric-icon--{col.iconTone || 'muted'}" aria-hidden="true"></iconify-icon>{/if}
+                {#if col.iconify}<iconify-icon icon={col.iconify} class="metric-icon" aria-hidden="true"></iconify-icon>{/if}
                 <span>{col.label}</span>
               </button>
             {:else if col.tooltip}
               <span class="metric-label-with-tooltip">
                 <span class="metric-label">
-                  {#if col.iconify}<iconify-icon icon={col.iconify} class="metric-icon metric-icon--{col.iconTone || 'muted'}" aria-hidden="true"></iconify-icon>{/if}
+                  {#if col.iconify}<iconify-icon icon={col.iconify} class="metric-icon" aria-hidden="true"></iconify-icon>{/if}
                   <span>{col.label}</span>
                 </span>
                 <MetricTooltip label={col.label} tooltip={col.tooltip} />
               </span>
             {:else if col.iconify}
               <span class="metric-label">
-                <iconify-icon icon={col.iconify} class="metric-icon metric-icon--{col.iconTone || 'muted'}" aria-hidden="true"></iconify-icon>
+                <iconify-icon icon={col.iconify} class="metric-icon" aria-hidden="true"></iconify-icon>
                 <span>{col.label}</span>
               </span>
             {:else}

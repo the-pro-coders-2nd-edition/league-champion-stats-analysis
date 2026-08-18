@@ -119,7 +119,6 @@ class MetricCard:
     icon: str | None = None
     iconify: str | None = None
     icon_href: str | None = None
-    icon_tone: str = "muted"
     value_class: str = ""
     value_color: str = ""
 

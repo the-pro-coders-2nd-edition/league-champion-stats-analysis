@@ -18,7 +18,7 @@
   <svelte:fragment slot="cells" let:row>
     <td>
       <span class="metric-label">
-        {#if row.icon_href}<img src={row.icon_href} alt="" class="metric-icon metric-icon--asset metric-icon--{row.icon_tone || 'muted'}" aria-hidden="true">{/if}
+        {#if row.icon_href}<img src={row.icon_href} alt="" class="metric-icon metric-icon--asset" aria-hidden="true">{/if}
         <span>{row.label}</span>
       </span>
     </td>

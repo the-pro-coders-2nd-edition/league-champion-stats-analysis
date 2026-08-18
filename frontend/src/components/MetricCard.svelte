@@ -17,7 +17,6 @@
         label={card.label}
         iconHref={card.icon_href || ''}
         iconify={card.iconify || ''}
-        tone={card.icon_tone || 'muted'}
         roleIconHref={card.role_icon_href || ''}
       />
       {#if card.tooltip}

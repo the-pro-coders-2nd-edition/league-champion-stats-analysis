@@ -7,12 +7,11 @@
   export let label;
   export let iconHref = '';
   export let iconify = '';
-  export let tone = 'muted';
-  // Not part of RFC-001 step 15's prop list (label/iconHref/iconify/tone), but the role icon is
+  // Not part of RFC-001 step 15's prop list (label/iconHref/iconify), but the role icon is
   // still real behaviour (MetricCard's player-role glyph) that this rename must not drop.
   export let roleIconHref = '';
 
-  $: icon = resolveMetricIcon(iconHref, iconify, tone);
+  $: icon = resolveMetricIcon(iconHref, iconify);
 </script>
 
 <span class="metric-label">

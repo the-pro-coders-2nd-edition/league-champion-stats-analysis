@@ -370,15 +370,6 @@ main.is-filter-loading .score-breakdown-title, main.is-filter-loading .score-set
 .metric-label-with-tooltip { display: inline-flex; align-items: flex-start; gap: 6px; max-width: 100%; }
 iconify-icon.metric-icon { width: 14px; height: 14px; flex-shrink: 0; display: inline-block; vertical-align: middle; }
 img.metric-icon--asset { width: 14px; height: 14px; object-fit: contain; flex-shrink: 0; vertical-align: middle; }
-.metric-icon--gold { color: var(--color-neutral-600); }
-.metric-icon--green { color: var(--color-neutral-600); }
-.metric-icon--danger { color: var(--color-neutral-600); }
-.metric-icon--blue { color: var(--color-neutral-600); }
-.metric-icon--win { color: var(--color-neutral-600); }
-.metric-icon--accent { color: var(--color-neutral-600); }
-.metric-icon--orange { color: var(--color-neutral-600); }
-.metric-icon--purple { color: var(--color-neutral-600); }
-.metric-icon--muted { color: var(--color-neutral-400); }
 .section-title { display: flex; align-items: center; gap: 10px; }
 /* RFC-001 Open Question #1 (resolved): header icons stay suppressed. Every section's icons
    collapse to 1-2 neutral greys regardless of tone (see .metric-icon--* above) and this rule has

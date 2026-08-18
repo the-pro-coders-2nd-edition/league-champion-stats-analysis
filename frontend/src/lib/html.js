@@ -25,10 +25,9 @@ export function soloIconCellHtml(name, iconHref) {
 // class does it get" — shared by MetricLabel.svelte (real DOM) and the string builders below
 // ({@html} consumers not yet converted to components; see RFC-001 step 4). icon_href always
 // wins over iconify.
-export function resolveMetricIcon(iconHref, iconify, tone) {
-  const toneClass = `metric-icon metric-icon--${tone || 'muted'}`;
-  if (iconHref) return { kind: 'img', src: iconHref, className: `${toneClass} metric-icon--asset` };
-  if (iconify) return { kind: 'iconify', icon: iconify, className: toneClass };
+export function resolveMetricIcon(iconHref, iconify) {
+  if (iconHref) return { kind: 'img', src: iconHref, className: 'metric-icon metric-icon--asset' };
+  if (iconify) return { kind: 'iconify', icon: iconify, className: 'metric-icon' };
   return null;
 }
 
@@ -47,7 +46,7 @@ function metricIconTagHtml(icon) {
 // ever rendered here in practice — only `icon_href` produces a visible icon. Replicated as-is:
 // `row.iconify` is deliberately never passed to resolveMetricIcon.
 function metricIconHtml(row) {
-  return metricIconTagHtml(resolveMetricIcon(row.icon_href, '', row.icon_tone));
+  return metricIconTagHtml(resolveMetricIcon(row.icon_href, ''));
 }
 
 // Row-object variant: label + icon both come from the row (form/rank-peer delta tables).
@@ -55,7 +54,7 @@ export function metricLabelFromRow(row) {
   return `<span class="metric-label">${metricIconHtml(row)}<span>${escapeHtml(row.label)}</span></span>`;
 }
 
-// Static variant: label/iconify-key/tone are passed explicitly (table headers).
-export function metricLabelWithIconify(label, iconify, tone) {
-  return `<span class="metric-label">${metricIconTagHtml(resolveMetricIcon('', iconify, tone))}<span>${escapeHtml(label)}</span></span>`;
+// Static variant: label/iconify-key are passed explicitly (table headers).
+export function metricLabelWithIconify(label, iconify) {
+  return `<span class="metric-label">${metricIconTagHtml(resolveMetricIcon('', iconify))}<span>${escapeHtml(label)}</span></span>`;
 }

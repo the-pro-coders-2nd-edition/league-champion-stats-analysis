@@ -27,7 +27,6 @@
   $: peerTableRows = peerRows.map((row) => ({
     label: row.label,
     icon_href: row.icon_href,
-    icon_tone: row.icon_tone,
     value: row.yours,
     baseline: row.peer_avg,
     gap: row.gap,
