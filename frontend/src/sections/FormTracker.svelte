@@ -4,7 +4,7 @@
   import Panel from '../components/Panel.svelte';
   import UiChipBadge from '../components/UiChipBadge.svelte';
   import FormWrBridge from '../components/FormWrBridge.svelte';
-  import TabBar from '../components/TabBar.svelte';
+  import SegmentedControl from '../components/SegmentedControl.svelte';
   import FormStoryHead from '../components/FormStoryHead.svelte';
   import FormStoryLine from '../components/FormStoryLine.svelte';
   import MetricDeltaTable from '../components/MetricDeltaTable.svelte';
@@ -48,9 +48,9 @@
     verdict: row.verdict,
   }));
 
-  $: formTabs = [
-    { value: 'pulse', label: 'Pulse', active: activeTab === 'pulse' },
-    { value: 'evidence', label: 'Evidence', active: activeTab === 'evidence' },
+  const formTabs = [
+    { value: 'pulse', label: 'Pulse' },
+    { value: 'evidence', label: 'Evidence' },
   ];
 
   function selectFormTab(tab) {
@@ -94,12 +94,14 @@
           <p class="form-headline" id="form-headline">{data.form_snapshot ? (data.form_snapshot.headline || '') : ''}</p>
         </div>
       </svelte:fragment>
-      <TabBar
-        containerId="form-tabs"
-        buttonClass="form-tab"
-        dataAttr="data-tab"
-        tabs={formTabs}
-        on:select={(e) => selectFormTab(e.detail)}
+      <SegmentedControl
+        id="form-tabs"
+        variant="pill"
+        as="tablist"
+        sticky
+        items={formTabs}
+        value={activeTab}
+        on:select={(e) => selectFormTab(e.detail.value)}
       />
       <div class="form-panel" id="form-panel-pulse" role="tabpanel" hidden={activeTab !== 'pulse'}>
         <div class="form-stories" id="form-stories">
