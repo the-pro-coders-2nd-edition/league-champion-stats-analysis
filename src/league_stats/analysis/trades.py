@@ -104,7 +104,7 @@ def format_trade_asset_labels(asset_ids: list[str], *, gained: bool) -> list[str
             continue
         seen.add(asset_id)
         if asset_id in OBJECTIVE_VALUES:
-            labels.append(f"{asset_id.title()} ({'secured' if gained else 'lost'})")
+            labels.append(asset_id.title())
         else:
             labels.append(_format_owned_structures([asset_id], enemy=gained))
     return labels

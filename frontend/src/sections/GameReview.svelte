@@ -255,12 +255,19 @@
 
   // --- Key Moments feed tab (deaths / fights / objectives) ---
 
-  function tradeSummaryIsMixed(summary) {
-    if (!summary) return false;
-    const lower = String(summary).toLowerCase();
-    const hasGain = lower.indexOf('gained') !== -1 || lower.indexOf('secured') !== -1 || lower.indexOf('held our') !== -1;
-    const hasLoss = lower.indexOf('lost') !== -1;
-    return hasGain && hasLoss;
+  const EPIC_OBJECTIVE_IDS = { dragon: 1, elder: 1, baron: 1, herald: 1, grubs: 1 };
+
+  function isStructureAsset(id) {
+    return id && !EPIC_OBJECTIVE_IDS[id];
+  }
+
+  function objectiveSplitSwings(row) {
+    const gains = row.trade_gain || [];
+    const losses = row.trade_loss || [];
+    return {
+      hasSplitGain: gains.some(isStructureAsset),
+      hasSplitLoss: losses.some(isStructureAsset),
+    };
   }
 
   function objectiveOutcome(row) {
@@ -274,15 +281,12 @@
       return { label: `${secured}/${total} secured`, tone: 'mixed' };
     }
     if (row.trade_outcome === 'held') return { label: 'Held', tone: 'good' };
-    if (row.trade_outcome === 'traded_for') return { label: 'Trade', tone: 'mixed' };
-    if (row.trade_outcome === 'traded_away') {
-      const tradeDelta = row.trade_value_delta != null ? Number(row.trade_value_delta) : null;
-      return { label: 'Trade', tone: tradeDelta != null && tradeDelta < 0 ? 'bad' : 'mixed' };
-    }
+    const swings = objectiveSplitSwings(row);
     if (row.taken_by_team) {
-      if (row.trade_summary && tradeSummaryIsMixed(row.trade_summary)) return { label: 'Secured', tone: 'mixed' };
+      if (swings.hasSplitLoss) return { label: 'Trade', tone: 'mixed' };
       return { label: 'Secured', tone: 'good' };
     }
+    if (swings.hasSplitGain) return { label: 'Trade', tone: 'mixed' };
     return { label: 'Lost', tone: 'bad' };
   }
 
@@ -312,13 +316,14 @@
     const presence = objectivePresenceDetail(row, objectiveHints);
     parts.push(`<div class="game-review-objective-detail-row"><span class="game-review-objective-detail-label">Your role</span>${chipHtml(presence.label, presence.tone, presence.hint)}</div>`);
 
-    if (row.present && row.wards_before != null) {
-      const wardCount = Number(row.wards_before) || 0;
-      const wardLabel = wardCount === 1
-        ? 'You placed 1 ward near objective during setup'
-        : `You placed ${wardCount} wards near objective during setup`;
-      parts.push(`<div class="game-review-objective-detail-row"><span class="game-review-objective-detail-label">Vision</span>` +
-        chipHtml(wardLabel, 'stat', objectiveHints['Wards during setup'] || objectiveHints['Wards before'] || '') + '</div>');
+    const gainLabels = row.trade_gain_labels || [];
+    const lossLabels = row.trade_loss_labels || [];
+    if (gainLabels.length || lossLabels.length) {
+      const swingChips = gainLabels.map((label) => chipHtml(label, 'good', ''))
+        .concat(lossLabels.map((label) => chipHtml(label, 'bad', '')));
+      parts.push(`<div class="game-review-objective-detail-row game-review-objective-detail-row--swings">` +
+        `<span class="game-review-objective-detail-label">Map trade</span>` +
+        `<div class="game-review-objective-swing-chips">${swingChips.join('')}</div></div>`);
     }
 
     const allies = row.pit_ally_champions || [];
@@ -330,18 +335,13 @@
         `<span class="game-review-fight-vs">vs</span>${championIconStackHtml(enemies, row.pit_enemy_icons, 'enemy')}</div></div>`);
     }
 
-    const gainLabels = row.trade_gain_labels || [];
-    const lossLabels = row.trade_loss_labels || [];
-    if (gainLabels.length) {
-      parts.push(`<div class="game-review-objective-detail-row"><span class="game-review-objective-detail-label">Gained</span>` +
-        `<span class="game-review-objective-detail-text">${gainLabels.map(escapeHtml).join(' · ')}</span></div>`);
-    }
-    if (lossLabels.length) {
-      parts.push(`<div class="game-review-objective-detail-row"><span class="game-review-objective-detail-label">Lost</span>` +
-        `<span class="game-review-objective-detail-text">${lossLabels.map(escapeHtml).join(' · ')}</span></div>`);
-    } else if (row.trade_summary && !gainLabels.length) {
-      parts.push(`<div class="game-review-objective-detail-row"><span class="game-review-objective-detail-label">Trade</span>` +
-        `<span class="game-review-objective-detail-text">${escapeHtml(row.trade_summary)}</span></div>`);
+    if (row.present && row.wards_before != null) {
+      const wardCount = Number(row.wards_before) || 0;
+      const wardLabel = wardCount === 1
+        ? 'You placed 1 ward near objective during setup'
+        : `You placed ${wardCount} wards near objective during setup`;
+      parts.push(`<div class="game-review-objective-detail-row"><span class="game-review-objective-detail-label">Objective</span>` +
+        chipHtml(wardLabel, 'stat', objectiveHints['Wards during setup'] || objectiveHints['Wards before'] || '') + '</div>');
     }
 
     if (row.tp_available === true) {
