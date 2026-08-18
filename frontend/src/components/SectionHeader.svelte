@@ -1,7 +1,7 @@
 <script>
   import { getContext } from 'svelte';
   import { writable } from 'svelte/store';
-  import Pill from './Pill.svelte';
+  import Chip from './Chip.svelte';
   import { categoryForSection } from '../lib/reportNav.js';
   import { WINDOW_SCOPE_KEY } from '../lib/windowScope.js';
 
@@ -24,7 +24,7 @@
     <iconify-icon icon="lucide:{icon}" class="metric-icon" aria-hidden="true"></iconify-icon>
   {/if}
   <span>{title}</span>
-  <Pill tone="flat" variant="outline" dot={false} label={resolvedScope} />
+  <Chip tone="flat" fill={false} bordered={true} label={resolvedScope} />
 </h2>
 {#if lead || $$slots.lead}
   <p class="sub sub--lead">{#if $$slots.lead}<slot name="lead" />{:else}{lead}{/if}</p>

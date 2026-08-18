@@ -2,7 +2,7 @@
   import { tick } from 'svelte';
   import SectionHeader from '../components/SectionHeader.svelte';
   import Panel from '../components/Panel.svelte';
-  import UiChipBadge from '../components/UiChipBadge.svelte';
+  import Chip from '../components/Chip.svelte';
   import FormWrBridge from '../components/FormWrBridge.svelte';
   import SegmentedControl from '../components/SegmentedControl.svelte';
   import Callout from '../components/Callout.svelte';
@@ -25,6 +25,12 @@
     ? (data.form_snapshot.form_score >= 0 ? '+' : '') + Math.round(data.form_snapshot.form_score)
     : '0';
   $: confidence = snapshot.confidence || 'insufficient';
+
+  function trendTone(value) {
+    if (value === 'improving') return 'good';
+    if (value === 'declining') return 'bad';
+    return 'flat';
+  }
 
   $: wrFrom = Math.round((snapshot.baseline_winrate || 0) * 100) + '%';
   $: wrTo = Math.round((snapshot.recent_winrate || 0) * 100) + '%';
@@ -80,8 +86,8 @@
           <div class="label">Form score</div>
           <div class="form-score-value form-score-value--{trend}" id="form-score-value">{formScoreText}</div>
           <div class="form-meta">
-            <UiChipBadge tone={trend} label={trend} id="form-trend-badge" />
-            <UiChipBadge tone="confidence" label="{confidence} confidence" id="form-confidence-badge" />
+            <Chip tone={trendTone(trend)} fill={true} caps={true} label={trend} id="form-trend-badge" />
+            <Chip tone="info" fill={true} caps={true} label="{confidence} confidence" id="form-confidence-badge" />
           </div>
         </div>
         <div class="form-stage-wr">
