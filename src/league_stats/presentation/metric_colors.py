@@ -1,18 +1,18 @@
-"""Gradient metric colors matching ``--score-fill-gradient`` in report.css.
+"""Diverging metric colors for chart fills, keyed to the report's tone palette.
 
-Stops: loss (red) -> neutral (gold) -> mint -> teal -> jade.
+Stops: loss (red) -> neutral (gray) -> mint -> teal -> jade.
 Richer teal/jade means better on the positive side; keeps luminosity on dark UI.
 """
 
 from __future__ import annotations
 
 LOSS_HEX = "#e05563"
-NEUTRAL_HEX = "#e0b155"
+NEUTRAL_HEX = "#9aa8b1"
 MINT_HEX = "#7ed4c0"
-WIN_HEX = "#3fb68b"
+WIN_HEX = "#41b78c"
 JADE_HEX = "#2a9f7a"
 
-# Positive-side stop positions mirror the bar fill's gold(16%) → mint(38%) →
+# Positive-side stop positions mirror the ramp's neutral(16%) → mint(38%) →
 # teal(68%) → jade(100%) spacing, remapped onto score [0, 1].
 _POS_MINT = (38 - 16) / (100 - 16)
 _POS_TEAL = (68 - 16) / (100 - 16)
@@ -101,7 +101,7 @@ _METRIC_COLOR_STOPS: list[tuple[float, str]] = [
 
 
 def interpolate_metric_color(score: float) -> str:
-    """Map ``score`` in [-1, 1] along the shared red→gold→mint→teal→jade ramp."""
+    """Map ``score`` in [-1, 1] along the shared red→neutral→mint→teal→jade ramp."""
     score = _clamp(score)
     for index in range(1, len(_METRIC_COLOR_STOPS)):
         left_score, left_hex = _METRIC_COLOR_STOPS[index - 1]

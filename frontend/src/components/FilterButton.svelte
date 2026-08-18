@@ -20,11 +20,14 @@
 
 <style>
   :global(.game-window-btn) {
-    border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
-    border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; cursor: pointer;
+    border: 1px solid transparent; background: var(--color-surface-2); color: var(--color-neutral-500);
+    border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: color .15s, border-color .15s, background .15s;
   }
-  :global(.game-window-btn:hover:not(:disabled)) { border-color: var(--accent); color: var(--accent); }
-  :global(.game-window-btn.is-active) { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :global(.game-window-btn:hover:not(:disabled)) { color: var(--color-text); }
+  :global(.game-window-btn.is-active) {
+    background: transparent; border-color: var(--color-neutral-500); color: var(--color-neutral-100);
+  }
   :global(.game-window-btn:disabled) { opacity: .45; cursor: not-allowed; }
   :global(.filter-group.is-muted .game-window-btn) { cursor: not-allowed; }
 </style>

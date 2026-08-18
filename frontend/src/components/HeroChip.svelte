@@ -17,6 +17,6 @@
     display: inline-flex; align-items: baseline; gap: 6px;
     letter-spacing: normal; text-transform: none; font-weight: 500;
   }
-  :global(.hero-chip-label) { color: var(--muted); font-size: 11px; font-weight: 600; }
-  :global(.hero-chip-value) { font-size: 13px; font-weight: 700; color: var(--text); }
+  :global(.hero-chip-label) { color: var(--color-neutral-400); font-size: 11px; font-weight: 600; }
+  :global(.hero-chip-value) { font-size: 13px; font-weight: 700; color: var(--color-text); }
 </style>

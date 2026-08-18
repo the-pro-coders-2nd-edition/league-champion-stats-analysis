@@ -37,12 +37,12 @@ from league_stats.analysis.deaths import death_heatmap_coords
 from league_stats.utils import MAP_SIZE, get_logger
 
 PLOTLY_TEMPLATE = "plotly_dark"
-ACCENT = "#7c6cf0"
-WIN_COLOR = "#3fb68b"
+ACCENT = "#41b78c"
+WIN_COLOR = "#82d2bb"
 LOSS_COLOR = "#e05563"
-TEXT_COLOR = "#e8eaf2"
-MUTED_COLOR = "#9aa0b5"
-GRID_COLOR = "#2a2f40"
+TEXT_COLOR = "#e6edf0"
+MUTED_COLOR = "#9aa8b1"
+GRID_COLOR = "#3c474e"
 FONT_FAMILY = 'Manrope, -apple-system, "Segoe UI", sans-serif'
 COLORWAY = [ACCENT, WIN_COLOR, "#7ed4c0", "#e0b155", "#b48cff", "#2a9f7a"]
 

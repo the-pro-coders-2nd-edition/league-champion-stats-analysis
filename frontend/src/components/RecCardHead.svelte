@@ -14,12 +14,29 @@
 
 <div class="rec-head">
   <Pill tone={PRIORITY_TONE[badge]} variant="soft" dot={false} label={priorityLabel} />
-  <span class="badge">{category}</span>
-  <strong>{title}</strong>
+  <Pill tone="flat" variant="soft" dot={false} label={category} />
 </div>
-<p>{detail}</p>
+<strong class="rec-title">{title}</strong>
+<p class="rec-body">{detail}</p>
 
 <style>
-  :global(.rec-head) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
-  :global(.rec-head strong) { flex: 1 1 100%; font-size: 15px; }
+  :global(.rec-head) {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-2);
+  }
+  :global(.rec-title) {
+    display: block;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 14px;
+  }
+  :global(.rec-body) {
+    margin: var(--space-2) 0 0;
+    color: var(--color-neutral-400);
+    font-size: 12px;
+    line-height: 1.55;
+  }
 </style>

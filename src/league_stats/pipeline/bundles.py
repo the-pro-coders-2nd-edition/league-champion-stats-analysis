@@ -54,6 +54,9 @@ from league_stats.pipeline.view_models import (
 )
 from league_stats.presentation.graphs import ChartIconResolver, GraphFactory
 from league_stats.presentation.report import improvement_score, score_badge
+from league_stats.presentation.tones import p_value as tone_p_value
+from league_stats.presentation.tones import priority_tone as tone_priority_tone
+from league_stats.presentation.tones import verdict as tone_verdict
 from league_stats.presentation.ui_icons import attach_metric_icon_hrefs, icon_fields_for_label, tooltip_for_label
 
 
@@ -147,15 +150,30 @@ def _evidence_summary(rec: Any) -> str:
     return f"This is {strength} {games}."
 
 
+def _evidence_rows(rec: Any) -> list[dict[str, Any]]:
+    """Key/value evidence rows for a recommendation's Evidence disclosure."""
+    rows: list[dict[str, Any]] = [{"label": "Evidence", "value": rec.evidence}]
+    sample = int(rec.sample_size or 0)
+    if sample:
+        rows.append({"label": "Sample", "value": f"{sample} games"})
+    rows.append({"label": "Significance", "value": tone_p_value(rec.p_value)})
+    return rows
+
+
 def _recommendation_payload(rec: Any) -> dict[str, Any]:
     """Serialize one coaching recommendation for HTML/JSON views."""
     badge = score_badge(rec)
+    label = priority_label(badge)
+    side = "keep" if rec.tone.value == "positive" else "work"
     return {
         **rec.model_dump(),
         "badge": badge,
-        "priority_label": priority_label(badge),
+        "priority_label": label,
+        "priority_tone": tone_priority_tone(label, side),
         "tone": rec.tone.value,
+        "confidence": tone_p_value(rec.p_value),
         "evidence_summary": _evidence_summary(rec),
+        "evidence_rows": _evidence_rows(rec),
     }
 
 
@@ -189,24 +207,25 @@ _CHIP_STRONG_SCORE = 65.0
 _CHIP_FOCUS_SCORE = 45.0
 
 
-def _chip_tone(score: float) -> tuple[str, str]:
+def _overall_score_verdict(score: float) -> tuple[str, str]:
+    """CSS color + verdict label for the top-level Improvement score."""
     if score >= _CHIP_STRONG_SCORE:
-        return "strong", "Strength"
-    if score < _CHIP_FOCUS_SCORE:
-        return "focus", "Focus"
-    return "solid", "Solid"
+        return "var(--tone-good-fg)", "Strength"
+    if score >= _CHIP_FOCUS_SCORE:
+        return "var(--color-text)", "Solid"
+    return "var(--tone-bad-fg)", "Focus"
 
 
 def _annotate_score_components(
     score_components: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Attach Strength / Solid / Focus tone + label to each score category card."""
+    """Attach the Strength / Solid / Watch / Focus tone + label to each score card."""
     for comp in score_components:
         raw_score = float(comp.get("score", 0.0))
         score = raw_score if math.isfinite(raw_score) else 0.0
-        tone, verdict = _chip_tone(score)
+        label, tone = tone_verdict(score)
         comp["tone"] = tone
-        comp["verdict"] = verdict
+        comp["verdict"] = label
     return score_components
 
 
@@ -433,6 +452,8 @@ def bundle_to_template_context(
         "queue_label": bundle.get("queue_label", "ranked solo queue"),
         "overview": bundle["overview"],
         "score": bundle["score"],
+        "score_color": bundle.get("score_color", "var(--color-text)"),
+        "score_verdict_label": bundle.get("score_verdict_label", "Solid"),
         "score_components": bundle["score_components"],
         "figures": bundle["figures"],
         "overview_cards": bundle.get("overview_cards", []),
@@ -455,6 +476,7 @@ def bundle_to_template_context(
         "matchup_rows": bundle["matchup_rows"],
         "positive_recommendations": bundle["positive_recommendations"],
         "negative_recommendations": bundle["negative_recommendations"],
+        "weak_recommendations": bundle.get("weak_recommendations", []),
         "top_tips": bundle.get("top_tips", []),
         "figure_hints": bundle.get("figure_hints", {}),
         "career": bundle.get("career") or empty_career_view(),
@@ -488,6 +510,8 @@ def build_window_bundle(
         "overview_cards": [],
         "section_verdicts": {},
         "score": 0,
+        "score_color": "var(--color-text)",
+        "score_verdict_label": "Solid",
         "score_components": [],
         "lane_cards": [],
         "early_section_title": "Laning",
@@ -506,6 +530,7 @@ def build_window_bundle(
         "matchup_rows": [],
         "positive_recommendations": [],
         "negative_recommendations": [],
+        "weak_recommendations": [],
         "top_tips": [],
         "figure_hints": {},
         "figures": {},
@@ -626,6 +651,8 @@ def build_window_bundle(
         "early_section_title": profile.early_section_title,
         "section_order": list(profile.section_order),
         "score": score,
+        "score_color": _overall_score_verdict(score)[0],
+        "score_verdict_label": _overall_score_verdict(score)[1],
         "score_components": [
             {
                 **asdict(component),
@@ -701,19 +728,23 @@ def build_window_bundle(
         "build_paths": build_path_stats(frames.matches_df).head(10).to_dict("records"),
         "rune_rows": rune_setup_stats(frames.runes_df).to_dict("records"),
         "matchup_rows": matchup_rows,
-        "positive_recommendations": [
-            _recommendation_payload(rec)
-            for rec in recommendations
-            if rec.tone.value == "positive"
-        ],
-        "negative_recommendations": [
-            _recommendation_payload(rec)
-            for rec in recommendations
-            if rec.tone.value == "negative"
-        ],
         "figures": figures,
         "career": career,
     }
+    recommendation_payloads = [_recommendation_payload(rec) for rec in recommendations]
+    bundle["weak_recommendations"] = [
+        payload for payload in recommendation_payloads if payload["badge"] == "low"
+    ]
+    bundle["positive_recommendations"] = [
+        payload
+        for payload in recommendation_payloads
+        if payload["badge"] != "low" and payload["tone"] == "positive"
+    ]
+    bundle["negative_recommendations"] = [
+        payload
+        for payload in recommendation_payloads
+        if payload["badge"] != "low" and payload["tone"] == "negative"
+    ]
     _finalize_coaching_anchors(bundle)
     bundle["top_tips"] = _build_top_tips(bundle)
     bundle["figure_hints"] = _build_figure_hints(win_corrs, model)

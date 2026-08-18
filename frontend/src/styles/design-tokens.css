@@ -41,6 +41,13 @@
   --radius-md: 12px;
   --radius-lg: 18px;
 
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
   --shadow-sm: 0 0 0 1px rgba(230, 237, 240, 0.07);
   --shadow-md: 0 0 0 1px rgba(230, 237, 240, 0.09), 0 8px 24px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 0 0 1px rgba(230, 237, 240, 0.12), 0 18px 44px rgba(0, 0, 0, 0.6);

@@ -13,13 +13,13 @@
 <span class="form-wr-delta {deltaClass}">{deltaText}</span>
 
 <style>
-  :global(.form-wr-from) { font-size: 22px; color: var(--muted); }
-  :global(.form-wr-arrow) { color: var(--muted); font-size: 16px; }
-  :global(.form-wr-to) { font-size: 28px; color: var(--text); letter-spacing: -.02em; }
+  :global(.form-wr-from) { font-size: 22px; color: var(--color-neutral-400); }
+  :global(.form-wr-arrow) { color: var(--color-neutral-400); font-size: 16px; }
+  :global(.form-wr-to) { font-size: 28px; color: var(--color-text); letter-spacing: -.02em; }
   :global(.form-wr-delta) {
     font-size: 13px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
-    background: var(--panel); color: var(--muted);
+    background: var(--color-surface); color: var(--color-neutral-400);
   }
-  :global(.form-wr-delta--up) { color: var(--win); background: var(--win-tint-12); }
-  :global(.form-wr-delta--down) { color: var(--loss); background: var(--loss-tint-12); }
+  :global(.form-wr-delta--up) { color: var(--tone-good-fg); background: var(--win-tint-12); }
+  :global(.form-wr-delta--down) { color: var(--tone-bad-fg); background: var(--loss-tint-12); }
 </style>
