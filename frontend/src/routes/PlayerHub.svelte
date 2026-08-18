@@ -203,7 +203,11 @@
   $: showSkeleton = active && job && job.state !== 'queued' && job.state !== 'failed' && builds.length === 0;
   $: showBuilds = builds.length > 0 && !showSkeleton;
   $: showRetry = !!(job && (job.state === 'failed' || job.state === 'cancelled'));
-  $: showActions = !!(status && status.has_report && !active);
+  // The watch toggle only needs a report to exist -- it shouldn't wait for the whole
+  // pipeline (through peer comparison) to finish just to let someone opt into
+  // auto-refresh. Refresh/regenerate stay gated on !active below: no point letting
+  // someone kick off another run while one is already in flight.
+  $: showActions = !!(status && status.has_report);
   $: canWatch = !!(status && status.can_watch);
   $: watchInterval = status ? status.watch_interval_s : 0;
   $: watchError = status ? status.last_watch_error || '' : '';
@@ -349,8 +353,10 @@
 {#if showActions}
   <Panel id="actions-card">
     <div class="actions-row">
-      <Button id="refresh-btn" on:click={handleRefresh} disabled={busy}>Refresh with latest games</Button>
-      <Button variant="bare" id="regenerate-btn" on:click={handleRegenerate} disabled={busy}>Regenerate with same games</Button>
+      {#if !active}
+        <Button id="refresh-btn" on:click={handleRefresh} disabled={busy}>Refresh with latest games</Button>
+        <Button variant="bare" id="regenerate-btn" on:click={handleRegenerate} disabled={busy}>Regenerate with same games</Button>
+      {/if}
       {#if canWatch}
         <button
           class="watch-toggle{watching ? ' is-on' : ''}"
