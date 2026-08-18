@@ -322,6 +322,20 @@ def test_player_status_serves_existing_reports(client: TestClient) -> None:
     assert client.get("/api/players/unknown_player").status_code == 404
 
 
+def test_get_build_payload_returns_report_json(client: TestClient) -> None:
+    report_dir = _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    (report_dir / "report.json").write_text('{"champion": "Viktor"}', encoding="utf-8")
+
+    response = client.get("/api/players/test_euw/builds/viktor_middle")
+
+    assert response.status_code == 200
+    assert response.json() == {"champion": "Viktor"}
+
+
+def test_get_build_payload_404_when_missing(client: TestClient) -> None:
+    assert client.get("/api/players/test_euw/builds/nonexistent").status_code == 404
+
+
 def test_player_builds_expose_per_build_peers_ready(client: TestClient) -> None:
     ready = _write_report(
         client.web_config.output_dir,

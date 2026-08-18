@@ -887,6 +887,13 @@ def create_app(
             "peer_completed_at": player["peer_completed_at"] if player else None,
         }
 
+    @app.get("/api/players/{slug}/builds/{build_slug}")
+    def build_payload(slug: str, build_slug: str) -> dict[str, Any]:
+        report_json_path = config.reports_dir / slug / build_slug / "report.json"
+        if not report_json_path.is_file():
+            raise HTTPException(status_code=404, detail="Unknown build")
+        return json.loads(report_json_path.read_text(encoding="utf-8"))
+
     def _resolve_build_filter(
         slug: str,
         champion: str,
