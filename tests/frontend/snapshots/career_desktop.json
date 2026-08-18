@@ -1,0 +1,2893 @@
+{
+  "class_set": [
+    "career-block",
+    "career-block-head",
+    "career-block-metric",
+    "career-block-name",
+    "career-block-position",
+    "career-block-state",
+    "career-block-unlock",
+    "career-blocks",
+    "career-body",
+    "career-connector",
+    "career-count",
+    "career-head",
+    "career-heading",
+    "career-legend",
+    "career-legend-name",
+    "career-legend-name--at-risk",
+    "career-legend-name--cleared",
+    "career-legend-name--in-progress",
+    "career-legend-name--locked",
+    "career-legend-name--revoked",
+    "career-legend-row",
+    "career-legend-text",
+    "career-legend-title",
+    "career-mark",
+    "career-mark--at-risk",
+    "career-mark--cleared",
+    "career-mark--in-progress",
+    "career-mark--locked",
+    "career-mark--revoked",
+    "career-node",
+    "career-node--last",
+    "career-note",
+    "career-rail",
+    "career-ring",
+    "career-ring--at-risk",
+    "career-ring--cleared",
+    "career-ring--in-progress",
+    "career-ring--locked",
+    "career-ring--revoked",
+    "career-rule",
+    "career-rule-key",
+    "career-rule-note",
+    "career-rule-value",
+    "career-rules",
+    "career-step",
+    "career-step-bullet",
+    "career-step-text",
+    "career-steps",
+    "career-text",
+    "career-text--in-progress",
+    "pill",
+    "pill--flat",
+    "pill--soft",
+    "pill--warn",
+    "pill__dot",
+    "report-section",
+    "report-section--career"
+  ],
+  "elements": [
+    {
+      "classes": [
+        "report-section",
+        "report-section--career"
+      ],
+      "identity": "section.report-section.report-section--career (#1)",
+      "tag": "section"
+    },
+    {
+      "classes": [
+        "career-heading"
+      ],
+      "identity": "h2.career-heading (#1)",
+      "tag": "h2"
+    },
+    {
+      "classes": [
+        "career-rules"
+      ],
+      "identity": "div.career-rules (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule"
+      ],
+      "identity": "div.career-rule (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-key"
+      ],
+      "identity": "div.career-rule-key (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-value"
+      ],
+      "identity": "div.career-rule-value (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-note"
+      ],
+      "identity": "p.career-rule-note (#1)",
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-rule"
+      ],
+      "identity": "div.career-rule (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-key"
+      ],
+      "identity": "div.career-rule-key (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-value"
+      ],
+      "identity": "div.career-rule-value (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-note"
+      ],
+      "identity": "p.career-rule-note (#2)",
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-rule"
+      ],
+      "identity": "div.career-rule (#3)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-key"
+      ],
+      "identity": "div.career-rule-key (#3)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-value"
+      ],
+      "identity": "div.career-rule-value (#3)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-note"
+      ],
+      "identity": "p.career-rule-note (#3)",
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-rule"
+      ],
+      "identity": "div.career-rule (#4)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-key"
+      ],
+      "identity": "div.career-rule-key (#4)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-value"
+      ],
+      "identity": "div.career-rule-value (#4)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-note"
+      ],
+      "identity": "p.career-rule-note (#4)",
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-legend"
+      ],
+      "identity": "div.career-legend (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-title"
+      ],
+      "identity": "div.career-legend-title (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-row"
+      ],
+      "identity": "div.career-legend-row (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--locked"
+      ],
+      "identity": "div.career-ring.career-ring--locked (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--locked"
+      ],
+      "identity": "div.career-mark.career-mark--locked (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-name",
+        "career-legend-name--locked"
+      ],
+      "identity": "div.career-legend-name.career-legend-name--locked (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-text"
+      ],
+      "identity": "div.career-legend-text (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-row"
+      ],
+      "identity": "div.career-legend-row (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--in-progress"
+      ],
+      "identity": "div.career-ring.career-ring--in-progress (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--in-progress"
+      ],
+      "identity": "div.career-mark.career-mark--in-progress (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-name",
+        "career-legend-name--in-progress"
+      ],
+      "identity": "div.career-legend-name.career-legend-name--in-progress (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-text"
+      ],
+      "identity": "div.career-legend-text (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-row"
+      ],
+      "identity": "div.career-legend-row (#3)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--at-risk"
+      ],
+      "identity": "div.career-ring.career-ring--at-risk (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--at-risk"
+      ],
+      "identity": "div.career-mark.career-mark--at-risk (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-name",
+        "career-legend-name--at-risk"
+      ],
+      "identity": "div.career-legend-name.career-legend-name--at-risk (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-text"
+      ],
+      "identity": "div.career-legend-text (#3)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-row"
+      ],
+      "identity": "div.career-legend-row (#4)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--cleared"
+      ],
+      "identity": "div.career-ring.career-ring--cleared (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--cleared"
+      ],
+      "identity": "div.career-mark.career-mark--cleared (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-name",
+        "career-legend-name--cleared"
+      ],
+      "identity": "div.career-legend-name.career-legend-name--cleared (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-text"
+      ],
+      "identity": "div.career-legend-text (#4)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-row"
+      ],
+      "identity": "div.career-legend-row (#5)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--revoked"
+      ],
+      "identity": "div.career-ring.career-ring--revoked (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--revoked"
+      ],
+      "identity": "div.career-mark.career-mark--revoked (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-name",
+        "career-legend-name--revoked"
+      ],
+      "identity": "div.career-legend-name.career-legend-name--revoked (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-text"
+      ],
+      "identity": "div.career-legend-text (#5)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-blocks"
+      ],
+      "identity": "div.career-blocks (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-block"
+      ],
+      "identity": "div.career-block (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-block-head"
+      ],
+      "identity": "div.career-block-head (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-block-position"
+      ],
+      "identity": "span.career-block-position (#1)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-block-state"
+      ],
+      "identity": "span.career-block-state (#1)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill",
+        "pill--soft",
+        "pill--warn"
+      ],
+      "identity": "span.pill.pill--soft.pill--warn (#1)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill__dot"
+      ],
+      "identity": "i.pill__dot (#1)",
+      "tag": "i"
+    },
+    {
+      "classes": [],
+      "identity": "span (#1)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-block-name"
+      ],
+      "identity": "h3.career-block-name (#1)",
+      "tag": "h3"
+    },
+    {
+      "classes": [
+        "career-block-metric"
+      ],
+      "identity": "p.career-block-metric (#1)",
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-node"
+      ],
+      "identity": "div.career-node (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rail"
+      ],
+      "identity": "div.career-rail (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--in-progress"
+      ],
+      "identity": "div.career-ring.career-ring--in-progress (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--in-progress"
+      ],
+      "identity": "div.career-mark.career-mark--in-progress (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-connector"
+      ],
+      "identity": "i.career-connector (#1)",
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-body"
+      ],
+      "identity": "div.career-body (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-head"
+      ],
+      "identity": "div.career-head (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "pill",
+        "pill--soft",
+        "pill--warn"
+      ],
+      "identity": "span.pill.pill--soft.pill--warn (#2)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill__dot"
+      ],
+      "identity": "i.pill__dot (#2)",
+      "tag": "i"
+    },
+    {
+      "classes": [],
+      "identity": "span (#2)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-count"
+      ],
+      "identity": "span.career-count (#1)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-text",
+        "career-text--in-progress"
+      ],
+      "identity": "div.career-text.career-text--in-progress (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-note"
+      ],
+      "identity": "div.career-note (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-node"
+      ],
+      "identity": "div.career-node (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rail"
+      ],
+      "identity": "div.career-rail (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--in-progress"
+      ],
+      "identity": "div.career-ring.career-ring--in-progress (#3)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--in-progress"
+      ],
+      "identity": "div.career-mark.career-mark--in-progress (#3)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-connector"
+      ],
+      "identity": "i.career-connector (#2)",
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-body"
+      ],
+      "identity": "div.career-body (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-head"
+      ],
+      "identity": "div.career-head (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "pill",
+        "pill--soft",
+        "pill--warn"
+      ],
+      "identity": "span.pill.pill--soft.pill--warn (#3)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill__dot"
+      ],
+      "identity": "i.pill__dot (#3)",
+      "tag": "i"
+    },
+    {
+      "classes": [],
+      "identity": "span (#3)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-count"
+      ],
+      "identity": "span.career-count (#2)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-text",
+        "career-text--in-progress"
+      ],
+      "identity": "div.career-text.career-text--in-progress (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-note"
+      ],
+      "identity": "div.career-note (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-node",
+        "career-node--last"
+      ],
+      "identity": "div.career-node.career-node--last (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rail"
+      ],
+      "identity": "div.career-rail (#3)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--in-progress"
+      ],
+      "identity": "div.career-ring.career-ring--in-progress (#4)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--in-progress"
+      ],
+      "identity": "div.career-mark.career-mark--in-progress (#4)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-connector"
+      ],
+      "identity": "i.career-connector (#3)",
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-body"
+      ],
+      "identity": "div.career-body (#3)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-head"
+      ],
+      "identity": "div.career-head (#3)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "pill",
+        "pill--soft",
+        "pill--warn"
+      ],
+      "identity": "span.pill.pill--soft.pill--warn (#4)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill__dot"
+      ],
+      "identity": "i.pill__dot (#4)",
+      "tag": "i"
+    },
+    {
+      "classes": [],
+      "identity": "span (#4)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-count"
+      ],
+      "identity": "span.career-count (#3)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-text",
+        "career-text--in-progress"
+      ],
+      "identity": "div.career-text.career-text--in-progress (#3)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-note"
+      ],
+      "identity": "div.career-note (#3)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-block"
+      ],
+      "identity": "div.career-block (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-block-head"
+      ],
+      "identity": "div.career-block-head (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-block-position"
+      ],
+      "identity": "span.career-block-position (#2)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-block-state"
+      ],
+      "identity": "span.career-block-state (#2)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill",
+        "pill--flat",
+        "pill--soft"
+      ],
+      "identity": "span.pill.pill--flat.pill--soft (#1)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill__dot"
+      ],
+      "identity": "i.pill__dot (#5)",
+      "tag": "i"
+    },
+    {
+      "classes": [],
+      "identity": "span (#5)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-block-name"
+      ],
+      "identity": "h3.career-block-name (#2)",
+      "tag": "h3"
+    },
+    {
+      "classes": [
+        "career-block-metric"
+      ],
+      "identity": "p.career-block-metric (#2)",
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-steps"
+      ],
+      "identity": "div.career-steps (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-step"
+      ],
+      "identity": "div.career-step (#1)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-step-bullet"
+      ],
+      "identity": "i.career-step-bullet (#1)",
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-step-text"
+      ],
+      "identity": "p.career-step-text (#1)",
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-step"
+      ],
+      "identity": "div.career-step (#2)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-step-bullet"
+      ],
+      "identity": "i.career-step-bullet (#2)",
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-step-text"
+      ],
+      "identity": "p.career-step-text (#2)",
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-step"
+      ],
+      "identity": "div.career-step (#3)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-step-bullet"
+      ],
+      "identity": "i.career-step-bullet (#3)",
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-step-text"
+      ],
+      "identity": "p.career-step-text (#3)",
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-block-unlock"
+      ],
+      "identity": "p.career-block-unlock (#1)",
+      "tag": "p"
+    }
+  ],
+  "watched": [
+    {
+      "classes": [
+        "career-heading"
+      ],
+      "identity": "h2.career-heading (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "17px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "h2"
+    },
+    {
+      "classes": [
+        "career-rules"
+      ],
+      "identity": "div.career-rules (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "12px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule"
+      ],
+      "identity": "div.career-rule (#1)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgba(230, 237, 240, 0.1)",
+        "border-radius": "12px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "14px 18px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-key"
+      ],
+      "identity": "div.career-rule-key (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "10px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-value"
+      ],
+      "identity": "div.career-rule-value (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-note"
+      ],
+      "identity": "p.career-rule-note (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-rule"
+      ],
+      "identity": "div.career-rule (#2)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgba(230, 237, 240, 0.1)",
+        "border-radius": "12px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "14px 18px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-key"
+      ],
+      "identity": "div.career-rule-key (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "10px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-value"
+      ],
+      "identity": "div.career-rule-value (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-note"
+      ],
+      "identity": "p.career-rule-note (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-rule"
+      ],
+      "identity": "div.career-rule (#3)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgba(230, 237, 240, 0.1)",
+        "border-radius": "12px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "14px 18px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-key"
+      ],
+      "identity": "div.career-rule-key (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "10px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-value"
+      ],
+      "identity": "div.career-rule-value (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-note"
+      ],
+      "identity": "p.career-rule-note (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-rule"
+      ],
+      "identity": "div.career-rule (#4)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgba(230, 237, 240, 0.1)",
+        "border-radius": "12px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "14px 18px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-key"
+      ],
+      "identity": "div.career-rule-key (#4)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "10px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-value"
+      ],
+      "identity": "div.career-rule-value (#4)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rule-note"
+      ],
+      "identity": "p.career-rule-note (#4)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-legend"
+      ],
+      "identity": "div.career-legend (#1)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgba(230, 237, 240, 0.1)",
+        "border-radius": "12px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "14px",
+        "padding": "18px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-title"
+      ],
+      "identity": "div.career-legend-title (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "10px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-row"
+      ],
+      "identity": "div.career-legend-row (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "14px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--locked"
+      ],
+      "identity": "div.career-ring.career-ring--locked (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(60, 71, 78)",
+        "border-radius": "50%",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--locked"
+      ],
+      "identity": "div.career-mark.career-mark--locked (#1)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgb(139, 152, 162)",
+        "border-radius": "50%",
+        "color": "rgb(139, 152, 162)",
+        "display": "grid",
+        "font-size": "10px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-name",
+        "career-legend-name--locked"
+      ],
+      "identity": "div.career-legend-name.career-legend-name--locked (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-text"
+      ],
+      "identity": "div.career-legend-text (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-row"
+      ],
+      "identity": "div.career-legend-row (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "14px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--in-progress"
+      ],
+      "identity": "div.career-ring.career-ring--in-progress (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "50%",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--in-progress"
+      ],
+      "identity": "div.career-mark.career-mark--in-progress (#1)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "50%",
+        "color": "rgb(224, 174, 85)",
+        "display": "grid",
+        "font-size": "10px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-name",
+        "career-legend-name--in-progress"
+      ],
+      "identity": "div.career-legend-name.career-legend-name--in-progress (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "0px",
+        "color": "rgb(224, 174, 85)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-text"
+      ],
+      "identity": "div.career-legend-text (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-row"
+      ],
+      "identity": "div.career-legend-row (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "14px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--at-risk"
+      ],
+      "identity": "div.career-ring.career-ring--at-risk (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(221, 178, 88)",
+        "border-radius": "50%",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--at-risk"
+      ],
+      "identity": "div.career-mark.career-mark--at-risk (#1)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "50%",
+        "color": "rgb(224, 174, 85)",
+        "display": "grid",
+        "font-size": "10px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-name",
+        "career-legend-name--at-risk"
+      ],
+      "identity": "div.career-legend-name.career-legend-name--at-risk (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "0px",
+        "color": "rgb(224, 174, 85)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-text"
+      ],
+      "identity": "div.career-legend-text (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-row"
+      ],
+      "identity": "div.career-legend-row (#4)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "14px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--cleared"
+      ],
+      "identity": "div.career-ring.career-ring--cleared (#1)",
+      "styles": {
+        "background-color": "rgb(65, 183, 140)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "50%",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--cleared"
+      ],
+      "identity": "div.career-mark.career-mark--cleared (#1)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgb(130, 210, 187)",
+        "border-radius": "50%",
+        "color": "rgb(130, 210, 187)",
+        "display": "grid",
+        "font-size": "10px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-name",
+        "career-legend-name--cleared"
+      ],
+      "identity": "div.career-legend-name.career-legend-name--cleared (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(130, 210, 187)",
+        "border-radius": "0px",
+        "color": "rgb(130, 210, 187)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-text"
+      ],
+      "identity": "div.career-legend-text (#4)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-row"
+      ],
+      "identity": "div.career-legend-row (#5)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "14px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--revoked"
+      ],
+      "identity": "div.career-ring.career-ring--revoked (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(224, 85, 99)",
+        "border-radius": "50%",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--revoked"
+      ],
+      "identity": "div.career-mark.career-mark--revoked (#1)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgb(224, 129, 92)",
+        "border-radius": "50%",
+        "color": "rgb(224, 129, 92)",
+        "display": "grid",
+        "font-size": "10px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-name",
+        "career-legend-name--revoked"
+      ],
+      "identity": "div.career-legend-name.career-legend-name--revoked (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(224, 129, 92)",
+        "border-radius": "0px",
+        "color": "rgb(224, 129, 92)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-legend-text"
+      ],
+      "identity": "div.career-legend-text (#5)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-blocks"
+      ],
+      "identity": "div.career-blocks (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "14px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-block"
+      ],
+      "identity": "div.career-block (#1)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgba(230, 237, 240, 0.1)",
+        "border-radius": "12px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "18px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-block-head"
+      ],
+      "identity": "div.career-block-head (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "flex",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "10px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-block-position"
+      ],
+      "identity": "span.career-block-position (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "10px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-block-state"
+      ],
+      "identity": "span.career-block-state (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill",
+        "pill--soft",
+        "pill--warn"
+      ],
+      "identity": "span.pill.pill--soft.pill--warn (#1)",
+      "styles": {
+        "background-color": "rgb(45, 36, 21)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "9px",
+        "color": "rgb(224, 174, 85)",
+        "display": "inline-flex",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "5px",
+        "padding": "0px 7px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill__dot"
+      ],
+      "identity": "i.pill__dot (#1)",
+      "styles": {
+        "background-color": "rgb(221, 178, 88)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "50%",
+        "color": "rgb(224, 174, 85)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-block-name"
+      ],
+      "identity": "h3.career-block-name (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "h3"
+    },
+    {
+      "classes": [
+        "career-block-metric"
+      ],
+      "identity": "p.career-block-metric (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-node"
+      ],
+      "identity": "div.career-node (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "10px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rail"
+      ],
+      "identity": "div.career-rail (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "0px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--in-progress"
+      ],
+      "identity": "div.career-ring.career-ring--in-progress (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "50%",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--in-progress"
+      ],
+      "identity": "div.career-mark.career-mark--in-progress (#2)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "50%",
+        "color": "rgb(224, 174, 85)",
+        "display": "grid",
+        "font-size": "10px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-connector"
+      ],
+      "identity": "i.career-connector (#1)",
+      "styles": {
+        "background-color": "rgb(35, 45, 51)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-body"
+      ],
+      "identity": "div.career-body (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px 0px 18px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-head"
+      ],
+      "identity": "div.career-head (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "flex",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "6px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "pill",
+        "pill--soft",
+        "pill--warn"
+      ],
+      "identity": "span.pill.pill--soft.pill--warn (#2)",
+      "styles": {
+        "background-color": "rgb(45, 36, 21)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "9px",
+        "color": "rgb(224, 174, 85)",
+        "display": "flex",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "5px",
+        "padding": "0px 7px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill__dot"
+      ],
+      "identity": "i.pill__dot (#2)",
+      "styles": {
+        "background-color": "rgb(221, 178, 88)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "50%",
+        "color": "rgb(224, 174, 85)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-count"
+      ],
+      "identity": "span.career-count (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(139, 152, 162)",
+        "border-radius": "0px",
+        "color": "rgb(139, 152, 162)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-text",
+        "career-text--in-progress"
+      ],
+      "identity": "div.career-text.career-text--in-progress (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-note"
+      ],
+      "identity": "div.career-note (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(139, 152, 162)",
+        "border-radius": "0px",
+        "color": "rgb(139, 152, 162)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-node"
+      ],
+      "identity": "div.career-node (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "10px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rail"
+      ],
+      "identity": "div.career-rail (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "0px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--in-progress"
+      ],
+      "identity": "div.career-ring.career-ring--in-progress (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "50%",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--in-progress"
+      ],
+      "identity": "div.career-mark.career-mark--in-progress (#3)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "50%",
+        "color": "rgb(224, 174, 85)",
+        "display": "grid",
+        "font-size": "10px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-connector"
+      ],
+      "identity": "i.career-connector (#2)",
+      "styles": {
+        "background-color": "rgb(35, 45, 51)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-body"
+      ],
+      "identity": "div.career-body (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px 0px 18px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-head"
+      ],
+      "identity": "div.career-head (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "flex",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "6px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "pill",
+        "pill--soft",
+        "pill--warn"
+      ],
+      "identity": "span.pill.pill--soft.pill--warn (#3)",
+      "styles": {
+        "background-color": "rgb(45, 36, 21)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "9px",
+        "color": "rgb(224, 174, 85)",
+        "display": "flex",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "5px",
+        "padding": "0px 7px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill__dot"
+      ],
+      "identity": "i.pill__dot (#3)",
+      "styles": {
+        "background-color": "rgb(221, 178, 88)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "50%",
+        "color": "rgb(224, 174, 85)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-count"
+      ],
+      "identity": "span.career-count (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(139, 152, 162)",
+        "border-radius": "0px",
+        "color": "rgb(139, 152, 162)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-text",
+        "career-text--in-progress"
+      ],
+      "identity": "div.career-text.career-text--in-progress (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-note"
+      ],
+      "identity": "div.career-note (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(139, 152, 162)",
+        "border-radius": "0px",
+        "color": "rgb(139, 152, 162)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-node",
+        "career-node--last"
+      ],
+      "identity": "div.career-node.career-node--last (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "10px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-rail"
+      ],
+      "identity": "div.career-rail (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "0px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-ring",
+        "career-ring--in-progress"
+      ],
+      "identity": "div.career-ring.career-ring--in-progress (#4)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "50%",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-mark",
+        "career-mark--in-progress"
+      ],
+      "identity": "div.career-mark.career-mark--in-progress (#4)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "50%",
+        "color": "rgb(224, 174, 85)",
+        "display": "grid",
+        "font-size": "10px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-connector"
+      ],
+      "identity": "i.career-connector (#3)",
+      "styles": {
+        "background-color": "rgb(35, 45, 51)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-body"
+      ],
+      "identity": "div.career-body (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px 0px 18px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-head"
+      ],
+      "identity": "div.career-head (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "flex",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "6px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "pill",
+        "pill--soft",
+        "pill--warn"
+      ],
+      "identity": "span.pill.pill--soft.pill--warn (#4)",
+      "styles": {
+        "background-color": "rgb(45, 36, 21)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "9px",
+        "color": "rgb(224, 174, 85)",
+        "display": "flex",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "5px",
+        "padding": "0px 7px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill__dot"
+      ],
+      "identity": "i.pill__dot (#4)",
+      "styles": {
+        "background-color": "rgb(221, 178, 88)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "50%",
+        "color": "rgb(224, 174, 85)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-count"
+      ],
+      "identity": "span.career-count (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(139, 152, 162)",
+        "border-radius": "0px",
+        "color": "rgb(139, 152, 162)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-text",
+        "career-text--in-progress"
+      ],
+      "identity": "div.career-text.career-text--in-progress (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-note"
+      ],
+      "identity": "div.career-note (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(139, 152, 162)",
+        "border-radius": "0px",
+        "color": "rgb(139, 152, 162)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-block"
+      ],
+      "identity": "div.career-block (#2)",
+      "styles": {
+        "background-color": "rgb(21, 29, 34)",
+        "border-color": "rgba(230, 237, 240, 0.1)",
+        "border-radius": "12px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "18px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-block-head"
+      ],
+      "identity": "div.career-block-head (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "flex",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "10px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-block-position"
+      ],
+      "identity": "span.career-block-position (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "10px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-block-state"
+      ],
+      "identity": "span.career-block-state (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill",
+        "pill--flat",
+        "pill--soft"
+      ],
+      "identity": "span.pill.pill--flat.pill--soft (#1)",
+      "styles": {
+        "background-color": "rgb(35, 45, 51)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "9px",
+        "color": "rgb(154, 168, 177)",
+        "display": "inline-flex",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "5px",
+        "padding": "0px 7px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "pill__dot"
+      ],
+      "identity": "i.pill__dot (#5)",
+      "styles": {
+        "background-color": "rgb(154, 168, 177)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "50%",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-block-name"
+      ],
+      "identity": "h3.career-block-name (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "h3"
+    },
+    {
+      "classes": [
+        "career-block-metric"
+      ],
+      "identity": "p.career-block-metric (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-steps"
+      ],
+      "identity": "div.career-steps (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "12px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-step"
+      ],
+      "identity": "div.career-step (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "12px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-step-bullet"
+      ],
+      "identity": "i.career-step-bullet (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(60, 71, 78)",
+        "border-radius": "50%",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-step-text"
+      ],
+      "identity": "p.career-step-text (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-step"
+      ],
+      "identity": "div.career-step (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "12px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-step-bullet"
+      ],
+      "identity": "i.career-step-bullet (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(60, 71, 78)",
+        "border-radius": "50%",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-step-text"
+      ],
+      "identity": "p.career-step-text (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-step"
+      ],
+      "identity": "div.career-step (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "grid",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "12px",
+        "padding": "0px"
+      },
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "career-step-bullet"
+      ],
+      "identity": "i.career-step-bullet (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(60, 71, 78)",
+        "border-radius": "50%",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
+        "font-size": "15px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "i"
+    },
+    {
+      "classes": [
+        "career-step-text"
+      ],
+      "identity": "p.career-step-text (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "p"
+    },
+    {
+      "classes": [
+        "career-block-unlock"
+      ],
+      "identity": "p.career-block-unlock (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgba(230, 237, 240, 0.1) rgb(154, 168, 177) rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "14px 0px 0px"
+      },
+      "tag": "p"
+    }
+  ]
+}
