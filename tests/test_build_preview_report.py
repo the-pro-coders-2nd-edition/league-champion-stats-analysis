@@ -25,7 +25,7 @@ def test_build_preview_writes_index_and_player_reports(tmp_path: Path) -> None:
     assert hub_path.exists()
     assert hub_path.read_text(encoding="utf-8")
 
-    report_files = list((tmp_path / "output" / "reports").rglob("report.html"))
+    report_files = list((tmp_path / "output" / "reports").rglob("report.json"))
     assert len(report_files) == len(module.PREVIEW_BUILDS)
 
 
