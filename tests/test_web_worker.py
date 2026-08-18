@@ -91,6 +91,10 @@ def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, **overrides: Any) -> list[s
         "group_records": lambda records, champion, role: ["record"],
         "resolve_ranked": lambda services, batch, records: calls.append("ranked") or None,
         "should_skip_unchanged_build": lambda config, pool, records, new_ids: False,
+        # Defaults to "already has peer data" so a test that skips stage A via
+        # should_skip_unchanged_build also skips stage B without needing a real
+        # AppConfig (report_needs_peer_comparison reads config.output_dir).
+        "report_needs_peer_comparison": lambda config, pool: False,
         "analyze_build": (
             lambda services, batch, pool, *, ranked, peer_comparison: calls.append(
                 f"analyze(peer={peer_comparison is not None})"
