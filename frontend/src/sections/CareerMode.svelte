@@ -6,11 +6,14 @@
   export let data;
   export let playerSlug = '';
   export let buildSlug = '';
+  // True while an analysis job is running. A drop shifts every slot left, so
+  // acting on a ladder that is mid-rebuild would target the wrong block.
+  export let busy = false;
+  export let onDropped = () => {};
 
   let confirmSlot = null;
-  let dropping = false;
+  let droppingSlot = null;
   let dropError = '';
-  let dropped = false;
 
   $: career = data.career || { has_career: false, blocks: [], rules: [], legend: [], congrats: null };
   $: canDrop = !!(playerSlug && buildSlug);
@@ -25,16 +28,16 @@
   }
 
   async function confirmDrop(slot) {
-    dropping = true;
+    droppingSlot = slot;
     dropError = '';
     try {
-      await dropCareerBlock(playerSlug, buildSlug, slot);
-      dropped = true;
+      const result = await dropCareerBlock(playerSlug, buildSlug, slot);
       confirmSlot = null;
+      onDropped(result);
     } catch (err) {
       dropError = err.message || 'Could not drop this block.';
     } finally {
-      dropping = false;
+      droppingSlot = null;
     }
   }
 </script>
@@ -63,13 +66,6 @@
       </div>
     {/if}
 
-    {#if dropped}
-      <p class="career-drop-notice" role="status">
-        Block dropped. The remaining block moved left and a replacement is being generated —
-        this report updates when the run finishes.
-      </p>
-    {/if}
-
     <div class="career-legend">
       <div class="career-legend-title">The five states a goal can be in</div>
       {#each career.legend as entry}
@@ -88,7 +84,6 @@
         {@const slot = block.slot ?? index}
         <div class="career-block">
           <div class="career-block-head">
-            <span class="career-block-position">{block.position}</span>
             <span class="career-block-state">
               <Pill tone={block.tone} label={block.state_label} />
             </span>
@@ -97,7 +92,8 @@
                 type="button"
                 class="career-drop-btn"
                 aria-label="Drop {block.name}"
-                disabled={dropping || dropped}
+                disabled={busy || droppingSlot !== null}
+                title={busy ? 'Wait for the current run to finish' : 'Discard this block and generate a replacement'}
                 on:click={() => askDrop(slot)}
               >Drop block</button>
             {/if}
@@ -116,10 +112,15 @@
                 <button
                   type="button"
                   class="career-drop-confirm-yes"
-                  disabled={dropping}
+                  disabled={droppingSlot !== null}
                   on:click={() => confirmDrop(slot)}
-                >{dropping ? 'Dropping…' : 'Yes, drop it'}</button>
-                <button type="button" class="career-drop-confirm-no" disabled={dropping} on:click={cancelDrop}>
+                >{droppingSlot === slot ? 'Dropping…' : 'Yes, drop it'}</button>
+                <button
+                  type="button"
+                  class="career-drop-confirm-no"
+                  disabled={droppingSlot !== null}
+                  on:click={cancelDrop}
+                >
                   Keep it
                 </button>
               </div>
@@ -163,6 +164,10 @@
 </section>
 
 <style>
+  /* report.css:2057 pushes .career-block-state right; with the "Block X"
+     kicker gone the pill leads the row and the button takes the right edge. */
+  .career-block-head .career-block-state { margin-left: 0; }
+
   .career-drop-btn {
     margin-left: auto;
     border: 1px solid var(--color-divider);

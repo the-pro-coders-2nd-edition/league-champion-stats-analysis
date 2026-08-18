@@ -146,6 +146,17 @@
     jobActive = false;
   }
 
+  function handleCareerDropped(result) {
+    // The drop is performed by the regenerate job it enqueued, so the ladder only
+    // changes once that run rewrites the report. pollStatus already reloads on a
+    // new generated_at; this just drops it to the fast cadence so the new block
+    // appears on its own instead of waiting out the 30s idle poll.
+    jobActive = true;
+    statusBannerVisible = true;
+    statusBannerText = result?.job?.stage_detail || 'Rebuilding your Career ladder…';
+    startStatusPoll(3000);
+  }
+
   async function handleRefresh() {
     if (refreshing || jobActive || !payload?.refresh_champion || !payload?.refresh_role) return;
     refreshing = true;
@@ -490,7 +501,13 @@
   </div>
 
   <div class="report-category-panel{activeCategory === 'career' ? ' is-active' : ''}" id="category-career" data-category="career">
-    <CareerMode data={$view} playerSlug={params.slug} buildSlug={params.buildSlug} />
+    <CareerMode
+      data={$view}
+      playerSlug={params.slug}
+      buildSlug={params.buildSlug}
+      busy={jobActive || refreshing}
+      onDropped={handleCareerDropped}
+    />
   </div>
 
   <div class="report-category-panel{activeCategory === 'performance' ? ' is-active' : ''}" id="category-performance" data-category="performance">

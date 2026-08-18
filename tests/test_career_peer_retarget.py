@@ -373,3 +373,27 @@ def test_purging_a_live_orphan_keeps_the_queued_block_queued(store: CareerStore)
     live = {goal.track_key for goal in store.load_goals(KEY) if goal.slot == 0}
     assert still_queued == {queued}
     assert live and live != {queued}
+
+
+def test_requested_drop_survives_the_two_stage_regenerate(store: CareerStore) -> None:
+    """The drop lands in stage A (peer-blind); stage B retargets the replacement.
+
+    A regenerate job runs advance_career twice: worker.py:262 without peers, then
+    worker.py:312 with them. The drop must be performed exactly once, and the
+    block generated to replace it must not keep stage A's own-p75 rungs.
+    """
+    matches = _matches()
+    advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)
+    live = next(row[1] for row in _ladder(store) if row[0] == 0)
+    queued = next(row[1] for row in _ladder(store) if row[0] == 1)
+
+    store.request_drop(KEY, 0)
+    advance_career(store, KEY, _ctx(matches, {}), WEAK_LANING)      # stage A
+    advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)   # stage B
+
+    ladder = _ladder(store)
+    assert next(row[1] for row in ladder if row[0] == 0) == queued
+    assert len({row[0] for row in ladder}) == BLOCK_SLOTS
+    assert all(goal.peer_seeded for goal in store.load_goals(KEY))
+    assert live not in store.used_track_keys(KEY)
+    assert store.peek_pending_drop(KEY) is None
