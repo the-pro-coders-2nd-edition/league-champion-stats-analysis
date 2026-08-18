@@ -95,7 +95,7 @@ def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, **overrides: Any) -> list[s
             lambda services, batch, pool, *, ranked, peer_comparison: calls.append(
                 f"analyze(peer={peer_comparison is not None})"
             )
-            or Path("report.html")
+            or Path("report.json")
         ),
         "build_peer_for_pool": (
             lambda services, batch, pool, ranked: calls.append("peer") or object()
@@ -367,7 +367,7 @@ def test_execute_job_honours_cancel_before_peer(
         services: Any, batch: Any, pool: Any, *, ranked: Any, peer_comparison: Any
     ) -> Path:
         store.cancel(job_id)
-        return Path("report.html")
+        return Path("report.json")
 
     calls = _patch_pipeline(monkeypatch, analyze_build=cancel_after_analyze)
 
