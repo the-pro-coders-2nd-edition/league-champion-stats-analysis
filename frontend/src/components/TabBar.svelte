@@ -59,6 +59,7 @@
   .report-tab--games.is-active { border-bottom-color: var(--cat-games); }
   .report-tab--champion.is-active { border-bottom-color: var(--cat-champion); }
   .report-tab--deepdive.is-active { border-bottom-color: var(--cat-deepdive); }
+  .report-tab--career.is-active { border-bottom-color: var(--cat-career); }
   .report-tab--advanced.is-active { border-bottom-color: var(--cat-advanced); }
 
   .form-tabs, .game-review-tabs {

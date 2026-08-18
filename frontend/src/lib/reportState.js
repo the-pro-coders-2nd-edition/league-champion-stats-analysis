@@ -52,6 +52,7 @@ function bundleFields(bundle) {
       : null,
     peer_rows: peer ? peer.rows || [] : [],
     peer_rank_icon: peer ? peer.rank_icon : null,
+    career: bundle.career || null,
   };
 }
 

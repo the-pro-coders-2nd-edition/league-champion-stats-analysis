@@ -16,6 +16,8 @@
   import VisionEconomyTeamfightsPositioning from '../sections/VisionEconomyTeamfightsPositioning.svelte';
   import GameReview from '../sections/GameReview.svelte';
   import Graphs from '../sections/Graphs.svelte';
+  import CareerMode from '../sections/CareerMode.svelte';
+  import TabBar from '../components/TabBar.svelte';
 
   export let params = {};
 
@@ -28,23 +30,37 @@
   let playerPageHref = null;
   let navCollapsed = false;
 
-  $: fetchBuild(params.slug, params.buildSlug)
-    .then((result) => {
-      payload = result;
-      report = createReportState(payload, {
-        fetchAccountViews: (accounts) => fetchAccountViews(params.slug, params.buildSlug, accounts),
-      });
-    })
-    .catch((err) => { error = err; });
+  // `params` is a fresh object on every route match, so a bare `$:` on its fields
+  // would refire on any unrelated reactivity tick; only refetch when the actual
+  // slug/build pair changes.
+  let loadedKey = '';
+  $: {
+    const key = `${params.slug}/${params.buildSlug}`;
+    if (key !== loadedKey) {
+      loadedKey = key;
+      fetchBuild(params.slug, params.buildSlug)
+        .then((result) => {
+          payload = result;
+          report = createReportState(payload, {
+            fetchAccountViews: (accounts) => fetchAccountViews(params.slug, params.buildSlug, accounts),
+          });
+        })
+        .catch((err) => { error = err; });
+    }
+  }
 
-  $: fetchPlayerStatus(params.slug)
-    .then((status) => {
-      playerBuilds = status.builds || [];
-      playerPageHref = `/players/${params.slug}`;
-    })
-    .catch(() => {
-      playerBuilds = [];
-    });
+  let loadedStatusSlug = '';
+  $: if (params.slug !== loadedStatusSlug) {
+    loadedStatusSlug = params.slug;
+    fetchPlayerStatus(params.slug)
+      .then((status) => {
+        playerBuilds = status.builds || [];
+        playerPageHref = `/players/${params.slug}`;
+      })
+      .catch(() => {
+        playerBuilds = [];
+      });
+  }
 
   onMount(() => {
     try {
@@ -74,6 +90,26 @@
 
   function winratePct(build) {
     return build.winrate != null ? Math.round(build.winrate * 100) : null;
+  }
+
+  const REPORT_CATEGORIES = [
+    { value: 'summary', label: 'Summary' },
+    { value: 'career', label: 'Career' },
+    { value: 'performance', label: 'Performance' },
+    { value: 'games', label: 'Games' },
+    { value: 'champion', label: 'Champion' },
+    { value: 'deepdive', label: 'Deepdive' },
+  ];
+  let activeCategory = 'summary';
+  $: categoryTabs = REPORT_CATEGORIES.map((category) => ({
+    ...category,
+    modifierClass: category.value,
+    active: category.value === activeCategory,
+    id: `tab-${category.value}`,
+    ariaControls: `category-${category.value}`,
+  }));
+  function selectCategory(value) {
+    activeCategory = value;
   }
 
   $: queue = report ? report.queue : null;
@@ -200,16 +236,43 @@
     onChange={(key) => report.selectAccountKey(key)}
   />
 
-  <Overview data={$view} />
-  <Coaching data={$view} />
-  <FormTracker data={$view} />
-  <RankPeers data={$view} />
-  <Matchups data={$view} />
-  <ItemsRunes data={$view} />
-  <LaneObjectivesDeaths data={$view} />
-  <VisionEconomyTeamfightsPositioning data={$view} />
-  <GameReview data={$view} />
-  <Graphs data={$view} />
+  <TabBar
+    containerId="report-category-tabs"
+    ariaLabel="Report categories"
+    buttonClass="report-tab"
+    dataAttr="data-category"
+    tabs={categoryTabs}
+    on:select={(event) => selectCategory(event.detail)}
+  />
+
+  <div class="report-category-panel{activeCategory === 'summary' ? ' is-active' : ''}" id="category-summary" data-category="summary">
+    <Overview data={$view} onGoToCareer={() => selectCategory('career')} />
+    <Coaching data={$view} />
+  </div>
+
+  <div class="report-category-panel{activeCategory === 'career' ? ' is-active' : ''}" id="category-career" data-category="career">
+    <CareerMode data={$view} />
+  </div>
+
+  <div class="report-category-panel{activeCategory === 'performance' ? ' is-active' : ''}" id="category-performance" data-category="performance">
+    <FormTracker data={$view} />
+    <RankPeers data={$view} />
+  </div>
+
+  <div class="report-category-panel{activeCategory === 'games' ? ' is-active' : ''}" id="category-games" data-category="games">
+    <GameReview data={$view} />
+  </div>
+
+  <div class="report-category-panel{activeCategory === 'champion' ? ' is-active' : ''}" id="category-champion" data-category="champion">
+    <Matchups data={$view} />
+    <ItemsRunes data={$view} />
+  </div>
+
+  <div class="report-category-panel{activeCategory === 'deepdive' ? ' is-active' : ''}" id="category-deepdive" data-category="deepdive">
+    <LaneObjectivesDeaths data={$view} />
+    <VisionEconomyTeamfightsPositioning data={$view} />
+    <Graphs data={$view} />
+  </div>
 
   <Chatbot data={payload} sendMessage={sendChatMessage} />
 {/if}

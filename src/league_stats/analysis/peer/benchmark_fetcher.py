@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Final
 
 import pandas as pd
@@ -45,6 +45,8 @@ class BenchmarkSnapshot:
     players_sampled: int
     from_cache: bool
     platform: str
+    metrics_p50: dict[str, float] = field(default_factory=dict)
+    metrics_p75: dict[str, float] = field(default_factory=dict)
 
 
 def extract_champion_role_for_puuid(
@@ -114,6 +116,19 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, float]:
     if "win" in metrics:
         metrics["winrate"] = metrics["win"]
     return metrics
+
+
+def _quantile_metrics(rows: list[dict[str, Any]], q: float) -> dict[str, float]:
+    """Per-metric quantile across sampled games (Career mode rung targets)."""
+    frame = pd.DataFrame(rows)
+    result: dict[str, float] = {}
+    for column in BENCHMARK_METRIC_KEYS:
+        if column not in frame.columns:
+            continue
+        series = pd.to_numeric(frame[column], errors="coerce").dropna()
+        if not series.empty:
+            result[column] = float(series.quantile(q))
+    return result
 
 
 def _gather_seeds(
@@ -364,4 +379,6 @@ def fetch_benchmark_from_api(
         players_sampled=players,
         from_cache=False,
         platform=client.platform,
+        metrics_p50=_quantile_metrics(rows, 0.5),
+        metrics_p75=_quantile_metrics(rows, 0.75),
     )

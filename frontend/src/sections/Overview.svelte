@@ -4,8 +4,10 @@
   import ScoreSetItem from '../components/ScoreSetItem.svelte';
   import ReportPlayerChip from '../components/ReportPlayerChip.svelte';
   import MetricCard from '../components/MetricCard.svelte';
+  import CareerNode from '../components/CareerNode.svelte';
 
   export let data;
+  export let onGoToCareer = () => {};
 
   function heroChipTone(card) {
     if (card.value_class === 'win') return 'good';
@@ -88,6 +90,30 @@
       {/each}
     </div>
   </div>
+  {#if data.career && data.career.has_career}
+    <div class="career-widget" id="career-widget">
+      <div class="career-widget-head">
+        <span class="career-widget-label">Live block</span>
+        <button type="button" class="career-widget-link" id="career-widget-link" on:click={onGoToCareer}>
+          All goals
+        </button>
+      </div>
+      {#each data.career.widget as item, index (index)}
+        <CareerNode
+          compact={true}
+          state={item.state}
+          stateClass={item.state_class}
+          tone={item.tone}
+          pct={item.pct}
+          mark={item.mark}
+          text={item.text}
+          note={item.note}
+          count={item.count}
+          last={index === data.career.widget.length - 1}
+        />
+      {/each}
+    </div>
+  {/if}
   <div id="overview-cards" class="cards">
     {#each data.overview_cards || [] as card}
       <MetricCard {card} />
