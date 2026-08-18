@@ -1,4 +1,5 @@
 import './styles/design-tokens.css';
+import './styles/shell.css';
 import './styles/report.css';
 import './styles/chatbot.css';
 import './styles/components.css';
