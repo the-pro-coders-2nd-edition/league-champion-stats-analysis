@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -83,6 +84,7 @@ from league_stats.presentation.report import (
     utc_now_iso,
     write_report_meta,
 )
+from league_stats.infra.derived import KIND_SLICE, DerivedStore, slice_fingerprint
 from league_stats.presentation.report_json import context_to_json
 from league_stats.utils import get_logger
 
@@ -290,6 +292,13 @@ def write_full_exports(
     return summary
 
 
+def _peer_salt(peer_comparison: PeerComparisonResult | None) -> str:
+    """Fingerprint of the peer baseline a slice was built against."""
+    if peer_comparison is None:
+        return "nopeer"
+    return hashlib.sha256(peer_comparison.model_dump_json().encode()).hexdigest()[:12]
+
+
 def build_report_views(
     config: AppConfig,
     records: list[MatchRecord],
@@ -316,36 +325,88 @@ def build_report_views(
     ]
     window_specs.append(("all", None))
 
+    # Slices are cached on the full record set, not just their own games: every
+    # slice's feature-importance figure and figure hints come from the shared
+    # win predictor, which is trained on all records. So a new game correctly
+    # invalidates every slice, and the cache pays off on re-renders that add no
+    # games -- regenerate, account-view rebuilds, repeated requests.
+    fullset_salt = slice_fingerprint(
+        [record.match_id for record in records], salt="fullset"
+    )
+    peer_salt = _peer_salt(peer_comparison)
+    graphs_salt = graphs_dir.as_posix()
+
     report_views: dict[str, dict[str, Any]] = {}
     view_peers: dict[str, dict[str, PeerComparisonResult | None]] = {}
-    for queue_key in QUEUE_FILTER_OPTIONS:
-        queue_records = filter_records_by_queue(records, queue_key)
-        queue_total = len(queue_records)
-        queue_peer = peer_comparison if queue_key == "solo" else None
-        queue_label = QUEUE_SUBTITLE_LABELS[queue_key]
-        windows: dict[str, dict[str, Any]] = {}
-        window_peers: dict[str, PeerComparisonResult | None] = {}
-        for window_key, limit in window_specs:
-            sliced = slice_records(queue_records, limit)
-            bundle = build_window_bundle(
-                config,
-                sliced,
-                graphs_dir,
-                peer_comparison=queue_peer,
-                queue_label=queue_label,
-                assets=assets,
-                shared_stats=shared_stats,
-            )
-            window_peers[window_key] = bundle.pop("_peer_result", None)
-            serializable = {k: v for k, v in bundle.items() if not k.startswith("_")}
-            windows[window_key] = serializable
-        report_views[queue_key] = {
-            "total_games": queue_total,
-            "default_window": default_game_window_key(queue_total),
-            "window_options": game_window_options(queue_total),
-            "windows": windows,
-        }
-        view_peers[queue_key] = window_peers
+    with DerivedStore(config.derived_db_path) as derived:
+        for queue_key in QUEUE_FILTER_OPTIONS:
+            queue_records = filter_records_by_queue(records, queue_key)
+            queue_total = len(queue_records)
+            queue_peer = peer_comparison if queue_key == "solo" else None
+            queue_label = QUEUE_SUBTITLE_LABELS[queue_key]
+            windows: dict[str, dict[str, Any]] = {}
+            window_peers: dict[str, PeerComparisonResult | None] = {}
+            for window_key, limit in window_specs:
+                sliced = slice_records(queue_records, limit)
+                fingerprint = slice_fingerprint(
+                    [record.match_id for record in sliced],
+                    salt="|".join(
+                        (
+                            config.champion,
+                            config.role,
+                            queue_key,
+                            window_key,
+                            queue_label,
+                            fullset_salt,
+                            peer_salt,
+                            graphs_salt,
+                        )
+                    ),
+                )
+                cached = derived.get(KIND_SLICE, fingerprint)
+                if cached is not None:
+                    windows[window_key] = cached["bundle"]
+                    raw_peer = cached.get("peer")
+                    window_peers[window_key] = (
+                        PeerComparisonResult.model_validate(raw_peer)
+                        if raw_peer is not None
+                        else None
+                    )
+                    continue
+
+                bundle = build_window_bundle(
+                    config,
+                    sliced,
+                    graphs_dir,
+                    peer_comparison=queue_peer,
+                    queue_label=queue_label,
+                    assets=assets,
+                    shared_stats=shared_stats,
+                )
+                window_peer = bundle.pop("_peer_result", None)
+                window_peers[window_key] = window_peer
+                serializable = {k: v for k, v in bundle.items() if not k.startswith("_")}
+                windows[window_key] = serializable
+                derived.put(
+                    KIND_SLICE,
+                    fingerprint,
+                    {
+                        "bundle": serializable,
+                        "peer": (
+                            window_peer.model_dump(mode="json")
+                            if window_peer is not None
+                            else None
+                        ),
+                    },
+                )
+            report_views[queue_key] = {
+                "total_games": queue_total,
+                "default_window": default_game_window_key(queue_total),
+                "window_options": game_window_options(queue_total),
+                "windows": windows,
+            }
+            view_peers[queue_key] = window_peers
+        derived.evict_to_budget()
 
     return report_views, view_peers, default_queue_filter_key(solo_count, flex_count)
 
