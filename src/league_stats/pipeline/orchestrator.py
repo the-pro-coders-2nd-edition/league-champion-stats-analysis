@@ -41,7 +41,9 @@ from league_stats.infra.ddragon_assets import DDragonAssets
 from league_stats.infra.riot_api import RiotApiClient
 from league_stats.ingest.parser import BuildPool, discover_build_pools
 from league_stats.pipeline.bundles import (
+    build_all_ranked_ladder,
     build_window_bundle,
+    career_view_for_queue,
     bundle_to_template_context,
     default_game_window_key,
     default_queue_filter_key,
@@ -360,6 +362,10 @@ def build_report_views(
 
     report_views: dict[str, dict[str, Any]] = {}
     view_peers: dict[str, dict[str, PeerComparisonResult | None]] = {}
+    # One ladder for the whole report, spanning both ranked queues. Injected into
+    # every slice below rather than rebuilt per slice, and only the all-ranked
+    # views actually render it.
+    career_ladder = build_all_ranked_ladder(config, records, peer_comparison)
     with DerivedStore(config.derived_db_path) as derived:
         for queue_key in QUEUE_FILTER_OPTIONS:
             queue_records = filter_records_by_queue(records, queue_key)
@@ -421,6 +427,8 @@ def build_report_views(
                         ),
                     },
                 )
+            for bundle_view in windows.values():
+                bundle_view["career"] = career_view_for_queue(queue_key, career_ladder)
             report_views[queue_key] = {
                 "total_games": queue_total,
                 "default_window": default_game_window_key(queue_total),

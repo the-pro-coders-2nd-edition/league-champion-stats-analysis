@@ -1,4 +1,6 @@
 <script>
+  import { flip } from 'svelte/animate';
+  import { fade, fly } from 'svelte/transition';
   import CareerNode from '../components/CareerNode.svelte';
   import Chip from '../components/Chip.svelte';
   import SectionHeader from '../components/SectionHeader.svelte';
@@ -7,14 +9,28 @@
   export let data;
   export let playerSlug = '';
   export let buildSlug = '';
+  // True while an analysis job is running. A drop shifts every slot left, so
+  // acting on a ladder that is mid-rebuild would target the wrong block.
+  export let busy = false;
+  export let onDropped = () => {};
+  export let onShowAllRanked = null;
+  // Slot awaiting its replacement from the regenerate a drop kicked off. Rendered
+  // as a skeleton until the rebuilt report lands and the real block takes over.
+  export let pendingSlot = null;
 
   let confirmSlot = null;
-  let dropping = false;
+  let droppingSlot = null;
   let dropError = '';
-  let dropped = false;
 
   $: career = data.career || { has_career: false, blocks: [], rules: [], legend: [], congrats: null };
   $: canDrop = !!(playerSlug && buildSlug);
+  // A queue-filtered slice has no ladder of its own: there is one ladder over
+  // every ranked game, and only the all-ranked views render it.
+  $: tracksAllRanked = !career.has_career && career.tracks_all_ranked === true;
+  $: visibleBlocks = career.blocks.filter(
+    (block, index) => (block.slot ?? index) !== pendingSlot
+  );
+  $: awaitingReplacement = pendingSlot !== null;
 
   function askDrop(slot) {
     dropError = '';
@@ -25,17 +41,21 @@
     confirmSlot = null;
   }
 
-  async function confirmDrop(block) {
-    dropping = true;
+  function blockSlot(block, index) {
+    return block.slot ?? index;
+  }
+
+  async function confirmDrop(slot) {
+    droppingSlot = slot;
     dropError = '';
     try {
-      await dropCareerBlock(playerSlug, buildSlug, block.slot);
-      dropped = true;
+      const result = await dropCareerBlock(playerSlug, buildSlug, slot);
       confirmSlot = null;
+      onDropped(result);
     } catch (err) {
       dropError = err.message || 'Could not drop this block.';
     } finally {
-      dropping = false;
+      droppingSlot = null;
     }
   }
 </script>
@@ -43,7 +63,20 @@
 <section id="career" class="report-section report-section--career">
   <SectionHeader id="career" title="Career mode" icon="trending-up" />
 
-  {#if career.has_career}
+  {#if tracksAllRanked}
+    <div class="career-scope-notice">
+      <p class="career-scope-notice-text">
+        Career tracks <strong>all ranked games</strong>, Solo/Duo and Flex together, so it does not
+        follow the queue filter. Switch to <strong>All ranked</strong> to see your ladder.
+      </p>
+      {#if onShowAllRanked}
+        <button type="button" class="career-scope-switch" on:click={onShowAllRanked}>
+          Show all ranked
+        </button>
+      {/if}
+    </div>
+  {:else if career.has_career}
+    <p class="career-scope-caption">Tracking all ranked games, Solo/Duo and Flex together.</p>
     <div class="career-rules">
       {#each career.rules as rule}
         <div class="career-rule">
@@ -64,13 +97,6 @@
       </div>
     {/if}
 
-    {#if dropped}
-      <p class="career-drop-notice" role="status">
-        Block dropped. The remaining block moved left and a replacement is being generated —
-        this report updates when the run finishes.
-      </p>
-    {/if}
-
     <div class="career-legend">
       <div class="career-legend-title">The five states a goal can be in</div>
       {#each career.legend as entry}
@@ -85,27 +111,32 @@
     </div>
 
     <div class="career-blocks">
-      {#each career.blocks as block}
-        <div class="career-block">
+      {#each visibleBlocks as block, index (block.name)}
+        {@const slot = blockSlot(block, index)}
+        <div
+          class="career-block"
+          animate:flip={{ duration: 420 }}
+          in:fly={{ x: 24, duration: 320 }}
+        >
           <div class="career-block-head">
-            <span class="career-block-position">{block.position}</span>
             <span class="career-block-state">
               <Chip tone={block.tone} dot={true} label={block.state_label} />
             </span>
-            {#if canDrop && block.slot != null}
+            {#if canDrop}
               <button
                 type="button"
                 class="career-drop-btn"
                 aria-label="Drop {block.name}"
-                disabled={dropping || dropped}
-                on:click={() => askDrop(block.slot)}
+                disabled={busy || droppingSlot !== null}
+                title={busy ? 'Wait for the current run to finish' : 'Discard this block and generate a replacement'}
+                on:click={() => askDrop(slot)}
               >Drop block</button>
             {/if}
           </div>
           <h3 class="career-block-name">{block.name}</h3>
           <p class="career-block-metric">{block.metric}</p>
 
-          {#if confirmSlot === block.slot}
+          {#if confirmSlot === slot}
             <div class="career-drop-confirm" role="alertdialog" aria-label="Confirm dropping {block.name}">
               <p class="career-drop-confirm-text">
                 Drop <strong>{block.name}</strong>? Its progress is lost. Any block behind it moves
@@ -116,10 +147,15 @@
                 <button
                   type="button"
                   class="career-drop-confirm-yes"
-                  disabled={dropping}
-                  on:click={() => confirmDrop(block)}
-                >{dropping ? 'Dropping…' : 'Yes, drop it'}</button>
-                <button type="button" class="career-drop-confirm-no" disabled={dropping} on:click={cancelDrop}>
+                  disabled={droppingSlot !== null}
+                  on:click={() => confirmDrop(slot)}
+                >{droppingSlot === slot ? 'Dropping…' : 'Yes, drop it'}</button>
+                <button
+                  type="button"
+                  class="career-drop-confirm-no"
+                  disabled={droppingSlot !== null}
+                  on:click={cancelDrop}
+                >
                   Keep it
                 </button>
               </div>
@@ -154,6 +190,19 @@
           {/if}
         </div>
       {/each}
+      {#if awaitingReplacement}
+        <div
+          class="career-block career-block--skeleton"
+          aria-hidden="true"
+          in:fade={{ duration: 200 }}
+        >
+          <div class="career-skeleton-head"></div>
+          <div class="career-skeleton-title"></div>
+          <div class="career-skeleton-line"></div>
+          <div class="career-skeleton-line career-skeleton-line--short"></div>
+          <p class="career-skeleton-note">Generating your next block…</p>
+        </div>
+      {/if}
     </div>
   {:else}
     <p class="career-empty">
@@ -163,6 +212,10 @@
 </section>
 
 <style>
+  /* report.css:2057 pushes .career-block-state right; with the "Block X"
+     kicker gone the pill leads the row and the button takes the right edge. */
+  .career-block-head .career-block-state { margin-left: 0; }
+
   .career-drop-btn {
     margin-left: auto;
     border: 1px solid var(--color-divider);
@@ -221,6 +274,82 @@
     cursor: not-allowed;
   }
   .career-drop-error { margin: 0; font-size: 12px; color: var(--tone-bad-fg); }
+
+  .career-scope-notice {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+    margin: 0 0 var(--space-4);
+    padding: var(--space-4);
+    border: 1px solid var(--color-divider);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
+  }
+  .career-scope-notice-text {
+    margin: 0;
+    min-width: 0;
+    flex: 1 1 260px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-neutral-400);
+  }
+  .career-scope-switch {
+    border: 1px solid var(--color-accent);
+    background: transparent;
+    color: var(--color-accent);
+    border-radius: 8px;
+    padding: 7px 14px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .career-scope-switch:hover { background: rgba(65, 183, 140, 0.08); }
+  .career-scope-caption {
+    margin: 0 0 var(--space-4);
+    font-size: 12px;
+    color: var(--color-neutral-500);
+  }
+
+  .career-block--skeleton {
+    display: grid;
+    align-content: start;
+    gap: 10px;
+    pointer-events: none;
+    border-style: dashed;
+  }
+  .career-skeleton-head { width: 96px; height: 19px; border-radius: 6px; }
+  .career-skeleton-title { width: 62%; height: 17px; border-radius: 6px; }
+  .career-skeleton-line { width: 100%; height: 11px; border-radius: 6px; }
+  .career-skeleton-line--short { width: 45%; }
+  .career-skeleton-head,
+  .career-skeleton-title,
+  .career-skeleton-line {
+    background: linear-gradient(
+      90deg,
+      var(--color-surface-2) 0%,
+      var(--color-neutral-800) 50%,
+      var(--color-surface-2) 100%
+    );
+    background-size: 200% 100%;
+    animation: career-shimmer 1.4s ease-in-out infinite;
+  }
+  .career-skeleton-note {
+    margin: 4px 0 0;
+    font-size: 11px;
+    color: var(--color-neutral-600);
+  }
+  @keyframes career-shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .career-skeleton-head,
+    .career-skeleton-title,
+    .career-skeleton-line { animation: none; }
+  }
 
   .career-drop-notice {
     margin: 0 0 var(--space-4);

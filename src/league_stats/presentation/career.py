@@ -116,6 +116,16 @@ def empty_career_view() -> dict[str, Any]:
     }
 
 
+def career_scope_view() -> dict[str, Any]:
+    """The view a queue-filtered slice renders instead of the ladder.
+
+    Career is one ladder over every ranked game, so a Solo/Duo or Flex slice has
+    no ladder of its own to show. ``tracks_all_ranked`` tells the report to
+    explain that rather than claim the player has no ladder at all.
+    """
+    return {**empty_career_view(), "tracks_all_ranked": True}
+
+
 def _legend(window: int) -> list[dict[str, Any]]:
     return [
         {**_node(state, hit, need, window=window), "name": state, "text": text}
