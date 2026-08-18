@@ -4,15 +4,14 @@
     "career-block-head",
     "career-block-metric",
     "career-block-name",
-    "career-block-position",
     "career-block-state",
     "career-block-unlock",
     "career-blocks",
     "career-body",
     "career-connector",
     "career-count",
+    "career-drop-btn",
     "career-head",
-    "career-heading",
     "career-legend",
     "career-legend-name",
     "career-legend-name--at-risk",
@@ -44,19 +43,21 @@
     "career-rule-note",
     "career-rule-value",
     "career-rules",
+    "career-scope-caption",
     "career-step",
     "career-step-bullet",
     "career-step-text",
     "career-steps",
     "career-text",
     "career-text--in-progress",
-    "pill",
-    "pill--flat",
-    "pill--soft",
-    "pill--warn",
-    "pill__dot",
+    "chip",
+    "chip__dot",
+    "chip__label",
+    "metric-icon",
     "report-section",
-    "report-section--career"
+    "report-section--career",
+    "section-title",
+    "section-title--career"
   ],
   "elements": [
     {
@@ -69,10 +70,54 @@
     },
     {
       "classes": [
-        "career-heading"
+        "section-title",
+        "section-title--career"
       ],
-      "identity": "h2.career-heading (#1)",
+      "identity": "h2.section-title.section-title--career (#1)",
       "tag": "h2"
+    },
+    {
+      "classes": [
+        "metric-icon"
+      ],
+      "identity": "iconify-icon.metric-icon (#1)",
+      "tag": "iconify-icon"
+    },
+    {
+      "classes": [],
+      "identity": "span (#1)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "chip"
+      ],
+      "identity": "span.chip (#1)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#1)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-scope-caption"
+      ],
+      "identity": "p.career-scope-caption (#1)",
+      "tag": "p"
+    },
+    {
+      "classes": [],
+      "identity": "strong (#1)",
+      "tag": "strong"
+    },
+    {
+      "classes": [],
+      "identity": "strong (#2)",
+      "tag": "strong"
     },
     {
       "classes": [
@@ -420,13 +465,6 @@
     },
     {
       "classes": [
-        "career-block-position"
-      ],
-      "identity": "span.career-block-position (#1)",
-      "tag": "span"
-    },
-    {
-      "classes": [
         "career-block-state"
       ],
       "identity": "span.career-block-state (#1)",
@@ -434,24 +472,31 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--soft",
-        "pill--warn"
+        "chip"
       ],
-      "identity": "span.pill.pill--soft.pill--warn (#1)",
+      "identity": "span.chip (#2)",
       "tag": "span"
     },
     {
       "classes": [
-        "pill__dot"
+        "chip__dot"
       ],
-      "identity": "i.pill__dot (#1)",
+      "identity": "i.chip__dot (#1)",
       "tag": "i"
     },
     {
-      "classes": [],
-      "identity": "span (#1)",
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#2)",
       "tag": "span"
+    },
+    {
+      "classes": [
+        "career-drop-btn"
+      ],
+      "identity": "button.career-drop-btn (#1)",
+      "tag": "button"
     },
     {
       "classes": [
@@ -520,23 +565,23 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--soft",
-        "pill--warn"
+        "chip"
       ],
-      "identity": "span.pill.pill--soft.pill--warn (#2)",
+      "identity": "span.chip (#3)",
       "tag": "span"
     },
     {
       "classes": [
-        "pill__dot"
+        "chip__dot"
       ],
-      "identity": "i.pill__dot (#2)",
+      "identity": "i.chip__dot (#2)",
       "tag": "i"
     },
     {
-      "classes": [],
-      "identity": "span (#2)",
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#3)",
       "tag": "span"
     },
     {
@@ -614,23 +659,23 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--soft",
-        "pill--warn"
+        "chip"
       ],
-      "identity": "span.pill.pill--soft.pill--warn (#3)",
+      "identity": "span.chip (#4)",
       "tag": "span"
     },
     {
       "classes": [
-        "pill__dot"
+        "chip__dot"
       ],
-      "identity": "i.pill__dot (#3)",
+      "identity": "i.chip__dot (#3)",
       "tag": "i"
     },
     {
-      "classes": [],
-      "identity": "span (#3)",
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#4)",
       "tag": "span"
     },
     {
@@ -709,23 +754,23 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--soft",
-        "pill--warn"
+        "chip"
       ],
-      "identity": "span.pill.pill--soft.pill--warn (#4)",
+      "identity": "span.chip (#5)",
       "tag": "span"
     },
     {
       "classes": [
-        "pill__dot"
+        "chip__dot"
       ],
-      "identity": "i.pill__dot (#4)",
+      "identity": "i.chip__dot (#4)",
       "tag": "i"
     },
     {
-      "classes": [],
-      "identity": "span (#4)",
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#5)",
       "tag": "span"
     },
     {
@@ -766,13 +811,6 @@
     },
     {
       "classes": [
-        "career-block-position"
-      ],
-      "identity": "span.career-block-position (#2)",
-      "tag": "span"
-    },
-    {
-      "classes": [
         "career-block-state"
       ],
       "identity": "span.career-block-state (#2)",
@@ -780,24 +818,31 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--soft"
+        "chip"
       ],
-      "identity": "span.pill.pill--flat.pill--soft (#1)",
+      "identity": "span.chip (#6)",
       "tag": "span"
     },
     {
       "classes": [
-        "pill__dot"
+        "chip__dot"
       ],
-      "identity": "i.pill__dot (#5)",
+      "identity": "i.chip__dot (#5)",
       "tag": "i"
     },
     {
-      "classes": [],
-      "identity": "span (#5)",
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#6)",
       "tag": "span"
+    },
+    {
+      "classes": [
+        "career-drop-btn"
+      ],
+      "identity": "button.career-drop-btn (#2)",
+      "tag": "button"
     },
     {
       "classes": [
@@ -894,9 +939,28 @@
   "watched": [
     {
       "classes": [
-        "career-heading"
+        "section-title",
+        "section-title--career"
       ],
-      "identity": "h2.career-heading (#1)",
+      "identity": "h2.section-title.section-title--career (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
+        "display": "flex",
+        "font-size": "17px",
+        "font-weight": "700",
+        "gap": "10px",
+        "padding": "0px"
+      },
+      "tag": "h2"
+    },
+    {
+      "classes": [
+        "metric-icon"
+      ],
+      "identity": "iconify-icon.metric-icon (#1)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(230, 237, 240)",
@@ -908,7 +972,61 @@
         "gap": "normal",
         "padding": "0px"
       },
-      "tag": "h2"
+      "tag": "iconify-icon"
+    },
+    {
+      "classes": [
+        "chip"
+      ],
+      "identity": "span.chip (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "9px",
+        "color": "rgb(154, 168, 177)",
+        "display": "flex",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "5px",
+        "padding": "0px 7px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-scope-caption"
+      ],
+      "identity": "p.career-scope-caption (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "12px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "p"
     },
     {
       "classes": [
@@ -1773,24 +1891,6 @@
     },
     {
       "classes": [
-        "career-block-position"
-      ],
-      "identity": "span.career-block-position (#1)",
-      "styles": {
-        "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(154, 168, 177)",
-        "border-radius": "0px",
-        "color": "rgb(154, 168, 177)",
-        "display": "block",
-        "font-size": "10px",
-        "font-weight": "400",
-        "gap": "normal",
-        "padding": "0px"
-      },
-      "tag": "span"
-    },
-    {
-      "classes": [
         "career-block-state"
       ],
       "identity": "span.career-block-state (#1)",
@@ -1809,14 +1909,12 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--soft",
-        "pill--warn"
+        "chip"
       ],
-      "identity": "span.pill.pill--soft.pill--warn (#1)",
+      "identity": "span.chip (#2)",
       "styles": {
         "background-color": "rgb(45, 36, 21)",
-        "border-color": "rgb(224, 174, 85)",
+        "border-color": "rgba(0, 0, 0, 0)",
         "border-radius": "9px",
         "color": "rgb(224, 174, 85)",
         "display": "inline-flex",
@@ -1829,9 +1927,9 @@
     },
     {
       "classes": [
-        "pill__dot"
+        "chip__dot"
       ],
-      "identity": "i.pill__dot (#1)",
+      "identity": "i.chip__dot (#1)",
       "styles": {
         "background-color": "rgb(221, 178, 88)",
         "border-color": "rgb(224, 174, 85)",
@@ -1844,6 +1942,42 @@
         "padding": "0px"
       },
       "tag": "i"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "0px",
+        "color": "rgb(224, 174, 85)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-drop-btn"
+      ],
+      "identity": "button.career-drop-btn (#1)",
+      "styles": {
+        "background-color": "rgb(27, 36, 42)",
+        "border-color": "rgba(230, 237, 240, 0.1)",
+        "border-radius": "999px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "600",
+        "gap": "normal",
+        "padding": "4px 10px"
+      },
+      "tag": "button"
     },
     {
       "classes": [
@@ -2011,14 +2145,12 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--soft",
-        "pill--warn"
+        "chip"
       ],
-      "identity": "span.pill.pill--soft.pill--warn (#2)",
+      "identity": "span.chip (#3)",
       "styles": {
         "background-color": "rgb(45, 36, 21)",
-        "border-color": "rgb(224, 174, 85)",
+        "border-color": "rgba(0, 0, 0, 0)",
         "border-radius": "9px",
         "color": "rgb(224, 174, 85)",
         "display": "flex",
@@ -2031,9 +2163,9 @@
     },
     {
       "classes": [
-        "pill__dot"
+        "chip__dot"
       ],
-      "identity": "i.pill__dot (#2)",
+      "identity": "i.chip__dot (#2)",
       "styles": {
         "background-color": "rgb(221, 178, 88)",
         "border-color": "rgb(224, 174, 85)",
@@ -2046,6 +2178,24 @@
         "padding": "0px"
       },
       "tag": "i"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "0px",
+        "color": "rgb(224, 174, 85)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
     },
     {
       "classes": [
@@ -2232,14 +2382,12 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--soft",
-        "pill--warn"
+        "chip"
       ],
-      "identity": "span.pill.pill--soft.pill--warn (#3)",
+      "identity": "span.chip (#4)",
       "styles": {
         "background-color": "rgb(45, 36, 21)",
-        "border-color": "rgb(224, 174, 85)",
+        "border-color": "rgba(0, 0, 0, 0)",
         "border-radius": "9px",
         "color": "rgb(224, 174, 85)",
         "display": "flex",
@@ -2252,9 +2400,9 @@
     },
     {
       "classes": [
-        "pill__dot"
+        "chip__dot"
       ],
-      "identity": "i.pill__dot (#3)",
+      "identity": "i.chip__dot (#3)",
       "styles": {
         "background-color": "rgb(221, 178, 88)",
         "border-color": "rgb(224, 174, 85)",
@@ -2267,6 +2415,24 @@
         "padding": "0px"
       },
       "tag": "i"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#4)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "0px",
+        "color": "rgb(224, 174, 85)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
     },
     {
       "classes": [
@@ -2454,14 +2620,12 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--soft",
-        "pill--warn"
+        "chip"
       ],
-      "identity": "span.pill.pill--soft.pill--warn (#4)",
+      "identity": "span.chip (#5)",
       "styles": {
         "background-color": "rgb(45, 36, 21)",
-        "border-color": "rgb(224, 174, 85)",
+        "border-color": "rgba(0, 0, 0, 0)",
         "border-radius": "9px",
         "color": "rgb(224, 174, 85)",
         "display": "flex",
@@ -2474,9 +2638,9 @@
     },
     {
       "classes": [
-        "pill__dot"
+        "chip__dot"
       ],
-      "identity": "i.pill__dot (#4)",
+      "identity": "i.chip__dot (#4)",
       "styles": {
         "background-color": "rgb(221, 178, 88)",
         "border-color": "rgb(224, 174, 85)",
@@ -2489,6 +2653,24 @@
         "padding": "0px"
       },
       "tag": "i"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#5)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(224, 174, 85)",
+        "border-radius": "0px",
+        "color": "rgb(224, 174, 85)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
     },
     {
       "classes": [
@@ -2583,24 +2765,6 @@
     },
     {
       "classes": [
-        "career-block-position"
-      ],
-      "identity": "span.career-block-position (#2)",
-      "styles": {
-        "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(154, 168, 177)",
-        "border-radius": "0px",
-        "color": "rgb(154, 168, 177)",
-        "display": "block",
-        "font-size": "10px",
-        "font-weight": "400",
-        "gap": "normal",
-        "padding": "0px"
-      },
-      "tag": "span"
-    },
-    {
-      "classes": [
         "career-block-state"
       ],
       "identity": "span.career-block-state (#2)",
@@ -2619,14 +2783,12 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--soft"
+        "chip"
       ],
-      "identity": "span.pill.pill--flat.pill--soft (#1)",
+      "identity": "span.chip (#6)",
       "styles": {
         "background-color": "rgb(35, 45, 51)",
-        "border-color": "rgb(154, 168, 177)",
+        "border-color": "rgba(0, 0, 0, 0)",
         "border-radius": "9px",
         "color": "rgb(154, 168, 177)",
         "display": "inline-flex",
@@ -2639,9 +2801,9 @@
     },
     {
       "classes": [
-        "pill__dot"
+        "chip__dot"
       ],
-      "identity": "i.pill__dot (#5)",
+      "identity": "i.chip__dot (#5)",
       "styles": {
         "background-color": "rgb(154, 168, 177)",
         "border-color": "rgb(154, 168, 177)",
@@ -2654,6 +2816,42 @@
         "padding": "0px"
       },
       "tag": "i"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#6)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "career-drop-btn"
+      ],
+      "identity": "button.career-drop-btn (#2)",
+      "styles": {
+        "background-color": "rgb(27, 36, 42)",
+        "border-color": "rgba(230, 237, 240, 0.1)",
+        "border-radius": "999px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "600",
+        "gap": "normal",
+        "padding": "4px 10px"
+      },
+      "tag": "button"
     },
     {
       "classes": [

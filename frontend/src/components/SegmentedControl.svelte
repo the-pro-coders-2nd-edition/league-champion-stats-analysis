@@ -9,6 +9,10 @@
   export let size = 'md'; // 'sm' | 'md'
   export let sticky = false;
   export let ariaLabel = '';
+  // Name of a data-* attribute (e.g. "data-category") to stamp on each button with the
+  // item's value, for callers that need a stable selector beyond the item's label/index
+  // (Playwright tests, CSS hooks). Mirrors the retired TabBar's dataAttr prop.
+  export let dataAttr = '';
 
   const dispatch = createEventDispatcher();
 
@@ -34,6 +38,7 @@
       title={item.title || null}
       disabled={!!item.disabled}
       on:click={() => select(item)}
+      {...dataAttr ? { [dataAttr]: item.value } : {}}
     >{item.label}</button>
   {/each}
 </div>

@@ -1,5 +1,7 @@
 {
   "class_set": [
+    "chip",
+    "chip__label",
     "figure",
     "figure-block",
     "figure-caption",
@@ -14,18 +16,10 @@
     "matchup-verdict",
     "matchup-verdict--even",
     "metric-icon",
-    "metric-icon--accent",
-    "metric-icon--danger",
-    "metric-icon--gold",
-    "metric-icon--orange",
     "metric-label",
-    "pill",
-    "pill--flat",
-    "pill--outline",
     "plotly-graph-div",
     "report-section",
     "report-section--champion",
-    "scope-chip--window",
     "section-title",
     "section-title--champion",
     "sort-btn",
@@ -53,10 +47,9 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--accent"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--accent (#1)",
+      "identity": "iconify-icon.metric-icon (#1)",
       "tag": "iconify-icon"
     },
     {
@@ -66,17 +59,16 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--outline",
-        "scope-chip--window"
+        "chip"
       ],
-      "identity": "span.pill.pill--flat.pill--outline.scope-chip--window (#1)",
+      "identity": "span.chip (#1)",
       "tag": "span"
     },
     {
-      "classes": [],
-      "identity": "span (#2)",
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#1)",
       "tag": "span"
     },
     {
@@ -137,17 +129,17 @@
     },
     {
       "classes": [
+        "matchup-table",
         "table-scroll"
       ],
-      "identity": "div.table-scroll (#1)",
+      "identity": "div.matchup-table.table-scroll (#1)",
       "tag": "div"
     },
     {
       "classes": [
-        "matchup-table",
         "sortable-table"
       ],
-      "identity": "table.matchup-table.sortable-table (#1)",
+      "identity": "table.sortable-table (#1)",
       "tag": "table"
     },
     {
@@ -174,6 +166,11 @@
     },
     {
       "classes": [],
+      "identity": "span (#2)",
+      "tag": "span"
+    },
+    {
+      "classes": [],
       "identity": "th (#2)",
       "tag": "th"
     },
@@ -186,6 +183,11 @@
     },
     {
       "classes": [],
+      "identity": "span (#3)",
+      "tag": "span"
+    },
+    {
+      "classes": [],
       "identity": "th (#3)",
       "tag": "th"
     },
@@ -195,6 +197,11 @@
       ],
       "identity": "button.sort-btn (#3)",
       "tag": "button"
+    },
+    {
+      "classes": [],
+      "identity": "span (#4)",
+      "tag": "span"
     },
     {
       "classes": [],
@@ -212,6 +219,11 @@
     },
     {
       "classes": [],
+      "identity": "span (#5)",
+      "tag": "span"
+    },
+    {
+      "classes": [],
       "identity": "th (#5)",
       "tag": "th"
     },
@@ -221,6 +233,11 @@
       ],
       "identity": "button.sort-btn (#4)",
       "tag": "button"
+    },
+    {
+      "classes": [],
+      "identity": "span (#6)",
+      "tag": "span"
     },
     {
       "classes": [],
@@ -236,6 +253,11 @@
     },
     {
       "classes": [],
+      "identity": "span (#7)",
+      "tag": "span"
+    },
+    {
+      "classes": [],
       "identity": "th (#7)",
       "tag": "th"
     },
@@ -245,6 +267,11 @@
       ],
       "identity": "button.sort-btn (#6)",
       "tag": "button"
+    },
+    {
+      "classes": [],
+      "identity": "span (#8)",
+      "tag": "span"
     },
     {
       "classes": [],
@@ -365,30 +392,28 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--gold"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--gold (#1)",
+      "identity": "iconify-icon.metric-icon (#2)",
       "tag": "iconify-icon"
     },
     {
       "classes": [],
-      "identity": "span (#3)",
+      "identity": "span (#9)",
       "tag": "span"
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--outline",
-        "scope-chip--window"
+        "chip"
       ],
-      "identity": "span.pill.pill--flat.pill--outline.scope-chip--window (#2)",
+      "identity": "span.chip (#2)",
       "tag": "span"
     },
     {
-      "classes": [],
-      "identity": "span (#4)",
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#2)",
       "tag": "span"
     },
     {
@@ -438,7 +463,7 @@
       "classes": [
         "table-scroll"
       ],
-      "identity": "div.table-scroll (#2)",
+      "identity": "div.table-scroll (#1)",
       "tag": "div"
     },
     {
@@ -485,15 +510,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--orange"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--orange (#1)",
+      "identity": "iconify-icon.metric-icon (#3)",
       "tag": "iconify-icon"
     },
     {
       "classes": [],
-      "identity": "span (#5)",
+      "identity": "span (#10)",
       "tag": "span"
     },
     {
@@ -510,15 +534,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--danger"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--danger (#1)",
+      "identity": "iconify-icon.metric-icon (#4)",
       "tag": "iconify-icon"
     },
     {
       "classes": [],
-      "identity": "span (#6)",
+      "identity": "span (#11)",
       "tag": "span"
     },
     {
@@ -574,30 +597,28 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--accent"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--accent (#2)",
+      "identity": "iconify-icon.metric-icon (#5)",
       "tag": "iconify-icon"
     },
     {
       "classes": [],
-      "identity": "span (#7)",
+      "identity": "span (#12)",
       "tag": "span"
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--outline",
-        "scope-chip--window"
+        "chip"
       ],
-      "identity": "span.pill.pill--flat.pill--outline.scope-chip--window (#3)",
+      "identity": "span.chip (#3)",
       "tag": "span"
     },
     {
-      "classes": [],
-      "identity": "span (#8)",
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#3)",
       "tag": "span"
     },
     {
@@ -642,7 +663,7 @@
       "classes": [
         "table-scroll"
       ],
-      "identity": "div.table-scroll (#3)",
+      "identity": "div.table-scroll (#2)",
       "tag": "div"
     },
     {
@@ -689,15 +710,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--orange"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--orange (#2)",
+      "identity": "iconify-icon.metric-icon (#6)",
       "tag": "iconify-icon"
     },
     {
       "classes": [],
-      "identity": "span (#9)",
+      "identity": "span (#13)",
       "tag": "span"
     },
     {
@@ -714,15 +734,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--danger"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--danger (#2)",
+      "identity": "iconify-icon.metric-icon (#7)",
       "tag": "iconify-icon"
     },
     {
       "classes": [],
-      "identity": "span (#10)",
+      "identity": "span (#14)",
       "tag": "span"
     },
     {
@@ -783,16 +802,15 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--accent"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--accent (#1)",
+      "identity": "iconify-icon.metric-icon (#1)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(230, 237, 240)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
-        "display": "none",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
         "font-size": "17px",
         "font-weight": "700",
         "gap": "normal",
@@ -802,12 +820,9 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--outline",
-        "scope-chip--window"
+        "chip"
       ],
-      "identity": "span.pill.pill--flat.pill--outline.scope-chip--window (#1)",
+      "identity": "span.chip (#1)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(154, 168, 177)",
@@ -818,6 +833,24 @@
         "font-weight": "700",
         "gap": "5px",
         "padding": "0px 7px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
       },
       "tag": "span"
     },
@@ -896,9 +929,10 @@
     },
     {
       "classes": [
+        "matchup-table",
         "table-scroll"
       ],
-      "identity": "div.table-scroll (#1)",
+      "identity": "div.matchup-table.table-scroll (#1)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(230, 237, 240)",
@@ -911,25 +945,6 @@
         "padding": "0px"
       },
       "tag": "div"
-    },
-    {
-      "classes": [
-        "matchup-table",
-        "sortable-table"
-      ],
-      "identity": "table.matchup-table.sortable-table (#1)",
-      "styles": {
-        "background-color": "rgb(21, 29, 34)",
-        "border-color": "rgba(230, 237, 240, 0.1)",
-        "border-radius": "10px",
-        "color": "rgb(230, 237, 240)",
-        "display": "table",
-        "font-size": "14px",
-        "font-weight": "400",
-        "gap": "normal",
-        "padding": "0px"
-      },
-      "tag": "table"
     },
     {
       "classes": [
@@ -1208,16 +1223,15 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--gold"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--gold (#1)",
+      "identity": "iconify-icon.metric-icon (#2)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(230, 237, 240)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
-        "display": "none",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
         "font-size": "17px",
         "font-weight": "700",
         "gap": "normal",
@@ -1227,12 +1241,9 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--outline",
-        "scope-chip--window"
+        "chip"
       ],
-      "identity": "span.pill.pill--flat.pill--outline.scope-chip--window (#2)",
+      "identity": "span.chip (#2)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(154, 168, 177)",
@@ -1243,6 +1254,24 @@
         "font-weight": "700",
         "gap": "5px",
         "padding": "0px 7px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
       },
       "tag": "span"
     },
@@ -1304,7 +1333,7 @@
       "classes": [
         "table-scroll"
       ],
-      "identity": "div.table-scroll (#2)",
+      "identity": "div.table-scroll (#1)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(230, 237, 240)",
@@ -1338,15 +1367,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--orange"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--orange (#1)",
+      "identity": "iconify-icon.metric-icon (#3)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(154, 168, 177)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
+        "color": "rgb(154, 168, 177)",
         "display": "block",
         "font-size": "12px",
         "font-weight": "600",
@@ -1375,15 +1403,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--danger"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--danger (#1)",
+      "identity": "iconify-icon.metric-icon (#4)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(154, 168, 177)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
+        "color": "rgb(154, 168, 177)",
         "display": "block",
         "font-size": "12px",
         "font-weight": "600",
@@ -1413,16 +1440,15 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--accent"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--accent (#2)",
+      "identity": "iconify-icon.metric-icon (#5)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(230, 237, 240)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
-        "display": "none",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
         "font-size": "17px",
         "font-weight": "700",
         "gap": "normal",
@@ -1432,12 +1458,9 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--outline",
-        "scope-chip--window"
+        "chip"
       ],
-      "identity": "span.pill.pill--flat.pill--outline.scope-chip--window (#3)",
+      "identity": "span.chip (#3)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(154, 168, 177)",
@@ -1448,6 +1471,24 @@
         "font-weight": "700",
         "gap": "5px",
         "padding": "0px 7px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
       },
       "tag": "span"
     },
@@ -1509,7 +1550,7 @@
       "classes": [
         "table-scroll"
       ],
-      "identity": "div.table-scroll (#3)",
+      "identity": "div.table-scroll (#2)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(230, 237, 240)",
@@ -1543,15 +1584,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--orange"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--orange (#2)",
+      "identity": "iconify-icon.metric-icon (#6)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(154, 168, 177)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
+        "color": "rgb(154, 168, 177)",
         "display": "block",
         "font-size": "12px",
         "font-weight": "600",
@@ -1580,15 +1620,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--danger"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--danger (#2)",
+      "identity": "iconify-icon.metric-icon (#7)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(154, 168, 177)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
+        "color": "rgb(154, 168, 177)",
         "display": "block",
         "font-size": "12px",
         "font-weight": "600",

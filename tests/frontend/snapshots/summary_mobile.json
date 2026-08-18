@@ -23,17 +23,14 @@
     "career-widget-head",
     "career-widget-label",
     "career-widget-link",
-    "hero-action",
-    "hero-action-index",
+    "chip",
+    "chip__label",
+    "disclosure",
+    "disclosure--evidence",
+    "disclosure-summary",
     "hero-actions",
     "hero-actions-block",
     "hero-actions-title",
-    "hero-chip",
-    "hero-chip-label",
-    "hero-chip-value",
-    "hero-score-bar",
-    "hero-score-bar-fill",
-    "hero-score-bar-tick",
     "hero-score-head",
     "hero-score-label",
     "hero-score-panel",
@@ -42,23 +39,19 @@
     "high",
     "label",
     "meta",
+    "meter",
+    "meter--md",
+    "meter-fill",
+    "meter-tick",
     "metric-card-label",
     "metric-icon",
-    "metric-icon--accent",
-    "metric-icon--blue",
-    "metric-icon--danger",
-    "metric-icon--muted",
-    "metric-icon--orange",
-    "metric-icon--win",
     "metric-label",
     "metric-tooltip-btn",
     "metric-tooltip-panel",
     "metric-tooltip-wrap",
-    "pill",
-    "pill--bad",
-    "pill--flat",
-    "pill--outline",
-    "pill--soft",
+    "nav-link",
+    "nav-link--row",
+    "nav-link-index",
     "rec",
     "rec-body",
     "rec-column",
@@ -66,7 +59,6 @@
     "rec-column-positive",
     "rec-columns",
     "rec-empty",
-    "rec-evidence",
     "rec-evidence-summary",
     "rec-head",
     "rec-title",
@@ -80,28 +72,25 @@
     "report-player-name",
     "report-section",
     "report-section--summary",
-    "scope-chip--window",
     "score-breakdown-title",
     "score-set",
     "score-set-item",
-    "score-set-item-bar",
-    "score-set-item-fill",
     "score-set-item-foot",
     "score-set-item-head",
     "score-set-item-name",
     "score-set-item-score",
     "score-set-item-sub",
-    "score-set-item-tick",
     "score-set-item-verdict",
     "section-title",
     "section-title--summary",
+    "stat-chip",
+    "stat-chip__label",
+    "stat-chip__value",
     "sub",
     "sub--lead",
     "summary-grid",
     "summary-grid-main",
     "summary-grid-side",
-    "ui-chip",
-    "ui-chip--stat",
     "ui-chip-row",
     "value"
   ],
@@ -190,94 +179,86 @@
     },
     {
       "classes": [
-        "hero-chip",
-        "ui-chip",
-        "ui-chip--stat"
+        "stat-chip"
       ],
-      "identity": "span.hero-chip.ui-chip.ui-chip--stat (#1)",
+      "identity": "span.stat-chip (#1)",
       "tag": "span"
     },
     {
       "classes": [
-        "hero-chip-label"
+        "stat-chip__label"
       ],
-      "identity": "span.hero-chip-label (#1)",
+      "identity": "span.stat-chip__label (#1)",
       "tag": "span"
     },
     {
       "classes": [
-        "hero-chip-value"
+        "stat-chip__value"
       ],
-      "identity": "strong.hero-chip-value (#1)",
+      "identity": "strong.stat-chip__value (#1)",
       "tag": "strong"
     },
     {
       "classes": [
-        "hero-chip",
-        "ui-chip",
-        "ui-chip--stat"
+        "stat-chip"
       ],
-      "identity": "span.hero-chip.ui-chip.ui-chip--stat (#2)",
+      "identity": "span.stat-chip (#2)",
       "tag": "span"
     },
     {
       "classes": [
-        "hero-chip-label"
+        "stat-chip__label"
       ],
-      "identity": "span.hero-chip-label (#2)",
+      "identity": "span.stat-chip__label (#2)",
       "tag": "span"
     },
     {
       "classes": [
-        "hero-chip-value"
+        "stat-chip__value"
       ],
-      "identity": "strong.hero-chip-value (#2)",
+      "identity": "strong.stat-chip__value (#2)",
       "tag": "strong"
     },
     {
       "classes": [
-        "hero-chip",
-        "ui-chip",
-        "ui-chip--stat"
+        "stat-chip"
       ],
-      "identity": "span.hero-chip.ui-chip.ui-chip--stat (#3)",
+      "identity": "span.stat-chip (#3)",
       "tag": "span"
     },
     {
       "classes": [
-        "hero-chip-label"
+        "stat-chip__label"
       ],
-      "identity": "span.hero-chip-label (#3)",
+      "identity": "span.stat-chip__label (#3)",
       "tag": "span"
     },
     {
       "classes": [
-        "hero-chip-value"
+        "stat-chip__value"
       ],
-      "identity": "strong.hero-chip-value (#3)",
+      "identity": "strong.stat-chip__value (#3)",
       "tag": "strong"
     },
     {
       "classes": [
-        "hero-chip",
-        "ui-chip",
-        "ui-chip--stat"
+        "stat-chip"
       ],
-      "identity": "span.hero-chip.ui-chip.ui-chip--stat (#4)",
+      "identity": "span.stat-chip (#4)",
       "tag": "span"
     },
     {
       "classes": [
-        "hero-chip-label"
+        "stat-chip__label"
       ],
-      "identity": "span.hero-chip-label (#4)",
+      "identity": "span.stat-chip__label (#4)",
       "tag": "span"
     },
     {
       "classes": [
-        "hero-chip-value"
+        "stat-chip__value"
       ],
-      "identity": "strong.hero-chip-value (#4)",
+      "identity": "strong.stat-chip__value (#4)",
       "tag": "strong"
     },
     {
@@ -303,16 +284,17 @@
     },
     {
       "classes": [
-        "hero-action"
+        "nav-link",
+        "nav-link--row"
       ],
-      "identity": "a.hero-action (#1)",
+      "identity": "a.nav-link.nav-link--row (#1)",
       "tag": "a"
     },
     {
       "classes": [
-        "hero-action-index"
+        "nav-link-index"
       ],
-      "identity": "span.hero-action-index (#1)",
+      "identity": "span.nav-link-index (#1)",
       "tag": "span"
     },
     {
@@ -322,16 +304,17 @@
     },
     {
       "classes": [
-        "hero-action"
+        "nav-link",
+        "nav-link--row"
       ],
-      "identity": "a.hero-action (#2)",
+      "identity": "a.nav-link.nav-link--row (#2)",
       "tag": "a"
     },
     {
       "classes": [
-        "hero-action-index"
+        "nav-link-index"
       ],
-      "identity": "span.hero-action-index (#2)",
+      "identity": "span.nav-link-index (#2)",
       "tag": "span"
     },
     {
@@ -397,23 +380,24 @@
     },
     {
       "classes": [
-        "score-set-item-bar"
+        "meter",
+        "meter--md"
       ],
-      "identity": "div.score-set-item-bar (#1)",
+      "identity": "div.meter.meter--md (#1)",
       "tag": "div"
     },
     {
       "classes": [
-        "score-set-item-fill"
+        "meter-fill"
       ],
-      "identity": "i.score-set-item-fill (#1)",
+      "identity": "i.meter-fill (#1)",
       "tag": "i"
     },
     {
       "classes": [
-        "score-set-item-tick"
+        "meter-tick"
       ],
-      "identity": "i.score-set-item-tick (#1)",
+      "identity": "i.meter-tick (#1)",
       "tag": "i"
     },
     {
@@ -467,23 +451,24 @@
     },
     {
       "classes": [
-        "score-set-item-bar"
+        "meter",
+        "meter--md"
       ],
-      "identity": "div.score-set-item-bar (#2)",
+      "identity": "div.meter.meter--md (#2)",
       "tag": "div"
     },
     {
       "classes": [
-        "score-set-item-fill"
+        "meter-fill"
       ],
-      "identity": "i.score-set-item-fill (#2)",
+      "identity": "i.meter-fill (#2)",
       "tag": "i"
     },
     {
       "classes": [
-        "score-set-item-tick"
+        "meter-tick"
       ],
-      "identity": "i.score-set-item-tick (#2)",
+      "identity": "i.meter-tick (#2)",
       "tag": "i"
     },
     {
@@ -537,23 +522,24 @@
     },
     {
       "classes": [
-        "score-set-item-bar"
+        "meter",
+        "meter--md"
       ],
-      "identity": "div.score-set-item-bar (#3)",
+      "identity": "div.meter.meter--md (#3)",
       "tag": "div"
     },
     {
       "classes": [
-        "score-set-item-fill"
+        "meter-fill"
       ],
-      "identity": "i.score-set-item-fill (#3)",
+      "identity": "i.meter-fill (#3)",
       "tag": "i"
     },
     {
       "classes": [
-        "score-set-item-tick"
+        "meter-tick"
       ],
-      "identity": "i.score-set-item-tick (#3)",
+      "identity": "i.meter-tick (#3)",
       "tag": "i"
     },
     {
@@ -607,23 +593,24 @@
     },
     {
       "classes": [
-        "score-set-item-bar"
+        "meter",
+        "meter--md"
       ],
-      "identity": "div.score-set-item-bar (#4)",
+      "identity": "div.meter.meter--md (#4)",
       "tag": "div"
     },
     {
       "classes": [
-        "score-set-item-fill"
+        "meter-fill"
       ],
-      "identity": "i.score-set-item-fill (#4)",
+      "identity": "i.meter-fill (#4)",
       "tag": "i"
     },
     {
       "classes": [
-        "score-set-item-tick"
+        "meter-tick"
       ],
-      "identity": "i.score-set-item-tick (#4)",
+      "identity": "i.meter-tick (#4)",
       "tag": "i"
     },
     {
@@ -677,23 +664,24 @@
     },
     {
       "classes": [
-        "score-set-item-bar"
+        "meter",
+        "meter--md"
       ],
-      "identity": "div.score-set-item-bar (#5)",
+      "identity": "div.meter.meter--md (#5)",
       "tag": "div"
     },
     {
       "classes": [
-        "score-set-item-fill"
+        "meter-fill"
       ],
-      "identity": "i.score-set-item-fill (#5)",
+      "identity": "i.meter-fill (#5)",
       "tag": "i"
     },
     {
       "classes": [
-        "score-set-item-tick"
+        "meter-tick"
       ],
-      "identity": "i.score-set-item-tick (#5)",
+      "identity": "i.meter-tick (#5)",
       "tag": "i"
     },
     {
@@ -747,23 +735,24 @@
     },
     {
       "classes": [
-        "score-set-item-bar"
+        "meter",
+        "meter--md"
       ],
-      "identity": "div.score-set-item-bar (#6)",
+      "identity": "div.meter.meter--md (#6)",
       "tag": "div"
     },
     {
       "classes": [
-        "score-set-item-fill"
+        "meter-fill"
       ],
-      "identity": "i.score-set-item-fill (#6)",
+      "identity": "i.meter-fill (#6)",
       "tag": "i"
     },
     {
       "classes": [
-        "score-set-item-tick"
+        "meter-tick"
       ],
-      "identity": "i.score-set-item-tick (#6)",
+      "identity": "i.meter-tick (#6)",
       "tag": "i"
     },
     {
@@ -835,24 +824,30 @@
       "tag": "span"
     },
     {
-      "classes": [
-        "hero-score-bar"
-      ],
-      "identity": "div.hero-score-bar (#1)",
+      "classes": [],
+      "identity": "div (#1)",
       "tag": "div"
     },
     {
       "classes": [
-        "hero-score-bar-fill"
+        "meter",
+        "meter--md"
       ],
-      "identity": "i.hero-score-bar-fill (#1)",
+      "identity": "div.meter.meter--md (#7)",
+      "tag": "div"
+    },
+    {
+      "classes": [
+        "meter-fill"
+      ],
+      "identity": "i.meter-fill (#7)",
       "tag": "i"
     },
     {
       "classes": [
-        "hero-score-bar-tick"
+        "meter-tick"
       ],
-      "identity": "i.hero-score-bar-tick (#1)",
+      "identity": "i.meter-tick (#7)",
       "tag": "i"
     },
     {
@@ -1102,10 +1097,9 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--win"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--win (#1)",
+      "identity": "iconify-icon.metric-icon (#1)",
       "tag": "iconify-icon"
     },
     {
@@ -1172,10 +1166,9 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--accent"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--accent (#1)",
+      "identity": "iconify-icon.metric-icon (#2)",
       "tag": "iconify-icon"
     },
     {
@@ -1250,10 +1243,9 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--orange"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--orange (#1)",
+      "identity": "iconify-icon.metric-icon (#3)",
       "tag": "iconify-icon"
     },
     {
@@ -1397,10 +1389,9 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--orange"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--orange (#2)",
+      "identity": "iconify-icon.metric-icon (#4)",
       "tag": "iconify-icon"
     },
     {
@@ -1466,10 +1457,9 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--danger"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--danger (#1)",
+      "identity": "iconify-icon.metric-icon (#5)",
       "tag": "iconify-icon"
     },
     {
@@ -1535,10 +1525,9 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--blue"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--blue (#1)",
+      "identity": "iconify-icon.metric-icon (#6)",
       "tag": "iconify-icon"
     },
     {
@@ -1604,10 +1593,9 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--muted"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--muted (#1)",
+      "identity": "iconify-icon.metric-icon (#7)",
       "tag": "iconify-icon"
     },
     {
@@ -1661,10 +1649,9 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--win"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--win (#2)",
+      "identity": "iconify-icon.metric-icon (#8)",
       "tag": "iconify-icon"
     },
     {
@@ -1674,17 +1661,16 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--outline",
-        "scope-chip--window"
+        "chip"
       ],
-      "identity": "span.pill.pill--flat.pill--outline.scope-chip--window (#1)",
+      "identity": "span.chip (#1)",
       "tag": "span"
     },
     {
-      "classes": [],
-      "identity": "span (#15)",
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#1)",
       "tag": "span"
     },
     {
@@ -1752,30 +1738,30 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--bad",
-        "pill--soft"
+        "chip"
       ],
-      "identity": "span.pill.pill--bad.pill--soft (#1)",
-      "tag": "span"
-    },
-    {
-      "classes": [],
-      "identity": "span (#16)",
+      "identity": "span.chip (#2)",
       "tag": "span"
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--soft"
+        "chip__label"
       ],
-      "identity": "span.pill.pill--flat.pill--soft (#1)",
+      "identity": "span.chip__label (#2)",
       "tag": "span"
     },
     {
-      "classes": [],
-      "identity": "span (#17)",
+      "classes": [
+        "chip"
+      ],
+      "identity": "span.chip (#3)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#3)",
       "tag": "span"
     },
     {
@@ -1794,14 +1780,17 @@
     },
     {
       "classes": [
-        "rec-evidence"
+        "disclosure",
+        "disclosure--evidence"
       ],
-      "identity": "details.rec-evidence (#1)",
+      "identity": "details.disclosure.disclosure--evidence (#1)",
       "tag": "details"
     },
     {
-      "classes": [],
-      "identity": "summary (#1)",
+      "classes": [
+        "disclosure-summary"
+      ],
+      "identity": "summary.disclosure-summary (#1)",
       "tag": "summary"
     },
     {
@@ -1835,30 +1824,30 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--bad",
-        "pill--soft"
+        "chip"
       ],
-      "identity": "span.pill.pill--bad.pill--soft (#2)",
-      "tag": "span"
-    },
-    {
-      "classes": [],
-      "identity": "span (#18)",
+      "identity": "span.chip (#4)",
       "tag": "span"
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--soft"
+        "chip__label"
       ],
-      "identity": "span.pill.pill--flat.pill--soft (#2)",
+      "identity": "span.chip__label (#4)",
       "tag": "span"
     },
     {
-      "classes": [],
-      "identity": "span (#19)",
+      "classes": [
+        "chip"
+      ],
+      "identity": "span.chip (#5)",
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#5)",
       "tag": "span"
     },
     {
@@ -1877,14 +1866,17 @@
     },
     {
       "classes": [
-        "rec-evidence"
+        "disclosure",
+        "disclosure--evidence"
       ],
-      "identity": "details.rec-evidence (#2)",
+      "identity": "details.disclosure.disclosure--evidence (#2)",
       "tag": "details"
     },
     {
-      "classes": [],
-      "identity": "summary (#2)",
+      "classes": [
+        "disclosure-summary"
+      ],
+      "identity": "summary.disclosure-summary (#2)",
       "tag": "summary"
     },
     {
@@ -1923,29 +1915,27 @@
     },
     {
       "classes": [
-        "hero-chip",
-        "ui-chip",
-        "ui-chip--stat"
+        "stat-chip"
       ],
-      "identity": "span.hero-chip.ui-chip.ui-chip--stat (#1)",
+      "identity": "span.stat-chip (#1)",
       "styles": {
-        "background-color": "rgba(255, 255, 255, 0.05)",
-        "border-color": "rgba(230, 237, 240, 0.1)",
-        "border-radius": "999px",
-        "color": "rgb(154, 168, 177)",
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
         "display": "flex",
-        "font-size": "11px",
+        "font-size": "15px",
         "font-weight": "500",
         "gap": "6px",
-        "padding": "4px 8px"
+        "padding": "0px"
       },
       "tag": "span"
     },
     {
       "classes": [
-        "hero-chip-label"
+        "stat-chip__label"
       ],
-      "identity": "span.hero-chip-label (#1)",
+      "identity": "span.stat-chip__label (#1)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(154, 168, 177)",
@@ -1961,9 +1951,9 @@
     },
     {
       "classes": [
-        "hero-chip-value"
+        "stat-chip__value"
       ],
-      "identity": "strong.hero-chip-value (#1)",
+      "identity": "strong.stat-chip__value (#1)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(154, 168, 177)",
@@ -1979,29 +1969,27 @@
     },
     {
       "classes": [
-        "hero-chip",
-        "ui-chip",
-        "ui-chip--stat"
+        "stat-chip"
       ],
-      "identity": "span.hero-chip.ui-chip.ui-chip--stat (#2)",
+      "identity": "span.stat-chip (#2)",
       "styles": {
-        "background-color": "rgba(255, 255, 255, 0.05)",
-        "border-color": "rgba(230, 237, 240, 0.1)",
-        "border-radius": "999px",
-        "color": "rgb(154, 168, 177)",
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
         "display": "flex",
-        "font-size": "11px",
+        "font-size": "15px",
         "font-weight": "500",
         "gap": "6px",
-        "padding": "4px 8px"
+        "padding": "0px"
       },
       "tag": "span"
     },
     {
       "classes": [
-        "hero-chip-label"
+        "stat-chip__label"
       ],
-      "identity": "span.hero-chip-label (#2)",
+      "identity": "span.stat-chip__label (#2)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(154, 168, 177)",
@@ -2017,9 +2005,9 @@
     },
     {
       "classes": [
-        "hero-chip-value"
+        "stat-chip__value"
       ],
-      "identity": "strong.hero-chip-value (#2)",
+      "identity": "strong.stat-chip__value (#2)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(230, 237, 240)",
@@ -2035,29 +2023,27 @@
     },
     {
       "classes": [
-        "hero-chip",
-        "ui-chip",
-        "ui-chip--stat"
+        "stat-chip"
       ],
-      "identity": "span.hero-chip.ui-chip.ui-chip--stat (#3)",
+      "identity": "span.stat-chip (#3)",
       "styles": {
-        "background-color": "rgba(255, 255, 255, 0.05)",
-        "border-color": "rgba(230, 237, 240, 0.1)",
-        "border-radius": "999px",
-        "color": "rgb(154, 168, 177)",
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
         "display": "flex",
-        "font-size": "11px",
+        "font-size": "15px",
         "font-weight": "500",
         "gap": "6px",
-        "padding": "4px 8px"
+        "padding": "0px"
       },
       "tag": "span"
     },
     {
       "classes": [
-        "hero-chip-label"
+        "stat-chip__label"
       ],
-      "identity": "span.hero-chip-label (#3)",
+      "identity": "span.stat-chip__label (#3)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(154, 168, 177)",
@@ -2073,9 +2059,9 @@
     },
     {
       "classes": [
-        "hero-chip-value"
+        "stat-chip__value"
       ],
-      "identity": "strong.hero-chip-value (#3)",
+      "identity": "strong.stat-chip__value (#3)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(230, 237, 240)",
@@ -2091,29 +2077,27 @@
     },
     {
       "classes": [
-        "hero-chip",
-        "ui-chip",
-        "ui-chip--stat"
+        "stat-chip"
       ],
-      "identity": "span.hero-chip.ui-chip.ui-chip--stat (#4)",
+      "identity": "span.stat-chip (#4)",
       "styles": {
-        "background-color": "rgba(255, 255, 255, 0.05)",
-        "border-color": "rgba(230, 237, 240, 0.1)",
-        "border-radius": "999px",
-        "color": "rgb(154, 168, 177)",
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(230, 237, 240)",
+        "border-radius": "0px",
+        "color": "rgb(230, 237, 240)",
         "display": "flex",
-        "font-size": "11px",
+        "font-size": "15px",
         "font-weight": "500",
         "gap": "6px",
-        "padding": "4px 8px"
+        "padding": "0px"
       },
       "tag": "span"
     },
     {
       "classes": [
-        "hero-chip-label"
+        "stat-chip__label"
       ],
-      "identity": "span.hero-chip-label (#4)",
+      "identity": "span.stat-chip__label (#4)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(154, 168, 177)",
@@ -2129,9 +2113,9 @@
     },
     {
       "classes": [
-        "hero-chip-value"
+        "stat-chip__value"
       ],
-      "identity": "strong.hero-chip-value (#4)",
+      "identity": "strong.stat-chip__value (#4)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(230, 237, 240)",
@@ -2201,9 +2185,10 @@
     },
     {
       "classes": [
-        "hero-action"
+        "nav-link",
+        "nav-link--row"
       ],
-      "identity": "a.hero-action (#1)",
+      "identity": "a.nav-link.nav-link--row (#1)",
       "styles": {
         "background-color": "rgb(27, 36, 42)",
         "border-color": "rgba(230, 237, 240, 0.1)",
@@ -2211,7 +2196,7 @@
         "color": "rgb(230, 237, 240)",
         "display": "flex",
         "font-size": "13px",
-        "font-weight": "600",
+        "font-weight": "400",
         "gap": "10px",
         "padding": "11px 12px"
       },
@@ -2219,9 +2204,9 @@
     },
     {
       "classes": [
-        "hero-action-index"
+        "nav-link-index"
       ],
-      "identity": "span.hero-action-index (#1)",
+      "identity": "span.nav-link-index (#1)",
       "styles": {
         "background-color": "rgb(21, 29, 34)",
         "border-color": "rgb(154, 168, 177)",
@@ -2237,9 +2222,10 @@
     },
     {
       "classes": [
-        "hero-action"
+        "nav-link",
+        "nav-link--row"
       ],
-      "identity": "a.hero-action (#2)",
+      "identity": "a.nav-link.nav-link--row (#2)",
       "styles": {
         "background-color": "rgb(27, 36, 42)",
         "border-color": "rgba(230, 237, 240, 0.1)",
@@ -2247,7 +2233,7 @@
         "color": "rgb(230, 237, 240)",
         "display": "flex",
         "font-size": "13px",
-        "font-weight": "600",
+        "font-weight": "400",
         "gap": "10px",
         "padding": "11px 12px"
       },
@@ -2255,9 +2241,9 @@
     },
     {
       "classes": [
-        "hero-action-index"
+        "nav-link-index"
       ],
-      "identity": "span.hero-action-index (#2)",
+      "identity": "span.nav-link-index (#2)",
       "styles": {
         "background-color": "rgb(21, 29, 34)",
         "border-color": "rgb(154, 168, 177)",
@@ -2381,9 +2367,10 @@
     },
     {
       "classes": [
-        "score-set-item-bar"
+        "meter",
+        "meter--md"
       ],
-      "identity": "div.score-set-item-bar (#1)",
+      "identity": "div.meter.meter--md (#1)",
       "styles": {
         "background-color": "rgb(35, 45, 51)",
         "border-color": "rgb(230, 237, 240)",
@@ -2399,13 +2386,13 @@
     },
     {
       "classes": [
-        "score-set-item-fill"
+        "meter-fill"
       ],
-      "identity": "i.score-set-item-fill (#1)",
+      "identity": "i.meter-fill (#1)",
       "styles": {
         "background-color": "rgb(65, 183, 140)",
         "border-color": "rgb(230, 237, 240)",
-        "border-radius": "3px",
+        "border-radius": "0px",
         "color": "rgb(230, 237, 240)",
         "display": "block",
         "font-size": "15px",
@@ -2417,9 +2404,9 @@
     },
     {
       "classes": [
-        "score-set-item-tick"
+        "meter-tick"
       ],
-      "identity": "i.score-set-item-tick (#1)",
+      "identity": "i.meter-tick (#1)",
       "styles": {
         "background-color": "rgb(154, 168, 177)",
         "border-color": "rgb(230, 237, 240)",
@@ -2561,9 +2548,10 @@
     },
     {
       "classes": [
-        "score-set-item-bar"
+        "meter",
+        "meter--md"
       ],
-      "identity": "div.score-set-item-bar (#2)",
+      "identity": "div.meter.meter--md (#2)",
       "styles": {
         "background-color": "rgb(35, 45, 51)",
         "border-color": "rgb(230, 237, 240)",
@@ -2579,13 +2567,13 @@
     },
     {
       "classes": [
-        "score-set-item-fill"
+        "meter-fill"
       ],
-      "identity": "i.score-set-item-fill (#2)",
+      "identity": "i.meter-fill (#2)",
       "styles": {
         "background-color": "rgb(65, 183, 140)",
         "border-color": "rgb(230, 237, 240)",
-        "border-radius": "3px",
+        "border-radius": "0px",
         "color": "rgb(230, 237, 240)",
         "display": "block",
         "font-size": "15px",
@@ -2597,9 +2585,9 @@
     },
     {
       "classes": [
-        "score-set-item-tick"
+        "meter-tick"
       ],
-      "identity": "i.score-set-item-tick (#2)",
+      "identity": "i.meter-tick (#2)",
       "styles": {
         "background-color": "rgb(154, 168, 177)",
         "border-color": "rgb(230, 237, 240)",
@@ -2741,9 +2729,10 @@
     },
     {
       "classes": [
-        "score-set-item-bar"
+        "meter",
+        "meter--md"
       ],
-      "identity": "div.score-set-item-bar (#3)",
+      "identity": "div.meter.meter--md (#3)",
       "styles": {
         "background-color": "rgb(35, 45, 51)",
         "border-color": "rgb(230, 237, 240)",
@@ -2759,13 +2748,13 @@
     },
     {
       "classes": [
-        "score-set-item-fill"
+        "meter-fill"
       ],
-      "identity": "i.score-set-item-fill (#3)",
+      "identity": "i.meter-fill (#3)",
       "styles": {
         "background-color": "rgb(65, 183, 140)",
         "border-color": "rgb(230, 237, 240)",
-        "border-radius": "3px",
+        "border-radius": "0px",
         "color": "rgb(230, 237, 240)",
         "display": "block",
         "font-size": "15px",
@@ -2777,9 +2766,9 @@
     },
     {
       "classes": [
-        "score-set-item-tick"
+        "meter-tick"
       ],
-      "identity": "i.score-set-item-tick (#3)",
+      "identity": "i.meter-tick (#3)",
       "styles": {
         "background-color": "rgb(154, 168, 177)",
         "border-color": "rgb(230, 237, 240)",
@@ -2921,9 +2910,10 @@
     },
     {
       "classes": [
-        "score-set-item-bar"
+        "meter",
+        "meter--md"
       ],
-      "identity": "div.score-set-item-bar (#4)",
+      "identity": "div.meter.meter--md (#4)",
       "styles": {
         "background-color": "rgb(35, 45, 51)",
         "border-color": "rgb(230, 237, 240)",
@@ -2939,13 +2929,13 @@
     },
     {
       "classes": [
-        "score-set-item-fill"
+        "meter-fill"
       ],
-      "identity": "i.score-set-item-fill (#4)",
+      "identity": "i.meter-fill (#4)",
       "styles": {
         "background-color": "rgb(65, 183, 140)",
         "border-color": "rgb(230, 237, 240)",
-        "border-radius": "3px",
+        "border-radius": "0px",
         "color": "rgb(230, 237, 240)",
         "display": "block",
         "font-size": "15px",
@@ -2957,9 +2947,9 @@
     },
     {
       "classes": [
-        "score-set-item-tick"
+        "meter-tick"
       ],
-      "identity": "i.score-set-item-tick (#4)",
+      "identity": "i.meter-tick (#4)",
       "styles": {
         "background-color": "rgb(154, 168, 177)",
         "border-color": "rgb(230, 237, 240)",
@@ -3101,9 +3091,10 @@
     },
     {
       "classes": [
-        "score-set-item-bar"
+        "meter",
+        "meter--md"
       ],
-      "identity": "div.score-set-item-bar (#5)",
+      "identity": "div.meter.meter--md (#5)",
       "styles": {
         "background-color": "rgb(35, 45, 51)",
         "border-color": "rgb(230, 237, 240)",
@@ -3119,13 +3110,13 @@
     },
     {
       "classes": [
-        "score-set-item-fill"
+        "meter-fill"
       ],
-      "identity": "i.score-set-item-fill (#5)",
+      "identity": "i.meter-fill (#5)",
       "styles": {
         "background-color": "rgb(65, 183, 140)",
         "border-color": "rgb(230, 237, 240)",
-        "border-radius": "3px",
+        "border-radius": "0px",
         "color": "rgb(230, 237, 240)",
         "display": "block",
         "font-size": "15px",
@@ -3137,9 +3128,9 @@
     },
     {
       "classes": [
-        "score-set-item-tick"
+        "meter-tick"
       ],
-      "identity": "i.score-set-item-tick (#5)",
+      "identity": "i.meter-tick (#5)",
       "styles": {
         "background-color": "rgb(154, 168, 177)",
         "border-color": "rgb(230, 237, 240)",
@@ -3281,9 +3272,10 @@
     },
     {
       "classes": [
-        "score-set-item-bar"
+        "meter",
+        "meter--md"
       ],
-      "identity": "div.score-set-item-bar (#6)",
+      "identity": "div.meter.meter--md (#6)",
       "styles": {
         "background-color": "rgb(35, 45, 51)",
         "border-color": "rgb(230, 237, 240)",
@@ -3299,13 +3291,13 @@
     },
     {
       "classes": [
-        "score-set-item-fill"
+        "meter-fill"
       ],
-      "identity": "i.score-set-item-fill (#6)",
+      "identity": "i.meter-fill (#6)",
       "styles": {
         "background-color": "rgb(65, 183, 140)",
         "border-color": "rgb(230, 237, 240)",
-        "border-radius": "3px",
+        "border-radius": "0px",
         "color": "rgb(230, 237, 240)",
         "display": "block",
         "font-size": "15px",
@@ -3317,9 +3309,9 @@
     },
     {
       "classes": [
-        "score-set-item-tick"
+        "meter-tick"
       ],
-      "identity": "i.score-set-item-tick (#6)",
+      "identity": "i.meter-tick (#6)",
       "styles": {
         "background-color": "rgb(154, 168, 177)",
         "border-color": "rgb(230, 237, 240)",
@@ -3479,9 +3471,10 @@
     },
     {
       "classes": [
-        "hero-score-bar"
+        "meter",
+        "meter--md"
       ],
-      "identity": "div.hero-score-bar (#1)",
+      "identity": "div.meter.meter--md (#7)",
       "styles": {
         "background-color": "rgb(35, 45, 51)",
         "border-color": "rgb(230, 237, 240)",
@@ -3497,13 +3490,13 @@
     },
     {
       "classes": [
-        "hero-score-bar-fill"
+        "meter-fill"
       ],
-      "identity": "i.hero-score-bar-fill (#1)",
+      "identity": "i.meter-fill (#7)",
       "styles": {
-        "background-color": "rgb(130, 210, 187)",
+        "background-color": "rgb(65, 183, 140)",
         "border-color": "rgb(230, 237, 240)",
-        "border-radius": "3px",
+        "border-radius": "0px",
         "color": "rgb(230, 237, 240)",
         "display": "block",
         "font-size": "15px",
@@ -3515,9 +3508,9 @@
     },
     {
       "classes": [
-        "hero-score-bar-tick"
+        "meter-tick"
       ],
-      "identity": "i.hero-score-bar-tick (#1)",
+      "identity": "i.meter-tick (#7)",
       "styles": {
         "background-color": "rgb(154, 168, 177)",
         "border-color": "rgb(230, 237, 240)",
@@ -4123,15 +4116,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--win"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--win (#1)",
+      "identity": "iconify-icon.metric-icon (#1)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(154, 168, 177)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
+        "color": "rgb(154, 168, 177)",
         "display": "none",
         "font-size": "12px",
         "font-weight": "400",
@@ -4251,15 +4243,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--accent"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--accent (#1)",
+      "identity": "iconify-icon.metric-icon (#2)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(154, 168, 177)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
+        "color": "rgb(154, 168, 177)",
         "display": "none",
         "font-size": "12px",
         "font-weight": "400",
@@ -4398,15 +4389,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--orange"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--orange (#1)",
+      "identity": "iconify-icon.metric-icon (#3)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(154, 168, 177)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
+        "color": "rgb(154, 168, 177)",
         "display": "none",
         "font-size": "12px",
         "font-weight": "400",
@@ -4672,15 +4662,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--orange"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--orange (#2)",
+      "identity": "iconify-icon.metric-icon (#4)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(154, 168, 177)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
+        "color": "rgb(154, 168, 177)",
         "display": "none",
         "font-size": "12px",
         "font-weight": "400",
@@ -4799,15 +4788,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--danger"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--danger (#1)",
+      "identity": "iconify-icon.metric-icon (#5)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(154, 168, 177)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
+        "color": "rgb(154, 168, 177)",
         "display": "none",
         "font-size": "12px",
         "font-weight": "400",
@@ -4926,15 +4914,14 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--blue"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--blue (#1)",
+      "identity": "iconify-icon.metric-icon (#6)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(154, 168, 177)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
+        "color": "rgb(154, 168, 177)",
         "display": "none",
         "font-size": "12px",
         "font-weight": "400",
@@ -5053,10 +5040,9 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--muted"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--muted (#1)",
+      "identity": "iconify-icon.metric-icon (#7)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(154, 168, 177)",
@@ -5145,16 +5131,15 @@
     },
     {
       "classes": [
-        "metric-icon",
-        "metric-icon--win"
+        "metric-icon"
       ],
-      "identity": "iconify-icon.metric-icon.metric-icon--win (#2)",
+      "identity": "iconify-icon.metric-icon (#8)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
-        "border-color": "rgb(139, 152, 162)",
+        "border-color": "rgb(230, 237, 240)",
         "border-radius": "0px",
-        "color": "rgb(139, 152, 162)",
-        "display": "none",
+        "color": "rgb(230, 237, 240)",
+        "display": "block",
         "font-size": "17px",
         "font-weight": "700",
         "gap": "normal",
@@ -5164,12 +5149,9 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--outline",
-        "scope-chip--window"
+        "chip"
       ],
-      "identity": "span.pill.pill--flat.pill--outline.scope-chip--window (#1)",
+      "identity": "span.chip (#1)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgb(154, 168, 177)",
@@ -5180,6 +5162,24 @@
         "font-weight": "700",
         "gap": "5px",
         "padding": "0px 7px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
       },
       "tag": "span"
     },
@@ -5296,14 +5296,12 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--bad",
-        "pill--soft"
+        "chip"
       ],
-      "identity": "span.pill.pill--bad.pill--soft (#1)",
+      "identity": "span.chip (#2)",
       "styles": {
         "background-color": "rgb(49, 25, 26)",
-        "border-color": "rgb(224, 129, 92)",
+        "border-color": "rgba(0, 0, 0, 0)",
         "border-radius": "9px",
         "color": "rgb(224, 129, 92)",
         "display": "flex",
@@ -5316,14 +5314,30 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--soft"
+        "chip__label"
       ],
-      "identity": "span.pill.pill--flat.pill--soft (#1)",
+      "identity": "span.chip__label (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(224, 129, 92)",
+        "border-radius": "0px",
+        "color": "rgb(224, 129, 92)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "chip"
+      ],
+      "identity": "span.chip (#3)",
       "styles": {
         "background-color": "rgb(35, 45, 51)",
-        "border-color": "rgb(154, 168, 177)",
+        "border-color": "rgba(0, 0, 0, 0)",
         "border-radius": "9px",
         "color": "rgb(154, 168, 177)",
         "display": "flex",
@@ -5331,6 +5345,24 @@
         "font-weight": "700",
         "gap": "5px",
         "padding": "0px 7px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#3)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
       },
       "tag": "span"
     },
@@ -5372,9 +5404,10 @@
     },
     {
       "classes": [
-        "rec-evidence"
+        "disclosure",
+        "disclosure--evidence"
       ],
-      "identity": "details.rec-evidence (#1)",
+      "identity": "details.disclosure.disclosure--evidence (#1)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgba(230, 237, 240, 0.1) rgb(230, 237, 240) rgb(230, 237, 240)",
@@ -5387,6 +5420,24 @@
         "padding": "12px 0px 0px"
       },
       "tag": "details"
+    },
+    {
+      "classes": [
+        "disclosure-summary"
+      ],
+      "identity": "summary.disclosure-summary (#1)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(139, 152, 162)",
+        "border-radius": "0px",
+        "color": "rgb(139, 152, 162)",
+        "display": "list-item",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "summary"
     },
     {
       "classes": [
@@ -5426,14 +5477,12 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--bad",
-        "pill--soft"
+        "chip"
       ],
-      "identity": "span.pill.pill--bad.pill--soft (#2)",
+      "identity": "span.chip (#4)",
       "styles": {
         "background-color": "rgb(49, 25, 26)",
-        "border-color": "rgb(224, 129, 92)",
+        "border-color": "rgba(0, 0, 0, 0)",
         "border-radius": "9px",
         "color": "rgb(224, 129, 92)",
         "display": "flex",
@@ -5446,14 +5495,30 @@
     },
     {
       "classes": [
-        "pill",
-        "pill--flat",
-        "pill--soft"
+        "chip__label"
       ],
-      "identity": "span.pill.pill--flat.pill--soft (#2)",
+      "identity": "span.chip__label (#4)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(224, 129, 92)",
+        "border-radius": "0px",
+        "color": "rgb(224, 129, 92)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "chip"
+      ],
+      "identity": "span.chip (#5)",
       "styles": {
         "background-color": "rgb(35, 45, 51)",
-        "border-color": "rgb(154, 168, 177)",
+        "border-color": "rgba(0, 0, 0, 0)",
         "border-radius": "9px",
         "color": "rgb(154, 168, 177)",
         "display": "flex",
@@ -5461,6 +5526,24 @@
         "font-weight": "700",
         "gap": "5px",
         "padding": "0px 7px"
+      },
+      "tag": "span"
+    },
+    {
+      "classes": [
+        "chip__label"
+      ],
+      "identity": "span.chip__label (#5)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(154, 168, 177)",
+        "border-radius": "0px",
+        "color": "rgb(154, 168, 177)",
+        "display": "block",
+        "font-size": "11px",
+        "font-weight": "700",
+        "gap": "normal",
+        "padding": "0px"
       },
       "tag": "span"
     },
@@ -5502,9 +5585,10 @@
     },
     {
       "classes": [
-        "rec-evidence"
+        "disclosure",
+        "disclosure--evidence"
       ],
-      "identity": "details.rec-evidence (#2)",
+      "identity": "details.disclosure.disclosure--evidence (#2)",
       "styles": {
         "background-color": "rgba(0, 0, 0, 0)",
         "border-color": "rgba(230, 237, 240, 0.1) rgb(230, 237, 240) rgb(230, 237, 240)",
@@ -5517,6 +5601,24 @@
         "padding": "12px 0px 0px"
       },
       "tag": "details"
+    },
+    {
+      "classes": [
+        "disclosure-summary"
+      ],
+      "identity": "summary.disclosure-summary (#2)",
+      "styles": {
+        "background-color": "rgba(0, 0, 0, 0)",
+        "border-color": "rgb(139, 152, 162)",
+        "border-radius": "0px",
+        "color": "rgb(139, 152, 162)",
+        "display": "list-item",
+        "font-size": "11px",
+        "font-weight": "400",
+        "gap": "normal",
+        "padding": "0px"
+      },
+      "tag": "summary"
     },
     {
       "classes": [

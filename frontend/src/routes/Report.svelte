@@ -493,6 +493,7 @@
       ariaLabel="Report categories"
       variant="underline"
       as="tablist"
+      dataAttr="data-category"
       items={categoryTabs}
       value={activeCategory}
       on:select={(event) => selectCategory(event.detail.value)}
