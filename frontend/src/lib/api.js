@@ -69,6 +69,19 @@ export async function regeneratePlayer(slug) {
   return data;
 }
 
+export async function setPlayerWatch(slug, enabled, { intervalS } = {}) {
+  const response = await fetch(`/api/players/${slug}/watch`, {
+    method: enabled ? 'POST' : 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: enabled && intervalS ? JSON.stringify({ interval_s: intervalS }) : undefined,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(detailMessage(data, `Could not update watch: ${response.status}`));
+  }
+  return data;
+}
+
 export async function fetchJob(jobId) {
   const response = await fetch(`/api/jobs/${jobId}`);
   if (!response.ok) throw new Error(`Failed to load job: ${response.status}`);

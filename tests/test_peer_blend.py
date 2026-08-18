@@ -130,7 +130,7 @@ def test_seed_rank_skips_fetch_solo_rank(tmp_path, monkeypatch, ranked_gold: Ran
 
 
 # ---------------------------------------------------------------------------
-# File cache (7-day TTL)
+# File cache (patch-keyed, 3-day TTL)
 # ---------------------------------------------------------------------------
 
 
@@ -159,7 +159,7 @@ def test_write_and_read_live_cache(tmp_path, monkeypatch) -> None:
 
 
 def test_live_cache_expired_returns_none(tmp_path, monkeypatch) -> None:
-    """A cache entry older than 7 days is ignored."""
+    """A cache entry past its TTL is ignored."""
     import time as _time
 
     monkeypatch.setattr(
@@ -174,9 +174,8 @@ def test_live_cache_expired_returns_none(tmp_path, monkeypatch) -> None:
     )
     write_live_cache("euw1", "GOLD", "Zac", "JUNGLE", snapshot)
 
-    # Advance clock by 8 days so the entry appears stale
-    eight_days = 8 * 24 * 3600
-    now = _time.time() + eight_days
+    # Advance the clock well past the TTL so the entry appears stale
+    now = _time.time() + 8 * 24 * 3600
     monkeypatch.setattr("league_stats.analysis.peer.benchmark_cache.time.time", lambda: now)
 
     cached = read_live_cache("euw1", "GOLD", "Zac", "JUNGLE")

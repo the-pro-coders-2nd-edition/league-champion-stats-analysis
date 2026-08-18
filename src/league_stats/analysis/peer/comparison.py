@@ -446,6 +446,17 @@ def peer_comparison_for_window(
     )
 
 
+def current_patch(records: list[MatchRecord]) -> str:
+    """The gameplay patch to analyse against: the newest game's ``major.minor``.
+
+    Peer samples are keyed on this, so it decides when peers are re-sampled.
+    Empty when there are no records, which makes the peer cache fall back to its
+    TTL rather than discarding a usable sample.
+    """
+    newest = max(records, key=lambda record: record.game_creation_ms, default=None)
+    return str(newest.patch) if newest is not None else ""
+
+
 def build_peer_comparison(
     client: RiotApiClient,
     store: MatchStore,
@@ -489,6 +500,7 @@ def build_peer_comparison(
         champion,
         role,
         exclude_puuid=user_puuid,
+        patch=current_patch(records),
         progress=progress,
     )
     if baseline is None:

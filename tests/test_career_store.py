@@ -83,10 +83,16 @@ def test_used_tracks_and_pending_congrats(tmp_path: Path) -> None:
         store.record_used_track(key, "laning_income")
         assert store.used_track_keys(key) == {"laning_income"}
 
-        assert store.take_pending_congrats(key) == ""
+        assert store.peek_pending_congrats(key) == ""
         store.set_pending_congrats(key, "laning_income")
-        assert store.take_pending_congrats(key) == "laning_income"
-        assert store.take_pending_congrats(key) == ""
+
+        # Peeking must not consume: a background watch rebuild would otherwise
+        # swallow the milestone before anyone saw it.
+        assert store.peek_pending_congrats(key) == "laning_income"
+        assert store.peek_pending_congrats(key) == "laning_income"
+
+        store.clear_pending_congrats(key)
+        assert store.peek_pending_congrats(key) == ""
 
 
 def test_ladders_are_isolated_per_build(tmp_path: Path) -> None:

@@ -1,7 +1,13 @@
 <script>
   import { onMount } from 'svelte';
   import { link } from 'svelte-spa-router';
-  import { fetchPlayerStatus, refreshPlayer, regeneratePlayer, cancelJob } from '../lib/api.js';
+  import {
+    fetchPlayerStatus,
+    refreshPlayer,
+    regeneratePlayer,
+    cancelJob,
+    setPlayerWatch,
+  } from '../lib/api.js';
   import { createPoller } from '../lib/poller.js';
 
   export let params = {};
@@ -26,6 +32,12 @@
   let retrying = false;
   let busy = false;
   let actionHint = '';
+  let watching = false;
+  let watchBusy = false;
+  let watchHint = '';
+  // The poller overwrites `watching` from the server on every tick, which would
+  // snap the toggle back while a click is still in flight.
+  let watchPending = false;
 
   function formatEta(seconds) {
     if (seconds == null) return '';
@@ -59,6 +71,7 @@
     try {
       const data = await fetchPlayerStatus(params.slug);
       status = data;
+      if (!watchPending) watching = !!data.watch_enabled;
       const job = data.active_job;
       const active = !!(job && ACTIVE_STATES.includes(job.state));
       const builds = data.builds || [];
@@ -108,6 +121,31 @@
     } finally {
       busy = false;
     }
+  }
+
+  async function handleWatchToggle() {
+    if (watchBusy) return;
+    const next = !watching;
+    watchBusy = true;
+    watchPending = true;
+    watchHint = '';
+    try {
+      const result = await setPlayerWatch(params.slug, next);
+      watching = !!result.watch_enabled;
+    } catch (err) {
+      watchHint = err.message || 'Could not update watch.';
+    } finally {
+      watchBusy = false;
+      watchPending = false;
+    }
+  }
+
+  function watchLabel(interval) {
+    if (!interval) return 'Checking for new games';
+    const minutes = Math.round(interval / 60);
+    return minutes <= 1
+      ? 'Checking every minute for new games'
+      : `Checking every ${minutes} min for new games`;
   }
 
   async function handleRegenerate() {
@@ -163,6 +201,9 @@
   $: showBuilds = builds.length > 0 && !showSkeleton;
   $: showRetry = !!(job && (job.state === 'failed' || job.state === 'cancelled'));
   $: showActions = !!(status && status.has_report && !active);
+  $: canWatch = !!(status && status.can_watch);
+  $: watchInterval = status ? status.watch_interval_s : 0;
+  $: watchError = status ? status.last_watch_error || '' : '';
   $: jobDetailText = job
     ? (job.state === 'queued' && job.queue_position != null
       ? (job.queue_position === 0 ? 'Next in line.' : `${job.queue_position} job(s) ahead of you.`)
@@ -307,8 +348,34 @@
     <div class="actions-row">
       <button class="btn-primary" id="refresh-btn" type="button" on:click={handleRefresh} disabled={busy}>Refresh with latest games</button>
       <button class="btn-ghost" id="regenerate-btn" type="button" on:click={handleRegenerate} disabled={busy}>Regenerate with same games</button>
+      {#if canWatch}
+        <button
+          class="watch-toggle{watching ? ' is-on' : ''}"
+          id="watch-btn"
+          type="button"
+          role="switch"
+          aria-checked={watching}
+          on:click={handleWatchToggle}
+          disabled={watchBusy}
+          title={watching ? watchLabel(watchInterval) : 'Refresh automatically after each new game'}
+        >
+          <span class="watch-toggle-track" aria-hidden="true"><span class="watch-toggle-knob"></span></span>
+          <span class="watch-toggle-label">{watching ? 'Watching this player' : 'Watch this player'}</span>
+        </button>
+      {/if}
       <span class="muted" id="refresh-hint">{actionHint}</span>
     </div>
+    {#if canWatch && (watching || watchHint || watchError)}
+      <div class="watch-note" id="watch-note">
+        {#if watchHint}
+          <span class="error-text">{watchHint}</span>
+        {:else if watchError}
+          <span class="error-text">Watch paused after an error: {watchError}</span>
+        {:else}
+          <span class="muted">{watchLabel(watchInterval)} — the report refreshes on its own.</span>
+        {/if}
+      </div>
+    {/if}
   </div>
 {/if}
 </div>

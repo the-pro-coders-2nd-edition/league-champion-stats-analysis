@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
+from typing import Any
 
 from tqdm import tqdm
 
 from league_stats.core.config import PlayerIdentity
 from league_stats.core.models import MatchRecord
 from league_stats.core.progress import STAGE_FETCHING, STAGE_PARSING
+from league_stats.infra.derived import KIND_RECORD, DerivedStore
 from league_stats.ingest.parser import BaseMatchFilter, ItemCatalog, MatchParser
 from league_stats.pipeline.services import PlayerContext, Services
 from league_stats.utils import get_logger
@@ -72,6 +76,28 @@ def resolve_player_contexts(services: Services) -> list[PlayerContext]:
     ]
 
 
+def _catalog_fingerprint(raw_catalog: dict[str, Any]) -> str:
+    """Short hash of the item catalog, so cached records follow item renames.
+
+    Item names land in ``final_items`` / ``item_path``, so a Data Dragon bump
+    changes parse output even though no code changed. Hashed once per run.
+    """
+    # Keys are sorted as strings because Data Dragon payloads mix int and str
+    # keys, which sort_keys=True cannot order.
+    ordered = sorted((str(key), value) for key, value in raw_catalog.items())
+    digest = hashlib.sha256(json.dumps(ordered, default=str).encode())
+    return digest.hexdigest()[:12]
+
+
+def _record_key(match_id: str, puuid: str, catalog_key: str) -> str:
+    return f"{match_id}|{puuid}|{catalog_key}"
+
+
+def _with_account(record: MatchRecord, label: str | None) -> MatchRecord:
+    """Stamp the configured Riot ID onto a record, if one was supplied."""
+    return record.model_copy(update={"account": label}) if label else record
+
+
 def load_all_records(
     services: Services,
     puuids: str | list[str],
@@ -82,6 +108,11 @@ def load_all_records(
 
     ``account_by_puuid`` fills in the configured Riot ID when the match payload
     omits ``riotIdGameName`` / ``riotIdTagline`` (older cached docs).
+
+    Parsing is deterministic given the stored match, timeline and item catalog,
+    so results are cached in the derived store: a re-run parses only the games it
+    has not seen, instead of the whole history. The account label is applied
+    *after* the cache so one cached record serves solo and group reports alike.
     """
     if isinstance(puuids, str):
         puuid_list = [puuids]
@@ -89,40 +120,69 @@ def load_all_records(
         puuid_list = list(puuids)
     labels = account_by_puuid or {}
     log = get_logger("pipeline")
-    catalog = ItemCatalog(services.client.fetch_item_catalog())
+    raw_catalog = services.client.fetch_item_catalog()
+    catalog = ItemCatalog(raw_catalog)
+    catalog_key = _catalog_fingerprint(raw_catalog)
     match_filter = BaseMatchFilter(services.config)
     parser = MatchParser(catalog)
     records: list[MatchRecord] = []
-    for puuid in puuid_list:
-        match_ids = list(services.store.iter_match_ids(puuid))
-        total = len(match_ids)
-        for index, match_id in enumerate(
-            tqdm(match_ids, desc="Parsing matches", unit="match"), start=1
-        ):
-            if index == 1 or index % 25 == 0 or index == total:
-                services.progress.update(
-                    STAGE_PARSING,
-                    current=index,
-                    total=total,
-                    detail=f"Parsing matches ({index}/{total})",
-                )
-            match = services.store.load_match(match_id)
-            timeline = services.store.load_timeline(match_id)
-            if not match or not timeline:
-                continue
-            if not match_filter.accept(match, puuid):
-                continue
-            try:
-                record = parser.parse(match, timeline, puuid)
-            except Exception as exc:
-                log.warning("Failed to parse %s: %s", match_id, exc)
-                continue
+    hits = 0
+
+    with DerivedStore(services.config.derived_db_path) as derived:
+        for puuid in puuid_list:
+            match_ids = list(services.store.iter_match_ids(puuid))
+            total = len(match_ids)
             label = labels.get(puuid)
-            if label:
-                record = record.model_copy(update={"account": label})
-            records.append(record)
+            cached = derived.get_many(
+                KIND_RECORD,
+                [_record_key(match_id, puuid, catalog_key) for match_id in match_ids],
+            )
+            fresh: dict[str, Any] = {}
+            for index, match_id in enumerate(
+                tqdm(match_ids, desc="Parsing matches", unit="match"), start=1
+            ):
+                if index == 1 or index % 25 == 0 or index == total:
+                    services.progress.update(
+                        STAGE_PARSING,
+                        current=index,
+                        total=total,
+                        detail=f"Parsing matches ({index}/{total})",
+                    )
+                key = _record_key(match_id, puuid, catalog_key)
+                payload = cached.get(key)
+                if payload is not None:
+                    try:
+                        records.append(
+                            _with_account(MatchRecord.model_validate(payload), label)
+                        )
+                        hits += 1
+                        continue
+                    except Exception as exc:
+                        log.warning("Discarding cached record %s: %s", match_id, exc)
+                        derived.delete(KIND_RECORD, key)
+
+                match = services.store.load_match(match_id)
+                if not match:
+                    continue
+                if not match_filter.accept(match, puuid):
+                    continue
+                timeline = services.store.load_timeline(match_id)
+                if not timeline:
+                    continue
+                try:
+                    record = parser.parse(match, timeline, puuid)
+                except Exception as exc:
+                    log.warning("Failed to parse %s: %s", match_id, exc)
+                    continue
+                fresh[key] = record.model_dump(mode="json")
+                records.append(_with_account(record, label))
+            derived.put_many(KIND_RECORD, fresh)
+        derived.evict_to_budget()
+
     records.sort(key=lambda r: r.game_creation_ms, reverse=True)
-    log.info("Parsed %d qualifying ranked queue games", len(records))
+    log.info(
+        "Parsed %d qualifying ranked queue games (%d from cache)", len(records), hits
+    )
     return records
 
 

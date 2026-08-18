@@ -23,6 +23,7 @@ from league_stats.core.champions import (
     champion_icon_id,
     normalize_role,
     parse_riot_id,
+    player_slug,
     players_group_slug,
 )
 from league_stats.core.config import (
@@ -50,6 +51,8 @@ from league_stats.presentation.brand_assets import (
 )
 from league_stats.presentation.report import discover_player_builds, is_group_player_label
 from league_stats.utils import setup_logging
+from league_stats.infra.career_store import CareerStore, build_key as career_build_key
+from league_stats.web.watch import WatchPoller, watch_public_fields
 from league_stats.web.chat import ChatError, gemini_reply, load_report_summary, validate_history
 from league_stats.web.jobs import (
     JOB_KIND_ANALYZE,
@@ -88,6 +91,17 @@ class ChatRequest(BaseModel):
 
     report: str = Field(min_length=3, max_length=200)
     history: list[Any]
+
+
+class WatchRequest(BaseModel):
+    """Optional body for ``POST /api/players/{slug}/watch``.
+
+    ``interval_s`` is floored at 60 by the store: polling faster than that spends
+    rate-limit budget the analysis jobs need, for no benefit on games that last
+    25-35 minutes.
+    """
+
+    interval_s: int | None = Field(default=None, ge=60, le=3600)
 
 
 class RefreshRequest(BaseModel):
@@ -598,6 +612,8 @@ def _report_groups(
             str(job["player_slug"]): job for job in store.list_active_jobs()
         }
         for group in groups:
+            row = store.get_player(group["slug"])
+            group.update(watch_public_fields(row or {}))
             job = active_by_slug.get(group["slug"])
             if job is None:
                 continue
@@ -652,14 +668,20 @@ def create_app(
 
     store = JobStore(config.app_db_path)
     worker = AnalysisWorker(store, config)
+    watcher = WatchPoller(
+        store,
+        lambda region: _build_precheck_client(region, config.output_dir),
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         store.recover_orphans()
         if start_worker:
             worker.start()
+            watcher.start()
         yield
         if start_worker:
+            await watcher.stop()
             worker.stop()
         store.close()
 
@@ -818,7 +840,43 @@ def create_app(
             "peer_failed": bool(player["peer_failed"]) if player else False,
             "base_completed_at": player["base_completed_at"] if player else None,
             "peer_completed_at": player["peer_completed_at"] if player else None,
+            "can_watch": player is not None,
+            **watch_public_fields(player or {}),
         }
+
+    @app.post("/api/players/{slug}/builds/{build_slug}/career/ack")
+    def acknowledge_career_banner(slug: str, build_slug: str) -> dict[str, Any]:
+        """Mark a Career block-complete banner as seen.
+
+        The flag survives report builds so a background watch refresh cannot
+        swallow the milestone; this is how a reader retires it.
+        """
+        if not (_is_report_slug(slug) and _is_report_slug(build_slug)):
+            raise HTTPException(status_code=400, detail="Invalid report reference.")
+        meta_path = config.reports_dir / slug / build_slug / "meta.json"
+        if not meta_path.is_file():
+            raise HTTPException(status_code=404, detail="Unknown build")
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        champion = str(meta.get("champion", ""))
+        role = str(meta.get("role", ""))
+        riot_id = str(meta.get("riot_id", ""))
+        tagline = str(meta.get("tagline", ""))
+        if not (champion and role and riot_id and tagline):
+            raise HTTPException(status_code=409, detail="Build metadata is incomplete.")
+        # Only the career database path is needed here, so no Riot key is
+        # required -- this route never talks to the API.
+        app_config = load_config(
+            require_api_key=False,
+            riot_id=riot_id,
+            tagline=tagline,
+            region=str(meta.get("region", "europe")) or "europe",
+            output_dir=config.output_dir,
+        )
+        with CareerStore(app_config.career_db_path) as career:
+            career.clear_pending_congrats(
+                career_build_key(player_slug(riot_id, tagline), champion, role)
+            )
+        return {"acknowledged": True}
 
     @app.get("/api/players/{slug}/builds/{build_slug}")
     def build_payload(slug: str, build_slug: str) -> dict[str, Any]:
@@ -940,6 +998,23 @@ def create_app(
                 filter_role=filter_role,
             )
         return _enqueue_player_job(slug, JOB_KIND_REFRESH)
+
+    @app.post("/api/players/{slug}/watch")
+    def enable_watch(slug: str, body: WatchRequest | None = None) -> dict[str, Any]:
+        """Watch a group: poll for new games and refresh automatically."""
+        payload = body or WatchRequest()
+        if not store.set_watch(slug, enabled=True, interval_s=payload.interval_s):
+            raise HTTPException(status_code=404, detail="Unknown player")
+        row = store.get_player(slug) or {}
+        return {"slug": slug, **watch_public_fields(row)}
+
+    @app.delete("/api/players/{slug}/watch")
+    def disable_watch(slug: str) -> dict[str, Any]:
+        """Stop watching a group."""
+        if not store.set_watch(slug, enabled=False):
+            raise HTTPException(status_code=404, detail="Unknown player")
+        row = store.get_player(slug) or {}
+        return {"slug": slug, **watch_public_fields(row)}
 
     @app.post("/api/players/{slug}/regenerate")
     def regenerate_player(slug: str) -> dict[str, Any]:

@@ -219,16 +219,23 @@ class CareerStore:
         )
         self._conn.commit()
 
-    def take_pending_congrats(self, key: str) -> str:
-        """Read and clear the pending banner: static reports have no round-trip."""
+    def peek_pending_congrats(self, key: str) -> str:
+        """Read the pending banner without consuming it.
+
+        Consuming at build time was safe while every rebuild was user-initiated.
+        Under group watch a background rebuild the reader never opens would
+        swallow the banner, so the flag now survives until a reader acknowledges
+        it via :meth:`clear_pending_congrats`.
+        """
         row = self._conn.execute(
             "SELECT pending_congrats_track FROM career_flags WHERE build_key = ?", (key,)
         ).fetchone()
-        pending = str(row[0]) if row and row[0] else ""
-        if pending:
-            self._conn.execute(
-                "UPDATE career_flags SET pending_congrats_track = '' WHERE build_key = ?",
-                (key,),
-            )
-            self._conn.commit()
-        return pending
+        return str(row[0]) if row and row[0] else ""
+
+    def clear_pending_congrats(self, key: str) -> None:
+        """Mark the block-complete banner as seen."""
+        self._conn.execute(
+            "UPDATE career_flags SET pending_congrats_track = '' WHERE build_key = ?",
+            (key,),
+        )
+        self._conn.commit()

@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS peer_games (
     metrics TEXT NOT NULL,
     ingested_at REAL NOT NULL,
     rank_verified INTEGER NOT NULL DEFAULT 0,
+    patch TEXT NOT NULL DEFAULT '',
     UNIQUE (match_id, puuid, champion, role)
 );
 CREATE INDEX IF NOT EXISTS idx_peer_lookup
@@ -118,6 +119,30 @@ class MatchStore:
         self._conn.executescript(_SCHEMA)
         self._log = get_logger("cache")
         self._migrate_legacy_schema()
+        self._migrate_peer_patch()
+
+    def _migrate_peer_patch(self) -> None:
+        """Add ``peer_games.patch`` to stores created before patch filtering.
+
+        Existing rows keep ``''``, which reads as "unknown patch" and is only
+        used when current-patch data is too thin -- so an upgraded store degrades
+        to its old behaviour instead of losing its peer sample.
+        """
+        columns = {row[1] for row in self._conn.execute("PRAGMA table_info(peer_games)")}
+        if "patch" in columns:
+            return
+        self._log.info("Adding peer_games.patch")
+        try:
+            self._conn.execute(
+                "ALTER TABLE peer_games ADD COLUMN patch TEXT NOT NULL DEFAULT ''"
+            )
+            self._conn.commit()
+        except sqlite3.OperationalError as exc:
+            # The worker pool and the API process both open this store, so two
+            # opens can race here. Losing the race is fine -- the winner added
+            # the column -- but anything else is a real failure.
+            if "duplicate column" not in str(exc).lower():
+                raise
 
     def __enter__(self) -> "MatchStore":
         """Enter a context manager scope."""
@@ -289,8 +314,8 @@ class MatchStore:
             """
             INSERT OR IGNORE INTO peer_games (
                 match_id, puuid, champion, role, tier, rank, platform,
-                queue_id, metrics, ingested_at, rank_verified
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                queue_id, metrics, ingested_at, rank_verified, patch
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 row["match_id"],
@@ -304,6 +329,7 @@ class MatchStore:
                 json.dumps(row["metrics"]),
                 float(row["ingested_at"]),
                 int(row.get("rank_verified", 0)),
+                str(row.get("patch", "")),
             ),
         )
         if cursor.rowcount:
@@ -322,7 +348,7 @@ class MatchStore:
         cursor = self._conn.execute(
             """
             SELECT match_id, puuid, champion, role, tier, rank, platform,
-                   queue_id, metrics, ingested_at, rank_verified
+                   queue_id, metrics, ingested_at, rank_verified, patch
             FROM peer_games
             WHERE champion = ? AND role = ? AND platform = ?
             """,
@@ -343,6 +369,7 @@ class MatchStore:
                     "metrics": json.loads(record[8]),
                     "ingested_at": record[9],
                     "rank_verified": bool(record[10]),
+                    "patch": record[11],
                 }
             )
         return rows

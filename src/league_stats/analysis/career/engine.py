@@ -234,5 +234,5 @@ def _snapshot(store: CareerStore, key: str, ctx: TrackContext) -> CareerSnapshot
         )
     return CareerSnapshot(
         blocks=blocks,
-        pending_congrats=store.take_pending_congrats(key),
+        pending_congrats=store.peek_pending_congrats(key),
     )

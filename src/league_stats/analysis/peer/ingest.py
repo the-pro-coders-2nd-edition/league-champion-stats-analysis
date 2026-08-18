@@ -29,6 +29,7 @@ def extract_peer_rows(
 
     info = match.get("info", {})
     queue_id = int(info.get("queueId", 0))
+    patch = ".".join(str(info.get("gameVersion", "")).split(".")[:2])
     participants: list[dict[str, Any]] = info.get("participants", [])
     team_damage = team_damage_totals(participants)
     ingested_at = time.time()
@@ -51,6 +52,7 @@ def extract_peer_rows(
                 "puuid": puuid,
                 "champion": champion,
                 "role": role,
+                "patch": patch,
                 "tier": "",
                 "rank": "",
                 "platform": platform,

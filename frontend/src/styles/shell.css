@@ -376,3 +376,36 @@ input::placeholder { color: var(--muted); }
   .section-header { flex-direction: column; align-items: stretch; }
   .reports-search { max-width: none; }
 }
+
+/* --- Watch toggle (player hub actions) --- */
+.watch-toggle {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 8px 14px 8px 10px;
+  font: 600 13px/1.2 var(--font); cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.watch-toggle:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.watch-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.watch-toggle:disabled { opacity: .6; cursor: default; }
+.watch-toggle.is-on { color: var(--text); border-color: var(--accent); background: rgba(124, 108, 240, .10); }
+
+.watch-toggle-track {
+  position: relative; display: block; flex: 0 0 auto;
+  width: 30px; height: 18px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  transition: background .15s, border-color .15s;
+}
+.watch-toggle.is-on .watch-toggle-track { background: var(--accent); border-color: var(--accent); }
+
+.watch-toggle-knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--muted);
+  transition: transform .15s, background .15s;
+}
+.watch-toggle.is-on .watch-toggle-knob { transform: translateX(12px); background: #fff; }
+
+.watch-note { margin-top: 10px; font-size: 12px; line-height: 1.5; }
+.watch-note .error-text { color: var(--loss); }

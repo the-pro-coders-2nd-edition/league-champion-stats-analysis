@@ -164,7 +164,9 @@ def test_clearing_the_live_block_retires_shifts_and_regenerates(store: CareerSto
     assert store.used_track_keys(KEY) == {"laning_income"}
 
 
-def test_the_congrats_banner_is_shown_only_once(store: CareerStore) -> None:
+def test_the_congrats_banner_survives_until_acknowledged(store: CareerStore) -> None:
+    # Under group watch a background rebuild the reader never opens must not
+    # swallow the milestone, so the flag persists until it is explicitly cleared.
     history = _batch(20, start=0, cspm=6.0)
     cleared = _matches(history, _batch(20, start=20, cspm=9.0))
     advance_career(store, KEY, _ctx(history), WEAK_LANING)
@@ -172,7 +174,11 @@ def test_the_congrats_banner_is_shown_only_once(store: CareerStore) -> None:
     second = advance_career(store, KEY, _ctx(cleared), WEAK_LANING)
 
     assert first.pending_congrats == "laning_income"
-    assert second.pending_congrats == ""
+    assert second.pending_congrats == "laning_income"
+
+    store.clear_pending_congrats(KEY)
+    third = advance_career(store, KEY, _ctx(cleared), WEAK_LANING)
+    assert third.pending_congrats == ""
 
 
 def test_rung_targets_are_frozen_across_runs(store: CareerStore) -> None:

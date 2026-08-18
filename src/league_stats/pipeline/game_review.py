@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from league_stats.analysis.game_review.views import build_game_review_views as _build_payload
@@ -18,7 +19,9 @@ from league_stats.core.models import (
     MatchRecord,
 )
 from league_stats.infra.ddragon_assets import ABILITY_SLOTS, DDragonAssets
+from league_stats.infra.derived import KIND_GAME_REVIEW, DerivedStore, slice_fingerprint
 from league_stats.pipeline.frames import AnalysisFrames
+from league_stats.utils import get_logger
 
 
 def _lookup_account_icon(
@@ -194,8 +197,66 @@ def build_game_review_views(
     is rendered client-side from per-minute series data.
     """
     _ = graphs_dir
-    payload = _build_payload(config, records, frames)
 
+    # Per-game details are not independently cacheable: _baseline_for_game scores
+    # each game against the games around it (leave-one-out, or an exclusive
+    # baseline window), so keying on match_id alone would serve a baseline
+    # computed from a different record set. The whole payload is cached against
+    # the full set instead, which pays off on re-renders that add no games.
+    fingerprint = slice_fingerprint(
+        [record.match_id for record in records],
+        salt="|".join(
+            (
+                "game_review",
+                config.champion,
+                config.role,
+                str(config.progression_recent_n),
+                str(config.progression_baseline_m),
+                from_dir.as_posix() if from_dir is not None else "-",
+                _icons_salt(account_icons),
+            )
+        ),
+    )
+    with DerivedStore(config.derived_db_path) as derived:
+        cached = derived.get(KIND_GAME_REVIEW, fingerprint)
+        if cached is not None:
+            try:
+                return GameReviewPayload.model_validate(cached)
+            except Exception as exc:  # noqa: BLE001 - a bad entry must not break a report
+                get_logger("game_review").warning(
+                    "Discarding cached game review: %s", exc
+                )
+                derived.delete(KIND_GAME_REVIEW, fingerprint)
+
+        payload = _build_payload(config, records, frames)
+        result = _enrich_payload(
+            payload,
+            config=config,
+            assets=assets,
+            from_dir=from_dir,
+            account_icons=account_icons,
+        )
+        derived.put(KIND_GAME_REVIEW, fingerprint, result.model_dump(mode="json"))
+    return result
+
+
+def _icons_salt(account_icons: dict[str, str] | None) -> str:
+    """Stable fingerprint of the account-icon map, which lands in the output."""
+    if not account_icons:
+        return "-"
+    joined = "|".join(f"{key}={value}" for key, value in sorted(account_icons.items()))
+    return hashlib.sha256(joined.encode()).hexdigest()[:12]
+
+
+def _enrich_payload(
+    payload: GameReviewPayload,
+    *,
+    config: AppConfig,
+    assets: DDragonAssets | None,
+    from_dir: Path | None,
+    account_icons: dict[str, str] | None,
+) -> GameReviewPayload:
+    """Attach icon hrefs to every game in every queue bundle."""
     queues: dict[str, GameReviewQueueBundle] = {}
     for queue_key, bundle in payload.queues.items():
         games: list[GameDetail] = []
