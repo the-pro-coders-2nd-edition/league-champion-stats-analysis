@@ -4,9 +4,9 @@ Reuses the same fixture helpers the test suite relies on (tests/fixtures.py)
 so this can generate real report structure without hitting the Riot API or
 needing any secrets in CI.
 
-Not currently wired into the Netlify preview build — see
-``deploy/build_preview.sh`` for why (the SPA needs a live API, this only
-produces on-disk artifacts).
+Not wired into the Netlify preview build: the preview now proxies /api and
+/out to the real deployed app (see netlify.toml) instead of serving fixture
+data, so this script is a standalone tool for local testing/dev only.
 """
 
 from __future__ import annotations
