@@ -1,6 +1,7 @@
 <script>
   import { tick } from 'svelte';
   import Pill from '../components/Pill.svelte';
+  import Panel from '../components/Panel.svelte';
   import UiChipBadge from '../components/UiChipBadge.svelte';
   import FormWrBridge from '../components/FormWrBridge.svelte';
   import TabBar from '../components/TabBar.svelte';
@@ -71,28 +72,26 @@
     <p id="form-unavailable-text">{unavailableText}</p>
   </div>
   <div id="form-content" style={formAvailable ? null : 'display:none'}>
-    <div class="form-dossier form-dossier--{trend}" id="form-dossier">
-      <div class="form-stage" id="form-stage">
-        <div class="form-stage-inner">
-          <div class="form-stage-score">
-            <div class="label">Form score</div>
-            <div class="form-score-value form-score-value--{trend}" id="form-score-value">{formScoreText}</div>
-            <div class="form-meta">
-              <UiChipBadge tone={trend} label={trend} id="form-trend-badge" />
-              <UiChipBadge tone="confidence" label="{confidence} confidence" id="form-confidence-badge" />
-            </div>
-          </div>
-          <div class="form-stage-wr">
-            <div class="label">Win rate</div>
-            <div class="form-wr-bridge" id="form-wr-shift">
-              {#if data.form_snapshot}
-                <FormWrBridge from={wrFrom} to={wrTo} deltaClass={wrDeltaClass} deltaText={wrDeltaText} />
-              {:else}—{/if}
-            </div>
-            <p class="form-headline" id="form-headline">{data.form_snapshot ? (data.form_snapshot.headline || '') : ''}</p>
+    <Panel id="form-dossier">
+      <svelte:fragment slot="stage">
+        <div class="form-stage-score">
+          <div class="label">Form score</div>
+          <div class="form-score-value form-score-value--{trend}" id="form-score-value">{formScoreText}</div>
+          <div class="form-meta">
+            <UiChipBadge tone={trend} label={trend} id="form-trend-badge" />
+            <UiChipBadge tone="confidence" label="{confidence} confidence" id="form-confidence-badge" />
           </div>
         </div>
-      </div>
+        <div class="form-stage-wr">
+          <div class="label">Win rate</div>
+          <div class="form-wr-bridge" id="form-wr-shift">
+            {#if data.form_snapshot}
+              <FormWrBridge from={wrFrom} to={wrTo} deltaClass={wrDeltaClass} deltaText={wrDeltaText} />
+            {:else}—{/if}
+          </div>
+          <p class="form-headline" id="form-headline">{data.form_snapshot ? (data.form_snapshot.headline || '') : ''}</p>
+        </div>
+      </svelte:fragment>
       <TabBar
         containerId="form-tabs"
         buttonClass="form-tab"
@@ -181,6 +180,6 @@
           </div>
         </details>
       </div>
-    </div>
+    </Panel>
   </div>
 </section>
