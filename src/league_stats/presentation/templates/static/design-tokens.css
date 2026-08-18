@@ -1,0 +1,77 @@
+/* League Champion Analyser theme — the palette from the original report:
+   teal/mint for good, gold for inline, orange-red for regression, red for bad.
+   Overrides the Nocturne tokens so every component follows from one place.
+
+   Source of truth: Claude Design project f86e4399-0a80-4039-afd7-d141337da4ec,
+   file report-theme.css. Copy verbatim when the design system changes -- do not
+   hand-edit divergently here. */
+:root {
+  --color-bg: #0d1418;
+  --color-surface: #151d22;
+  --color-surface-2: #1b242a;
+  --color-text: #e6edf0;
+  --color-divider: rgba(230, 237, 240, 0.10);
+
+  --color-neutral-100: #f2f6f8;
+  --color-neutral-200: #dfe7eb;
+  --color-neutral-300: #c3ced5;
+  --color-neutral-400: #9aa8b1;
+  --color-neutral-500: #9aa8b1;
+  --color-neutral-600: #8b98a2;
+  --color-neutral-700: #3c474e;
+  --color-neutral-800: #232d33;
+  --color-neutral-900: #172025;
+
+  --color-accent: #41b78c;
+  --color-accent-100: #eafaf3;
+  --color-accent-200: #cdf0e3;
+  --color-accent-300: #82d2bb;
+  --color-accent-400: #56c19e;
+  --color-accent-500: #41b78c;
+  --color-accent-600: #2a9f7a;
+  --color-accent-700: #1f7a5e;
+  --color-accent-800: #15503e;
+  --color-accent-900: #102b23;
+
+  --font-heading: "Manrope", system-ui, sans-serif;
+  --font-body: "Manrope", system-ui, sans-serif;
+  --font-heading-weight: 700;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+
+  --shadow-sm: 0 0 0 1px rgba(230, 237, 240, 0.07);
+  --shadow-md: 0 0 0 1px rgba(230, 237, 240, 0.09), 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 0 0 1px rgba(230, 237, 240, 0.12), 0 18px 44px rgba(0, 0, 0, 0.6);
+
+  /* Status tones -- mirrors frontend/src/tones.js's T.good/warn/bad/flat/accent.
+     Components resolve a tone NAME ("good"/"warn"/"bad"/"flat"/"accent") via a
+     Jinja token or JS prop, then select colors through these custom properties
+     (e.g. `.pill--good { color: var(--tone-good-fg); }`) -- never a literal hex
+     value in component CSS. */
+  --tone-good-fg: #82d2bb;
+  --tone-good-mid: #2a9f7a;
+  --tone-good-soft: #10312a;
+  --tone-good-line: #41b78c;
+
+  --tone-warn-fg: #e0ae55;
+  --tone-warn-mid: #8a6a2c;
+  --tone-warn-soft: #2d2415;
+  --tone-warn-line: #ddb258;
+
+  --tone-bad-fg: #e0815c;
+  --tone-bad-mid: #a04434;
+  --tone-bad-soft: #31191a;
+  --tone-bad-line: #e05563;
+
+  --tone-flat-fg: var(--color-neutral-400);
+  --tone-flat-mid: var(--color-neutral-700);
+  --tone-flat-soft: var(--color-neutral-800);
+  --tone-flat-line: var(--color-neutral-500);
+
+  --tone-accent-fg: var(--color-accent-300);
+  --tone-accent-mid: var(--color-accent-600);
+  --tone-accent-soft: var(--color-accent-900);
+  --tone-accent-line: var(--color-accent);
+}

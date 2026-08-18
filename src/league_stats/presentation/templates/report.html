@@ -4,14 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ app_title }} — {{ player_name }}</title>
-{% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, tiered_cards, rec_card, metric_card, section_pulse, score_card, ui_chip, generated_at_time, format_generated_at_script %}
+{% from '_macros.html' import metric_label, metric_card_label, metric_icon, section_title, role_icon, build_heading, build_card, favicon_links, app_brand, icon_cell, core_cell, category_divider, tiered_cards, rec_card, metric_card, section_pulse, generated_at_time, format_generated_at_script, form_story, data_table with context %}
 {{ favicon_links(favicon_href) }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 {# Styles before blocking CDN scripts so buttons never paint unstyled. #}
+<link rel="stylesheet" href="{{ design_tokens_css_href | default('static/design-tokens.css') }}">
 <link rel="stylesheet" href="{{ report_css_href | default('static/report.css') }}">
 <link rel="stylesheet" href="{{ chatbot_css_href | default('static/chatbot.css') }}">
+<link rel="stylesheet" href="{{ components_css_href | default('static/components.css') }}">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
 <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual';</script>
@@ -108,23 +110,21 @@
     <div class="filter-group" id="queue-filter-bar">
       <span class="game-window-label">Queue</span>
       {% for option in queue_filter_options %}
-      <button
-        type="button"
-        class="queue-filter-btn game-window-btn{% if option.key == queue_filter_default %} is-active{% endif %}"
-        data-queue="{{ option.key }}"
-        {% if not option.enabled %}disabled{% endif %}
-      >{{ option.label }}</button>
+      {% if option.enabled %}
+      {% include "generated/queue_filter_button_enabled.html" %}
+      {% else %}
+      {% include "generated/queue_filter_button_disabled.html" %}
+      {% endif %}
       {% endfor %}
     </div>
     <div class="filter-group" id="game-window-bar">
       <span class="game-window-label">Games</span>
       {% for option in game_window_options %}
-      <button
-        type="button"
-        class="game-window-btn{% if option.key == game_window_default %} is-active{% endif %}"
-        data-window="{{ option.key }}"
-        {% if not option.enabled %}disabled{% endif %}
-      >{{ option.label }}</button>
+      {% if option.enabled %}
+      {% include "generated/game_window_button_enabled.html" %}
+      {% else %}
+      {% include "generated/game_window_button_disabled.html" %}
+      {% endif %}
       {% endfor %}
     </div>
     {% if status_endpoint and refresh_champion and refresh_role %}
@@ -141,13 +141,7 @@
     </div>
     {% endif %}
   </div>
-  <div class="report-category-tabs" id="report-category-tabs" role="tablist" aria-label="Report categories">
-    <button type="button" class="report-tab report-tab--summary is-active" data-category="summary" role="tab" aria-selected="true" aria-controls="category-summary" id="tab-summary">Summary</button>
-    <button type="button" class="report-tab report-tab--performance" data-category="performance" role="tab" aria-selected="false" aria-controls="category-performance" id="tab-performance">Performance</button>
-    <button type="button" class="report-tab report-tab--games" data-category="games" role="tab" aria-selected="false" aria-controls="category-games" id="tab-games">Game Review</button>
-    <button type="button" class="report-tab report-tab--champion" data-category="champion" role="tab" aria-selected="false" aria-controls="category-champion" id="tab-champion">Champion</button>
-    <button type="button" class="report-tab report-tab--deepdive" data-category="deepdive" role="tab" aria-selected="false" aria-controls="category-deepdive" id="tab-deepdive">Deep Dive</button>
-  </div>
+  {% include "generated/tab_bar_report_category.html" %}
 </div>
 {% if status_endpoint %}
 <script>
@@ -302,17 +296,24 @@
         {% endif %}
         <div class="report-hero-copy">
           <h1 class="report-page-title">{{ build_heading(champion, role_icon_href, role_display) }}</h1>
-          {% if not report_players or report_players|length <= 1 %}
+          {% if report_players and report_players|length > 1 %}
+          <div class="report-players">
+            {% for member in report_players %}
+            {% if member.profile_icon %}
+            {% include "generated/report_player_chip.html" %}
+            {% else %}
+            {% include "generated/report_player_chip_no_icon.html" %}
+            {% endif %}
+            {% endfor %}
+          </div>
+          {% else %}
           <div class="report-player-name">{{ player_name }}</div>
           {% endif %}
           <div class="report-hero-meta" id="overview-subtitle">{{ total_games }} {{ queue_label }} games · patches {{ patch_range }}</div>
           {% if overview_cards %}
           <div class="report-hero-chips ui-chip-row" id="hero-chips">
             {% for card in overview_cards[:4] %}
-            <span class="ui-chip ui-chip--{% if card.value_class == 'win' %}good{% elif card.value_class == 'loss' %}bad{% else %}stat{% endif %} hero-chip">
-              <span class="hero-chip-label">{{ card.label }}</span>
-              <strong class="hero-chip-value"{% if card.value_color %} style="color: {{ card.value_color }}"{% endif %}>{{ card.value }}</strong>
-            </span>
+            {% include "generated/hero_chip.html" %}
             {% endfor %}
           </div>
           {% else %}
@@ -330,10 +331,8 @@
       <div class="hero-actions" id="hero-actions">
         {% if top_tips %}
         {% for tip in top_tips %}
-        <a class="hero-action" href="#{{ tip.anchor }}">
-          <span class="hero-action-index">{{ loop.index }}</span>
-          <span>{{ tip.action or tip.title }}</span>
-        </a>
+        {% set tip_index = loop.index %}
+        {% include "generated/hero_action.html" %}
         {% endfor %}
         {% else %}
         <p class="hero-action-empty">Play a few more games to unlock personalised coaching tips.</p>
@@ -345,7 +344,7 @@
     <div class="score-breakdown-title">Score breakdown</div>
     <div class="score-comps" id="score-comps">
       {% for comp in score_components %}
-      {{ score_card(comp.name, comp.score, comp.verdict, comp.tone, comp.value, comp.hint) }}
+      {% include "generated/score_set_item.html" %}
       {% endfor %}
     </div>
   </div>
@@ -372,9 +371,7 @@
         {{ rec_card(rec) }}
         {% endfor %}
       </div>
-      <button type="button" class="rec-extend" data-target="rec-more-positive" data-more-label="Show {{ positive_recommendations|length - recommendation_visible_count }} more strength{{ 's' if positive_recommendations|length - recommendation_visible_count != 1 else '' }}" aria-expanded="false" aria-controls="rec-more-positive">
-        Show {{ positive_recommendations|length - recommendation_visible_count }} more strength{{ 's' if positive_recommendations|length - recommendation_visible_count != 1 else '' }}
-      </button>
+      {% include "generated/rec_extend_button_positive.html" %}
       {% endif %}
       {% else %}
       <p class="rec-empty">No clear strengths surfaced yet — keep playing more games.</p>
@@ -392,9 +389,7 @@
         {{ rec_card(rec) }}
         {% endfor %}
       </div>
-      <button type="button" class="rec-extend" data-target="rec-more-negative" data-more-label="Show {{ negative_recommendations|length - recommendation_visible_count }} more area{{ 's' if negative_recommendations|length - recommendation_visible_count != 1 else '' }} to improve" aria-expanded="false" aria-controls="rec-more-negative">
-        Show {{ negative_recommendations|length - recommendation_visible_count }} more area{{ 's' if negative_recommendations|length - recommendation_visible_count != 1 else '' }} to improve
-      </button>
+      {% include "generated/rec_extend_button_negative.html" %}
       {% endif %}
       {% else %}
       <p class="rec-empty">Nothing critical flagged — solid performance overall.</p>
@@ -421,43 +416,27 @@
             <div class="label">Form score</div>
             <div class="form-score-value form-score-value--{{ form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable' }}" id="form-score-value">{{ '%+.0f' % form_snapshot.form_score if form_snapshot and form_snapshot.form_score is defined else '0' }}</div>
             <div class="form-meta">
-              {{ ui_chip(form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable', form_snapshot.trend if form_snapshot and form_snapshot.trend else 'stable', id='form-trend-badge') }}
-              {{ ui_chip((form_snapshot.confidence if form_snapshot and form_snapshot.confidence else 'insufficient') ~ ' confidence', 'confidence', id='form-confidence-badge') }}
+              {% include "generated/ui_chip_badge_trend.html" %}
+              {% include "generated/ui_chip_badge_confidence.html" %}
             </div>
           </div>
           <div class="form-stage-wr">
             <div class="label">Win rate</div>
             <div class="form-wr-bridge" id="form-wr-shift">
               {% if form_snapshot %}
-              <span class="form-wr-from">{{ '%.0f' % (form_snapshot.baseline_winrate * 100) }}%</span>
-              <span class="form-wr-arrow" aria-hidden="true">→</span>
-              <span class="form-wr-to">{{ '%.0f' % (form_snapshot.recent_winrate * 100) }}%</span>
-              <span class="form-wr-delta{% if form_snapshot.winrate_delta_pp > 0 %} form-wr-delta--up{% elif form_snapshot.winrate_delta_pp < 0 %} form-wr-delta--down{% endif %}">
-                {%- if form_snapshot.winrate_delta_pp > 0 %}up {{ '%.0f' % form_snapshot.winrate_delta_pp }}{% elif form_snapshot.winrate_delta_pp < 0 %}down {{ '%.0f' % (-form_snapshot.winrate_delta_pp) }}{% else %}no change{% endif -%}
-              </span>
+              {% include "generated/form_wr_bridge.html" %}
               {% else %}—{% endif %}
             </div>
             <p class="form-headline" id="form-headline">{{ form_snapshot.headline if form_snapshot else '' }}</p>
           </div>
         </div>
       </div>
-      <div class="form-tabs" id="form-tabs" role="tablist">
-        <button type="button" class="form-tab is-active" data-tab="pulse" role="tab" aria-selected="true">Pulse</button>
-        <button type="button" class="form-tab" data-tab="evidence" role="tab" aria-selected="false">Evidence</button>
-      </div>
+      {% include "generated/tab_bar_form.html" %}
       <div class="form-panel" id="form-panel-pulse" role="tabpanel">
         <div class="form-stories" id="form-stories">
           {% if form_stories %}
           {% for story in form_stories %}
-          <article class="form-story form-story--{{ story.tone }}">
-            <span class="form-story-label">{{ 'Keep' if story.tone == 'keep' else 'Fix' }}</span>
-            <strong class="form-story-title">{{ story.title }}</strong>
-            <p class="form-story-driver"><span class="form-story-kicker">Driver</span> {{ story.driver }}</p>
-            {% if story.habit %}
-            <p class="form-story-habit"><span class="form-story-kicker">Habit</span> {{ story.habit }}</p>
-            {% endif %}
-            <p class="form-story-action"><span class="form-story-kicker">Action</span> {{ story.action }}</p>
-          </article>
+          {{ form_story(story) }}
           {% endfor %}
           {% else %}
           <p class="sub form-stories-empty" id="form-stories-empty">No standout form stories for this window.</p>
@@ -474,11 +453,7 @@
             <h4 class="form-feed-title">Top improvements</h4>
             <div class="form-mover-feed" id="form-improved-list">
               {% for row in form_top_improved %}
-              <div class="form-mover form-mover--improved">
-                <span class="form-mover-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
-                <span class="form-mover-values">{{ row.baseline }} → {{ row.recent }}</span>
-                <span class="form-mover-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
-              </div>
+              {% include "generated/mover_row_improved.html" %}
               {% else %}
               <p class="sub">No standout improvements.</p>
               {% endfor %}
@@ -488,11 +463,7 @@
             <h4 class="form-feed-title">Regressions</h4>
             <div class="form-mover-feed" id="form-regressed-list">
               {% for row in form_top_regressed %}
-              <div class="form-mover form-mover--regressed">
-                <span class="form-mover-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
-                <span class="form-mover-values">{{ row.baseline }} → {{ row.recent }}</span>
-                <span class="form-mover-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
-              </div>
+              {% include "generated/mover_row_regressed.html" %}
               {% else %}
               <p class="sub">No standout regressions.</p>
               {% endfor %}
@@ -505,24 +476,7 @@
         </div>
         <details class="form-all-metrics">
           <summary>All metrics</summary>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr><th>Metric</th><th>Recent</th><th>Baseline</th><th>Change</th><th>Verdict</th></tr>
-              </thead>
-              <tbody id="form-table-body">
-                {% for row in form_delta_rows %}
-                <tr>
-                  <td>{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</td>
-                  <td>{{ row.recent }}</td>
-                  <td>{{ row.baseline }}</td>
-                  <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</td>
-                  <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.verdict }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+          {{ data_table("generated/data_table_head_form_delta.html", "generated/data_table_row_form_delta.html", form_delta_rows, tbody_id="form-table-body") }}
         </details>
       </div>
     </div>
@@ -543,20 +497,21 @@
           <div class="label">Rank peers</div>
           <div class="peer-rank-value" id="peer-rank-value">
             {% if peer_rank_icon %}
-            <img class="peer-rank-icon" src="{{ peer_rank_icon }}" alt="" width="48" height="48">
+            {% include "generated/peer_rank_value.html" %}
+            {% else %}
+            {% include "generated/peer_rank_value_no_icon.html" %}
             {% endif %}
-            <span class="peer-rank-label" id="peer-rank-label">{{ peer_comparison.rank_label }}</span>
           </div>
         </div>
         <div class="peer-stage-meta">
           <div class="peer-balance" id="peer-balance">
-            <span class="peer-balance-chip peer-balance-chip--above"><strong id="peer-above-count">{{ peer_above|length }}</strong> above</span>
-            <span class="peer-balance-chip peer-balance-chip--below"><strong id="peer-below-count">{{ peer_below|length }}</strong> below</span>
+            {% include "generated/peer_balance_chip_above.html" %}
+            {% include "generated/peer_balance_chip_below.html" %}
           </div>
           <div class="peer-meta-chips" id="peer-meta-chips">
-            {{ ui_chip(peer_comparison.peer_games ~ ' peer games', 'meta') }}
-            {{ ui_chip(peer_comparison.peer_players ~ ' players', 'meta') }}
-            {{ ui_chip(peer_comparison.confidence ~ ' confidence', 'confidence') }}
+            {% include "generated/peer_meta_chip_games.html" %}
+            {% include "generated/peer_meta_chip_players.html" %}
+            {% include "generated/peer_meta_chip_confidence.html" %}
           </div>
         </div>
       </div>
@@ -566,11 +521,7 @@
         <h4 class="peer-feed-title">Above peers</h4>
         <div class="peer-driver-feed" id="peer-above-list">
           {% for row in peer_above[:6] %}
-          <div class="peer-driver peer-driver--above">
-            <span class="peer-driver-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
-            <span class="peer-driver-values">{{ row.yours }} vs {{ row.peer_avg }}</span>
-            <span class="peer-driver-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
-          </div>
+          {% include "generated/peer_driver_row_above.html" %}
           {% else %}
           <p class="sub">No above-peer metrics.</p>
           {% endfor %}
@@ -580,11 +531,7 @@
         <h4 class="peer-feed-title">Below peers</h4>
         <div class="peer-driver-feed" id="peer-below-list">
           {% for row in peer_below[:6] %}
-          <div class="peer-driver peer-driver--below">
-            <span class="peer-driver-label">{{ metric_label(row.label, row.iconify, row.icon_tone, icon_href=row.icon_href) }}</span>
-            <span class="peer-driver-values">{{ row.yours }} vs {{ row.peer_avg }}</span>
-            <span class="peer-driver-gap"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</span>
-          </div>
+          {% include "generated/peer_driver_row_below.html" %}
           {% else %}
           <p class="sub">No below-peer metrics.</p>
           {% endfor %}
@@ -593,24 +540,7 @@
     </div>
     <details class="peer-all-metrics">
       <summary>All metrics</summary>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr><th>Metric</th><th>You</th><th id="peer-table-peer-header">{{ peer_comparison.tier|title }} {{ build_label }} avg</th><th>Gap</th><th>Verdict</th></tr>
-          </thead>
-          <tbody id="peer-table-body">
-          {% for row in peer_rows %}
-          <tr>
-            <td>{{ metric_label(row.label, row.iconify or row.icon, row.icon_tone, icon_href=row.icon_href) }}</td>
-            <td>{{ row.yours }}</td>
-            <td>{{ row.peer_avg }}</td>
-            <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.gap }}</td>
-            <td class="delta-{{ row.verdict }}"{% if row.gap_color %} style="color: {{ row.gap_color }}"{% endif %}>{{ row.verdict }}</td>
-          </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
+      {{ data_table("generated/data_table_head_peer_details.html", "generated/data_table_row_peer_details.html", peer_rows, tbody_id="peer-table-body") }}
     </details>
   </div>
 </section>
@@ -644,12 +574,7 @@
         <div class="game-review-stage" id="game-review-matchup"></div>
         <div class="game-review-verdict" id="game-review-verdict"></div>
         <div class="game-review-scoreboard" id="game-review-score-hero"></div>
-        <div class="game-review-tabs" id="game-review-tabs" role="tablist">
-          <button type="button" class="game-review-tab is-active" data-tab="overview" role="tab" aria-selected="true">Overview</button>
-          <button type="button" class="game-review-tab" data-tab="story" role="tab" aria-selected="false">Story</button>
-          <button type="button" class="game-review-tab" data-tab="key-moments" role="tab" aria-selected="false">Key Moments</button>
-          <button type="button" class="game-review-tab" data-tab="loadout" role="tab" aria-selected="false">Loadout</button>
-        </div>
+        {% include "generated/tab_bar_game_review.html" %}
         <div class="game-review-panel" id="game-review-panel-overview" role="tabpanel"></div>
         <div class="game-review-panel" id="game-review-panel-story" role="tabpanel" hidden>
           <div class="game-review-story-block" id="game-review-key-moments-viewer"></div>
@@ -674,16 +599,7 @@
     <p class="figure-caption">Win rate by completed item — favor items with enough sample size and a clear WR edge.</p>
   </div>
   <h3>Two-item cores</h3>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Core</th><th>Games</th><th>Win rate</th><th>{{ metric_label("Avg DPM", "flame", "orange") }}</th><th>{{ metric_label("Avg deaths", "skull", "danger") }}</th></tr></thead>
-    <tbody id="build-paths-body">
-    {% for row in build_paths %}
-    <tr><td>{{ core_cell(row.first_item, row.second_item, row.first_item_icon, row.second_item_icon, row.core) }}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td>{{ row.avg_dpm }}</td><td>{{ row.avg_deaths }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
+  {{ data_table("generated/data_table_head_items_cores.html", "generated/data_table_row_items_cores.html", build_paths, tbody_id="build-paths-body") }}
 </section>
 
 <section id="runes" class="report-section report-section--champion">
@@ -692,16 +608,7 @@
     <div class="figure" id="fig-rune_winrate_bar">{{ figures.rune_winrate_bar | safe }}</div>
     <p class="figure-caption">Win rate by keystone — compare rune setups with similar game counts before switching.</p>
   </div>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Keystone</th><th>Games</th><th>Win rate</th><th>{{ metric_label("Avg DPM", "flame", "orange") }}</th><th>{{ metric_label("Avg deaths", "skull", "danger") }}</th></tr></thead>
-    <tbody id="rune-rows-body">
-    {% for row in rune_rows %}
-    <tr><td>{% if row.keystone_icon %}<span class="icon-cell"><img src="{{ row.keystone_icon }}" alt="" class="game-icon game-icon--sm"><span>{{ row.keystone }}</span></span>{% else %}{{ row.keystone }}{% endif %}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td>{{ row.avg_dpm }}</td><td>{{ row.avg_deaths }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
+  {{ data_table("generated/data_table_head_runes.html", "generated/data_table_row_runes.html", rune_rows, tbody_id="rune-rows-body") }}
 </section>
 
 <section id="matchups" class="report-section report-section--champion">
@@ -729,18 +636,7 @@
     </thead>
     <tbody id="matchup-rows-body">
     {% for row in matchup_rows %}
-    <tr>
-      <td>{% if row.opponent_icon %}<span class="icon-cell"><img src="{{ row.opponent_icon }}" alt="" class="game-icon game-icon--sm"><span>{{ row.opponent }}</span></span>{% else %}{{ row.opponent }}{% endif %}</td>
-      <td>{{ row.games }}</td>
-      <td>{{ '%.0f' % (row.winrate * 100) }}%</td>
-      <td><span class="matchup-verdict matchup-verdict--{{ row.verdict | default('even') }}">{{ row.verdict_label | default('Even') }}</span></td>
-      <td>{% if row.avg_gd10 is not none %}{% if row.gd10_color %}<span class="matchup-metric" style="color: {{ row.gd10_color }}">{{ '%+.0f' % row.avg_gd10 }}</span>{% else %}{{ '%+.0f' % row.avg_gd10 }}{% endif %}{% else %}—{% endif %}</td>
-      {% if show_cs_stats %}
-      <td>{% if row.avg_csd10 is not none %}{% if row.csd10_color %}<span class="matchup-metric" style="color: {{ row.csd10_color }}">{{ '%+.0f' % row.avg_csd10 }}</span>{% else %}{{ '%+.0f' % row.avg_csd10 }}{% endif %}{% else %}—{% endif %}</td>
-      {% endif %}
-      <td>{% if row.avg_deaths_pre14 is not none %}{% if row.deaths_pre14_color %}<span class="matchup-metric" style="color: {{ row.deaths_pre14_color }}">{{ '%.1f' % row.avg_deaths_pre14 }}</span>{% else %}{{ '%.1f' % row.avg_deaths_pre14 }}{% endif %}{% else %}—{% endif %}</td>
-      <td class="matchup-plan">{% if row.focus %}<span class="matchup-focus matchup-focus--{{ row.focus_key | default('standard') }}">{{ row.focus }}</span>{% endif %}<span class="matchup-tip">{{ row.recommendation }}</span></td>
-    </tr>
+    {% include "generated/data_table_row_matchups.html" %}
     {% endfor %}
     </tbody>
   </table>
@@ -780,18 +676,7 @@
   {% if show_split_push_stats | default(false) %}
   <div id="objective-macro-cards">{{ tiered_cards(objective_macro_cards, 'More split-push stats') }}</div>
   {% endif %}
-  <div class="table-scroll">
-  <table>
-    <thead>
-    <tr><th>Objective</th><th>Count</th><th>Taken</th><th>Present</th><th>Arrived early</th><th>{{ metric_label("Died in setup window (45–10s)", tooltip=metric_tooltip("Died in setup window (45–10s)")) }}</th><th>{{ metric_label("Wards before", tooltip=metric_tooltip("Wards before")) }}</th></tr>
-    </thead>
-    <tbody id="objective-table-body">
-    {% for row in objective_rows %}
-    <tr><td>{{ icon_cell(row.kind|title, row.objective_icon) }}</td><td>{{ row.count }}</td><td>{{ '%.0f' % (row.taken_rate * 100) }}%</td><td>{{ '%.0f' % (row.presence_rate * 100) }}%</td><td>{{ '%.0f' % (row.early_rate * 100) }}%</td><td>{{ '%.0f' % (row.dead_before_rate * 100) }}%</td><td>{{ row.avg_wards_before }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
+  {{ data_table("generated/data_table_head_objectives.html", "generated/data_table_row_objectives.html", objective_rows, tbody_id="objective-table-body") }}
   <details class="section-details">
     <summary>Show charts</summary>
     <div class="figure-block">
@@ -817,12 +702,7 @@
     </div>
     <div id="blind-spots-block"{% if not blind_spots %} style="display:none"{% endif %}>
     <h3>{{ metric_label("Most dangerous zones (solo deaths without recent team vision)", "skull", "danger") }}</h3>
-    <div class="table-scroll">
-    <table><thead><tr><th>Zone</th><th>{{ metric_label("Deaths", "skull", "danger") }}</th></tr></thead>
-    <tbody id="blind-spots-body">
-    {% for spot in blind_spots %}<tr><td>{{ spot.zone }}</td><td>{{ spot.deaths }}</td></tr>{% endfor %}
-    </tbody></table>
-    </div>
+    {{ data_table("generated/data_table_head_blind_spots.html", "generated/data_table_row_blind_spots.html", blind_spots, tbody_id="blind-spots-body") }}
     </div>
   </details>
 </section>
@@ -865,7 +745,7 @@
   {% if positioning_hints %}
   <div class="positioning-hints" id="positioning-hints">
     {% for hint in positioning_hints %}
-    <p class="positioning-hint positioning-hint--{{ hint.tone }}">{{ hint.text }}</p>
+    {% include "generated/positioning_hint.html" %}
     {% endfor %}
   </div>
   {% else %}
@@ -1566,28 +1446,44 @@
   function renderSectionVerdicts(bundle) {
     var verdicts = bundle.section_verdicts || {};
     document.querySelectorAll('[data-section-verdict]').forEach(function (node) {
-      var sectionId = node.getAttribute('data-section-verdict');
-      var verdict = verdicts[sectionId];
-      if (!verdict || (!verdict.name && !verdict.text)) {
+      var verdict = verdicts[node.getAttribute('data-section-verdict')];
+      if (!verdict || !verdict.text) {
         node.hidden = true;
-        node.className = 'score-card-row';
+        node.className = 'section-pulse';
         node.innerHTML = '';
         return;
       }
+      var tone = verdict.tone || 'solid';
+      var scoreHtml = '';
+      var barHtml = '';
+      if (verdict.score != null) {
+        scoreHtml = '<span class="section-pulse-score">' + escapeHtml(String(verdict.score)) + '</span>';
+        barHtml = '<div class="section-pulse-bar" aria-hidden="true"><i style="width:' +
+          Number(verdict.score) + '%"></i></div>';
+      }
+      var hintText = verdict.hint || verdict.value || '';
+      var hintHtml = hintText
+        ? '<p class="section-pulse-hint">' + escapeHtml(hintText) + '</p>'
+        : '';
+      var fix = '';
+      if (verdict.fix && verdict.fix.title) {
+        var href = '#' + (verdict.fix.anchor || 'coaching');
+        fix = '<a class="section-pulse-fix" href="' + href + '">' +
+          '<span class="section-pulse-fix-kicker">Try this</span>' +
+          '<span class="section-pulse-fix-title">' + escapeHtml(verdict.fix.title) + '</span></a>';
+      }
       node.hidden = false;
-      node.className = 'score-card-row' + (verdict.fix && verdict.fix.title ? ' score-card-row--with-fix' : '');
-      node.innerHTML = renderScoreCard({
-        name: verdict.name || '',
-        score: verdict.score,
-        verdict: verdict.label || 'Solid',
-        tone: verdict.tone || 'solid',
-        value: verdict.hint || verdict.value || verdict.text || '',
-        hint: verdict.hint || ''
-      }) + (verdict.fix && verdict.fix.title
-        ? '<a class="score-card-fix" href="#' + (verdict.fix.anchor || 'coaching') + '">' +
-            '<span class="score-card-fix-kicker">Try this</span>' +
-            '<span class="score-card-fix-title">' + escapeHtml(verdict.fix.title) + '</span></a>'
-        : '');
+      node.className = 'section-pulse section-pulse--' + tone;
+      node.innerHTML =
+        '<div class="section-pulse-callout">' +
+          '<span class="section-pulse-label">' + escapeHtml(verdict.label || 'Score') + '</span>' +
+          '<div class="section-pulse-head">' +
+            '<strong class="section-pulse-title">' + escapeHtml(verdict.text) + '</strong>' +
+            scoreHtml +
+          '</div>' +
+          barHtml +
+          hintHtml +
+        '</div>' + fix;
     });
   }
 

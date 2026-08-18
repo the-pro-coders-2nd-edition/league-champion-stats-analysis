@@ -1,0 +1,1 @@
+<tr><td>{% if row.keystone_icon %}<span class="icon-cell"><img src="{{ row.keystone_icon }}" alt="" class="game-icon game-icon--sm"><span>{{ row.keystone }}</span></span>{% else %}{{ row.keystone }}{% endif %}</td><td>{{ row.games }}</td><td>{{ '%.0f' % (row.winrate * 100) }}%</td><td>{{ row.avg_dpm }}</td><td>{{ row.avg_deaths }}</td></tr>
