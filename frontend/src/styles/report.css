@@ -332,24 +332,6 @@ h3 { font-size: 15px; margin: 24px 0 12px; color: var(--color-neutral-400); }
 .rec-evidence-key { color: var(--color-neutral-600); }
 .rec-evidence-value { color: var(--color-neutral-400); font-variant-numeric: tabular-nums; }
 .peer-highlight-list { margin-top: 8px; padding-left: 18px; color: var(--color-neutral-400); }
-.peer-dossier {
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  padding: 16px 18px 18px;
-  box-shadow: var(--shadow-md);
-}
-.peer-stage { margin-bottom: 14px; }
-.peer-stage-inner {
-  display: grid;
-  grid-template-columns: minmax(160px, 240px) minmax(0, 1fr);
-  gap: 16px;
-  align-items: stretch;
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--color-divider);
-  background: var(--color-surface-2);
-}
 .peer-stage-rank { min-width: 0; }
 .peer-rank-value {
   display: flex; align-items: center; gap: 8px;
@@ -384,7 +366,6 @@ h3 { font-size: 15px; margin: 24px 0 12px; color: var(--color-neutral-400); }
 .peer-pending .sub { margin: 0; }
 .peer-pending .sub.is-failed { color: var(--tone-bad-fg); }
 @media (max-width: 860px) {
-  .peer-stage-inner,
   .peer-drivers { grid-template-columns: 1fr; }
   .peer-driver {
     grid-template-columns: 1fr auto;
@@ -805,38 +786,6 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
   .report-tab { font-size: 12px; padding: 8px; }
 }
 
-.form-dossier {
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  padding: 16px 18px 18px;
-  box-shadow: var(--shadow-md);
-}
-.form-dossier--improving {
-  background:
-    var(--color-surface);
-  border-color: var(--color-divider);
-}
-.form-dossier--declining {
-  background:
-    var(--color-surface);
-  border-color: var(--color-divider);
-}
-.form-dossier--stable {
-  background:
-    var(--color-surface);
-}
-.form-stage { margin-bottom: 14px; }
-.form-stage-inner {
-  display: grid;
-  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
-  gap: 16px;
-  align-items: stretch;
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--color-divider);
-  background: var(--color-surface-2);
-}
 .form-stage-score { text-align: center; }
 .form-score-value {
   font-size: 48px; font-weight: 800; color: var(--color-accent);
@@ -924,7 +873,6 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 
 .form-empty { padding: 24px; color: var(--color-neutral-400); background: var(--color-surface-2); border-radius: 12px; border: 1px dashed var(--color-divider); }
 @media (max-width: 860px) {
-  .form-stage-inner,
   .form-movers { grid-template-columns: 1fr; }
   .form-mover {
     grid-template-columns: 1fr auto;
@@ -1039,87 +987,15 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .game-review-signal--bad { color: var(--tone-bad-fg); }
 .game-review-signal--none { color: var(--color-neutral-400); }
 
-.game-review-detail {
-  min-width: 0;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  padding: 16px 18px 18px;
-  box-shadow: var(--shadow-md);
-}
-.game-review-detail--win {
-  background:
-    var(--color-surface);
-  border-color: var(--color-divider);
-}
-.game-review-detail--loss {
-  background:
-    var(--color-surface);
-  border-color: var(--color-divider);
-}
-
-.game-review-stage { margin-bottom: 14px; }
-.game-review-stage-inner {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  grid-template-areas:
-    "result matchup score"
-    "result kda score"
-    "meta meta meta"
-    "loadout loadout loadout";
-  gap: 6px 16px;
-  align-items: center;
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--color-divider);
-  background: var(--color-surface-2);
-}
 .game-review-result {
   font-weight: 700; text-align: center; border-radius: 8px; padding: 4px 0;
 }
-.game-review-result--stage {
-  grid-area: result;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  padding: 10px 6px;
-  font-size: 12px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
 .game-review-result--win { color: var(--tone-good-fg); background: rgba(63, 182, 139, 0.12); }
 .game-review-result--loss { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.12); }
-.game-review-stage-matchup {
-  grid-area: matchup;
-  display: flex; align-items: center; gap: 12px;
-}
+/* Still global: `.game-review-stage-matchup` and its children now live in GameSummaryHeader.svelte,
+   but the icon markup inside arrives through a slot, so this descendant rule can't move into the
+   component's scoped <style> — it targets an element the component doesn't own. */
 .game-review-stage-matchup .game-icon { width: 40px; height: 40px; border-radius: 10px; }
-.game-review-matchup-vs { font-size: 12px; font-weight: 700; color: var(--color-neutral-400); text-transform: uppercase; }
-.game-review-stage-kda {
-  grid-area: kda;
-  font-size: 18px; font-weight: 700; letter-spacing: -.02em;
-}
-.game-review-stage-score {
-  grid-area: score;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
-}
-.game-review-stage-score-value {
-  font-size: 40px; font-weight: 800; line-height: 1; color: var(--color-accent); letter-spacing: -.03em;
-}
-.game-review-stage-meta {
-  grid-area: meta;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--color-neutral-400);
-}
-.game-review-stage-meta-text { color: var(--color-neutral-400); }
-.game-review-stage-loadout {
-  grid-area: loadout;
-  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
-  padding-top: 4px; border-top: 1px solid var(--color-divider);
-}
 .game-review-runes,
 .game-review-summoners {
   display: inline-flex;
@@ -1746,17 +1622,6 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
   .game-review-row {
     min-width: 200px; flex: 0 0 auto;
   }
-  .game-review-stage-inner {
-    grid-template-columns: auto 1fr;
-    grid-template-areas:
-      "result matchup"
-      "result kda"
-      "score score"
-      "meta meta"
-      "loadout loadout";
-  }
-  .game-review-stage-score { align-items: flex-start; flex-direction: row; gap: 10px; }
-  .game-review-stage-score-value { font-size: 32px; }
   .gr-score-list { grid-template-columns: 1fr; }
   .key-moment-layout { grid-template-columns: 1fr; }
   .game-review-stat-row {

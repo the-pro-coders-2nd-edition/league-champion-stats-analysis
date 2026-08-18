@@ -3,6 +3,8 @@
   import SectionHeader from '../components/SectionHeader.svelte';
   import SkillGrid from '../components/SkillGrid.svelte';
   import TabBar from '../components/TabBar.svelte';
+  import Panel from '../components/Panel.svelte';
+  import GameSummaryHeader from '../components/GameSummaryHeader.svelte';
   import GameReviewKeyMoments from './GameReviewKeyMoments.svelte';
   import { escapeHtml, soloIconCellHtml } from '../lib/html.js';
   import { formatGameTime, pct } from '../lib/format.js';
@@ -613,37 +615,27 @@
           </div>
         </aside>
         {#if selectedGame}
-          <div class="game-review-detail" id="game-review-detail" class:game-review-detail--win={selectedGame.result === 'win'} class:game-review-detail--loss={selectedGame.result !== 'win'}>
-            <div class="game-review-stage" id="game-review-matchup">
-              <div class="game-review-stage-inner">
-                <span class="game-review-result game-review-result--stage {selectedGame.result === 'win' ? 'game-review-result--win' : 'game-review-result--loss'}">
-                  {selectedGame.result === 'win' ? 'Victory' : 'Defeat'}
-                </span>
-                <div class="game-review-stage-matchup">
-                  {@html iconCellHtml(selectedGame.champion || 'You', selectedGame.champion_icon)}
-                  <span class="game-review-matchup-vs">vs</span>
-                  {@html iconCellHtml(selectedGame.opponent || 'Opponent', selectedGame.opponent_icon)}
-                </div>
-                <div class="game-review-stage-kda">{selectedGame.kda}</div>
-                <div class="game-review-stage-score">
-                  <span class="game-review-stage-score-value">{score.overall || 0}</span>
-                  {@html chipHtml(score.tier || '—', 'stable')}
-                </div>
-                <div class="game-review-stage-meta">
-                  {#if archetypeChip}<span class="game-review-stage-meta-chip">{@html archetypeChip}</span>{/if}
-                  <span class="game-review-stage-meta-text">{metaBits.join(' · ')}</span>
-                </div>
-                {#if hasLoadoutTeaser}
-                  <div class="game-review-stage-loadout">
-                    {@html renderGameReviewRunesHtml(build)}
-                    {#if (build.summoners || []).length}
-                      <span class="game-review-rune-sep" aria-hidden="true">·</span>
-                      {@html renderGameReviewSummonersHtml(build)}
-                    {/if}
-                  </div>
+          <Panel id="game-review-detail">
+            <GameSummaryHeader
+              result={selectedGame.result === 'win' ? 'win' : 'loss'}
+              kda={selectedGame.kda}
+              score={score.overall || 0}
+              metaText={metaBits.join(' · ')}
+              hasMetaChip={!!archetypeChip}
+              hasLoadout={hasLoadoutTeaser}
+            >
+              <svelte:fragment slot="champion">{@html iconCellHtml(selectedGame.champion || 'You', selectedGame.champion_icon)}</svelte:fragment>
+              <svelte:fragment slot="opponent">{@html iconCellHtml(selectedGame.opponent || 'Opponent', selectedGame.opponent_icon)}</svelte:fragment>
+              <svelte:fragment slot="score-chip">{@html chipHtml(score.tier || '—', 'stable')}</svelte:fragment>
+              <svelte:fragment slot="meta-chip">{@html archetypeChip}</svelte:fragment>
+              <svelte:fragment slot="loadout">
+                {@html renderGameReviewRunesHtml(build)}
+                {#if (build.summoners || []).length}
+                  <span class="game-review-rune-sep" aria-hidden="true">·</span>
+                  {@html renderGameReviewSummonersHtml(build)}
                 {/if}
-              </div>
-            </div>
+              </svelte:fragment>
+            </GameSummaryHeader>
 
             <div class="game-review-verdict" id="game-review-verdict">
               {#if !keep.length && !fixItems.length}
@@ -761,7 +753,7 @@
                 <div class="card card--full"><div class="label">Skill progression</div><div class="value"><SkillGrid build={build} /></div></div>
               </div>
             </div>
-          </div>
+          </Panel>
         {/if}
       </div>
     </div>

@@ -1,5 +1,6 @@
 <script>
   import SectionHeader from '../components/SectionHeader.svelte';
+  import Panel from '../components/Panel.svelte';
   import PeerRankValue from '../components/PeerRankValue.svelte';
   import PeerBalanceChip from '../components/PeerBalanceChip.svelte';
   import UiChipBadge from '../components/UiChipBadge.svelte';
@@ -21,9 +22,6 @@
   $: peerRows = data.peer_rows || [];
   $: peerAbove = peerRows.filter((row) => row.verdict === 'above');
   $: peerBelow = peerRows.filter((row) => row.verdict === 'below');
-  $: peerLean = peerAbove.length > peerBelow.length
-    ? 'above'
-    : (peerBelow.length > peerAbove.length ? 'below' : 'even');
 
   $: peerTableRows = peerRows.map((row) => ({
     label: row.label,
@@ -43,28 +41,26 @@
   <SectionHeader id="rank-peers" title="Rank peer comparison" icon="bar-chart-2">
     <svelte:fragment slot="lead">Your averages vs {data.build_label} at <strong>{peerComparison.rank_label}</strong> · {peerComparison.peer_games} peer games ({peerComparison.peer_players} players, {peerComparison.confidence} confidence)</svelte:fragment>
   </SectionHeader>
-  <div class="peer-dossier peer-dossier--{peerLean}" id="peer-dossier">
-    <div class="peer-stage" id="peer-stage">
-      <div class="peer-stage-inner">
-        <div class="peer-stage-rank">
-          <div class="label">Rank peers</div>
-          <div class="peer-rank-value" id="peer-rank-value">
-            <PeerRankValue icon={data.peer_rank_icon || ''} label={peerComparison.rank_label} />
-          </div>
-        </div>
-        <div class="peer-stage-meta">
-          <div class="peer-balance" id="peer-balance">
-            <PeerBalanceChip modifier="above" countId="peer-above-count" count={peerAbove.length} label="above" />
-            <PeerBalanceChip modifier="below" countId="peer-below-count" count={peerBelow.length} label="below" />
-          </div>
-          <div class="peer-meta-chips" id="peer-meta-chips">
-            <UiChipBadge tone="meta" label={`${peerComparison.peer_games} peer games`} />
-            <UiChipBadge tone="meta" label={`${peerComparison.peer_players} players`} />
-            <UiChipBadge tone="confidence" label={`${peerComparison.confidence} confidence`} />
-          </div>
+  <Panel id="peer-dossier">
+    <svelte:fragment slot="stage">
+      <div class="peer-stage-rank">
+        <div class="label">Rank peers</div>
+        <div class="peer-rank-value" id="peer-rank-value">
+          <PeerRankValue icon={data.peer_rank_icon || ''} label={peerComparison.rank_label} />
         </div>
       </div>
-    </div>
+      <div class="peer-stage-meta">
+        <div class="peer-balance" id="peer-balance">
+          <PeerBalanceChip modifier="above" countId="peer-above-count" count={peerAbove.length} label="above" />
+          <PeerBalanceChip modifier="below" countId="peer-below-count" count={peerBelow.length} label="below" />
+        </div>
+        <div class="peer-meta-chips" id="peer-meta-chips">
+          <UiChipBadge tone="meta" label={`${peerComparison.peer_games} peer games`} />
+          <UiChipBadge tone="meta" label={`${peerComparison.peer_players} players`} />
+          <UiChipBadge tone="confidence" label={`${peerComparison.confidence} confidence`} />
+        </div>
+      </div>
+    </svelte:fragment>
     <div class="peer-drivers" id="peer-drivers">
       <div class="peer-driver-section">
         <h4 class="peer-feed-title">Above peers</h4>
@@ -95,33 +91,33 @@
       <summary>All metrics</summary>
       <MetricDeltaTable rows={peerTableRows} valueHeader="You" baselineHeader={peerBaselineHeader} />
     </details>
-  </div>
+  </Panel>
 </section>
 {:else if pending}
 <section id="rank-peers" class="report-section report-section--performance" data-peer-pending="1">
   <SectionHeader id="rank-peers" title="Rank peer comparison" icon="bar-chart-2" />
-  <div class="peer-dossier peer-dossier--pending">
+  <Panel>
     <div class="peer-pending" role="status" aria-live="polite">
       <p class="sub" id="rank-peers-pending">{pendingMessage}</p>
     </div>
-  </div>
+  </Panel>
 </section>
 {:else if peerFailed}
 <section id="rank-peers" class="report-section report-section--performance" data-peer-failed="1">
   <SectionHeader id="rank-peers" title="Rank peer comparison" icon="bar-chart-2" />
-  <div class="peer-dossier peer-dossier--pending">
+  <Panel>
     <div class="peer-pending" role="status">
       <p class="sub is-failed" id="rank-peers-pending">Peer comparison could not be completed for this report.</p>
     </div>
-  </div>
+  </Panel>
 </section>
 {:else if peerUnavailable}
 <section id="rank-peers" class="report-section report-section--performance" data-peer-unavailable="1">
   <SectionHeader id="rank-peers" title="Rank peer comparison" icon="bar-chart-2" />
-  <div class="peer-dossier peer-dossier--pending">
+  <Panel>
     <div class="peer-pending" role="status">
       <p class="sub" id="rank-peers-pending">Rank peer comparison is not available for this build (rank or baseline data could not be resolved).</p>
     </div>
-  </div>
+  </Panel>
 </section>
 {/if}
