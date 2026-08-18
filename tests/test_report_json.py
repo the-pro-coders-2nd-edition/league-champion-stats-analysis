@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from league_stats.core.models import PeerComparisonResult
 from league_stats.presentation.report_json import context_to_json
 
 
@@ -61,3 +62,24 @@ def test_context_to_json_output_is_actually_json_dumpable() -> None:
     result = context_to_json(context)
 
     json.dumps(result)  # must not raise
+
+
+def test_context_to_json_converts_pydantic_models_to_dicts() -> None:
+    peer_comparison = PeerComparisonResult(
+        rank_label="Gold II",
+        tier="GOLD",
+        source="solo queue",
+        peer_games=100,
+        peer_players=5,
+    )
+    context = {"peer_comparison": peer_comparison}
+
+    result = context_to_json(context)
+
+    assert "peer_comparison" in result
+    assert isinstance(result["peer_comparison"], dict)
+    assert result["peer_comparison"]["rank_label"] == "Gold II"
+    assert result["peer_comparison"]["tier"] == "GOLD"
+    assert result["peer_comparison"]["source"] == "solo queue"
+    # Verify it's JSON-dumpable
+    json.dumps(result)
