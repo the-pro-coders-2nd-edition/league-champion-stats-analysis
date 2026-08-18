@@ -15,6 +15,7 @@
   data-queue={dataAttr === 'data-queue' ? value : null}
   data-window={dataAttr === 'data-window' ? value : null}
   disabled={disabled}
+  on:click
 >{label}</button>
 
 <style>
