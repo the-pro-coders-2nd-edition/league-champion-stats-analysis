@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -145,22 +146,20 @@ def test_discover_reports_lists_all_builds(tmp_path: Path) -> None:
     assert all("reports/" in report["href"] for report in reports)
 
 
-def test_improvement_score_renders_a_resolved_tone_colour(tmp_path: Path) -> None:
-    """score_color must reach the template, not render as an empty style."""
+def test_improvement_score_has_a_resolved_tone_colour(tmp_path: Path) -> None:
+    """score_color/score_verdict_label must reach report.json, never be empty."""
     ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75)
     records = _make_records()
     peer = _peer(records)
 
-    report = run_analysis(
+    report_path = run_analysis(
         _config(tmp_path, champion="Viktor", role="MIDDLE"),
         records,
         peer_comparison=peer,
         ranked=ranked,
     )
-    html = report.read_text(encoding="utf-8")
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
 
-    assert 'style="color: "' not in html
-    assert 'id="score-value"' in html
-    for marker in ('id="score-value"', 'id="score-verdict-label"'):
-        tag = html[html.index(marker) : html.index(">", html.index(marker))]
-        assert "var(--" in tag, f"{marker} has no resolved colour: {tag}"
+    assert payload["score_color"]
+    assert "var(--" in payload["score_color"]
+    assert payload["score_verdict_label"] in {"Strength", "Solid", "Focus"}
