@@ -3,9 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Svelte component library compiled into the Jinja templates used to render League Champion Analysis reports.",
+  "description": "Svelte SPA for League Champion Analysis reports.",
   "scripts": {
-    "generate": "node scripts/generate.js",
     "dev": "vite",
     "build": "vite build"
   },

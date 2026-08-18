@@ -1,8 +1,8 @@
-"""FastAPI application: pages, JSON API, static report serving.
+"""FastAPI application: SPA hosting, JSON API, static report serving.
 
 Generated reports remain plain files under ``output/`` (served at ``/out``);
-the app adds a landing/search page, a player status page, the job API and
-the Gemini chat proxy on top.
+the Svelte SPA (built to ``spa_dist/``) is served at ``/`` and talks to the
+job API and the Gemini chat proxy defined here.
 """
 
 from __future__ import annotations
@@ -14,9 +14,8 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from league_stats.core.champions import (
@@ -27,10 +26,8 @@ from league_stats.core.champions import (
     players_group_slug,
 )
 from league_stats.core.config import (
-    DEFAULT_TEMPLATE_DIR,
     VALID_PLATFORMS,
     VALID_REGIONS,
-    AppConfig,
     PlayerIdentity,
     WebConfig,
     load_config,
@@ -48,13 +45,10 @@ from league_stats.pipeline.orchestrator import (
 from league_stats.pipeline.services import Services
 from league_stats.presentation.brand_assets import (
     APP_TITLE,
-    FAVICON_FILENAME,
-    LOGO_FILENAME,
     ensure_brand_assets,
     refresh_saved_report_branding,
 )
 from league_stats.presentation.report import discover_player_builds, is_group_player_label
-from league_stats.presentation.report_static import ensure_report_static_assets
 from league_stats.utils import setup_logging
 from league_stats.web.chat import ChatError, gemini_reply, load_report_summary, validate_history
 from league_stats.web.jobs import (
@@ -67,25 +61,9 @@ from league_stats.web.jobs import (
 )
 from league_stats.web.worker import AnalysisWorker
 
-TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
-
-# Platform choices offered in the search form (label, value).
-REGION_CHOICES: tuple[tuple[str, str], ...] = (
-    ("EUW", "euw1"),
-    ("EUNE", "eun1"),
-    ("NA", "na1"),
-    ("KR", "kr"),
-    ("BR", "br1"),
-    ("LAN", "la1"),
-    ("LAS", "la2"),
-    ("OCE", "oc1"),
-    ("TR", "tr1"),
-    ("RU", "ru"),
-    ("JP", "jp1"),
-)
+SPA_DIST_DIR = Path(__file__).resolve().parent / "spa_dist"
 
 # Minimum ranked games a champion+lane needs before a report is generated.
-DEFAULT_MIN_GAMES: int = AppConfig.model_fields["min_games"].default
 MIN_GAMES_CHOICES: tuple[int, ...] = (5, 10, 15, 20, 25, 30, 50)
 
 MAX_GROUP_PLAYERS = 8
@@ -498,16 +476,6 @@ def _profile_icon_hrefs(
     return hrefs
 
 
-def _brand_page_context(output_dir: Path) -> dict[str, Any]:
-    """Shared template fields for logo, favicon, and app title."""
-    ensure_brand_assets(output_dir)
-    return {
-        "app_title": APP_TITLE,
-        "logo_href": _web_asset_href(output_dir, "assets", "brand", LOGO_FILENAME),
-        "favicon_href": _web_asset_href(output_dir, "assets", "brand", FAVICON_FILENAME),
-    }
-
-
 def _player_builds(output_dir: Path, slug: str) -> list[dict[str, Any]]:
     """On-disk builds for one player, with web hrefs and icon URLs."""
     builds = discover_player_builds(output_dir / "reports" / slug)
@@ -680,11 +648,7 @@ def create_app(
     config.output_dir.mkdir(parents=True, exist_ok=True)
     config.reports_dir.mkdir(parents=True, exist_ok=True)
     ensure_brand_assets(config.output_dir)
-    # Refresh every saved report's CSS so skipped builds don't keep stale
-    # button styles after a template deploy / local edit.
-    ensure_report_static_assets(config.output_dir, DEFAULT_TEMPLATE_DIR, sync_existing=True)
     refresh_saved_report_branding(config.output_dir)
-    brand = _brand_page_context(config.output_dir)
 
     store = JobStore(config.app_db_path)
     worker = AnalysisWorker(store, config)
@@ -700,7 +664,6 @@ def create_app(
         store.close()
 
     app = FastAPI(title=APP_TITLE, lifespan=lifespan)
-    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     app.state.job_store = store
     app.state.web_config = config
 
@@ -716,46 +679,6 @@ def create_app(
     app.mount("/out", StaticFiles(directory=str(config.output_dir), html=True), name="out")
 
     # ------------------------------------------------------------------ pages
-
-    @app.get("/", response_class=HTMLResponse)
-    def landing(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(
-            request,
-            "landing.html",
-            {
-                **brand,
-                "groups": _report_groups(config.reports_dir, store),
-                "region_choices": REGION_CHOICES,
-                "min_games_choices": MIN_GAMES_CHOICES,
-                "default_min_games": DEFAULT_MIN_GAMES,
-            },
-        )
-
-    @app.get("/players/{slug}", response_class=HTMLResponse)
-    def player_page(request: Request, slug: str) -> HTMLResponse:
-        player = store.get_player(slug)
-        builds = _player_builds(config.output_dir, slug)
-        if player is None and not builds:
-            raise HTTPException(status_code=404, detail="Unknown player")
-        meta_builds = discover_player_builds(config.reports_dir / slug)
-        tracked = _resolve_tracked_players(
-            slug,
-            store_players=(player.get("players") if player else None),
-            meta=meta_builds[0] if meta_builds else None,
-        )
-        label = _player_label_from_tracked(tracked, slug)
-        if not tracked and builds:
-            label = str(builds[0].get("player") or slug)
-        return templates.TemplateResponse(
-            request,
-            "player.html",
-            {
-                **brand,
-                "slug": slug,
-                "player_label": label,
-                "players": _shaped_players(config.output_dir, tracked),
-            },
-        )
 
     # -------------------------------------------------------------------- API
 
@@ -1180,5 +1103,21 @@ def create_app(
         if not path.is_file():
             raise HTTPException(status_code=404, detail="riot.txt missing")
         return PlainTextResponse(path.read_text(encoding="utf-8").strip() + "\n")
+
+    # --------------------------------------------------------------- SPA host
+    # Registered last: every /api and /out route above wins on an exact match,
+    # everything else falls through to the SPA shell so svelte-spa-router's
+    # client-side routes survive a hard refresh.
+    if (SPA_DIST_DIR / "assets").is_dir():
+        app.mount(
+            "/assets", StaticFiles(directory=str(SPA_DIST_DIR / "assets")), name="spa-assets"
+        )
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_spa(full_path: str) -> FileResponse:
+        index_path = SPA_DIST_DIR / "index.html"
+        if not index_path.is_file():
+            raise HTTPException(status_code=404, detail="SPA build not found")
+        return FileResponse(index_path)
 
     return app
