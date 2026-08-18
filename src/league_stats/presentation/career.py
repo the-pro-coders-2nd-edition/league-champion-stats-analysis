@@ -199,8 +199,8 @@ def build_career_view(snapshot: CareerSnapshot, *, window: int = WINDOW) -> dict
             "title": f"{retired} complete",
             "body": (
                 "All three goals held across a full 20-game window. This block "
-                f"retires, {next_name} moves left and becomes live, and a new third "
-                "block is generated from your numbers as they stand now."
+                f"retires, {next_name} moves left and becomes live, and a new "
+                "queued block is generated from your numbers as they stand now."
             ),
         }
 

@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from league_stats.analysis.career.engine import CareerSnapshot, advance_career
+from league_stats.analysis.career.models import BLOCK_SLOTS
 from league_stats.analysis.career.tracks import TrackContext
 from league_stats.infra.career_store import CareerStore, build_key
 from league_stats.presentation.career import (
@@ -100,17 +101,18 @@ def test_empty_view_is_not_shared_state() -> None:
     assert empty_career_view()["blocks"] == []
 
 
-def test_view_has_one_live_block_and_two_locked(view: dict) -> None:
+def test_view_has_one_live_block_and_the_rest_locked(view: dict) -> None:
     assert view["has_career"] is True
-    assert [block["is_active"] for block in view["blocks"]] == [True, False, False]
+    assert len(view["blocks"]) == BLOCK_SLOTS
+    assert [block["is_active"] for block in view["blocks"]] == [True] + [False] * (BLOCK_SLOTS - 1)
     assert view["blocks"][0]["opacity"] == "1"
     assert view["blocks"][1]["opacity"] == "0.6"
     assert view["blocks"][0]["position"] == "Block 1"
-    assert view["blocks"][2]["position"] == "Block 3"
+    assert view["blocks"][-1]["position"] == f"Block {BLOCK_SLOTS}"
 
 
 def test_live_block_carries_nodes_and_locked_blocks_carry_steps(view: dict) -> None:
-    live, second, _ = view["blocks"]
+    live, second = view["blocks"][0], view["blocks"][1]
     assert len(live["goals"]) == 3
     assert live["steps"] == []
     assert second["goals"] == []
@@ -127,7 +129,6 @@ def test_live_block_state_label_and_tone(view: dict) -> None:
 
 def test_locked_blocks_explain_their_unlock(view: dict) -> None:
     assert view["blocks"][1]["unlock"] == "Opens when Laning income is complete."
-    assert view["blocks"][2]["unlock"] == "Opens when Death discipline is complete."
     assert view["blocks"][1]["state_label"] == "Locked"
 
 

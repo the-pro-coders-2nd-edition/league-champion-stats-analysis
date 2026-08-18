@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from league_stats.analysis.career.models import BLOCK_SLOTS
 from league_stats.analysis.peer import build_comparisons
 from league_stats.core.models import MatchRecord, PeerComparisonResult, RankedEntry
 from league_stats.pipeline.orchestrator import run_analysis
@@ -84,7 +85,7 @@ def test_career_is_the_second_tab_and_panel(tmp_path: Path) -> None:
 def test_report_renders_the_career_rules_and_legend(tmp_path: Path) -> None:
     html = _render(tmp_path)
     assert "Career mode" in html
-    assert "Three blocks of three goals; only the left block is live." in html
+    assert "Two blocks of three goals; only the left block is live." in html
     assert "The five states a goal can be in" in html
     for state in ("Locked", "In progress", "At risk", "Cleared", "Revoked"):
         assert f'career-legend-name--{state.lower().replace(" ", "-")}' in html
@@ -104,6 +105,14 @@ def test_report_renders_locked_blocks_as_steps(tmp_path: Path) -> None:
     html = _render(tmp_path)
     assert "career-step-text" in html
     assert " is complete." in html
+
+
+def test_report_renders_exactly_the_configured_block_count(tmp_path: Path) -> None:
+    import re
+
+    html = _render(tmp_path)
+    panel = html[html.index('id="category-career"') : html.index('id="category-performance"')]
+    assert len(re.findall(r'class="career-block"', panel)) == BLOCK_SLOTS
 
 
 def test_summary_tab_shows_the_live_block_widget(tmp_path: Path) -> None:

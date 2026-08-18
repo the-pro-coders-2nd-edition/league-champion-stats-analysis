@@ -4,7 +4,7 @@ Two separate questions, deliberately not conflated:
 
 * ``build_rungs`` -- *can* this track produce three strictly-increasing rungs
   from the player's own numbers? Almost always yes, so the ladder can always
-  show three blocks. Peer-driven tracks step toward peer p75 when peer
+  fill every block. Peer-driven tracks step toward peer p75 when peer
   percentiles exist and toward the player's own p75 otherwise ("do what your
   good games already do, every game").
 * ``is_significant`` -- *should* this track go first? This is the coach's own

@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from league_stats.analysis.career.engine import advance_career
+from league_stats.analysis.career.models import BLOCK_SLOTS
 from league_stats.analysis.career.tracks import TrackContext
 from league_stats.infra.career_store import CareerStore, build_key
 
@@ -65,27 +66,25 @@ def store(tmp_path: Path):
         yield handle
 
 
-def test_first_run_seeds_three_blocks_weakest_first(store: CareerStore) -> None:
+def test_first_run_seeds_a_full_ladder_weakest_first(store: CareerStore) -> None:
     snapshot = advance_career(store, KEY, _ctx(_matches()), WEAK_LANING)
 
-    assert [block.slot for block in snapshot.blocks] == [0, 1, 2]
+    assert len(snapshot.blocks) == BLOCK_SLOTS
+    assert [block.slot for block in snapshot.blocks] == list(range(BLOCK_SLOTS))
     assert [block.track_key for block in snapshot.blocks] == [
         "laning_income",
         "death_discipline",
-        "economy_discipline",
     ]
-    assert len(snapshot.blocks) == 3
     assert snapshot.pending_congrats == ""
 
 
 def test_only_the_live_block_is_measured(store: CareerStore) -> None:
     snapshot = advance_career(store, KEY, _ctx(_matches()), WEAK_LANING)
 
-    live, second, third = snapshot.blocks
+    live, queued = snapshot.blocks
     assert live.display_states[0] == "In progress"
-    assert second.display_states == ["Locked"] * 3
-    assert third.display_states == ["Locked"] * 3
-    assert second.hits == [0, 0, 0]
+    assert queued.display_states == ["Locked"] * 3
+    assert queued.hits == [0, 0, 0]
 
 
 def test_later_goals_stay_locked_until_the_first_one_clears(store: CareerStore) -> None:
@@ -103,12 +102,10 @@ def test_clearing_the_live_block_retires_shifts_and_regenerates(store: CareerSto
     snapshot = advance_career(store, KEY, cleared_ctx, WEAK_LANING)
 
     assert snapshot.pending_congrats == "laning_income"
-    assert [block.track_key for block in snapshot.blocks][:2] == [
-        "death_discipline",
-        "economy_discipline",
-    ]
-    assert len(snapshot.blocks) == 3
-    assert snapshot.blocks[2].track_key not in {"death_discipline", "economy_discipline"}
+    assert len(snapshot.blocks) == BLOCK_SLOTS
+    # The queued block shifted left and became live; a fresh one filled its place.
+    assert snapshot.blocks[0].track_key == "death_discipline"
+    assert snapshot.blocks[1].track_key not in {"laning_income", "death_discipline"}
     assert store.used_track_keys(KEY) == {"laning_income"}
 
 
@@ -167,14 +164,14 @@ def _healthy_ctx() -> TrackContext:
     )
 
 
-def test_a_healthy_player_still_gets_three_blocks(store: CareerStore) -> None:
+def test_a_healthy_player_still_gets_a_full_ladder(store: CareerStore) -> None:
     snapshot = advance_career(store, KEY, _healthy_ctx(), WEAK_LANING)
 
-    assert len(snapshot.blocks) == 3
-    assert [block.slot for block in snapshot.blocks] == [0, 1, 2]
+    assert len(snapshot.blocks) == BLOCK_SLOTS
+    assert [block.slot for block in snapshot.blocks] == list(range(BLOCK_SLOTS))
 
 
-def test_three_blocks_without_any_peer_percentiles(store: CareerStore) -> None:
+def test_a_full_ladder_without_any_peer_percentiles(store: CareerStore) -> None:
     ctx = TrackContext(
         matches_df=_healthy_ctx().matches_df,
         objectives_df=_healthy_ctx().objectives_df,
@@ -183,7 +180,7 @@ def test_three_blocks_without_any_peer_percentiles(store: CareerStore) -> None:
     )
     snapshot = advance_career(store, KEY, ctx, WEAK_LANING)
 
-    assert len(snapshot.blocks) == 3
+    assert len(snapshot.blocks) == BLOCK_SLOTS
 
 
 def test_significant_tracks_are_handed_out_first(store: CareerStore) -> None:

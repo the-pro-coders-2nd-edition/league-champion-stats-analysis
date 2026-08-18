@@ -21,7 +21,7 @@ CLEAR_BAR: Final[int] = 15
 SETUP_CLEAR_BAR: Final[int] = 12
 HOLD_RATIO: Final[float] = 0.75
 GOALS_PER_BLOCK: Final[int] = 3
-BLOCK_SLOTS: Final[int] = 3
+BLOCK_SLOTS: Final[int] = 2
 
 # A goal counts toward its block while it is Cleared or drifting but still above
 # the hold bar; anything else stops the block and locks the goals after it.
