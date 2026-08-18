@@ -1,4 +1,5 @@
 <script>
+  import { tick } from 'svelte';
   import Pill from '../components/Pill.svelte';
   import TabBar from '../components/TabBar.svelte';
   import GameReviewKeyMoments from './GameReviewKeyMoments.svelte';
@@ -601,7 +602,7 @@
   $: if (!csStats && timelineMetric === 'cs') timelineMetric = 'gold';
   $: timelineTraces = selectedGame ? buildGameReviewTimelineTraces(selectedGame, timelineMode, timelineMetric) : [];
   $: hasTimeline = !!(selectedGame?.timeline || []).length;
-  $: if (chartEl && selectedGame && hasTimeline && timelineTraces) paintTimeline();
+  $: if (chartEl && selectedGame && hasTimeline && timelineTraces) tick().then(paintTimeline);
 
   $: gameReviewTabs = [
     { value: 'overview', label: 'Overview', active: activeTab === 'overview' },
