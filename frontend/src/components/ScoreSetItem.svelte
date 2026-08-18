@@ -2,10 +2,6 @@
   export let name: string;
   export let scoreLabel: string;
   export let scoreValue: number;
-  // Resolved CSS color/gradient values, not a tone name -- the flat/good/warn/bad
-  // branch (scoreColor === var(--color-text) when tone is 'flat') is decided by
-  // the caller (Jinja token in manifest.json, or real JS in report.html) since
-  // this component is SSR'd once per literal-token props, not per real value.
   export let valueColor: string;
   export let fillColor: string;
   export let verdict: string;

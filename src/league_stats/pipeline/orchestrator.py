@@ -93,7 +93,6 @@ class NoEligibleBuildsError(RuntimeError):
     """Raised when no champion+lane build has enough qualifying games."""
 
 
-# Tiers with no division, ranked by league points alone (mirrors RankedEntry).
 _APEX_TIERS = frozenset({"MASTER", "GRANDMASTER", "CHALLENGER"})
 
 
@@ -543,9 +542,6 @@ def run_analysis(
             "tagline": str(player["tagline"]),
             "label": f"{player['riot_id']}#{player['tagline']}",
             "profile_icon": icon_href,
-            # Index 0 is the primary player everywhere else in this file
-            # (primary_puuid / player_contexts[0]); mirror that here for the
-            # accounts-in-this-pool table's "Main" tag.
             "is_main": index == 0,
             "region": region_display,
         }

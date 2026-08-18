@@ -33,21 +33,22 @@
 
 <style>
   .report-category-tabs {
-    display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap;
-    padding: 0 0 14px;
+    display: flex; align-items: stretch; gap: var(--space-4); flex-wrap: wrap;
+    padding: 0;
   }
   .report-tab {
-    flex: 1 1 auto; min-width: 0;
-    border: 1px solid var(--color-divider); border-bottom-width: 3px;
-    background: var(--color-surface-2); color: var(--color-neutral-400);
-    border-radius: 10px 10px 0 0; padding: 10px 16px;
-    font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
-    transition: color .15s, background .15s, border-color .15s;
+    flex: 0 0 auto;
+    background: transparent; color: var(--color-neutral-500);
+    border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+    padding: var(--space-2) var(--space-1);
+    font-family: var(--font-heading); font-size: 13px; font-weight: 700;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
   }
-  .report-tab:hover { color: var(--color-text); background: var(--color-surface); }
+  .report-tab:hover { color: var(--color-text); }
   .report-tab.is-active {
-    color: var(--color-text); background: var(--color-surface);
-    border-bottom-color: var(--color-accent);
+    color: var(--color-text);
+    border-bottom-color: var(--color-neutral-100);
   }
 
   .form-tabs, .game-review-tabs {
@@ -62,8 +63,6 @@
     border: 1px solid var(--color-divider); background: var(--color-surface-2); color: var(--color-text);
     border-radius: 999px; padding: 8px 14px; cursor: pointer; font-size: 13px; font-weight: 600;
   }
-  /* Interaction is neutral: active tabs use a neutral surface, never the
-     accent/status palette (verified against TabBar.dc.html). */
   .form-tab.is-active, .game-review-tab.is-active {
     border-color: var(--color-neutral-500); color: var(--color-neutral-100); background: var(--color-surface-2);
   }

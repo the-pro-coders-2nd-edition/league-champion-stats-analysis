@@ -203,12 +203,7 @@ _CHIP_FOCUS_SCORE = 45.0
 
 
 def _overall_score_verdict(score: float) -> tuple[str, str]:
-    """CSS color + verdict label for the top-level Improvement score.
-
-    Mirrors report-tones.js's verdict(): only strong/weak scores get a
-    status color, mid-range scores stay neutral (interaction/status color
-    is never applied indiscriminately).
-    """
+    """CSS color + verdict label for the top-level Improvement score."""
     if score >= _CHIP_STRONG_SCORE:
         return "var(--tone-good-fg)", "Strength"
     if score >= _CHIP_FOCUS_SCORE:
@@ -219,11 +214,7 @@ def _overall_score_verdict(score: float) -> tuple[str, str]:
 def _annotate_score_components(
     score_components: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Attach the Strength / Solid / Watch / Focus tone + label to each score card.
-
-    Uses the shared verdict() thresholds (tones.py / tones.js) so the Summary
-    tab's ScoreSet reads exactly like every other tone-driven surface.
-    """
+    """Attach the Strength / Solid / Watch / Focus tone + label to each score card."""
     for comp in score_components:
         raw_score = float(comp.get("score", 0.0))
         score = raw_score if math.isfinite(raw_score) else 0.0

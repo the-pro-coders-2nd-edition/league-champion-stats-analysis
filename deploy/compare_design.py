@@ -12,18 +12,6 @@ For each page, this clicks through every top-level category tab and takes a
 screenshot of each state. Output goes to /tmp/design_compare/:
     reference_<n>_<label>.png   -- the target (Aatrox Report.html)
     actual_<n>_<label>.png      -- what the app currently generates
-
-Notes on why this version differs from the first attempt:
-- full_page=True screenshots in headless Chromium mishandle
-  `position: sticky` elements (our report has a sticky left nav), producing
-  a blank/garbled capture. Fixed by using a very tall fixed viewport and a
-  plain (non-full-page) screenshot instead.
-- The reference file's tabs are plain text elements, not `role="tab"` --
-  matching by role picked up the queue/window filter buttons instead. Fixed
-  by matching on the exact known tab labels.
-- Console/page errors and failed network requests are now printed so a
-  genuinely broken page (missing CSS, JS exception) is visible instead of
-  silently producing a blank screenshot.
 """
 
 from __future__ import annotations

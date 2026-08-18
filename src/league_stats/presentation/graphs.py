@@ -37,15 +37,12 @@ from league_stats.analysis.deaths import death_heatmap_coords
 from league_stats.utils import MAP_SIZE, get_logger
 
 PLOTLY_TEMPLATE = "plotly_dark"
-# Mirrors design-tokens.css / frontend/src/tones.js — charts render as static
-# Plotly/matplotlib output, so they can't resolve a CSS var and need the literal
-# hex kept in sync by hand when the design system changes.
-ACCENT = "#41b78c"  # --color-accent / --tone-accent-line
-WIN_COLOR = "#82d2bb"  # --tone-good-fg
-LOSS_COLOR = "#e05563"  # --tone-bad-line
-TEXT_COLOR = "#e6edf0"  # --color-text
-MUTED_COLOR = "#9aa8b1"  # --color-neutral-400
-GRID_COLOR = "#3c474e"  # --color-neutral-700
+ACCENT = "#41b78c"
+WIN_COLOR = "#82d2bb"
+LOSS_COLOR = "#e05563"
+TEXT_COLOR = "#e6edf0"
+MUTED_COLOR = "#9aa8b1"
+GRID_COLOR = "#3c474e"
 FONT_FAMILY = 'Manrope, -apple-system, "Segoe UI", sans-serif'
 COLORWAY = [ACCENT, WIN_COLOR, "#7ed4c0", "#e0b155", "#b48cff", "#2a9f7a"]
 

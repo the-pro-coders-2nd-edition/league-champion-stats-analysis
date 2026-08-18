@@ -107,7 +107,16 @@
   </div>
   {% endif %}
   <div class="report-filter-bar" id="report-filter-bar">
-    <div class="filter-group" id="queue-filter-bar">
+    <div class="report-topbar-build">
+      {% if champion_icon %}
+      <img src="{{ champion_icon }}" alt="" class="report-topbar-build-icon">
+      {% endif %}
+      <span class="report-topbar-build-name">{{ champion }}</span>
+      {% if role_display %}
+      <span class="report-topbar-build-role">{{ role_display }}</span>
+      {% endif %}
+    </div>
+    <div class="filter-group filter-group--first" id="queue-filter-bar">
       <span class="game-window-label">Queue</span>
       {% for option in queue_filter_options %}
       {% if option.enabled %}
@@ -1204,6 +1213,14 @@
     compsNode.innerHTML = (bundle.score_components || []).map(renderScoreSetItem).join('');
   }
 
+  function scoreToneName(score) {
+    var s = Number(score) || 0;
+    if (s >= 70) return 'good';
+    if (s >= 45) return 'flat';
+    if (s >= 40) return 'warn';
+    return 'bad';
+  }
+
   function renderScoreSetItem(comp) {
     var tone = comp.tone || 'flat';
     var color = tone === 'flat' ? 'var(--color-text)' : 'var(--tone-' + tone + '-fg)';
@@ -1905,7 +1922,7 @@
       '<div class="gr-score-summary">' +
         '<span class="gr-score-name">' + escapeHtml(name) + '</span>' +
         '<span class="gr-score-value">' + pct + '</span>' +
-        '<div class="gr-score-bar" aria-hidden="true"><i style="width:' + pct + '%"></i></div>' +
+        '<div class="gr-score-bar" aria-hidden="true"><i style="width:' + pct + '%; background: var(--tone-' + scoreToneName(pct) + '-line)"></i></div>' +
       '</div>';
     if (!ingredients.length) {
       return '<div class="gr-score"' + titleAttr + '>' + summary + '</div>';
@@ -1921,7 +1938,7 @@
         '</div>' +
         '<div class="comp-ingredient-meta">' + escapeHtml(gameTxt) +
           ' vs your avg ' + escapeHtml(baseTxt) + '</div>' +
-        '<div class="bar bar--sm" aria-hidden="true"><i style="width:' + subPct + '%"></i></div>' +
+        '<div class="bar bar--sm" aria-hidden="true"><i style="width:' + subPct + '%; background: var(--tone-' + scoreToneName(subPct) + '-line)"></i></div>' +
         '</div>';
     }).join('');
     return '<details class="gr-score gr-score--expandable"' + titleAttr + '>' +
