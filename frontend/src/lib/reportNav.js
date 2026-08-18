@@ -28,7 +28,9 @@ export function categoryForSection(sectionId) {
   if (!sectionId) return null;
   if (SECTION_CATEGORIES[sectionId]) return SECTION_CATEGORIES[sectionId];
   if (sectionId.startsWith('coaching-tip-')) return 'summary';
-  return null;
+  // Silently returning null here is exactly how 18 inert `.section-title--*` modifier
+  // classes were produced historically — fail loudly instead of degrading quietly.
+  throw new Error(`categoryForSection: unknown section id "${sectionId}"`);
 }
 
 export function createReportNav(selectCategory) {

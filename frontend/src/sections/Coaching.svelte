@@ -1,15 +1,12 @@
 <script>
   import RecCard from '../components/RecCard.svelte';
   import RecExtendButton from '../components/RecExtendButton.svelte';
-  import Pill from '../components/Pill.svelte';
-  import { computeWindowScopeLabel } from '../lib/windowScope.js';
+  import SectionHeader from '../components/SectionHeader.svelte';
 
   export let data;
 
   let showAllPositive = false;
   let showAllNegative = false;
-
-  $: windowScopeLabel = computeWindowScopeLabel(data);
 
   $: positive = data.positive_recommendations || [];
   $: negative = data.negative_recommendations || [];
@@ -25,12 +22,12 @@
 </script>
 
 <section id="coaching" class="report-section report-section--summary">
-  <h2 class="section-title section-title--summary">
-    <iconify-icon icon="lucide:lightbulb" class="metric-icon metric-icon--win" aria-hidden="true"></iconify-icon>
-    <span>Coaching</span>
-    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
-  </h2>
-  <p class="sub sub--lead">Strengths on the left, areas to improve on the right — ranked by what matters most for your next games.</p>
+  <SectionHeader
+    id="coaching"
+    title="Coaching"
+    icon="lightbulb"
+    lead="Strengths on the left, areas to improve on the right — ranked by what matters most for your next games."
+  />
   <div class="rec-columns" id="recommendations-root">
     <div class="rec-column rec-column-positive" id="rec-positive-column">
       <h3>Keep doing</h3>

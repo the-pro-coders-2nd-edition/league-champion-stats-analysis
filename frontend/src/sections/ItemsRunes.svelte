@@ -1,11 +1,10 @@
 <script>
-  import Pill from '../components/Pill.svelte';
+  import SectionHeader from '../components/SectionHeader.svelte';
   import DataTableHead from '../components/DataTableHead.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
   import { escapeHtml, iconCellHtml, metricLabelWithIconify } from '../lib/html.js';
   import { pyFloatStr } from '../lib/format.js';
-  import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
   export let data;
 
@@ -46,15 +45,10 @@
       `<td>${pyFloatStr(row.avg_dpm)}</td><td>${pyFloatStr(row.avg_deaths)}</td>`;
   }
 
-  $: windowScopeLabel = computeWindowScopeLabel(data);
 </script>
 
 <section id="items" class="report-section report-section--champion">
-  <h2 class="section-title section-title--champion">
-    <iconify-icon icon="lucide:wand-sparkles" class="metric-icon metric-icon--gold" aria-hidden="true"></iconify-icon>
-    <span>Items</span>
-    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
-  </h2>
+  <SectionHeader id="items" title="Items" icon="wand-sparkles" />
   <div class="figure-block">
     <PlotlyFigure id="fig-item_winrate_bar" html={data.figures?.item_winrate_bar || ''} />
     <p class="figure-caption">Win rate by completed item — favor items with enough sample size and a clear WR edge.</p>
@@ -73,11 +67,7 @@
 </section>
 
 <section id="runes" class="report-section report-section--champion">
-  <h2 class="section-title section-title--champion">
-    <iconify-icon icon="lucide:sparkles" class="metric-icon metric-icon--accent" aria-hidden="true"></iconify-icon>
-    <span>Runes</span>
-    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
-  </h2>
+  <SectionHeader id="runes" title="Runes" icon="sparkles" />
   <div class="figure-block">
     <PlotlyFigure id="fig-rune_winrate_bar" html={data.figures?.rune_winrate_bar || ''} />
     <p class="figure-caption">Win rate by keystone — compare rune setups with similar game counts before switching.</p>

@@ -1,10 +1,9 @@
 <script>
-  import Pill from '../components/Pill.svelte';
+  import SectionHeader from '../components/SectionHeader.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
   import { escapeHtml, iconCellHtml } from '../lib/html.js';
   import { pct } from '../lib/format.js';
-  import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
   export let data;
 
@@ -97,8 +96,6 @@
       `<td class="matchup-plan">${focus}${tip}</td>`;
   }
 
-  $: windowScopeLabel = computeWindowScopeLabel(data);
-
   $: showCsStats = data.show_cs_stats !== false;
   $: matchupRows = data.matchup_rows || [];
   $: visibleColumns = COLUMNS.filter((col) => !col.csOnly || showCsStats);
@@ -106,12 +103,9 @@
 </script>
 
 <section id="matchups" class="report-section report-section--champion">
-  <h2 class="section-title section-title--champion">
-    <iconify-icon icon="lucide:swords" class="metric-icon metric-icon--accent" aria-hidden="true"></iconify-icon>
-    <span>Matchups</span>
-    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
-  </h2>
-  <p class="sub sub--lead">Lane opponents you've faced most. <strong>Verdict</strong> is your win rate read; <strong>Play plan</strong> is the single biggest pattern in those games.</p>
+  <SectionHeader id="matchups" title="Matchups" icon="swords">
+    <svelte:fragment slot="lead">Lane opponents you've faced most. <strong>Verdict</strong> is your win rate read; <strong>Play plan</strong> is the single biggest pattern in those games.</svelte:fragment>
+  </SectionHeader>
   <div class="figure-block">
     <PlotlyFigure id="fig-matchup_bar" html={(data.figures && data.figures.matchup_bar) || ''} />
     <p class="figure-caption">Win rate vs lane opponents — bar length shows sample size; color shows above/below 50% WR.</p>

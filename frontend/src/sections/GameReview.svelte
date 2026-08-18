@@ -1,6 +1,6 @@
 <script>
   import { tick } from 'svelte';
-  import Pill from '../components/Pill.svelte';
+  import SectionHeader from '../components/SectionHeader.svelte';
   import TabBar from '../components/TabBar.svelte';
   import GameReviewKeyMoments from './GameReviewKeyMoments.svelte';
   import { escapeHtml, soloIconCellHtml } from '../lib/html.js';
@@ -624,11 +624,7 @@
 </script>
 
 <section id="game-review" class="report-section report-section--games">
-  <h2 class="section-title section-title--games">
-    <span>Game Review</span>
-    <Pill tone="flat" variant="outline" extraClass="" dot={false} label="Last 10 games" />
-  </h2>
-  <p class="sub sub--lead" id="game-review-subtitle">{subtitleText}</p>
+  <SectionHeader id="game-review" title="Game Review" icon="swords" scope="Last 10 games" lead={subtitleText} />
   {#if !available}
     <div id="game-review-unavailable" class="form-empty">
       <p>No ranked games in this queue for Game Review.</p>

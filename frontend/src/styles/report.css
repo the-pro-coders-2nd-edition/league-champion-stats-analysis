@@ -151,23 +151,7 @@ section { margin-bottom: 64px; scroll-margin-top: var(--report-sticky-offset); }
 .report-section--games { --section-accent: var(--cat-games); }
 .report-section--champion { --section-accent: var(--cat-champion); }
 .report-section--deepdive { --section-accent: var(--cat-deepdive); }
-.report-section--advanced { --section-accent: var(--cat-advanced); }
 .report-section--career { --section-accent: var(--cat-career); }
-.category-divider {
-  display: flex; align-items: center; gap: 12px; margin: 8px 0 28px; padding: 10px 0;
-  border-bottom: 1px solid var(--color-divider);
-}
-.category-divider-label {
-  font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-  white-space: nowrap;
-}
-.category-divider::after { content: ""; flex: 1; height: 1px; background: var(--color-divider); opacity: .6; }
-.category-divider--summary .category-divider-label { color: var(--cat-summary); }
-.category-divider--performance .category-divider-label { color: var(--cat-performance); }
-.category-divider--games .category-divider-label { color: var(--cat-games); }
-.category-divider--champion .category-divider-label { color: var(--cat-champion); }
-.category-divider--deepdive .category-divider-label { color: var(--cat-deepdive); }
-.category-divider--advanced .category-divider-label { color: var(--cat-advanced); }
 h2 { font-size: 17px; margin-bottom: 6px; }
 .report-page-title { font-size: 30px; font-weight: 700; line-height: 1.15; margin: 0; }
 .report-player-name { color: var(--color-neutral-400); font-size: 14px; margin-top: 4px; }
@@ -442,9 +426,6 @@ img.metric-icon--asset { width: 14px; height: 14px; object-fit: contain; flex-sh
 .metric-icon--purple { color: var(--color-neutral-600); }
 .metric-icon--muted { color: var(--color-neutral-400); }
 .section-title { display: flex; align-items: center; gap: 10px; }
-.section-title-scope { font-size: 11px; font-weight: 400; color: var(--color-neutral-600); }
-.section-title > iconify-icon.metric-icon,
-.section-title > img.metric-icon--asset,
 .metric-card-label iconify-icon.metric-icon,
 .metric-card-label img.metric-icon--asset { display: none; }
 .section-title iconify-icon.metric-icon { width: 18px; height: 18px; }
@@ -1840,7 +1821,6 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .ui-chip,
 .game-review-chip,
 .peer-meta-chip,
-.scope-chip,
 .form-badge {
   display: inline-flex; align-items: center;
   font-size: 11px; font-weight: 600; letter-spacing: .05em;
@@ -1848,10 +1828,6 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
   border: 1px solid var(--color-divider);
   background: var(--color-surface-2); color: var(--color-neutral-400);
   white-space: nowrap;
-}
-.ui-chip--scope,
-.scope-chip {
-  margin-left: 4px; padding: 3px 10px; letter-spacing: .02em;
 }
 .ui-chip--good, .game-review-chip--good { color: var(--tone-good-fg); border-color: rgba(63, 182, 139, 0.35); background: rgba(63, 182, 139, 0.08); }
 .ui-chip--bad, .game-review-chip--bad { color: var(--tone-bad-fg); border-color: rgba(224, 85, 99, 0.35); background: rgba(224, 85, 99, 0.08); }
