@@ -7,6 +7,7 @@ from league_stats.analysis.peer.baseline import resolve_peer_baseline
 from league_stats.analysis.peer.comparison import (
     build_comparisons,
     build_peer_comparison,
+    current_patch,
     comparisons_dataframe,
     peer_comparison_for_window,
     peer_recommendations,
@@ -17,6 +18,7 @@ __all__ = [
     "backfill_all_matches",
     "build_comparisons",
     "build_peer_comparison",
+    "current_patch",
     "comparisons_dataframe",
     "ingest_match",
     "peer_comparison_for_window",

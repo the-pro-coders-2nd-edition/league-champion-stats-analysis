@@ -135,17 +135,19 @@ def _try_live_baseline(
     role: str,
     *,
     exclude_puuid: str | None,
+    patch: str = "",
     progress: ProgressReporter = NULL_REPORTER,
 ) -> PeerBaseline | None:
     """Return a peer baseline from the file cache or live snowball sampling.
 
-    The file cache is checked first (7-day TTL) to make re-runs near-instant.
-    After a successful live sample the result is written to the cache so the
-    next run skips the API entirely.
+    The file cache is checked first to make re-runs near-instant; it is only
+    reused on the same patch, in the same tier, and within its TTL. After a
+    successful live sample the result is written back so the next run on this
+    patch skips the API entirely.
     """
     log = get_logger("peer_baseline")
 
-    cached = read_live_cache(client.platform, ranked.tier, champion, role)
+    cached = read_live_cache(client.platform, ranked.tier, champion, role, patch=patch)
     if cached is not None:
         log.info(
             "File cache hit for %s %s (platform=%s, tier=%s): %d games",
@@ -169,7 +171,7 @@ def _try_live_baseline(
     if snapshot is None:
         return None
 
-    write_live_cache(client.platform, ranked.tier, champion, role, snapshot)
+    write_live_cache(client.platform, ranked.tier, champion, role, snapshot, patch=patch)
 
     sample = collect_peer_games_from_store(
         store,
@@ -206,6 +208,7 @@ def resolve_peer_baseline(
     role: str,
     *,
     exclude_puuid: str | None = None,
+    patch: str = "",
     progress: ProgressReporter = NULL_REPORTER,
 ) -> PeerBaseline | None:
     """Resolve the best available peer baseline using the fallback ladder.
@@ -213,7 +216,8 @@ def resolve_peer_baseline(
     Levels:
     0 — Peer store, exact rank, ≥50 games (high confidence at ≥100)
     1 — Peer store, ±1 widened rank, ≥50 games
-    2 — File cache or live API snowball (7-day TTL), ≥50 games
+    2 — File cache or live API snowball, ≥50 games (cache reused only on the
+        same patch and tier, and within its TTL)
     3 — Peer store, ±2 wider rank, ≥50 games (post-live-attempt)
     4 — Static champion JSON
     5 — Static role JSON
@@ -291,6 +295,7 @@ def resolve_peer_baseline(
             champion,
             role,
             exclude_puuid=exclude_puuid,
+            patch=patch,
             progress=progress,
         )
     except RiotApiError as exc:
