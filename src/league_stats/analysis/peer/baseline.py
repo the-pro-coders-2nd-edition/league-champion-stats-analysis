@@ -74,6 +74,7 @@ def _try_store_baseline(
     level: int,
     confidence: str,
     source_label: str,
+    patch: str = "",
     high_confidence_threshold: int = 0,
 ) -> PeerBaseline | None:
     """Return a store-backed baseline when enough games exist.
@@ -89,6 +90,8 @@ def _try_store_baseline(
         scope=scope,
         exclude_puuid=exclude_puuid,
         client=client,
+        patch=patch,
+        min_games=min_games,
     )
     if sample.games < min_games:
         return None
@@ -181,6 +184,8 @@ def _try_live_baseline(
         scope=build_widened_scope(ranked),
         exclude_puuid=exclude_puuid or "",
         client=client,
+        patch=patch,
+        min_games=MIN_LIVE_GAMES,
     )
     if sample.games < MIN_LIVE_GAMES:
         return _baseline_from_snapshot(snapshot, champion, role, level=2)
@@ -240,6 +245,7 @@ def resolve_peer_baseline(
         min_games=MIN_EXACT_GAMES,
         level=0,
         confidence="medium",
+        patch=patch,
         high_confidence_threshold=HIGH_CONFIDENCE_GAMES,
         source_label=(
             f"Peer store: {label} at {ranked.label} "
@@ -271,6 +277,7 @@ def resolve_peer_baseline(
         min_games=MIN_WIDENED_GAMES,
         level=1,
         confidence="medium",
+        patch=patch,
         source_label=f"Peer store (widened rank): {label}.",
     )
     if baseline is not None:
@@ -322,6 +329,7 @@ def resolve_peer_baseline(
         min_games=MIN_WIDENED_GAMES,
         level=3,
         confidence="medium",
+        patch=patch,
         source_label=f"Peer store (wider rank ±2 tiers): {label}.",
     )
     if baseline is not None:

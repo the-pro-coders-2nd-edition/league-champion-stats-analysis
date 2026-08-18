@@ -93,6 +93,51 @@ def _backfill_ranks(
         store.set_puuid_rank(puuid, ranked.tier, ranked.rank)
 
 
+def patch_sort_key(patch: str) -> tuple[int, int]:
+    """Numeric ``(major, minor)`` for patch ordering; unparseable sorts oldest."""
+    parts = str(patch).split(".")
+    try:
+        return (int(parts[0]), int(parts[1]))
+    except (IndexError, ValueError):
+        return (0, 0)
+
+
+def select_by_patch(
+    rows: list[dict[str, Any]],
+    wanted: str,
+    min_games: int,
+) -> list[dict[str, Any]]:
+    """Prefer current-patch peer rows, widening to older patches only if thin.
+
+    Peer rows are kept forever, so without this a long-lived store blends every
+    patch it has ever ingested into one baseline. Widening is by whole patch,
+    newest first, and stops as soon as ``min_games`` is reachable. If even the
+    full history is too thin the unfiltered rows are returned, so an upgraded or
+    sparse store degrades to its previous behaviour rather than losing its
+    sample.
+    """
+    if not wanted or not rows:
+        return rows
+
+    by_patch: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_patch.setdefault(str(row.get("patch", "")), []).append(row)
+
+    wanted_key = patch_sort_key(wanted)
+    candidates = sorted(
+        (patch for patch in by_patch if patch and patch_sort_key(patch) <= wanted_key),
+        key=patch_sort_key,
+        reverse=True,
+    )
+
+    selected: list[dict[str, Any]] = []
+    for patch in candidates:
+        selected.extend(by_patch[patch])
+        if len(selected) >= min_games:
+            return selected
+    return rows if len(selected) < min_games else selected
+
+
 def _filter_rows(
     rows: list[dict[str, Any]],
     *,
@@ -122,6 +167,8 @@ def collect_peer_games_from_store(
     scope: RankScope,
     exclude_puuid: str,
     client: RiotApiClient | None = None,
+    patch: str = "",
+    min_games: int = 0,
 ) -> PeerSample:
     """Load peer games for a champion + lane from the persistent store.
 
@@ -140,8 +187,18 @@ def collect_peer_games_from_store(
 
     _backfill_ranks(store, client, champion=champion, role=role, platform=platform)
     rows = store.load_peer_games(champion=champion, role=role, platform=platform)
-    filtered = _filter_rows(rows, scope=scope, exclude_puuid=exclude_puuid)
+    in_scope = _filter_rows(rows, scope=scope, exclude_puuid=exclude_puuid)
+    filtered = select_by_patch(in_scope, patch, min_games)
     players = len({row["puuid"] for row in filtered})
+    if patch and len(filtered) != len(in_scope):
+        log.debug(
+            "Patch filter %s kept %d of %d peer game(s) for %s %s",
+            patch,
+            len(filtered),
+            len(in_scope),
+            champion,
+            role,
+        )
     log.debug(
         "Loaded %d peer game(s) for %s %s (%d players) from store",
         len(filtered),
