@@ -5,45 +5,87 @@ from __future__ import annotations
 from typing import Any, Final
 
 from league_stats.analysis.career.engine import CareerBlockState, CareerSnapshot
-from league_stats.analysis.career.models import GOALS_PER_BLOCK, WINDOW, hold_bar
+from league_stats.analysis.career.models import (
+    CLEAR_BAR,
+    GOALS_PER_BLOCK,
+    HOLD_RATIO,
+    SETUP_CLEAR_BAR,
+    WINDOW,
+    hold_bar,
+)
+from league_stats.analysis.career.steps import (
+    ANCHOR_QUANTILE,
+    BASELINE_GAMES,
+    MAX_STEP_STRETCH,
+)
 from league_stats.analysis.career.tracks import track_spec
 from league_stats.presentation.tones import career_count, career_node
 
+# Every number here is derived from the constants that actually drive the engine.
+# This panel drifted badly once -- it still described a median-anchored target long
+# after that changed -- and tests/test_career_rules_copy.py now pins it.
+_ANCHOR_PCT: Final[int] = int(ANCHOR_QUANTILE * 100)
+_MIRROR_PCT: Final[int] = int((1 - ANCHOR_QUANTILE) * 100)
+_STRETCH_PCT: Final[int] = int(MAX_STEP_STRETCH * 100)
+
 CAREER_RULES: Final[tuple[dict[str, str], ...]] = (
     {
-        "key": "Window",
-        "value": "20 games",
+        "key": "Scope",
+        "value": "all ranked games",
         "note": (
-            "Every goal reads the same rolling window, and a new block only "
-            "counts games played after it appeared."
+            "Solo/Duo and Flex together. Career does not follow the queue or "
+            "game-window filters above, so it shows the same ladder whichever "
+            "you pick."
+        ),
+    },
+    {
+        "key": "Blocks",
+        "value": f"one category, up to {GOALS_PER_BLOCK} goals",
+        "note": (
+            "A block is a category — Survival, Vision, Objectives and so on — and "
+            "its goals are the steps that category says you most need right now. "
+            "Two players weak at the same category get different goals."
+        ),
+    },
+    {
+        "key": "Window",
+        "value": f"{WINDOW} games",
+        "note": (
+            f"Progress is measured over your last {WINDOW} ranked games, and a new "
+            "block only counts games played after it appeared."
         ),
     },
     {
         "key": "Clear bar",
-        "value": "15 of 20",
+        "value": f"{CLEAR_BAR} of {WINDOW}",
         "note": (
-            "Hit the target in 15 games of the window and the goal clears. All "
-            "three goals count at once, so a strong run clears the block in one "
-            "window."
+            f"Hit the target in {CLEAR_BAR} games of the window and the goal "
+            f"clears. Goals about one narrow moment ask {SETUP_CLEAR_BAR} of "
+            f"{WINDOW} instead. Every goal in the live block counts at once, so a "
+            "strong run can clear the whole block in one window."
         ),
     },
     {
         "key": "Hold bar",
-        "value": "75% of the clear bar",
+        "value": f"{int(HOLD_RATIO * 100)}% of the clear bar",
         "note": (
-            "Drop below 11 of 20 and a cleared goal is revoked — the block "
-            "cannot complete until you re-earn it."
+            f"Fall under {hold_bar(CLEAR_BAR)} of {WINDOW} and a cleared goal is "
+            "revoked — the block cannot complete until you earn it back."
         ),
     },
     {
         "key": "Target",
-        "value": "your p50 toward peer p75",
+        "value": f"P{_ANCHOR_PCT} of your last {BASELINE_GAMES} games, +{_STRETCH_PCT}%",
         "note": (
-            "Each rung is computed from your own distribution and capped at a "
-            "reachable step, so clearing a block moves the next one up."
+            f"A stepped target is anchored at a level you already reach in most "
+            f"games, then stretched {_STRETCH_PCT}%; lower-is-better goals mirror "
+            f"it at P{_MIRROR_PCT} minus {_STRETCH_PCT}%. Peer data can only pull a "
+            "target down, never up. Some goals need no target at all — even gold at "
+            "10 minutes, or no greed deaths."
         ),
     },
 )
+
 
 _LEGEND_SOURCE: Final[tuple[tuple[str, int, int, str], ...]] = (
     (
@@ -149,6 +191,7 @@ def _active_block(block: CareerBlockState, *, window: int) -> dict[str, Any]:
         state = block.display_states[index]
         node = _node(state, block.hits[index], goal.rung.need, window=window)
         node["text"] = goal.rung.text
+        node["why"] = goal.rung.why
         node["note"] = ""
         node["last"] = index == len(block.goals) - 1
         items.append(node)

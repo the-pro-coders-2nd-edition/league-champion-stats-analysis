@@ -24,6 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Final, Sequence
 
+from league_stats.analysis.career.explanations import WHY_BY_COLUMN
 from league_stats.analysis.career.models import CLEAR_BAR, SETUP_CLEAR_BAR, Rung
 from league_stats.analysis.career.window import (
     player_mean,
@@ -143,6 +144,7 @@ def _stepped(
         comparator="at_least",
         target=target,
         need=need,
+        why=WHY_BY_COLUMN.get(column, ""),
     )
 
 
@@ -175,6 +177,7 @@ def _stepped_under(
         comparator="under",
         target=target,
         need=need,
+        why=WHY_BY_COLUMN.get(column, ""),
     )
 
 
@@ -182,14 +185,20 @@ def _line(ctx, *, column: str, target: float, text: str, need: int = CLEAR_BAR) 
     """One rung on a fixed, self-explaining line. No target has to be invented."""
     if column not in ctx.matches_df.columns:
         return None
-    return Rung(text=text, column=column, comparator="at_least", target=target, need=need)
+    return Rung(
+        text=text, column=column, comparator="at_least", target=target, need=need,
+        why=WHY_BY_COLUMN.get(column, ""),
+    )
 
 
 def _none_of(ctx, *, column: str, text: str, need: int = CLEAR_BAR) -> Rung | None:
     """One rung asking for none of something."""
     if column not in ctx.matches_df.columns:
         return None
-    return Rung(text=text, column=column, comparator="under", target=1.0, need=need)
+    return Rung(
+        text=text, column=column, comparator="under", target=1.0, need=need,
+        why=WHY_BY_COLUMN.get(column, ""),
+    )
 
 
 def _integer_under(ctx, *, column: str, template: str, need: int = CLEAR_BAR) -> Rung | None:
@@ -204,6 +213,7 @@ def _integer_under(ctx, *, column: str, template: str, need: int = CLEAR_BAR) ->
         comparator="under",
         target=float(target),
         need=need,
+        why=WHY_BY_COLUMN.get(column, ""),
     )
 
 

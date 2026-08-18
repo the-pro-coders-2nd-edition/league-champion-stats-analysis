@@ -171,6 +171,7 @@
               pct={item.pct}
               mark={item.mark}
               text={item.text}
+              why={item.why}
               note={item.note}
               count={item.count}
               last={index === (career.widget || []).length - 1}

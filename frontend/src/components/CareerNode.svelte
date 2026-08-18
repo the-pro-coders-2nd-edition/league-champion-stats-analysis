@@ -1,5 +1,6 @@
 <script lang="ts">
   import Chip from './Chip.svelte';
+  import MetricTooltip from './MetricTooltip.svelte';
 
   export let state: string;
   export let stateClass: string;
@@ -7,6 +8,7 @@
   export let pct: string;
   export let mark: string;
   export let text: string;
+  export let why: string = '';
   export let note: string;
   export let count: string;
   export let compact: boolean = false;
@@ -27,7 +29,10 @@
       <span class="career-count">{count}</span>
     </div>
     {/if}
-    <div class="career-text career-text--{stateClass}">{text}</div>
+    <div class="career-text career-text--{stateClass}">
+      {text}
+      {#if why}<MetricTooltip label="this goal" tooltip={why} />{/if}
+    </div>
     <div class="career-note">{note}</div>
   </div>
 </div>

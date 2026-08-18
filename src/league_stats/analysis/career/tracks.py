@@ -22,6 +22,7 @@ from typing import Any, Container, Final, Sequence
 
 import pandas as pd
 
+from league_stats.analysis.career.explanations import WHY_BY_COLUMN
 from league_stats.analysis.career.models import (
     CLEAR_BAR,
     GOALS_PER_BLOCK,
@@ -297,6 +298,7 @@ def _stepped_rungs(
             comparator="at_least",
             target=target,
             need=CLEAR_BAR,
+            why=WHY_BY_COLUMN.get(column, ""),
         )
         for target in targets
     )
@@ -333,6 +335,7 @@ def _stepped_rungs_under(
             comparator="under",
             target=target,
             need=CLEAR_BAR,
+            why=WHY_BY_COLUMN.get(column, ""),
         )
         for target in targets
     )
@@ -376,6 +379,7 @@ def _own_stepped_rungs(
             comparator="at_least",
             target=target,
             need=CLEAR_BAR,
+            why=WHY_BY_COLUMN.get(column, ""),
         )
         for target in targets
     )
@@ -409,6 +413,7 @@ def _own_stepped_under(
             comparator="under",
             target=target,
             need=CLEAR_BAR,
+            why=WHY_BY_COLUMN.get(column, ""),
         )
         for target in targets
     )
@@ -429,7 +434,10 @@ def _absolute_lines(
             return None
         comparator = "at_least" if target >= 0 else "at_least"
         rungs.append(
-            Rung(text=text, column=column, comparator=comparator, target=target, need=CLEAR_BAR)
+            Rung(
+                text=text, column=column, comparator=comparator, target=target, need=CLEAR_BAR,
+                why=WHY_BY_COLUMN.get(column, ""),
+            )
         )
     return tuple(rungs) if len(rungs) == GOALS_PER_BLOCK else None
 
@@ -444,7 +452,10 @@ def _zero_tolerance(
         if column not in ctx.matches_df.columns:
             return None
         rungs.append(
-            Rung(text=text, column=column, comparator="under", target=1.0, need=need)
+            Rung(
+                text=text, column=column, comparator="under", target=1.0, need=need,
+                why=WHY_BY_COLUMN.get(column, ""),
+            )
         )
     return tuple(rungs) if len(rungs) == GOALS_PER_BLOCK else None
 
@@ -495,6 +506,7 @@ def _death_discipline(ctx: TrackContext) -> tuple[Rung, ...] | None:
             comparator="under",
             target=float(first),
             need=CLEAR_BAR,
+            why=WHY_BY_COLUMN.get("deaths_pre20", ""),
         ),
         Rung(
             text=f"Under {second} deaths before 20 min in 15 of 20 games",
@@ -502,6 +514,7 @@ def _death_discipline(ctx: TrackContext) -> tuple[Rung, ...] | None:
             comparator="under",
             target=float(second),
             need=CLEAR_BAR,
+            why=WHY_BY_COLUMN.get("deaths_pre20", ""),
         ),
         Rung(
             text="No death in the objective setup window in 12 of 20 games",
@@ -509,6 +522,7 @@ def _death_discipline(ctx: TrackContext) -> tuple[Rung, ...] | None:
             comparator="under",
             target=1.0,
             need=SETUP_CLEAR_BAR,
+            why=WHY_BY_COLUMN.get("deaths_before_neutral_objective", ""),
         ),
     )
 
@@ -542,6 +556,7 @@ def _map_presence(ctx: TrackContext) -> tuple[Rung, ...] | None:
             comparator="at_least",
             target=pit_target,
             need=CLEAR_BAR,
+            why=WHY_BY_COLUMN.get("objectives_present_rate", ""),
         ),
         Rung(
             text="One control ward per game in 15 of 20 games",
@@ -549,6 +564,7 @@ def _map_presence(ctx: TrackContext) -> tuple[Rung, ...] | None:
             comparator="at_least",
             target=1.0,
             need=CLEAR_BAR,
+            why=WHY_BY_COLUMN.get("control_wards", ""),
         ),
         Rung(
             text=f"Attend {fight_target * 100:.0f}% of teamfights in 15 of 20 games",
@@ -556,6 +572,7 @@ def _map_presence(ctx: TrackContext) -> tuple[Rung, ...] | None:
             comparator="at_least",
             target=fight_target,
             need=CLEAR_BAR,
+            why=WHY_BY_COLUMN.get("tf_participation", ""),
         ),
     )
 

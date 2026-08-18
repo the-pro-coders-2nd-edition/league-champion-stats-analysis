@@ -42,6 +42,7 @@ class Rung:
     comparator: Comparator
     target: float
     need: int
+    why: str = ""
 
 
 @dataclass(frozen=True)

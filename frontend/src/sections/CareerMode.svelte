@@ -172,6 +172,7 @@
                 pct={goal.pct}
                 mark={goal.mark}
                 text={goal.text}
+                why={goal.why}
                 note={goal.note}
                 count={goal.count}
                 last={goal.last}
