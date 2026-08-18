@@ -248,7 +248,7 @@ STEP_BANK: Final[tuple[StepSpec, ...]] = (
     StepSpec(
         key="no_lane_gank_deaths", category=CATEGORY_LANING, specificity=3,
         build=lambda c: _none_of(
-            c, column="gank_deaths_laning", text="Survive the lane phase ungänked in 15 of 20 games",
+            c, column="gank_deaths_laning", text="Survive the lane phase unganked in 15 of 20 games",
         ),
         severity=lambda c: _mean_of(c, "gank_deaths_laning"),
     ),
