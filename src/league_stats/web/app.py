@@ -50,6 +50,7 @@ from league_stats.presentation.brand_assets import (
 )
 from league_stats.presentation.report import discover_player_builds, is_group_player_label
 from league_stats.utils import setup_logging
+from league_stats.web.watch import WatchPoller, watch_public_fields
 from league_stats.web.chat import ChatError, gemini_reply, load_report_summary, validate_history
 from league_stats.web.jobs import (
     JOB_KIND_ANALYZE,
@@ -88,6 +89,17 @@ class ChatRequest(BaseModel):
 
     report: str = Field(min_length=3, max_length=200)
     history: list[Any]
+
+
+class WatchRequest(BaseModel):
+    """Optional body for ``POST /api/players/{slug}/watch``.
+
+    ``interval_s`` is floored at 60 by the store: polling faster than that spends
+    rate-limit budget the analysis jobs need, for no benefit on games that last
+    25-35 minutes.
+    """
+
+    interval_s: int | None = Field(default=None, ge=60, le=3600)
 
 
 class RefreshRequest(BaseModel):
@@ -598,6 +610,8 @@ def _report_groups(
             str(job["player_slug"]): job for job in store.list_active_jobs()
         }
         for group in groups:
+            row = store.get_player(group["slug"])
+            group.update(watch_public_fields(row or {}))
             job = active_by_slug.get(group["slug"])
             if job is None:
                 continue
@@ -652,14 +666,20 @@ def create_app(
 
     store = JobStore(config.app_db_path)
     worker = AnalysisWorker(store, config)
+    watcher = WatchPoller(
+        store,
+        lambda region: _build_precheck_client(region, config.output_dir),
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         store.recover_orphans()
         if start_worker:
             worker.start()
+            watcher.start()
         yield
         if start_worker:
+            await watcher.stop()
             worker.stop()
         store.close()
 
@@ -940,6 +960,23 @@ def create_app(
                 filter_role=filter_role,
             )
         return _enqueue_player_job(slug, JOB_KIND_REFRESH)
+
+    @app.post("/api/players/{slug}/watch")
+    def enable_watch(slug: str, body: WatchRequest | None = None) -> dict[str, Any]:
+        """Watch a group: poll for new games and refresh automatically."""
+        payload = body or WatchRequest()
+        if not store.set_watch(slug, enabled=True, interval_s=payload.interval_s):
+            raise HTTPException(status_code=404, detail="Unknown player")
+        row = store.get_player(slug) or {}
+        return {"slug": slug, **watch_public_fields(row)}
+
+    @app.delete("/api/players/{slug}/watch")
+    def disable_watch(slug: str) -> dict[str, Any]:
+        """Stop watching a group."""
+        if not store.set_watch(slug, enabled=False):
+            raise HTTPException(status_code=404, detail="Unknown player")
+        row = store.get_player(slug) or {}
+        return {"slug": slug, **watch_public_fields(row)}
 
     @app.post("/api/players/{slug}/regenerate")
     def regenerate_player(slug: str) -> dict[str, Any]:

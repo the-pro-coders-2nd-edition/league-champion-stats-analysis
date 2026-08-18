@@ -33,6 +33,9 @@ JOB_KIND_ANALYZE = "analyze"
 JOB_KIND_REFRESH = "refresh"
 JOB_KIND_REGENERATE = "regenerate"
 
+# Default gap between watch checks for one group.
+DEFAULT_WATCH_INTERVAL_S = 180
+
 # Used for ETA display until enough completed jobs exist to average.
 DEFAULT_JOB_DURATION_S = 20 * 60
 
@@ -69,7 +72,12 @@ CREATE TABLE IF NOT EXISTS players (
     last_job_id INTEGER,
     base_completed_at REAL,
     peer_completed_at REAL,
-    peer_failed INTEGER NOT NULL DEFAULT 0
+    peer_failed INTEGER NOT NULL DEFAULT 0,
+    watch_enabled INTEGER NOT NULL DEFAULT 0,
+    watch_interval_s INTEGER NOT NULL DEFAULT 180,
+    last_watch_at REAL,
+    last_watch_error TEXT NOT NULL DEFAULT '',
+    watch_seen_json TEXT NOT NULL DEFAULT '{}'
 );
 """
 
@@ -159,6 +167,19 @@ class JobStore:
                 self._conn.execute(
                     f"ALTER TABLE {table} ADD COLUMN players_json TEXT NOT NULL DEFAULT '[]'"
                 )
+        player_columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(players)")
+        }
+        watch_columns = (
+            ("watch_enabled", "INTEGER NOT NULL DEFAULT 0"),
+            ("watch_interval_s", f"INTEGER NOT NULL DEFAULT {DEFAULT_WATCH_INTERVAL_S}"),
+            ("last_watch_at", "REAL"),
+            ("last_watch_error", "TEXT NOT NULL DEFAULT ''"),
+            ("watch_seen_json", "TEXT NOT NULL DEFAULT '{}'"),
+        )
+        for name, ddl in watch_columns:
+            if name not in player_columns:
+                self._conn.execute(f"ALTER TABLE players ADD COLUMN {name} {ddl}")
         job_columns = {
             row[1] for row in self._conn.execute("PRAGMA table_info(jobs)")
         }
@@ -504,6 +525,82 @@ class JobStore:
                 tagline=str(data.get("tagline", "")),
             )
             return data
+
+    def set_watch(
+        self, slug: str, *, enabled: bool, interval_s: int | None = None
+    ) -> bool:
+        """Turn watching on or off for a group. Returns ``False`` if unknown."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT slug FROM players WHERE slug = ?", (slug,)
+            ).fetchone()
+            if row is None:
+                return False
+            if interval_s is None:
+                self._conn.execute(
+                    "UPDATE players SET watch_enabled = ?, last_watch_error = '' "
+                    "WHERE slug = ?",
+                    (1 if enabled else 0, slug),
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE players SET watch_enabled = ?, watch_interval_s = ?, "
+                    "last_watch_error = '' WHERE slug = ?",
+                    (1 if enabled else 0, max(60, int(interval_s)), slug),
+                )
+            self._conn.commit()
+            return True
+
+    def list_watched_players(self) -> list[dict[str, Any]]:
+        """Every group with watching enabled, identities decoded."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM players WHERE watch_enabled = 1 ORDER BY slug"
+            ).fetchall()
+        watched: list[dict[str, Any]] = []
+        for row in rows:
+            data = dict(row)
+            data["players"] = decode_players(
+                data.get("players_json"),
+                riot_id=str(data.get("riot_id", "")),
+                tagline=str(data.get("tagline", "")),
+            )
+            try:
+                data["watch_seen"] = json.loads(data.get("watch_seen_json") or "{}")
+            except json.JSONDecodeError:
+                data["watch_seen"] = {}
+            watched.append(data)
+        return watched
+
+    def record_watch_tick(
+        self,
+        slug: str,
+        *,
+        seen: dict[str, str] | None = None,
+        error: str = "",
+        at: float | None = None,
+    ) -> None:
+        """Stamp a watch check, storing the newest match id seen per account.
+
+        ``at`` lets the poller supply its own clock, so the timestamp it writes
+        and the one it compares against when deciding whether a group is due
+        cannot disagree.
+        """
+        stamp = time.time() if at is None else float(at)
+        with self._lock:
+            if seen is None:
+                self._conn.execute(
+                    "UPDATE players SET last_watch_at = ?, last_watch_error = ? "
+                    "WHERE slug = ?",
+                    (stamp, error, slug),
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE players SET last_watch_at = ?, last_watch_error = ?, "
+                    "watch_seen_json = ? WHERE slug = ?",
+                    (stamp, error, json.dumps(seen), slug),
+                )
+            self._conn.commit()
 
     def mark_player_base_complete(self, slug: str) -> None:
         """Record that the base (pre-peer) report finished for a player."""
