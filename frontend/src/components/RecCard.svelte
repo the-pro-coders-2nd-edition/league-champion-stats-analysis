@@ -1,6 +1,7 @@
 <script lang="ts">
   import RecCardHead from './RecCardHead.svelte';
   import RecEvidenceSummary from './RecEvidenceSummary.svelte';
+  import Disclosure from './Disclosure.svelte';
 
   export let rec: Record<string, any>;
 
@@ -16,11 +17,11 @@
     title={rec.title}
     detail={rec.detail}
   />
-  <details class="rec-evidence">
-    <summary>Why this?</summary>
+  <Disclosure variant="evidence" chevron="none">
+    <svelte:fragment slot="summary">Why this?</svelte:fragment>
     {#if rec.evidence_summary}
       <RecEvidenceSummary text={rec.evidence_summary} />
     {/if}
     <p class="meta">Stats: {rec.evidence}{pValueSuffix}{sampleSuffix}</p>
-  </details>
+  </Disclosure>
 </div>

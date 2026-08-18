@@ -1,8 +1,11 @@
 <script lang="ts">
   import MetricCard from './MetricCard.svelte';
+  import ShowMore from './ShowMore.svelte';
 
   export let cards: Array<Record<string, any>> = [];
   export let moreLabel: string = 'More stats';
+
+  let open = false;
 
   $: hasHeadline = cards.some((card) => card.tier === 'headline');
   $: headline = hasHeadline ? cards.filter((card) => card.tier === 'headline') : cards;
@@ -14,17 +17,18 @@
     {#each headline as card}
       <MetricCard {card} />
     {/each}
-    {#if more.length}
-      <details class="cards-more">
-        <summary>{moreLabel}</summary>
-      </details>
-    {/if}
   </div>
   {#if more.length}
-    <div class="cards-tiered-more">
+    <ShowMore
+      bind:open
+      indicator="chevron"
+      triggerClass="cards-more-trigger"
+      label={moreLabel}
+      style="--show-more-content-display: flex; --show-more-content-wrap: wrap; --show-more-content-gap: 14px; --show-more-content-margin-top: 14px;"
+    >
       {#each more as card}
         <MetricCard {card} />
       {/each}
-    </div>
+    </ShowMore>
   {/if}
 </div>

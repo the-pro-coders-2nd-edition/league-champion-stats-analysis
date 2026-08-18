@@ -7,6 +7,8 @@
   import ScoreDisclosure from '../components/ScoreDisclosure.svelte';
   import SegmentedControl from '../components/SegmentedControl.svelte';
   import Callout from '../components/Callout.svelte';
+  import Disclosure from '../components/Disclosure.svelte';
+  import ShowMore from '../components/ShowMore.svelte';
   import GameReviewKeyMoments from './GameReviewKeyMoments.svelte';
   import { escapeHtml, soloIconCellHtml } from '../lib/html.js';
   import { formatGameTime, pct } from '../lib/format.js';
@@ -193,11 +195,6 @@
   }
 
   function handleListClick(event) {
-    const toggle = event.target.closest('.game-review-more-toggle');
-    if (toggle) {
-      moreOpen = !moreOpen;
-      return;
-    }
     const row = event.target.closest('.game-review-row');
     if (row) selectedMatchId = row.getAttribute('data-match-id');
   }
@@ -304,27 +301,20 @@
     return parts.join('');
   }
 
-  function renderObjectiveRowHtml(row, objectiveHints) {
-    const kindLabel = row.kind.charAt(0).toUpperCase() + row.kind.slice(1);
-    const outcome = objectiveOutcome(row);
-    let grubClass = '';
-    if (row.kind === 'grubs' && row.secured_count != null && row.objective_total != null) {
-      const bucket = Math.max(0, Math.min(3, Math.round(Number(row.secured_count) || 0)));
-      grubClass = ` game-review-objective--grubs-${bucket}`;
-    }
-    return `<details class="game-review-objective game-review-objective--${outcome.tone}${grubClass}">` +
-      `<summary class="game-review-objective-summary"><span class="game-review-objective-time">${formatGameTime(row.minute)}</span>` +
-      `<span class="game-review-objective-kind">${iconCellHtml(kindLabel, row.objective_icon)}<span>${escapeHtml(kindLabel)}</span></span>` +
-      `<span class="game-review-objective-outcome game-review-objective-outcome--${outcome.tone}">${escapeHtml(outcome.label)}</span></summary>` +
-      `<div class="game-review-objective-details">${renderObjectiveDetailsHtml(row, objectiveHints)}</div></details>`;
+  function objectiveKindLabel(row) {
+    return row.kind.charAt(0).toUpperCase() + row.kind.slice(1);
+  }
+
+  function objectiveGrubClass(row) {
+    if (row.kind !== 'grubs' || row.secured_count == null || row.objective_total == null) return '';
+    const bucket = Math.max(0, Math.min(3, Math.round(Number(row.secured_count) || 0)));
+    return ` game-review-objective--grubs-${bucket}`;
   }
 
   function keyMomentsFeedHtml(game, tooltips) {
-    const objectiveHints = tooltips.objectives || {};
     const deathHints = tooltips.key_moments || {};
     const deaths = game.deaths || [];
     const fights = game.fights || [];
-    const objectives = game.objectives || [];
     const parts = [];
 
     parts.push('<div class="game-review-feed-section"><h4 class="game-review-feed-title">Deaths</h4>');
@@ -363,15 +353,6 @@
           `<div class="game-review-fight-sides">${championIconStackHtml(row.ally_champions, row.ally_icons, 'ally')}` +
           `<span class="game-review-fight-vs">vs</span>${championIconStackHtml(row.enemy_champions, row.enemy_icons, 'enemy')}</div></div></div>`;
       }).join('') + '</div>');
-    }
-    parts.push('</div>');
-
-    parts.push('<div class="game-review-feed-section"><h4 class="game-review-feed-title">Objectives</h4>');
-    if (!objectives.length) {
-      parts.push('<p class="sub">No objectives tracked.</p>');
-    } else {
-      parts.push('<div class="game-review-objective-list">' +
-        objectives.map((row) => renderObjectiveRowHtml(row, objectiveHints)).join('') + '</div>');
     }
     parts.push('</div>');
     return parts.join('');
@@ -525,17 +506,14 @@
     moreOpen = extraGames.some((g) => g.match_id === selectedMatchId);
     moreOpenInitialized = true;
   }
-  $: listHtml = visibleGames.map(gameReviewRowHtml).join('') +
-    (extraGames.length
-      ? `<div class="game-review-more${moreOpen ? ' is-open' : ''}" id="game-review-more">${extraGames.map(gameReviewRowHtml).join('')}</div>` +
-        `<button type="button" class="game-review-more-toggle${moreOpen ? ' is-expanded' : ''}" aria-expanded="${moreOpen ? 'true' : 'false'}" aria-controls="game-review-more" data-extra-count="${extraGames.length}">` +
-        `<iconify-icon icon="lucide:chevron-${moreOpen ? 'up' : 'down'}" aria-hidden="true"></iconify-icon>` +
-        `<span class="game-review-more-label">${moreOpen ? 'Show fewer' : `Show ${extraGames.length} more`}</span></button>`
-      : '');
+  $: listHtml = visibleGames.map(gameReviewRowHtml).join('');
+  $: extraGamesHtml = extraGames.map(gameReviewRowHtml).join('');
 
   $: selectedGame = games.find((g) => g.match_id === selectedMatchId) || games[0];
 
   $: tooltips = data.game_review_tooltips || {};
+  $: objectiveHints = tooltips.objectives || {};
+  $: objectiveRows = selectedGame ? (selectedGame.objectives || []) : [];
   $: score = selectedGame?.score || {};
   $: build = selectedGame?.build || {};
   $: dimensions = score.dimensions || [];
@@ -590,6 +568,19 @@
         <aside class="game-review-rail" aria-label="Recent games">
           <div class="game-review-list" id="game-review-list" on:click={handleListClick}>
             {@html listHtml}
+            {#if extraGames.length}
+              <ShowMore
+                bind:open={moreOpen}
+                indicator="icon"
+                triggerClass="game-review-more-toggle"
+                label={`Show ${extraGames.length} more`}
+                openLabel="Show fewer"
+                id="game-review-more"
+                style="--show-more-content-display: flex; --show-more-content-gap: 8px;"
+              >
+                {@html extraGamesHtml}
+              </ShowMore>
+            {/if}
           </div>
         </aside>
         {#if selectedGame}
@@ -695,6 +686,30 @@
 
             <div class="game-review-panel" id="game-review-panel-key-moments" role="tabpanel" hidden={activeTab !== 'key-moments'}>
               {@html keyMomentsFeedHtml(selectedGame, tooltips)}
+              <div class="game-review-feed-section">
+                <h4 class="game-review-feed-title">Objectives</h4>
+                {#if !objectiveRows.length}
+                  <p class="sub">No objectives tracked.</p>
+                {:else}
+                  <div class="game-review-objective-list">
+                    {#each objectiveRows as row}
+                      {@const outcome = objectiveOutcome(row)}
+                      <Disclosure
+                        variant="objective"
+                        chevron="trailing"
+                        class="game-review-objective game-review-objective--{outcome.tone}{objectiveGrubClass(row)}"
+                      >
+                        <svelte:fragment slot="summary">
+                          <span class="game-review-objective-time">{formatGameTime(row.minute)}</span>
+                          <span class="game-review-objective-kind">{@html iconCellHtml(objectiveKindLabel(row), row.objective_icon)}<span>{objectiveKindLabel(row)}</span></span>
+                          <span class="game-review-objective-outcome game-review-objective-outcome--{outcome.tone}">{outcome.label}</span>
+                        </svelte:fragment>
+                        <div class="game-review-objective-details">{@html renderObjectiveDetailsHtml(row, objectiveHints)}</div>
+                      </Disclosure>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
             </div>
 
             <div class="game-review-panel" id="game-review-panel-loadout" role="tabpanel" hidden={activeTab !== 'loadout'}>

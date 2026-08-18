@@ -6,6 +6,7 @@
   import UiChipBadge from '../components/UiChipBadge.svelte';
   import TrendRow from '../components/TrendRow.svelte';
   import MetricDeltaTable from '../components/MetricDeltaTable.svelte';
+  import Disclosure from '../components/Disclosure.svelte';
   import { metricLabelFromRow } from '../lib/html.js';
 
   export let data;
@@ -87,10 +88,10 @@
         </div>
       </div>
     </div>
-    <details class="all-metrics-details">
-      <summary>All metrics</summary>
+    <Disclosure variant="box" chevron="leading">
+      <svelte:fragment slot="summary">All metrics</svelte:fragment>
       <MetricDeltaTable rows={peerTableRows} valueHeader="You" baselineHeader={peerBaselineHeader} />
-    </details>
+    </Disclosure>
   </Panel>
 </section>
 {:else if pending}
