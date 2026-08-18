@@ -1709,13 +1709,28 @@ footer { color: var(--muted); font-size: 13px; padding: 24px 0; border-top: 1px 
 .game-review-objective-detail-row--pit {
   align-items: flex-start;
 }
+.game-review-objective-detail-row--swings {
+  align-items: center;
+}
+.game-review-objective-swing-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
 .game-review-objective-detail-label {
-  flex: 0 0 72px;
+  flex: 0 0 80px;
+  display: flex;
+  align-items: center;
+  min-height: 27px;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--muted);
+  white-space: nowrap;
 }
 .game-review-objective-detail-text {
   font-size: 12px;

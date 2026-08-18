@@ -51,11 +51,11 @@ def test_format_trade_asset_labels() -> None:
 
     assert format_trade_asset_labels(["mid_t2", "baron"], gained=True) == [
         "their Mid T2",
-        "Baron (secured)",
+        "Baron",
     ]
     assert format_trade_asset_labels(["bot_t1", "baron"], gained=False) == [
         "our Bot T1",
-        "Baron (lost)",
+        "Baron",
     ]
 
 
