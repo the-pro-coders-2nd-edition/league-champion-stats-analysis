@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import Pill from '../components/Pill.svelte';
   import TabBar from '../components/TabBar.svelte';
+  import Callout from '../components/Callout.svelte';
   import GameReviewKeyMoments from './GameReviewKeyMoments.svelte';
   import { escapeHtml, soloIconCellHtml } from '../lib/html.js';
   import { formatGameTime, pct } from '../lib/format.js';
@@ -680,18 +681,10 @@
               {:else}
                 <div class="game-review-verdict-grid">
                   {#each fixItems as item}
-                    <div class="game-review-callout game-review-callout--fix">
-                      <span class="game-review-callout-label">Fix</span>
-                      <strong class="game-review-callout-title">{item.title}</strong>
-                      <span class="game-review-callout-detail">{item.detail}</span>
-                    </div>
+                    <Callout tone="bad" label="Fix" title={item.title} body={item.detail} />
                   {/each}
                   {#each keep as item}
-                    <div class="game-review-callout game-review-callout--keep">
-                      <span class="game-review-callout-label">Keep</span>
-                      <strong class="game-review-callout-title">{item.title}</strong>
-                      <span class="game-review-callout-detail">{item.detail}</span>
-                    </div>
+                    <Callout tone="good" label="Keep" title={item.title} body={item.detail} />
                   {/each}
                 </div>
               {/if}

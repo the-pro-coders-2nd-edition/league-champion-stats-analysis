@@ -4,8 +4,7 @@
   import UiChipBadge from '../components/UiChipBadge.svelte';
   import FormWrBridge from '../components/FormWrBridge.svelte';
   import TabBar from '../components/TabBar.svelte';
-  import FormStoryHead from '../components/FormStoryHead.svelte';
-  import FormStoryLine from '../components/FormStoryLine.svelte';
+  import Callout from '../components/Callout.svelte';
   import DataTableHead from '../components/DataTableHead.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
@@ -104,14 +103,17 @@
         <div class="form-stories" id="form-stories">
           {#if stories.length}
             {#each stories as story}
-              <article class="form-story form-story--{story.tone === 'keep' ? 'keep' : 'fix'}">
-                <FormStoryHead label={story.tone === 'keep' ? 'Keep' : 'Fix'} title={story.title} />
-                <FormStoryLine variant="driver" value={story.driver} />
-                {#if story.habit}
-                  <FormStoryLine variant="habit" value={story.habit} />
-                {/if}
-                <FormStoryLine variant="action" value={story.action} />
-              </article>
+              <Callout
+                tone={story.tone === 'keep' ? 'good' : 'bad'}
+                edge
+                label={story.tone === 'keep' ? 'Keep' : 'Fix'}
+                title={story.title}
+                lines={[
+                  { kicker: 'Driver', value: story.driver },
+                  ...(story.habit ? [{ kicker: 'Habit', value: story.habit }] : []),
+                  { kicker: 'Action', value: story.action },
+                ]}
+              />
             {/each}
           {:else}
             <p class="sub form-stories-empty" id="form-stories-empty">No standout form stories for this window.</p>
