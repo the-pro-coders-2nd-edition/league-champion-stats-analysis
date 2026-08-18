@@ -10,6 +10,8 @@ from typing import Any
 
 import pandas as pd
 
+from league_stats.analysis.career.engine import advance_career
+from league_stats.analysis.career.tracks import TrackContext
 from league_stats.analysis.coach.engine import VISIBLE_RECOMMENDATIONS
 from league_stats.analysis.deaths import blind_spot_zones
 from league_stats.analysis.items import build_path_stats
@@ -18,7 +20,7 @@ from league_stats.analysis.peer import peer_comparison_for_window
 from league_stats.analysis.runes import rune_setup_stats
 from league_stats.analysis.positioning import ROLE_COLUMNS
 from league_stats.analysis.statistics import StatisticsEngine, feature_label
-from league_stats.core.champions import role_display
+from league_stats.core.champions import player_slug, role_display
 from league_stats.core.config import (
     DEFAULT_GAME_WINDOW,
     DEFAULT_QUEUE_FILTER,
@@ -30,8 +32,11 @@ from league_stats.core.config import (
     AppConfig,
 )
 from league_stats.core.models import MatchRecord, PeerComparisonResult
+from league_stats.infra.career_store import CareerStore, build_key
 from league_stats.infra.ddragon_assets import DDragonAssets
+from league_stats.presentation.career import build_career_view, empty_career_view
 from league_stats.pipeline.frames import AnalysisFrames, build_analysis_frames, build_overview
+from league_stats.utils import get_logger
 from league_stats.pipeline.summaries import ReportStats, build_domain_summaries, generate_recommendations
 from league_stats.core.role_metrics import role_profile
 from league_stats.pipeline.view_models import (
@@ -397,6 +402,44 @@ def _build_positioning_cards(
     return annotate_card_tiers(entries, "positioning")
 
 
+def _peer_p75(peer_comparison: PeerComparisonResult | None) -> dict[str, float]:
+    """Peer 75th percentiles per metric, empty until peer sampling lands them."""
+    if peer_comparison is None:
+        return {}
+    return {
+        row.metric: float(row.peer_p75)
+        for row in peer_comparison.comparisons
+        if row.peer_p75 is not None
+    }
+
+
+def build_career_bundle(
+    config: AppConfig,
+    frames: AnalysisFrames,
+    peer_comparison: PeerComparisonResult | None,
+    components: list[Any],
+) -> dict[str, Any]:
+    """Advance this build's Career ladder and shape it for the templates.
+
+    A Career failure must never cost the reader their whole report, so anything
+    unexpected degrades to the empty view with a warning.
+    """
+    try:
+        ctx = TrackContext(
+            matches_df=frames.matches_df,
+            objectives_df=frames.objectives_df,
+            role=config.role,
+            peer_p75=_peer_p75(peer_comparison),
+        )
+        key = build_key(player_slug(config.riot_id, config.tagline), config.champion, config.role)
+        with CareerStore(config.career_db_path) as store:
+            snapshot = advance_career(store, key, ctx, components)
+        return build_career_view(snapshot)
+    except Exception as exc:  # noqa: BLE001 - a broken ladder must not break the report
+        get_logger("career").warning("Career mode skipped: %s", exc)
+        return empty_career_view()
+
+
 def bundle_to_template_context(
     bundle: dict[str, Any],
     *,
@@ -434,6 +477,7 @@ def bundle_to_template_context(
         "weak_recommendations": bundle.get("weak_recommendations", []),
         "top_tips": bundle.get("top_tips", []),
         "figure_hints": bundle.get("figure_hints", {}),
+        "career": bundle.get("career") or empty_career_view(),
         "has_peer_comparison": peer_comparison is not None,
     }
     if peer_comparison is not None:
@@ -488,6 +532,7 @@ def build_window_bundle(
         "top_tips": [],
         "figure_hints": {},
         "figures": {},
+        "career": empty_career_view(),
     }
     if not records:
         return empty
@@ -523,6 +568,7 @@ def build_window_bundle(
     )
 
     score, components = improvement_score(frames.matches_df, role=config.role)
+    career = build_career_bundle(config, frames, window_peer, components)
     matchups_export = frames.matchups_df.copy()
     if not matchups_export.empty:
         matchups_export["recommendation"] = matchups_export.apply(
@@ -681,6 +727,7 @@ def build_window_bundle(
         "rune_rows": rune_setup_stats(frames.runes_df).to_dict("records"),
         "matchup_rows": matchup_rows,
         "figures": figures,
+        "career": career,
     }
     recommendation_payloads = [_recommendation_payload(rec) for rec in recommendations]
     bundle["weak_recommendations"] = [

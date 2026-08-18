@@ -6,6 +6,43 @@ import { pathToFileURL } from 'node:url';
 
 const tsPreprocessor = sveltePreprocess.typescript();
 
+const SVELTE_IMPORT = /(from\s+['"])(\.[^'"]*?)\.svelte(['"])/g;
+
+/**
+ * Compile one component (and, recursively, any .svelte components it imports)
+ * to sibling temp ESM modules, collecting each one's scoped CSS.
+ *
+ * Temp modules are written next to their source so relative imports keep
+ * resolving; the .svelte specifier is rewritten to the compiled twin.
+ *
+ * @param {string} absPath
+ * @param {string} stamp - shared suffix so one render's temp files clean up together
+ * @param {Map<string, string>} written - absPath -> temp module path
+ * @param {string[]} cssBlocks - accumulated scoped CSS, dependencies first
+ * @returns {Promise<string>} temp module path for absPath
+ */
+async function compileToTemp(absPath, stamp, written, cssBlocks) {
+  const existing = written.get(absPath);
+  if (existing) return existing;
+
+  const rawSource = fs.readFileSync(absPath, 'utf-8');
+  const { code: source } = await preprocess(rawSource, tsPreprocessor, { filename: absPath });
+  const { js, css } = compile(source, { generate: 'ssr', filename: absPath });
+
+  const tmpFile = `${absPath}.ssr.${stamp}.mjs`;
+  written.set(absPath, tmpFile);
+
+  const dir = path.dirname(absPath);
+  const deps = [...js.code.matchAll(SVELTE_IMPORT)].map((match) => match[2]);
+  for (const specifier of deps) {
+    await compileToTemp(path.resolve(dir, `${specifier}.svelte`), stamp, written, cssBlocks);
+  }
+
+  fs.writeFileSync(tmpFile, js.code.replace(SVELTE_IMPORT, `$1$2.svelte.ssr.${stamp}.mjs$3`));
+  if (css && css.code) cssBlocks.push(css.code);
+  return tmpFile;
+}
+
 /**
  * Compile a .svelte file to an SSR module and render it once with the given props.
  *
@@ -19,16 +56,18 @@ const tsPreprocessor = sveltePreprocess.typescript();
  */
 export async function renderComponent(svelteFile, props) {
   const absPath = path.resolve(svelteFile);
-  const rawSource = fs.readFileSync(absPath, 'utf-8');
-  const { code: source } = await preprocess(rawSource, tsPreprocessor, { filename: absPath });
-  const { js } = compile(source, { generate: 'ssr', filename: absPath });
+  const stamp = `${Date.now()}`;
+  const written = new Map();
+  const cssBlocks = [];
 
-  const tmpFile = `${absPath}.ssr.${Date.now()}.mjs`;
-  fs.writeFileSync(tmpFile, js.code);
+  const tmpFile = await compileToTemp(absPath, stamp, written, cssBlocks);
   try {
     const mod = await import(pathToFileURL(tmpFile).href);
-    return mod.default.render(props);
+    const rendered = mod.default.render(props);
+    return { ...rendered, css: { code: cssBlocks.join('\n\n') } };
   } finally {
-    fs.unlinkSync(tmpFile);
+    for (const file of written.values()) {
+      fs.unlinkSync(file);
+    }
   }
 }
