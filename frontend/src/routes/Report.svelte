@@ -1,7 +1,8 @@
 <script>
   import { onMount, setContext, tick } from 'svelte';
   import { createReportNav, REPORT_NAV_KEY } from '../lib/reportNav.js';
-  import { get } from 'svelte/store';
+  import { computeWindowScopeLabel, WINDOW_SCOPE_KEY } from '../lib/windowScope.js';
+  import { get, writable } from 'svelte/store';
   import { link } from 'svelte-spa-router';
   import {
     fetchBuild,
@@ -321,6 +322,9 @@
 
   setContext(REPORT_NAV_KEY, createReportNav(selectCategory));
 
+  const windowScopeLabel = writable('');
+  setContext(WINDOW_SCOPE_KEY, windowScopeLabel);
+
   $: queue = report ? report.queue : null;
   $: gameWindow = report ? report.gameWindow : null;
   $: accountKey = report ? report.accountKey : null;
@@ -328,6 +332,7 @@
   $: accountError = report ? report.accountError : null;
   $: activeSource = report ? report.activeSource : null;
   $: view = report ? report.view : null;
+  $: windowScopeLabel.set($view ? computeWindowScopeLabel($view) : '');
 
   $: queueButtons = (payload && $activeSource)
     ? (payload.queue_filter_options || []).map((option) => ({

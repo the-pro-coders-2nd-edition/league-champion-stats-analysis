@@ -1,6 +1,6 @@
 <script>
   import { tick } from 'svelte';
-  import Pill from '../components/Pill.svelte';
+  import SectionHeader from '../components/SectionHeader.svelte';
   import UiChipBadge from '../components/UiChipBadge.svelte';
   import FormWrBridge from '../components/FormWrBridge.svelte';
   import TabBar from '../components/TabBar.svelte';
@@ -62,11 +62,13 @@
 </script>
 
 <section id="form-tracker" class="report-section report-section--performance">
-  <h2 class="section-title section-title--performance">
-    <span>Form tracker</span>
-    <Pill tone="flat" variant="outline" dot={false} extraClass="" label="Recent games vs your baseline" />
-  </h2>
-  <p class="sub sub--lead" id="form-subtitle">{data.form_sample_subtitle || 'Recent form vs your personal baseline'} — independent of the game window filter above.</p>
+  <SectionHeader
+    id="form-tracker"
+    title="Form tracker"
+    icon="bar-chart-2"
+    scope="Recent games vs your baseline"
+    lead="{data.form_sample_subtitle || 'Recent form vs your personal baseline'} — independent of the game window filter above."
+  />
   <div id="form-unavailable" class="form-empty" style={formAvailable ? 'display:none' : null}>
     <p id="form-unavailable-text">{unavailableText}</p>
   </div>

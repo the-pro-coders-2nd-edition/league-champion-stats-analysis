@@ -1,5 +1,5 @@
 <script>
-  import Pill from '../components/Pill.svelte';
+  import SectionHeader from '../components/SectionHeader.svelte';
   import PeerRankValue from '../components/PeerRankValue.svelte';
   import PeerBalanceChip from '../components/PeerBalanceChip.svelte';
   import UiChipBadge from '../components/UiChipBadge.svelte';
@@ -7,7 +7,6 @@
   import DataTableHead from '../components/DataTableHead.svelte';
   import DataTableRow from '../components/DataTableRow.svelte';
   import { escapeHtml, metricLabelFromRow } from '../lib/html.js';
-  import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
   export let data;
   export let peerStageDetail = '';
@@ -19,8 +18,6 @@
     return `<td>${metricLabelFromRow(row)}</td><td>${escapeHtml(row.yours)}</td><td>${escapeHtml(row.peer_avg)}</td>` +
       `<td class="delta-${row.verdict}"${style}>${escapeHtml(row.gap)}</td><td class="delta-${row.verdict}"${style}>${escapeHtml(row.verdict)}</td>`;
   }
-
-  $: windowScopeLabel = computeWindowScopeLabel(data);
 
   $: hasPeerComparison = !!data.has_peer_comparison;
   $: pending = !hasPeerComparison && !!data.status_endpoint && !peerFailed && !peerUnavailable;
@@ -46,12 +43,9 @@
 
 {#if hasPeerComparison}
 <section id="rank-peers" class="report-section report-section--performance">
-  <h2 class="section-title section-title--performance">
-    <iconify-icon icon="lucide:bar-chart-2" class="metric-icon metric-icon--accent" aria-hidden="true"></iconify-icon>
-    <span>Rank peer comparison</span>
-    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
-  </h2>
-  <p class="sub sub--lead" id="peer-subtitle">Your averages vs {data.build_label} at <strong>{peerComparison.rank_label}</strong> · {peerComparison.peer_games} peer games ({peerComparison.peer_players} players, {peerComparison.confidence} confidence)</p>
+  <SectionHeader id="rank-peers" title="Rank peer comparison" icon="bar-chart-2">
+    <svelte:fragment slot="lead">Your averages vs {data.build_label} at <strong>{peerComparison.rank_label}</strong> · {peerComparison.peer_games} peer games ({peerComparison.peer_players} players, {peerComparison.confidence} confidence)</svelte:fragment>
+  </SectionHeader>
   <div class="peer-dossier peer-dossier--{peerLean}" id="peer-dossier">
     <div class="peer-stage" id="peer-stage">
       <div class="peer-stage-inner">
@@ -117,11 +111,7 @@
 </section>
 {:else if pending}
 <section id="rank-peers" class="report-section report-section--performance" data-peer-pending="1">
-  <h2 class="section-title section-title--performance">
-    <iconify-icon icon="lucide:bar-chart-2" class="metric-icon metric-icon--accent" aria-hidden="true"></iconify-icon>
-    <span>Rank peer comparison</span>
-    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
-  </h2>
+  <SectionHeader id="rank-peers" title="Rank peer comparison" icon="bar-chart-2" />
   <div class="peer-dossier peer-dossier--pending">
     <div class="peer-pending" role="status" aria-live="polite">
       <p class="sub" id="rank-peers-pending">{pendingMessage}</p>
@@ -130,11 +120,7 @@
 </section>
 {:else if peerFailed}
 <section id="rank-peers" class="report-section report-section--performance" data-peer-failed="1">
-  <h2 class="section-title section-title--performance">
-    <iconify-icon icon="lucide:bar-chart-2" class="metric-icon metric-icon--accent" aria-hidden="true"></iconify-icon>
-    <span>Rank peer comparison</span>
-    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
-  </h2>
+  <SectionHeader id="rank-peers" title="Rank peer comparison" icon="bar-chart-2" />
   <div class="peer-dossier peer-dossier--pending">
     <div class="peer-pending" role="status">
       <p class="sub is-failed" id="rank-peers-pending">Peer comparison could not be completed for this report.</p>
@@ -143,11 +129,7 @@
 </section>
 {:else if peerUnavailable}
 <section id="rank-peers" class="report-section report-section--performance" data-peer-unavailable="1">
-  <h2 class="section-title section-title--performance">
-    <iconify-icon icon="lucide:bar-chart-2" class="metric-icon metric-icon--accent" aria-hidden="true"></iconify-icon>
-    <span>Rank peer comparison</span>
-    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
-  </h2>
+  <SectionHeader id="rank-peers" title="Rank peer comparison" icon="bar-chart-2" />
   <div class="peer-dossier peer-dossier--pending">
     <div class="peer-pending" role="status">
       <p class="sub" id="rank-peers-pending">Rank peer comparison is not available for this build (rank or baseline data could not be resolved).</p>

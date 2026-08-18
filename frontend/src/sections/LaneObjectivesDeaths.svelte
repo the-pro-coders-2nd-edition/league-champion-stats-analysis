@@ -1,5 +1,5 @@
 <script>
-  import Pill from '../components/Pill.svelte';
+  import SectionHeader from '../components/SectionHeader.svelte';
   import SectionPulse from '../components/SectionPulse.svelte';
   import TieredCards from '../components/TieredCards.svelte';
   import DataTableHead from '../components/DataTableHead.svelte';
@@ -7,7 +7,6 @@
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
   import { escapeHtml, iconCellHtml, metricLabelWithIconify } from '../lib/html.js';
   import { pyFloatStr } from '../lib/format.js';
-  import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
   export let data;
 
@@ -55,8 +54,6 @@
     return `<td>${escapeHtml(row.zone)}</td><td>${row.deaths}</td>`;
   }
 
-  $: windowScopeLabel = computeWindowScopeLabel(data);
-
   $: earlySectionTitle = data.early_section_title || 'Lane';
   $: laneMoreLabel = `More ${(data.early_section_title || 'lane').toLowerCase()} stats`;
   $: showCsStats = !!data.show_cs_stats;
@@ -66,11 +63,7 @@
 </script>
 
 <section id="lane" class="report-section report-section--deepdive">
-  <h2 class="section-title section-title--deepdive">
-    <iconify-icon icon="lucide:map" class="metric-icon metric-icon--accent" aria-hidden="true"></iconify-icon>
-    <span>{earlySectionTitle}</span>
-    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
-  </h2>
+  <SectionHeader id="lane" title={earlySectionTitle} icon="map" />
   <SectionPulse sectionId="lane" verdict={data.section_verdicts?.lane} />
   <div id="lane-cards"><TieredCards cards={data.lane_cards || []} moreLabel={laneMoreLabel} /></div>
   <details class="section-details">
@@ -93,11 +86,7 @@
 </section>
 
 <section id="objectives" class="report-section report-section--deepdive">
-  <h2 class="section-title section-title--deepdive">
-    <iconify-icon icon="lucide:target" class="metric-icon metric-icon--gold" aria-hidden="true"></iconify-icon>
-    <span>Objectives</span>
-    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
-  </h2>
+  <SectionHeader id="objectives" title="Objectives" icon="target" />
   <SectionPulse sectionId="objectives" verdict={data.section_verdicts?.objectives} />
   {#if showSplitPushStats}
     <div id="objective-macro-cards"><TieredCards cards={objectiveMacroCards} moreLabel="More split-push stats" /></div>
@@ -122,11 +111,7 @@
 </section>
 
 <section id="deaths" class="report-section report-section--deepdive">
-  <h2 class="section-title section-title--deepdive">
-    <iconify-icon icon="lucide:skull" class="metric-icon metric-icon--danger" aria-hidden="true"></iconify-icon>
-    <span>Deaths</span>
-    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
-  </h2>
+  <SectionHeader id="deaths" title="Deaths" icon="skull" />
   <SectionPulse sectionId="deaths" verdict={data.section_verdicts?.deaths} />
   <div id="death-cards"><TieredCards cards={data.death_cards || []} moreLabel="More death stats" /></div>
   <details class="section-details">
