@@ -5,6 +5,9 @@
   import FormTracker from '../sections/FormTracker.svelte';
   import RankPeers from '../sections/RankPeers.svelte';
   import Matchups from '../sections/Matchups.svelte';
+  import ItemsRunes from '../sections/ItemsRunes.svelte';
+  import LaneObjectivesDeaths from '../sections/LaneObjectivesDeaths.svelte';
+  import VisionEconomyTeamfightsPositioning from '../sections/VisionEconomyTeamfightsPositioning.svelte';
 
   export let params = {};
 
@@ -26,4 +29,7 @@
   <FormTracker data={payload} />
   <RankPeers data={payload} />
   <Matchups data={payload} />
+  <ItemsRunes data={payload} />
+  <LaneObjectivesDeaths data={payload} />
+  <VisionEconomyTeamfightsPositioning data={payload} />
 {/if}
