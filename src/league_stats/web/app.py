@@ -23,6 +23,7 @@ from league_stats.core.champions import (
     champion_icon_id,
     normalize_role,
     parse_riot_id,
+    player_slug,
     players_group_slug,
 )
 from league_stats.core.config import (
@@ -50,6 +51,7 @@ from league_stats.presentation.brand_assets import (
 )
 from league_stats.presentation.report import discover_player_builds, is_group_player_label
 from league_stats.utils import setup_logging
+from league_stats.infra.career_store import CareerStore, build_key as career_build_key
 from league_stats.web.watch import WatchPoller, watch_public_fields
 from league_stats.web.chat import ChatError, gemini_reply, load_report_summary, validate_history
 from league_stats.web.jobs import (
@@ -839,6 +841,37 @@ def create_app(
             "base_completed_at": player["base_completed_at"] if player else None,
             "peer_completed_at": player["peer_completed_at"] if player else None,
         }
+
+    @app.post("/api/players/{slug}/builds/{build_slug}/career/ack")
+    def acknowledge_career_banner(slug: str, build_slug: str) -> dict[str, Any]:
+        """Mark a Career block-complete banner as seen.
+
+        The flag survives report builds so a background watch refresh cannot
+        swallow the milestone; this is how a reader retires it.
+        """
+        if not (_is_report_slug(slug) and _is_report_slug(build_slug)):
+            raise HTTPException(status_code=400, detail="Invalid report reference.")
+        meta_path = config.reports_dir / slug / build_slug / "meta.json"
+        if not meta_path.is_file():
+            raise HTTPException(status_code=404, detail="Unknown build")
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        champion = str(meta.get("champion", ""))
+        role = str(meta.get("role", ""))
+        riot_id = str(meta.get("riot_id", ""))
+        tagline = str(meta.get("tagline", ""))
+        if not (champion and role and riot_id and tagline):
+            raise HTTPException(status_code=409, detail="Build metadata is incomplete.")
+        app_config = load_config(
+            riot_id=riot_id,
+            tagline=tagline,
+            region=str(meta.get("region", "europe")) or "europe",
+            output_dir=config.output_dir,
+        )
+        with CareerStore(app_config.career_db_path) as career:
+            career.clear_pending_congrats(
+                career_build_key(player_slug(riot_id, tagline), champion, role)
+            )
+        return {"acknowledged": True}
 
     @app.get("/api/players/{slug}/builds/{build_slug}")
     def build_payload(slug: str, build_slug: str) -> dict[str, Any]:

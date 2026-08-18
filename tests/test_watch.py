@@ -271,3 +271,54 @@ def test_watch_route_rejects_a_too_fast_interval(client: TestClient) -> None:
 def test_watch_routes_404_on_unknown_player(client: TestClient) -> None:
     assert client.post("/api/players/nobody/watch").status_code == 404
     assert client.delete("/api/players/nobody/watch").status_code == 404
+
+
+def test_career_banner_ack_route(tmp_path: Path) -> None:
+    """A reader can retire a Career banner that watch rebuilds must not eat."""
+    import json
+
+    from league_stats.core.champions import player_slug
+    from league_stats.core.config import load_config
+    from league_stats.infra.career_store import CareerStore, build_key as career_build_key
+
+    config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite")
+    build_dir = config.reports_dir / SLUG / "viktor_middle"
+    build_dir.mkdir(parents=True)
+    (build_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "champion": "Viktor",
+                "role": "MIDDLE",
+                "riot_id": "Hugros",
+                "tagline": "EUW",
+                "region": "europe",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    app_config = load_config(
+        riot_id="Hugros", tagline="EUW", region="europe", output_dir=config.output_dir
+    )
+    key = career_build_key(player_slug("Hugros", "EUW"), "Viktor", "MIDDLE")
+    with CareerStore(app_config.career_db_path) as career:
+        career.set_pending_congrats(key, "laning_income")
+
+    app = create_app(config, start_worker=False)
+    with TestClient(app) as handle:
+        response = handle.post(f"/api/players/{SLUG}/builds/viktor_middle/career/ack")
+        assert response.status_code == 200
+        assert response.json() == {"acknowledged": True}
+
+    with CareerStore(app_config.career_db_path) as career:
+        assert career.peek_pending_congrats(key) == ""
+
+
+def test_career_banner_ack_404s_on_unknown_build(tmp_path: Path) -> None:
+    config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite")
+    app = create_app(config, start_worker=False)
+    with TestClient(app) as handle:
+        assert (
+            handle.post(f"/api/players/{SLUG}/builds/nope_mid/career/ack").status_code
+            == 404
+        )
