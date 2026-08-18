@@ -13,7 +13,6 @@ dependencies = [
     "plotly>=5.24",
     "scipy>=1.14",
     "matplotlib>=3.9",
-    "jinja2>=3.1",
     "pydantic>=2.9",
     "tqdm>=4.66",
     "joblib>=1.4",
@@ -30,6 +29,7 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-xdist>=3.8.0",
     "httpx>=0.27",
+    "playwright==1.47.0",
 ]
 
 [project.scripts]

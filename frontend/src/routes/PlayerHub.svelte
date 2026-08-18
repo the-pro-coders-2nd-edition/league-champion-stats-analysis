@@ -9,6 +9,7 @@
     setPlayerWatch,
   } from '../lib/api.js';
   import { createPoller } from '../lib/poller.js';
+  import Button from '../components/Button.svelte';
 
   export let params = {};
 
@@ -267,9 +268,9 @@
       <strong id="job-state">{STATE_LABELS[job.state] || job.state}</strong>
       <span class="muted" id="job-eta">{jobEtaText}</span>
       {#if active}
-        <button class="btn-ghost" id="cancel-btn" type="button" on:click={handleCancel} disabled={cancelling}>
+        <Button variant="bare" id="cancel-btn" on:click={handleCancel} disabled={cancelling}>
           {cancelling ? 'Cancelling…' : 'Cancel run'}
-        </button>
+        </Button>
       {/if}
     </div>
     <div class="muted job-detail" id="job-detail">{jobDetailText}</div>
@@ -288,7 +289,7 @@
     <div class="error" id="job-error">{jobErrorText}</div>
     {#if showRetry}
       <div class="actions-row" id="retry-row">
-        <button class="btn-primary" id="retry-btn" type="button" on:click={handleRetry} disabled={retrying}>Retry analysis</button>
+        <Button id="retry-btn" on:click={handleRetry} disabled={retrying}>Retry analysis</Button>
       </div>
     {/if}
   </div>
@@ -346,8 +347,8 @@
 {#if showActions}
   <div class="panel" id="actions-card" style="margin-top:24px;">
     <div class="actions-row">
-      <button class="btn-primary" id="refresh-btn" type="button" on:click={handleRefresh} disabled={busy}>Refresh with latest games</button>
-      <button class="btn-ghost" id="regenerate-btn" type="button" on:click={handleRegenerate} disabled={busy}>Regenerate with same games</button>
+      <Button id="refresh-btn" on:click={handleRefresh} disabled={busy}>Refresh with latest games</Button>
+      <Button variant="bare" id="regenerate-btn" on:click={handleRegenerate} disabled={busy}>Regenerate with same games</Button>
       {#if canWatch}
         <button
           class="watch-toggle{watching ? ' is-on' : ''}"
@@ -359,7 +360,7 @@
           disabled={watchBusy}
           title={watching ? watchLabel(watchInterval) : 'Refresh automatically after each new game'}
         >
-          <span class="watch-toggle-track" aria-hidden="true"><span class="watch-toggle-knob"></span></span>
+          <span class="watch-toggle-track switch-track" aria-hidden="true"><span class="watch-toggle-knob switch-track-knob"></span></span>
           <span class="watch-toggle-label">{watching ? 'Watching this player' : 'Watch this player'}</span>
         </button>
       {/if}

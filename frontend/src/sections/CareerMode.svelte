@@ -2,7 +2,8 @@
   import { flip } from 'svelte/animate';
   import { fade, fly } from 'svelte/transition';
   import CareerNode from '../components/CareerNode.svelte';
-  import Pill from '../components/Pill.svelte';
+  import Chip from '../components/Chip.svelte';
+  import SectionHeader from '../components/SectionHeader.svelte';
   import { dropCareerBlock } from '../lib/api.js';
 
   export let data;
@@ -60,7 +61,7 @@
 </script>
 
 <section id="career" class="report-section report-section--career">
-  <h2 class="career-heading">Career mode</h2>
+  <SectionHeader id="career" title="Career mode" icon="trending-up" />
 
   {#if tracksAllRanked}
     <div class="career-scope-notice">
@@ -119,7 +120,7 @@
         >
           <div class="career-block-head">
             <span class="career-block-state">
-              <Pill tone={block.tone} label={block.state_label} />
+              <Chip tone={block.tone} dot={true} label={block.state_label} />
             </span>
             {#if canDrop}
               <button

@@ -1,32 +1,24 @@
-<script lang="ts">
-  import MetricLabelSpan from './MetricLabelSpan.svelte';
+<script>
+  // Plain JS, not lang="ts": MetricLabel.svelte is untyped (it imports lib/html.js, which has no
+  // declarations — see MetricLabel.svelte's own comment), and svelte-check flags an untyped child
+  // component import as an error under lang="ts".
+  import MetricLabel from './MetricLabel.svelte';
   import MetricTooltip from './MetricTooltip.svelte';
   import MetricValue from './MetricValue.svelte';
   import MetricBenchmark from './MetricBenchmark.svelte';
 
   export let card;
-
-  function metricIconHtml(card) {
-    const tone = card.icon_tone || 'muted';
-    if (card.icon_href) {
-      return `<img src="${card.icon_href}" alt="" class="metric-icon metric-icon--asset metric-icon--${tone}" aria-hidden="true">`;
-    }
-    if (card.iconify) {
-      return `<iconify-icon icon="${card.iconify}" class="metric-icon metric-icon--${tone}" aria-hidden="true"></iconify-icon>`;
-    }
-    return '';
-  }
-
-  function roleIconHtml(card) {
-    if (!card.role_icon_href) return '';
-    return `<img src="${card.role_icon_href}" alt="" title="" class="role-icon role-icon--sm">`;
-  }
 </script>
 
 <div class="card{card.tier === 'headline' ? ' card--headline' : ''}">
   <div class="label">
     <div class="metric-card-label">
-      <MetricLabelSpan roleIconHtml={roleIconHtml(card)} iconHtml={metricIconHtml(card)} label={card.label} />
+      <MetricLabel
+        label={card.label}
+        iconHref={card.icon_href || ''}
+        iconify={card.iconify || ''}
+        roleIconHref={card.role_icon_href || ''}
+      />
       {#if card.tooltip}
         <MetricTooltip label={card.label} tooltip={card.tooltip} />
       {/if}

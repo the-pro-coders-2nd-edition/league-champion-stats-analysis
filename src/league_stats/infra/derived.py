@@ -51,7 +51,12 @@ _PACKAGE_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 _KIND_SOURCES: Final[dict[str, tuple[str, ...]]] = {
     KIND_RECORD: ("ingest", "core/models.py"),
     KIND_GAME_REVIEW: ("analysis/game_review", "pipeline/game_review.py"),
-    KIND_SLICE: ("analysis", "pipeline/bundles.py", "presentation/view_models.py"),
+    KIND_SLICE: (
+        "analysis",
+        "pipeline/bundles.py",
+        "presentation/view_models.py",
+        "presentation/tones.py",
+    ),
 }
 
 DEFAULT_MAX_BYTES: Final[int] = 512 * 1024 * 1024  # 512 MiB

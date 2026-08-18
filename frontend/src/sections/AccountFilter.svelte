@@ -52,7 +52,7 @@
           disabled={!member.games}
           on:change={(e) => toggle(member, e.currentTarget.checked)}
         >
-        <span class="account-filter-switch" aria-hidden="true"></span>
+        <span class="account-filter-switch switch-track" aria-hidden="true"></span>
       </label>
     {/each}
   </div>

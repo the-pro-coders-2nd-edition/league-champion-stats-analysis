@@ -1,15 +1,12 @@
 <script>
   import RecCard from '../components/RecCard.svelte';
-  import RecExtendButton from '../components/RecExtendButton.svelte';
-  import Pill from '../components/Pill.svelte';
-  import { computeWindowScopeLabel } from '../lib/windowScope.js';
+  import SectionHeader from '../components/SectionHeader.svelte';
+  import ShowMore from '../components/ShowMore.svelte';
 
   export let data;
 
   let showAllPositive = false;
   let showAllNegative = false;
-
-  $: windowScopeLabel = computeWindowScopeLabel(data);
 
   $: positive = data.positive_recommendations || [];
   $: negative = data.negative_recommendations || [];
@@ -25,12 +22,12 @@
 </script>
 
 <section id="coaching" class="report-section report-section--summary">
-  <h2 class="section-title section-title--summary">
-    <iconify-icon icon="lucide:lightbulb" class="metric-icon metric-icon--win" aria-hidden="true"></iconify-icon>
-    <span>Coaching</span>
-    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
-  </h2>
-  <p class="sub sub--lead">Strengths on the left, areas to improve on the right — ranked by what matters most for your next games.</p>
+  <SectionHeader
+    id="coaching"
+    title="Coaching"
+    icon="lightbulb"
+    lead="Strengths on the left, areas to improve on the right — ranked by what matters most for your next games."
+  />
   <div class="rec-columns" id="recommendations-root">
     <div class="rec-column rec-column-positive" id="rec-positive-column">
       <h3>Keep doing</h3>
@@ -39,17 +36,11 @@
           <RecCard {rec} />
         {/each}
         {#if positiveMore.length}
-          <div class="rec-more" id="rec-more-positive" class:is-open={showAllPositive}>
+          <ShowMore bind:open={showAllPositive} triggerClass="rec-extend" label={positiveMoreLabel} openLabel="Show less" id="rec-more-positive">
             {#each positiveMore as rec (rec.anchor || rec.title)}
               <RecCard {rec} />
             {/each}
-          </div>
-          <RecExtendButton
-            targetId="rec-more-positive"
-            label={positiveMoreLabel}
-            expanded={showAllPositive}
-            on:click={() => (showAllPositive = !showAllPositive)}
-          />
+          </ShowMore>
         {/if}
       {:else}
         <p class="rec-empty">No clear strengths surfaced yet — keep playing more games.</p>
@@ -62,17 +53,11 @@
           <RecCard {rec} />
         {/each}
         {#if negativeMore.length}
-          <div class="rec-more" id="rec-more-negative" class:is-open={showAllNegative}>
+          <ShowMore bind:open={showAllNegative} triggerClass="rec-extend" label={negativeMoreLabel} openLabel="Show less" id="rec-more-negative">
             {#each negativeMore as rec (rec.anchor || rec.title)}
               <RecCard {rec} />
             {/each}
-          </div>
-          <RecExtendButton
-            targetId="rec-more-negative"
-            label={negativeMoreLabel}
-            expanded={showAllNegative}
-            on:click={() => (showAllNegative = !showAllNegative)}
-          />
+          </ShowMore>
         {/if}
       {:else}
         <p class="rec-empty">Nothing critical flagged — solid performance overall.</p>

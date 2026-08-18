@@ -1,0 +1,20 @@
+{
+  "player": "Test#EUW",
+  "riot_id": "Test",
+  "tagline": "EUW",
+  "players": [
+    {
+      "riot_id": "Test",
+      "tagline": "EUW"
+    }
+  ],
+  "profile_icon_id": null,
+  "champion": "Viktor",
+  "role": "MIDDLE",
+  "role_display": "mid",
+  "build_label": "Viktor mid",
+  "games": 40,
+  "winrate": 0.5,
+  "generated_at": "2026-08-18T18:05:09Z",
+  "has_peer_comparison": true
+}

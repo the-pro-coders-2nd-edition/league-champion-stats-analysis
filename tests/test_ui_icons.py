@@ -7,7 +7,6 @@ from league_stats.presentation.ui_icons import (
     icon_fields_for_label,
     icon_for_label,
     icon_for_objective,
-    icon_tone,
     iconify_for_key,
     tooltip_for_label,
     with_icon,
@@ -59,14 +58,12 @@ def test_cs_min_uses_local_asset() -> None:
     assert fields["icon"] == "cs"
     assert fields["icon_asset"] == "minions.png"
     assert fields["iconify"] is None
-    assert fields["icon_tone"] == "green"
 
 
 def test_with_icon_enriches_card() -> None:
     card = with_icon({"label": "GPM", "value": "420"})
     assert card["icon"] == "coin"
     assert card["iconify"] == "lucide:coins"
-    assert card["icon_tone"] == "gold"
     assert card["tooltip"] == "Gold per minute: total gold earned ÷ game length."
 
 
@@ -105,8 +102,3 @@ def test_with_icons_preserves_order() -> None:
     cards = with_icons([{"label": "KDA", "value": "3.1"}, {"label": "DPM", "value": "700"}])
     assert cards[0]["iconify"] == "lucide:swords"
     assert cards[1]["iconify"] == "lucide:flame"
-
-
-def test_icon_tone_defaults_to_muted() -> None:
-    assert icon_tone(None) == "muted"
-    assert icon_tone("skull") == "danger"

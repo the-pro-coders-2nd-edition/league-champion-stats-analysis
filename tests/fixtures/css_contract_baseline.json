@@ -1,0 +1,90 @@
+{
+  "_comment": "Ratchet baselines for tests/test_css_contract.py (RFC-001 step 5). Regenerated against current tree.",
+  "rule1_markup_or_class_props": {
+    "count": 1,
+    "props": [
+      "components/TrendRow.svelte:label"
+    ]
+  },
+  "rule2_markup_builders": {
+    "total": 28,
+    "per_file": {
+      "sections/GameReview.svelte": 22,
+      "lib/html.js": 6
+    }
+  },
+  "rule3_html_sites": {
+    "total": 8,
+    "permanent_allowlist": {
+      "sections/Chatbot.svelte": 1
+    },
+    "per_file": {
+      "components/TrendRow.svelte": 1,
+      "sections/Chatbot.svelte": 1,
+      "sections/GameReview.svelte": 3,
+      "sections/GameReviewKeyMoments.svelte": 2,
+      "sections/LaneObjectivesDeaths.svelte": 1
+    }
+  },
+  "rule4_global_outside_allowlist": {
+    "files": 5,
+    "rules": 69,
+    "per_file": {
+      "components/CareerNode.svelte": 17,
+      "components/Chip.svelte": 32,
+      "components/HeroAction.svelte": 1,
+      "components/MetricLabel.svelte": 2,
+      "components/StatChip.svelte": 17
+    }
+  },
+  "rule5_root_token_collisions": {
+    "count": 5,
+    "tokens": [
+      "focus-ring",
+      "radius-lg",
+      "scrollbar-thumb",
+      "scrollbar-thumb-hover",
+      "scrollbar-track"
+    ]
+  },
+  "rule6_raw_colors": {
+    "occurrences": 23,
+    "lines": 20
+  },
+  "rule7_generated_css": {
+    "components_css_present": true,
+    "stale_hash_count": 38
+  },
+  "rule8_underused_components": {
+    "count": 22,
+    "names": [
+      "ChampionIconStack",
+      "FormWrBridge",
+      "GameReviewIconRow",
+      "GameReviewRunePage",
+      "GameReviewSummoners",
+      "GameSummaryHeader",
+      "HeroAction",
+      "IconCell",
+      "IconOnly",
+      "IconStatTable",
+      "MetricBenchmark",
+      "MetricLabel",
+      "MetricValue",
+      "PeerRankValue",
+      "RecCard",
+      "RecCardHead",
+      "RecEvidenceSummary",
+      "ReportPlayerChip",
+      "ScoreDisclosure",
+      "SectionPulseFix",
+      "SectionPulseHint",
+      "SkillGrid"
+    ]
+  },
+  "rule9_dead_modules": {
+    "tones_js_present": true,
+    "delta_tone_non_test_callers": 0,
+    "delta_label_non_test_callers": 0
+  }
+}

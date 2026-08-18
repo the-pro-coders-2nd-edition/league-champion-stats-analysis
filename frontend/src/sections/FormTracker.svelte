@@ -1,27 +1,21 @@
 <script>
   import { tick } from 'svelte';
-  import Pill from '../components/Pill.svelte';
-  import UiChipBadge from '../components/UiChipBadge.svelte';
+  import SectionHeader from '../components/SectionHeader.svelte';
+  import Panel from '../components/Panel.svelte';
+  import Chip from '../components/Chip.svelte';
   import FormWrBridge from '../components/FormWrBridge.svelte';
-  import TabBar from '../components/TabBar.svelte';
-  import FormStoryHead from '../components/FormStoryHead.svelte';
-  import FormStoryLine from '../components/FormStoryLine.svelte';
-  import DataTableHead from '../components/DataTableHead.svelte';
-  import DataTableRow from '../components/DataTableRow.svelte';
+  import SegmentedControl from '../components/SegmentedControl.svelte';
+  import Callout from '../components/Callout.svelte';
+  import MetricDeltaTable from '../components/MetricDeltaTable.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
   import { resizePlotlySoon } from '../lib/plotlyResize.js';
   import TrendRow from '../components/TrendRow.svelte';
-  import { escapeHtml, metricLabelFromRow } from '../lib/html.js';
+  import Disclosure from '../components/Disclosure.svelte';
+  import { metricLabelFromRow } from '../lib/html.js';
 
   export let data;
 
   let activeTab = 'pulse';
-
-  function deltaRowCellsHtml(row) {
-    const style = row.gap_color ? ` style="color: ${row.gap_color}"` : '';
-    return `<td>${metricLabelFromRow(row)}</td><td>${escapeHtml(row.recent)}</td><td>${escapeHtml(row.baseline)}</td>` +
-      `<td class="delta-${row.verdict}"${style}>${escapeHtml(row.gap)}</td><td class="delta-${row.verdict}"${style}>${escapeHtml(row.verdict)}</td>`;
-  }
 
   $: formAvailable = !!data.form_available;
   $: snapshot = data.form_snapshot || {};
@@ -31,6 +25,12 @@
     ? (data.form_snapshot.form_score >= 0 ? '+' : '') + Math.round(data.form_snapshot.form_score)
     : '0';
   $: confidence = snapshot.confidence || 'insufficient';
+
+  function trendTone(value) {
+    if (value === 'improving') return 'good';
+    if (value === 'declining') return 'bad';
+    return 'flat';
+  }
 
   $: wrFrom = Math.round((snapshot.baseline_winrate || 0) * 100) + '%';
   $: wrTo = Math.round((snapshot.recent_winrate || 0) * 100) + '%';
@@ -43,13 +43,19 @@
   $: stories = data.form_stories || [];
   $: topImproved = data.form_top_improved || [];
   $: topRegressed = data.form_top_regressed || [];
-  $: deltaRows = data.form_delta_rows || [];
+  $: deltaRows = (data.form_delta_rows || []).map((row) => ({
+    label: row.label,
+    icon_href: row.icon_href,
+    value: row.recent,
+    baseline: row.baseline,
+    gap: row.gap,
+    gap_color: row.gap_color,
+    verdict: row.verdict,
+  }));
 
-  const tableColumns = ['Metric', 'Recent', 'Baseline', 'Change', 'Verdict'].map((html) => ({ html, id: '' }));
-
-  $: formTabs = [
-    { value: 'pulse', label: 'Pulse', active: activeTab === 'pulse' },
-    { value: 'evidence', label: 'Evidence', active: activeTab === 'evidence' },
+  const formTabs = [
+    { value: 'pulse', label: 'Pulse' },
+    { value: 'evidence', label: 'Evidence' },
   ];
 
   function selectFormTab(tab) {
@@ -62,56 +68,61 @@
 </script>
 
 <section id="form-tracker" class="report-section report-section--performance">
-  <h2 class="section-title section-title--performance">
-    <span>Form tracker</span>
-    <Pill tone="flat" variant="outline" dot={false} extraClass="" label="Recent games vs your baseline" />
-  </h2>
-  <p class="sub sub--lead" id="form-subtitle">{data.form_sample_subtitle || 'Recent form vs your personal baseline'} — independent of the game window filter above.</p>
+  <SectionHeader
+    id="form-tracker"
+    title="Form tracker"
+    icon="bar-chart-2"
+    scope="Recent games vs your baseline"
+    lead="{data.form_sample_subtitle || 'Recent form vs your personal baseline'} — independent of the game window filter above."
+  />
   <div id="form-unavailable" class="form-empty" style={formAvailable ? 'display:none' : null}>
     <p id="form-unavailable-text">{unavailableText}</p>
   </div>
   <div id="form-content" style={formAvailable ? null : 'display:none'}>
-    <div class="form-dossier form-dossier--{trend}" id="form-dossier">
-      <div class="form-stage" id="form-stage">
-        <div class="form-stage-inner">
-          <div class="form-stage-score">
-            <div class="label">Form score</div>
-            <div class="form-score-value form-score-value--{trend}" id="form-score-value">{formScoreText}</div>
-            <div class="form-meta">
-              <UiChipBadge tone={trend} label={trend} id="form-trend-badge" />
-              <UiChipBadge tone="confidence" label="{confidence} confidence" id="form-confidence-badge" />
-            </div>
-          </div>
-          <div class="form-stage-wr">
-            <div class="label">Win rate</div>
-            <div class="form-wr-bridge" id="form-wr-shift">
-              {#if data.form_snapshot}
-                <FormWrBridge from={wrFrom} to={wrTo} deltaClass={wrDeltaClass} deltaText={wrDeltaText} />
-              {:else}—{/if}
-            </div>
-            <p class="form-headline" id="form-headline">{data.form_snapshot ? (data.form_snapshot.headline || '') : ''}</p>
+    <Panel id="form-dossier">
+      <svelte:fragment slot="stage">
+        <div class="form-stage-score">
+          <div class="label">Form score</div>
+          <div class="form-score-value form-score-value--{trend}" id="form-score-value">{formScoreText}</div>
+          <div class="form-meta">
+            <Chip tone={trendTone(trend)} fill={true} caps={true} label={trend} id="form-trend-badge" />
+            <Chip tone="info" fill={true} caps={true} label="{confidence} confidence" id="form-confidence-badge" />
           </div>
         </div>
-      </div>
-      <TabBar
-        containerId="form-tabs"
-        buttonClass="form-tab"
-        dataAttr="data-tab"
-        tabs={formTabs}
-        on:select={(e) => selectFormTab(e.detail)}
+        <div class="form-stage-wr">
+          <div class="label">Win rate</div>
+          <div class="form-wr-bridge" id="form-wr-shift">
+            {#if data.form_snapshot}
+              <FormWrBridge from={wrFrom} to={wrTo} deltaClass={wrDeltaClass} deltaText={wrDeltaText} />
+            {:else}—{/if}
+          </div>
+          <p class="form-headline" id="form-headline">{data.form_snapshot ? (data.form_snapshot.headline || '') : ''}</p>
+        </div>
+      </svelte:fragment>
+      <SegmentedControl
+        id="form-tabs"
+        variant="pill"
+        as="tablist"
+        sticky
+        items={formTabs}
+        value={activeTab}
+        on:select={(e) => selectFormTab(e.detail.value)}
       />
       <div class="form-panel" id="form-panel-pulse" role="tabpanel" hidden={activeTab !== 'pulse'}>
         <div class="form-stories" id="form-stories">
           {#if stories.length}
             {#each stories as story}
-              <article class="form-story form-story--{story.tone === 'keep' ? 'keep' : 'fix'}">
-                <FormStoryHead label={story.tone === 'keep' ? 'Keep' : 'Fix'} title={story.title} />
-                <FormStoryLine variant="driver" value={story.driver} />
-                {#if story.habit}
-                  <FormStoryLine variant="habit" value={story.habit} />
-                {/if}
-                <FormStoryLine variant="action" value={story.action} />
-              </article>
+              <Callout
+                tone={story.tone === 'keep' ? 'good' : 'bad'}
+                edge
+                label={story.tone === 'keep' ? 'Keep' : 'Fix'}
+                title={story.title}
+                lines={[
+                  { kicker: 'Driver', value: story.driver },
+                  ...(story.habit ? [{ kicker: 'Habit', value: story.habit }] : []),
+                  { kicker: 'Action', value: story.action },
+                ]}
+              />
             {/each}
           {:else}
             <p class="sub form-stories-empty" id="form-stories-empty">No standout form stories for this window.</p>
@@ -167,20 +178,11 @@
           <PlotlyFigure id="fig-form_metric_delta_bar" html={(data.form_figures && data.form_figures.form_metric_delta_bar) || ''} />
           <p class="figure-caption">Largest metric shifts between recent games and your baseline period.</p>
         </div>
-        <details class="form-all-metrics">
-          <summary>All metrics</summary>
-          <div class="table-scroll">
-            <table>
-              <DataTableHead columns={tableColumns} />
-              <tbody id="form-table-body">
-                {#each deltaRows as row}
-                  <DataTableRow cellsHtml={deltaRowCellsHtml(row)} />
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        </details>
+        <Disclosure variant="box" chevron="leading">
+          <svelte:fragment slot="summary">All metrics</svelte:fragment>
+          <MetricDeltaTable rows={deltaRows} valueHeader="Recent" baselineHeader="Baseline" />
+        </Disclosure>
       </div>
-    </div>
+    </Panel>
   </div>
 </section>

@@ -6,6 +6,8 @@ Richer teal/jade means better on the positive side; keeps luminosity on dark UI.
 
 from __future__ import annotations
 
+import math
+
 LOSS_HEX = "#e05563"
 NEUTRAL_HEX = "#9aa8b1"
 MINT_HEX = "#7ed4c0"
@@ -77,6 +79,11 @@ def _clamp(value: float, low: float = -1.0, high: float = 1.0) -> float:
     return max(low, min(high, value))
 
 
+def _round_half_up(value: float) -> int:
+    """Round to the nearest int, ties rounding away from zero (matches JS Math.round)."""
+    return math.floor(value + 0.5) if value >= 0 else math.ceil(value - 0.5)
+
+
 def _lerp(a: float, b: float, t: float) -> float:
     return a + (b - a) * t
 
@@ -112,9 +119,9 @@ def interpolate_metric_color(score: float) -> str:
             r1, g1, b1 = _hex_to_rgb(left_hex)
             r2, g2, b2 = _hex_to_rgb(right_hex)
             return _rgb_to_hex(
-                round(_lerp(r1, r2, t)),
-                round(_lerp(g1, g2, t)),
-                round(_lerp(b1, b2, t)),
+                _round_half_up(_lerp(r1, r2, t)),
+                _round_half_up(_lerp(g1, g2, t)),
+                _round_half_up(_lerp(b1, b2, t)),
             )
     return JADE_HEX
 

@@ -27,8 +27,8 @@
 </div>
 
 <style>
-  :global(.peer-driver),
-  :global(.form-mover) {
+  .peer-driver,
+  .form-mover {
     display: grid;
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
     gap: 8px 12px;
@@ -39,20 +39,33 @@
     border-left-width: 3px;
     background: var(--panel-2);
   }
-  :global(.peer-driver--above),
-  :global(.form-mover--improved) {
+  .peer-driver--above,
+  .form-mover--improved {
     border-left-color: var(--win);
     background: var(--win-tint-06);
   }
-  :global(.peer-driver--below),
-  :global(.form-mover--regressed) {
+  .peer-driver--below,
+  .form-mover--regressed {
     border-left-color: var(--loss);
     background: var(--loss-tint-06);
   }
-  :global(.peer-driver-label),
-  :global(.form-mover-label) { font-size: 13px; font-weight: 600; min-width: 0; }
-  :global(.peer-driver-values),
-  :global(.form-mover-values) { font-size: 12px; color: var(--muted); }
-  :global(.peer-driver-gap),
-  :global(.form-mover-gap) { font-size: 14px; font-weight: 700; white-space: nowrap; }
+  .peer-driver-label,
+  .form-mover-label { font-size: 13px; font-weight: 600; min-width: 0; }
+  .peer-driver-values,
+  .form-mover-values { font-size: 12px; color: var(--muted); }
+  .peer-driver-gap,
+  .form-mover-gap { font-size: 14px; font-weight: 700; white-space: nowrap; }
+
+  /* Moved from report.css: co-locating with the (now scoped) base selector keeps this override
+     from losing a specificity fight it cannot win once .peer-driver/.form-mover are scoped
+     (report.css:342-346 / :783-787 previously relied on source order at equal specificity —
+     already dead before this change, per RFC-001 step 21). */
+  @media (max-width: 860px) {
+    .peer-driver,
+    .form-mover {
+      grid-template-columns: 1fr auto;
+    }
+    .peer-driver-values,
+    .form-mover-values { grid-column: 1 / -1; }
+  }
 </style>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Pill from './Pill.svelte';
+  import Chip from './Chip.svelte';
 
   export let state: string;
   export let stateClass: string;
@@ -23,7 +23,7 @@
   <div class="career-body">
     {#if !compact}
     <div class="career-head">
-      <Pill tone={tone} label={state} />
+      <Chip tone={tone} dot={true} label={state} />
       <span class="career-count">{count}</span>
     </div>
     {/if}
@@ -33,23 +33,26 @@
 </div>
 
 <style>
-  :global(.career-node) {
+  .career-node {
     display: grid;
     grid-template-columns: 40px minmax(0, 1fr);
     gap: 10px;
     align-items: start;
     color: var(--color-text);
   }
-  :global(.career-node--compact) { grid-template-columns: 30px minmax(0, 1fr); }
+  .career-node--compact { grid-template-columns: 30px minmax(0, 1fr); }
 
-  :global(.career-rail) { display: grid; justify-items: center; gap: 0; }
+  .career-rail { display: grid; justify-items: center; gap: 0; }
 
+  /* :global -- CareerMode.svelte's legend row builds its own .career-ring/.career-mark markup
+     directly (not through this component) to preview all five states side by side, so this
+     whole ring/mark/connector family must resolve without the scoping hash. */
   :global(.career-ring) {
     width: 36px; height: 36px; border-radius: 50%;
     display: grid; place-items: center;
     background: transparent;
   }
-  :global(.career-node--compact .career-ring) { width: 28px; height: 28px; }
+  .career-node--compact :global(.career-ring) { width: 28px; height: 28px; }
 
   :global(.career-ring--cleared) { background: var(--tone-good-line); }
   :global(.career-ring--in-progress) {
@@ -73,32 +76,33 @@
     font-variant-numeric: tabular-nums;
     color: var(--tone-flat-fg);
   }
-  :global(.career-node--compact .career-mark) { width: 21px; height: 21px; font-size: 9px; }
+  .career-node--compact :global(.career-mark) { width: 21px; height: 21px; font-size: 9px; }
   :global(.career-mark--cleared) { color: var(--tone-good-fg); }
   :global(.career-mark--in-progress), :global(.career-mark--at-risk) { color: var(--tone-warn-fg); }
   :global(.career-mark--revoked) { color: var(--tone-bad-fg); }
   :global(.career-mark--locked) { color: var(--color-neutral-600); }
 
+  /* :global -- report.css:1541 (.career-legend-row .career-connector) also targets this class. */
   :global(.career-connector) {
     width: 1px; height: 22px;
     background: var(--color-neutral-800);
     display: block;
   }
-  :global(.career-node--compact .career-connector) { height: 20px; }
-  :global(.career-node--last .career-connector) { height: 0; }
+  .career-node--compact :global(.career-connector) { height: 20px; }
+  .career-node--last :global(.career-connector) { height: 0; }
 
-  :global(.career-body) { padding-bottom: 18px; min-width: 0; }
-  :global(.career-head) {
+  .career-body { padding-bottom: 18px; min-width: 0; }
+  .career-head {
     display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     margin-bottom: 6px;
   }
-  :global(.career-count) {
+  .career-count {
     font-size: 11px; color: var(--color-neutral-600);
     font-variant-numeric: tabular-nums;
   }
-  :global(.career-text) { font-size: 12px; line-height: 1.45; text-wrap: pretty; }
-  :global(.career-text--locked) { color: var(--color-neutral-600); }
-  :global(.career-note) {
+  .career-text { font-size: 12px; line-height: 1.45; text-wrap: pretty; }
+  .career-text--locked { color: var(--color-neutral-600); }
+  .career-note {
     margin-top: 2px; font-size: 11px;
     color: var(--color-neutral-600); line-height: 1.5; text-wrap: pretty;
   }

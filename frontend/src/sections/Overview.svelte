@@ -1,11 +1,11 @@
 <script>
-  import HeroChip from '../components/HeroChip.svelte';
-  import HeroAction from '../components/HeroAction.svelte';
-  import ScoreSetItem from '../components/ScoreSetItem.svelte';
+  import StatChip from '../components/StatChip.svelte';
+  import NavLink from '../components/NavLink.svelte';
+  import Meter from '../components/Meter.svelte';
   import ReportPlayerChip from '../components/ReportPlayerChip.svelte';
   import MetricCard from '../components/MetricCard.svelte';
   import CareerNode from '../components/CareerNode.svelte';
-  import Pill from '../components/Pill.svelte';
+  import Chip from '../components/Chip.svelte';
 
   export let data;
   export let onGoToCareer = () => {};
@@ -13,19 +13,24 @@
   function heroChipTone(card) {
     if (card.value_class === 'win') return 'good';
     if (card.value_class === 'loss') return 'bad';
-    return 'stat';
+    return 'flat';
   }
 
   function scorePercent(score) {
     return Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
   }
 
-  function scoreToneStyle(tone) {
+  function toneTextColor(tone) {
     const resolved = tone || 'flat';
-    return {
-      valueColor: resolved === 'flat' ? 'var(--color-text)' : `var(--tone-${resolved}-fg)`,
-      fillColor: `var(--tone-${resolved}-line)`,
-    };
+    return resolved === 'flat' ? 'var(--color-text)' : `var(--tone-${resolved}-fg)`;
+  }
+
+  // `score_color` already encodes the Strength/Solid/Focus verdict decided in Python;
+  // this just maps that string back to a tone name for the Meter fill.
+  function heroScoreTone(colorVar) {
+    if (colorVar === 'var(--tone-good-fg)') return 'good';
+    if (colorVar === 'var(--tone-bad-fg)') return 'bad';
+    return 'flat';
   }
 
   $: heroChips = (data.overview_cards || []).slice(0, 4);
@@ -35,6 +40,7 @@
   $: scoreColor = data.score_color || 'var(--color-text)';
   $: scoreVerdictLabel = data.score_verdict_label || 'Solid';
   $: scorePct = scorePercent(data.score);
+  $: heroTone = heroScoreTone(scoreColor);
 </script>
 
 <section id="overview" class="report-section report-section--summary">
@@ -67,7 +73,7 @@
           <div class="report-hero-meta" id="overview-subtitle">{data.total_games} {data.queue_label} games · patches {data.patch_range}</div>
           <div class="report-hero-chips ui-chip-row" id="hero-chips" hidden={heroChips.length === 0}>
             {#each heroChips as card}
-              <HeroChip tone={heroChipTone(card)} label={card.label} value={card.value} valueColor={card.value_color || ''} />
+              <StatChip tone={heroChipTone(card)} label={card.label} value={card.value} valueColor={card.value_color || ''} />
             {/each}
           </div>
         </div>
@@ -78,7 +84,7 @@
       <div class="hero-actions" id="hero-actions">
         {#if topTips.length}
           {#each topTips as tip, index}
-            <HeroAction anchor={tip.anchor || 'coaching'} index={index + 1} label={tip.action || tip.title} />
+            <NavLink anchor={tip.anchor || 'coaching'} index={index + 1} label={tip.action || tip.title} variant="row" />
           {/each}
         {:else}
           <p class="hero-action-empty">Play a few more games to unlock personalised coaching tips.</p>
@@ -105,7 +111,7 @@
               <span class="accounts-panel-name">
                 {member.label}
                 {#if member.is_main}
-                  <Pill tone="good" variant="soft" dot={false} label="Main" />
+                  <Chip tone="good" fill={true} label="Main" />
                 {/if}
               </span>
               <span class="accounts-panel-rank">{member.solo_rank_division || 'Unranked'}</span>
@@ -119,17 +125,18 @@
       <h2 class="score-breakdown-title" id="score-breakdown">Score breakdown</h2>
       <div class="score-set" id="score-comps">
         {#each scoreComponents as comp}
-          {@const toneStyle = scoreToneStyle(comp.tone)}
-          <ScoreSetItem
-            name={comp.name}
-            scoreLabel={String(scorePercent(comp.score))}
-            scoreValue={scorePercent(comp.score)}
-            valueColor={toneStyle.valueColor}
-            fillColor={toneStyle.fillColor}
-            verdict={comp.verdict || 'Solid'}
-            sub={comp.value || ''}
-            hint={comp.hint || ''}
-          />
+          {@const textColor = toneTextColor(comp.tone)}
+          <div class="score-set-item" title={comp.hint || null}>
+            <div class="score-set-item-head">
+              <span class="score-set-item-name">{comp.name}</span>
+              <span class="score-set-item-score" style="color: {textColor}">{scorePercent(comp.score)}</span>
+            </div>
+            <Meter value={comp.score} tone={comp.tone} size="md" reference={50} />
+            <div class="score-set-item-foot">
+              <span class="score-set-item-verdict" style="color: {textColor}">{comp.verdict || 'Solid'}</span>
+              {#if comp.value}<span class="score-set-item-sub">{comp.value}</span>{/if}
+            </div>
+          </div>
         {/each}
       </div>
     </div>
@@ -140,11 +147,8 @@
           <div class="hero-score-label">Improvement score</div>
           <span id="score-verdict-label" class="hero-score-verdict" style="color: {scoreColor}">{scoreVerdictLabel}</span>
         </div>
-        <div class="hero-score-value" id="score-value" data-score={data.score} style="color: {scoreColor}">{data.score}<span>/100</span></div>
-        <div class="hero-score-bar" aria-hidden="true">
-          <i class="hero-score-bar-fill" style="width: {scorePct}%; background: {scoreColor}"></i>
-          <i class="hero-score-bar-tick"></i>
-        </div>
+        <div class="hero-score-value" id="score-value" data-score={data.score} style="color: {scoreColor}">{scorePct}<span>/100</span></div>
+        <Meter value={data.score} tone={heroTone} size="md" reference={50} --meter-margin="8px 0 0" />
       </div>
 
       {#if data.career && data.career.has_career}

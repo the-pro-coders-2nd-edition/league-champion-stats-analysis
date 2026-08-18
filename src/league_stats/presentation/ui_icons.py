@@ -337,33 +337,6 @@ SECTION_ICONS: dict[str, str] = {
     "recommendations": "bulb",
 }
 
-ICON_TONES: dict[str, str] = {
-    "coin": "gold",
-    "minion": "green",
-    "cs": "green",
-    "skull": "danger",
-    "eye": "blue",
-    "ward": "blue",
-    "trophy": "win",
-    "combat": "accent",
-    "flame": "orange",
-    "clock": "muted",
-    "dragon": "gold",
-    "teamfight": "accent",
-    "tower": "muted",
-    "target": "gold",
-    "roam": "accent",
-    "recall": "gold",
-    "level": "green",
-    "lane": "accent",
-    "chart": "accent",
-    "wand": "gold",
-    "items": "gold",
-    "rune": "accent",
-    "bulb": "win",
-    "kp": "accent",
-}
-
 
 def icon_for_label(label: str) -> str | None:
     """Return an internal icon key for a metric card label, if mapped."""
@@ -397,18 +370,16 @@ def icon_fields_for_label(label: str) -> dict[str, Any]:
     """Resolve icon metadata for a metric label."""
     icon_key = icon_for_label(label)
     if not icon_key:
-        return {"icon": None, "iconify": None, "icon_tone": "muted"}
+        return {"icon": None, "iconify": None}
     if icon_key in ICON_ASSET_FILES:
         return {
             "icon": icon_key,
             "icon_asset": ICON_ASSET_FILES[icon_key],
             "iconify": None,
-            "icon_tone": icon_tone(icon_key),
         }
     return {
         "icon": icon_key,
         "iconify": iconify_for_key(icon_key),
-        "icon_tone": icon_tone(icon_key),
     }
 
 
@@ -434,13 +405,6 @@ def iconify_for_key(icon_key: str | None) -> str | None:
     if not icon_key:
         return None
     return ICONIFY_ICONS.get(icon_key)
-
-
-def icon_tone(icon_key: str | None) -> str:
-    """CSS tone class suffix for an icon key."""
-    if not icon_key:
-        return "muted"
-    return ICON_TONES.get(icon_key, "muted")
 
 
 def with_icon(card: dict[str, Any]) -> dict[str, Any]:

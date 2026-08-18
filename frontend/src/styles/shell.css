@@ -137,30 +137,7 @@ button:disabled, .btn:disabled { opacity: .45; cursor: not-allowed; }
 button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visible {
   outline: none; box-shadow: var(--focus-ring); border-color: var(--accent);
 }
-.btn-primary {
-  background: var(--accent); color: #fff; border-color: var(--accent);
-  padding: 12px 22px; font-size: 15px; font-weight: 700;
-  box-shadow: 0 4px 16px rgba(124, 108, 240, .28);
-}
-.btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
-.btn-secondary {
-  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
-}
-.btn-secondary:hover:not(:disabled) {
-  color: var(--accent); border-color: var(--accent); filter: none;
-}
-.btn-tertiary, .btn-ghost {
-  background: transparent; color: var(--muted); border: 1px solid transparent;
-  padding: 9px 12px; font-weight: 600;
-}
-.btn-tertiary:hover:not(:disabled), .btn-ghost:hover:not(:disabled) {
-  color: var(--accent); background: rgba(124, 108, 240, .08); filter: none;
-}
-.btn-text {
-  background: none; border: none; color: var(--muted); padding: 8px 4px;
-  font: 600 13px/1.2 var(--font); box-shadow: none;
-}
-.btn-text:hover:not(:disabled) { color: var(--accent); filter: none; text-decoration: underline; }
+/* .btn-primary/-secondary/-tertiary/-ghost/-text moved into Button.svelte's .ctl classes. */
 
 input, select {
   background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
@@ -178,7 +155,7 @@ input::placeholder { color: var(--muted); }
 }
 .form-row-end { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .form-row-end select { min-height: 48px; }
-.form-row-end .btn-primary { min-height: 48px; }
+.form-row-end .ctl--filled { min-height: 48px; }
 .player-row { margin-bottom: 10px; }
 .player-row .remove-player { padding: 10px 12px; }
 .hint { margin: 12px 0 0; color: var(--muted); font-size: 13px; }
@@ -371,7 +348,7 @@ input::placeholder { color: var(--muted); }
   .build-grid { grid-template-columns: 1fr; }
   .player-cards { grid-template-columns: 1fr; }
   .form-row-end { margin-left: 0; width: 100%; }
-  .form-row-end .btn-primary, .form-row-end select { flex: 1; }
+  .form-row-end .ctl--filled, .form-row-end select { flex: 1; }
   .form-actions { flex-direction: column; align-items: stretch; }
   .section-header { flex-direction: column; align-items: stretch; }
   .reports-search { max-width: none; }
@@ -392,18 +369,12 @@ input::placeholder { color: var(--muted); }
 .watch-toggle.is-on { color: var(--text); border-color: var(--accent); background: rgba(124, 108, 240, .10); }
 
 .watch-toggle-track {
-  position: relative; display: block; flex: 0 0 auto;
-  width: 30px; height: 18px; border-radius: 999px;
-  background: var(--panel-2); border: 1px solid var(--border);
-  transition: background .15s, border-color .15s;
+  background: var(--panel-2); border-color: var(--border);
 }
 .watch-toggle.is-on .watch-toggle-track { background: var(--accent); border-color: var(--accent); }
 
 .watch-toggle-knob {
-  position: absolute; top: 2px; left: 2px;
-  width: 12px; height: 12px; border-radius: 50%;
   background: var(--muted);
-  transition: transform .15s, background .15s;
 }
 .watch-toggle.is-on .watch-toggle-knob { transform: translateX(12px); background: #fff; }
 

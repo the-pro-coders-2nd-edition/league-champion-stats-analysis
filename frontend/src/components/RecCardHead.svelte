@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Pill from './Pill.svelte';
+  import Chip from './Chip.svelte';
 
   type Badge = 'high' | 'medium' | 'low';
 
@@ -13,27 +13,27 @@
 </script>
 
 <div class="rec-head">
-  <Pill tone={PRIORITY_TONE[badge]} variant="soft" dot={false} label={priorityLabel} />
-  <Pill tone="flat" variant="soft" dot={false} label={category} />
+  <Chip tone={PRIORITY_TONE[badge]} fill={true} label={priorityLabel} />
+  <Chip tone="flat" fill={true} label={category} />
 </div>
 <strong class="rec-title">{title}</strong>
 <p class="rec-body">{detail}</p>
 
 <style>
-  :global(.rec-head) {
+  .rec-head {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     flex-wrap: wrap;
     margin-bottom: var(--space-2);
   }
-  :global(.rec-title) {
+  .rec-title {
     display: block;
     font-family: var(--font-heading);
     font-weight: 700;
     font-size: 14px;
   }
-  :global(.rec-body) {
+  .rec-body {
     margin: var(--space-2) 0 0;
     color: var(--color-neutral-400);
     font-size: 12px;

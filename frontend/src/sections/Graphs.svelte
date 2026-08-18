@@ -1,7 +1,7 @@
 <script>
-  import Pill from '../components/Pill.svelte';
+  import SectionHeader from '../components/SectionHeader.svelte';
+  import Disclosure from '../components/Disclosure.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
-  import { computeWindowScopeLabel } from '../lib/windowScope.js';
 
   export let data;
 
@@ -11,19 +11,18 @@
     helpOpen = !helpOpen;
   }
 
-  $: windowScopeLabel = computeWindowScopeLabel(data);
   $: figureHints = data.figure_hints || {};
 </script>
 
 <section id="graphs" class="report-section report-section--deepdive">
-  <h2 class="section-title section-title--deepdive">
-    <iconify-icon icon="lucide:bar-chart-2" class="metric-icon metric-icon--accent" aria-hidden="true"></iconify-icon>
-    <span>For the curious</span>
-    <Pill tone="flat" variant="outline" extraClass="scope-chip--window" dot={false} label={windowScopeLabel} />
-  </h2>
-  <p class="sub">Correlations, win predictors, and game archetypes — a data-science view for readers who want to dig deeper.</p>
-  <details class="section-details section-details--advanced">
-    <summary>Show advanced analytics</summary>
+  <SectionHeader
+    id="graphs"
+    title="For the curious"
+    icon="bar-chart-2"
+    lead="Correlations, win predictors, and game archetypes — a data-science view for readers who want to dig deeper."
+  />
+  <Disclosure variant="pill" chevron="leading">
+    <svelte:fragment slot="summary">Show advanced analytics</svelte:fragment>
     <div class="figure-block">
       <PlotlyFigure id="fig-correlation_heatmap" html={data.figures?.correlation_heatmap || ''} />
       <p class="figure-caption">How stats move together — strong red/blue pairs mean two metrics rise or fall in tandem across your games.</p>
@@ -78,5 +77,5 @@
       </div>
       <p class="figure-caption">Game archetypes in a compressed stat space — look for clusters of throws or comeback wins to spot patterns.</p>
     </div>
-  </details>
+  </Disclosure>
 </section>

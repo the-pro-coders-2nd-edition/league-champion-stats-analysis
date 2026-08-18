@@ -22,7 +22,7 @@
   --color-neutral-800: #232d33;
   --color-neutral-900: #172025;
 
-  --color-accent: #41b78c;
+  --color-accent: #7c6cf0;
   --color-accent-100: #eafaf3;
   --color-accent-200: #cdf0e3;
   --color-accent-300: #82d2bb;
@@ -52,11 +52,13 @@
   --shadow-md: 0 0 0 1px rgba(230, 237, 240, 0.09), 0 8px 24px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 0 0 1px rgba(230, 237, 240, 0.12), 0 18px 44px rgba(0, 0, 0, 0.6);
 
-  /* Status tones -- mirrors frontend/src/tones.js's T.good/warn/bad/flat/accent.
-     Components resolve a tone NAME ("good"/"warn"/"bad"/"flat"/"accent") via a
-     Jinja token or JS prop, then select colors through these custom properties
-     (e.g. `.pill--good { color: var(--tone-good-fg); }`) -- never a literal hex
-     value in component CSS. */
+  /* Status tones -- mirrors src/league_stats/presentation/tones.py's tone map, plus
+     info/plan/note added for Chip.svelte's 7-tone set (RFC-001 chip unification).
+     Components resolve a tone NAME (e.g. "good"/"warn"/"bad"/"flat"/"info"/"plan"/
+     "note") via a Python or JS prop, then select colors through these custom
+     properties (e.g. `.chip[data-tone="good"] { color: var(--tone-good-fg); }`) --
+     never a literal hex value in component CSS. 'accent' was deprecated and
+     removed from the tone set -- do not reintroduce --tone-accent-*. */
   --tone-good-fg: #82d2bb;
   --tone-good-mid: #2a9f7a;
   --tone-good-soft: #10312a;
@@ -77,10 +79,20 @@
   --tone-flat-soft: var(--color-neutral-800);
   --tone-flat-line: var(--color-neutral-500);
 
-  --tone-accent-fg: var(--color-accent-300);
-  --tone-accent-mid: var(--color-accent-600);
-  --tone-accent-soft: var(--color-accent-900);
-  --tone-accent-line: var(--color-accent);
+  --tone-info-fg: #6fb3e0;
+  --tone-info-mid: #2f6f96;
+  --tone-info-soft: #14232e;
+  --tone-info-line: #4a95c9;
+
+  --tone-plan-fg: #b3a0f0;
+  --tone-plan-mid: #6152a3;
+  --tone-plan-soft: #211c36;
+  --tone-plan-line: #9483e0;
+
+  --tone-note-fg: #9fb8bd;
+  --tone-note-mid: #4f6a70;
+  --tone-note-soft: #1a2528;
+  --tone-note-line: #7fa0a8;
 
   /* Win/loss background tints at two opacities, keyed to report.css's/shell.css's
      --win (#3fb68b) and --loss (#e05563). Components previously hardcoded these
@@ -89,4 +101,22 @@
   --win-tint-12: rgba(63, 182, 139, 0.12);
   --loss-tint-06: rgba(224, 85, 99, 0.06);
   --loss-tint-12: rgba(224, 85, 99, 0.12);
+}
+
+/* Shared toggle-switch geometry (RFC-001 SwitchTrack consolidation).
+   Two call sites -- .watch-toggle-track (shell.css) and .account-filter-switch
+   (report.css) -- independently reimplemented the same 30x18 track / 12x12 knob.
+   This holds only the shared geometry; each caller keeps its own colors/tones
+   since they draw from different token namespaces (shell.css's --panel-2/--border
+   vs report.css's --color-surface-2/--color-divider). */
+.switch-track {
+  position: relative; display: block; flex: 0 0 auto;
+  width: 30px; height: 18px; border-radius: 999px;
+  border-width: 1px; border-style: solid;
+  transition: background .15s, border-color .15s;
+}
+.switch-track-knob, .account-filter-switch::after {
+  position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 50%;
+  transition: transform .15s, background .15s;
 }
