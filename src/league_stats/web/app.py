@@ -852,7 +852,7 @@ def create_app(
             **watch_public_fields(player or {}),
         }
 
-    def _career_ladder_ref(slug: str, build_slug: str) -> tuple[Path, str]:
+    def _career_ladder_ref(slug: str, build_slug: str) -> tuple[Path, str, str, str]:
         """The career database path and ladder key behind a report URL.
 
         Only the career database is touched, so no Riot key is required -- these
@@ -877,9 +877,8 @@ def create_app(
             region=str(meta.get("region", "europe")) or "europe",
             output_dir=config.output_dir,
         )
-        return app_config.career_db_path, career_build_key(
-            player_slug(riot_id, tagline), champion, role
-        )
+        ladder_key = career_build_key(player_slug(riot_id, tagline), champion, role)
+        return app_config.career_db_path, ladder_key, champion, role
 
     @app.post("/api/players/{slug}/builds/{build_slug}/career/ack")
     def acknowledge_career_banner(slug: str, build_slug: str) -> dict[str, Any]:
@@ -888,7 +887,7 @@ def create_app(
         The flag survives report builds so a background watch refresh cannot
         swallow the milestone; this is how a reader retires it.
         """
-        db_path, ladder_key = _career_ladder_ref(slug, build_slug)
+        db_path, ladder_key, _champion, _role = _career_ladder_ref(slug, build_slug)
         with CareerStore(db_path) as career:
             career.clear_pending_congrats(ladder_key)
         return {"acknowledged": True}
@@ -904,13 +903,24 @@ def create_app(
         run this schedules. A dropped track is not recorded as used, so if it is
         still the best fit for the build it comes straight back, with rungs
         recomputed against current peer percentiles.
+
+        The regenerate is scoped to this champion and lane. A regenerate sets
+        ``new_match_ids = None``, which makes ``should_skip_unchanged_build`` return
+        False for every build, so an unscoped one would re-analyse the player's
+        whole report set to act on one champion's ladder.
         """
-        db_path, ladder_key = _career_ladder_ref(slug, build_slug)
+        db_path, ladder_key, champion, role = _career_ladder_ref(slug, build_slug)
         with CareerStore(db_path) as career:
             if not any(goal.slot == body.slot for goal in career.load_goals(ladder_key)):
                 raise HTTPException(status_code=404, detail="No block in that slot.")
             career.request_drop(ladder_key, body.slot)
-        return {"dropped_slot": body.slot, **_enqueue_player_job(slug, JOB_KIND_REGENERATE)}
+        job = _enqueue_player_job(
+            slug,
+            JOB_KIND_REGENERATE,
+            filter_champion=champion,
+            filter_role=role,
+        )
+        return {"dropped_slot": body.slot, "build_slug": build_slug, **job}
 
     @app.get("/api/players/{slug}/builds/{build_slug}")
     def build_payload(slug: str, build_slug: str) -> dict[str, Any]:
