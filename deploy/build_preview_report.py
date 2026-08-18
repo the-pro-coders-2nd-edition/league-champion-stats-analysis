@@ -22,7 +22,7 @@ from league_stats.core.config import AppConfig
 from league_stats.core.models import MatchRecord, PeerComparisonResult, RankedEntry
 from league_stats.ingest.parser import ItemCatalog, MatchParser
 from league_stats.pipeline.orchestrator import run_analysis
-from league_stats.presentation.report import refresh_report_indexes
+from league_stats.presentation.report import build_manifest_entry, refresh_report_indexes
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 
 TEMPLATE_DIR = REPO_ROOT / "src" / "league_stats" / "presentation" / "templates"
@@ -54,6 +54,7 @@ class PreviewBuild:
     peer_p50: dict[str, float]
     peer_p75: dict[str, float]
     gpm: float
+    games: int
 
 
 # Peer baselines are role-shaped: a support is not measured against a mid
@@ -108,6 +109,7 @@ PREVIEW_BUILDS = (
         peer_p50=_MID_PEER_P50,
         peer_p75=_MID_PEER_P75,
         gpm=395.0,
+        games=60,
     ),
     PreviewBuild(
         champion="Jinx",
@@ -133,6 +135,7 @@ PREVIEW_BUILDS = (
         peer_p50=_ADC_PEER_P50,
         peer_p75=_ADC_PEER_P75,
         gpm=430.0,
+        games=44,
     ),
     PreviewBuild(
         champion="Thresh",
@@ -158,12 +161,11 @@ PREVIEW_BUILDS = (
         peer_p50=_SUPPORT_PEER_P50,
         peer_p75=_SUPPORT_PEER_P75,
         gpm=270.0,
+        games=31,
     ),
 )
 
 _DURATION_S = (1620, 1980, 1440, 2160, 1800, 1500, 2040, 1740, 2280)
-
-PREVIEW_GAMES = 60
 
 
 def _cycle(values: tuple, index: int):
@@ -274,9 +276,12 @@ def _vary(base: MatchRecord, build: PreviewBuild, index: int) -> MatchRecord:
     )
 
 
-def _make_records(build: PreviewBuild, n: int = PREVIEW_GAMES) -> list[MatchRecord]:
+def _make_records(build: PreviewBuild) -> list[MatchRecord]:
+    """Games for one build. Counts differ per build so the player hub's
+    most-played-first ordering (and therefore its default report) is meaningful
+    rather than decided by whichever build happened to render last."""
     base = MatchParser(ItemCatalog(FAKE_ITEMS)).parse(make_match(), make_timeline(), MY_PUUID)
-    records = [_vary(base, build, index) for index in range(n)]
+    records = [_vary(base, build, index) for index in range(build.games)]
     return sorted(records, key=lambda record: record.game_creation_ms, reverse=True)
 
 
@@ -323,11 +328,30 @@ def build_preview(output_dir: Path) -> Path:
     """
     ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75)
 
+    # Records are generated for every build before anything renders, because each
+    # report's champion switcher needs the *full* build list -- rendering
+    # one-at-a-time would leave the first report with nothing to switch to.
+    histories = [(build, _make_records(build)) for build in PREVIEW_BUILDS]
+    manifest_builds = [
+        build_manifest_entry(
+            champion=build.champion,
+            role=build.role,
+            games=len(records),
+            winrate=sum(1 for record in records if record.win) / len(records),
+        )
+        for build, records in histories
+    ]
+
     config = None
-    for build in PREVIEW_BUILDS:
-        records = _make_records(build)
+    for build, records in histories:
         config = _config(output_dir, champion=build.champion, role=build.role)
-        run_analysis(config, records, peer_comparison=_peer(records, build), ranked=ranked)
+        run_analysis(
+            config,
+            records,
+            peer_comparison=_peer(records, build),
+            ranked=ranked,
+            player_builds=manifest_builds,
+        )
 
     hub = refresh_report_indexes(
         config.output_dir,

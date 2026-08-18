@@ -39,3 +39,36 @@ def test_build_preview_reports_cover_configured_champions(tmp_path: Path) -> Non
     entries = discover_reports(tmp_path / "output")
     champions = {entry["champion"] for entry in entries}
     assert champions == {build.champion for build in module.PREVIEW_BUILDS}
+
+
+def test_preview_reports_can_switch_between_every_build(tmp_path: Path) -> None:
+    module = _load_build_preview_report()
+    output = tmp_path / "output"
+
+    module.build_preview(output)
+
+    player_dir = output / "reports" / "preview_euw"
+    slugs = ["viktor_middle", "jinx_bottom", "thresh_utility"]
+    for slug in slugs:
+        html = (player_dir / slug / "report.html").read_text(encoding="utf-8")
+        assert "nav-builds" in html, f"{slug} has no champion switcher"
+        for target in slugs:
+            assert f'href="../{target}/report.html"' in html, f"{slug} cannot reach {target}"
+        assert f'build-card is-default" href="../{slug}/report.html"' in html
+
+
+def test_preview_hub_defaults_to_the_most_played_build(tmp_path: Path) -> None:
+    import json
+
+    module = _load_build_preview_report()
+    output = tmp_path / "output"
+
+    module.build_preview(output)
+
+    manifest = json.loads(
+        (output / "reports" / "preview_euw" / "manifest.json").read_text(encoding="utf-8")
+    )
+    games = [build["games"] for build in manifest["builds"]]
+    assert games == sorted(games, reverse=True), "hub should list most-played first"
+    assert len(set(games)) == len(games), "distinct counts keep the default deterministic"
+    assert manifest["default_href"] == manifest["builds"][0]["href"]
