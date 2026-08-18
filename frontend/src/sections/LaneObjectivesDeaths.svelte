@@ -2,10 +2,9 @@
   import SectionHeader from '../components/SectionHeader.svelte';
   import SectionPulse from '../components/SectionPulse.svelte';
   import TieredCards from '../components/TieredCards.svelte';
-  import DataTableHead from '../components/DataTableHead.svelte';
-  import DataTableRow from '../components/DataTableRow.svelte';
+  import DataTable from '../components/DataTable.svelte';
   import PlotlyFigure from '../lib/PlotlyFigure.svelte';
-  import { escapeHtml, iconCellHtml, metricLabelWithIconify } from '../lib/html.js';
+  import { metricLabelWithIconify } from '../lib/html.js';
   import { pyFloatStr } from '../lib/format.js';
 
   export let data;
@@ -17,42 +16,25 @@
       .join(' ');
   }
 
-  function metricLabelTooltipHtml(label, tooltip) {
-    return `<span class="metric-label-with-tooltip">\n` +
-      `  <span class="metric-label"><span>${escapeHtml(label)}</span></span>\n` +
-      `  <span class="metric-tooltip-wrap"><button type="button" class="metric-tooltip-btn" aria-label="How ${escapeHtml(label)} is calculated" aria-expanded="false">?</button> <span class="metric-tooltip-panel" role="tooltip">${escapeHtml(tooltip)}</span> </span>\n` +
-      `</span>`;
-  }
-
   const OBJECTIVE_DIED_TOOLTIP = 'Share of epic objectives where you died in the 45–10s setup window before the take ' +
     '(caught before the fight; deaths in the last 10s are excluded as teamfight deaths).';
   const OBJECTIVE_WARDS_TOOLTIP = 'Average wards you placed in the 2 minutes before each objective take. Any ward type counts; map location is not filtered.';
 
   $: objectiveColumns = [
-    { html: 'Objective', id: '' },
-    { html: 'Count', id: '' },
-    { html: 'Taken', id: '' },
-    { html: 'Present', id: '' },
-    { html: 'Arrived early', id: '' },
-    { html: metricLabelTooltipHtml('Died in setup window (45–10s)', OBJECTIVE_DIED_TOOLTIP), id: '' },
-    { html: metricLabelTooltipHtml('Wards before', OBJECTIVE_WARDS_TOOLTIP), id: '' },
+    { label: 'Objective' },
+    { label: 'Count' },
+    { label: 'Taken' },
+    { label: 'Present' },
+    { label: 'Arrived early' },
+    { label: 'Died in setup window (45–10s)', tooltip: OBJECTIVE_DIED_TOOLTIP },
+    { label: 'Wards before', tooltip: OBJECTIVE_WARDS_TOOLTIP },
   ];
 
   $: blindSpotColumns = [
-    { html: 'Zone', id: '' },
-    { html: metricLabelWithIconify('Deaths', 'lucide:skull', 'danger'), id: '' },
+    { label: 'Zone' },
+    { label: 'Deaths', iconify: 'lucide:skull', iconTone: 'danger' },
   ];
 
-  function objectiveRowHtml(row) {
-    return `<td>${iconCellHtml(titleCase(row.kind), row.objective_icon)}</td><td>${row.count}</td>` +
-      `<td>${Math.round(row.taken_rate * 100)}%</td><td>${Math.round(row.presence_rate * 100)}%</td>` +
-      `<td>${Math.round(row.early_rate * 100)}%</td><td>${Math.round(row.dead_before_rate * 100)}%</td>` +
-      `<td>${pyFloatStr(row.avg_wards_before)}</td>`;
-  }
-
-  function blindSpotRowHtml(row) {
-    return `<td>${escapeHtml(row.zone)}</td><td>${row.deaths}</td>`;
-  }
 
   $: earlySectionTitle = data.early_section_title || 'Lane';
   $: laneMoreLabel = `More ${(data.early_section_title || 'lane').toLowerCase()} stats`;
@@ -91,16 +73,23 @@
   {#if showSplitPushStats}
     <div id="objective-macro-cards"><TieredCards cards={objectiveMacroCards} moreLabel="More split-push stats" /></div>
   {/if}
-  <div class="table-scroll">
-    <table>
-      <DataTableHead columns={objectiveColumns} />
-      <tbody id="objective-table-body">
-        {#each data.objective_rows || [] as row}
-          <DataTableRow cellsHtml={objectiveRowHtml(row)} />
-        {/each}
-      </tbody>
-    </table>
-  </div>
+  <DataTable columns={objectiveColumns} rows={data.objective_rows || []} wrapClass="objectives-table">
+    <svelte:fragment slot="cells" let:row>
+      <td>
+        {#if row.objective_icon}
+          <span class="icon-cell"><img src={row.objective_icon} alt="" class="game-icon game-icon--sm"><span>{titleCase(row.kind)}</span></span>
+        {:else}
+          {titleCase(row.kind)}
+        {/if}
+      </td>
+      <td>{row.count}</td>
+      <td>{Math.round(row.taken_rate * 100)}%</td>
+      <td>{Math.round(row.presence_rate * 100)}%</td>
+      <td>{Math.round(row.early_rate * 100)}%</td>
+      <td>{Math.round(row.dead_before_rate * 100)}%</td>
+      <td>{pyFloatStr(row.avg_wards_before)}</td>
+    </svelte:fragment>
+  </DataTable>
   <details class="section-details">
     <summary>Show charts</summary>
     <div class="figure-block">
@@ -124,30 +113,14 @@
       <PlotlyFigure id="fig-deaths_box" html={data.figures?.deaths_box || ''} />
       <p class="figure-caption">Deaths per game spread — a high median with a long upper tail means volatile survival.</p>
     </div>
-    {#if blindSpots.length}
-      <div id="blind-spots-block">
-        <h3>{@html metricLabelWithIconify('Most dangerous zones (solo deaths without recent team vision)', 'lucide:skull', 'danger')}</h3>
-        <div class="table-scroll">
-          <table>
-            <DataTableHead columns={blindSpotColumns} />
-            <tbody id="blind-spots-body">
-              {#each blindSpots as row}
-                <DataTableRow cellsHtml={blindSpotRowHtml(row)} />
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    {:else}
-      <div id="blind-spots-block" style="display:none">
-        <h3>{@html metricLabelWithIconify('Most dangerous zones (solo deaths without recent team vision)', 'lucide:skull', 'danger')}</h3>
-        <div class="table-scroll">
-          <table>
-            <DataTableHead columns={blindSpotColumns} />
-            <tbody id="blind-spots-body"></tbody>
-          </table>
-        </div>
-      </div>
-    {/if}
+    <div id="blind-spots-block" style={blindSpots.length ? null : 'display:none'}>
+      <h3>{@html metricLabelWithIconify('Most dangerous zones (solo deaths without recent team vision)', 'lucide:skull', 'danger')}</h3>
+      <DataTable columns={blindSpotColumns} rows={blindSpots}>
+        <svelte:fragment slot="cells" let:row>
+          <td>{row.zone}</td>
+          <td>{row.deaths}</td>
+        </svelte:fragment>
+      </DataTable>
+    </div>
   </details>
 </section>
