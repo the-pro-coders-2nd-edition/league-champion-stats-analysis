@@ -9,6 +9,12 @@
   import Callout from '../components/Callout.svelte';
   import Disclosure from '../components/Disclosure.svelte';
   import ShowMore from '../components/ShowMore.svelte';
+  import UiChipBadge from '../components/UiChipBadge.svelte';
+  import IconCellSolo from '../components/IconCellSolo.svelte';
+  import ChampionIconStack from '../components/ChampionIconStack.svelte';
+  import GameReviewRuneDuo from '../components/GameReviewRuneDuo.svelte';
+  import GameReviewRunePage from '../components/GameReviewRunePage.svelte';
+  import GameReviewSummoners from '../components/GameReviewSummoners.svelte';
   import GameReviewKeyMoments from './GameReviewKeyMoments.svelte';
   import { escapeHtml, soloIconCellHtml } from '../lib/html.js';
   import { formatGameTime, pct } from '../lib/format.js';
@@ -27,21 +33,6 @@
 
   // `iconCell(name, iconHref, true)` from report.html — always icon-only in this section.
   const iconCellHtml = soloIconCellHtml;
-
-  function chipHtml(label, tone, title) {
-    const cls = tone ? `ui-chip ui-chip--${tone}` : 'ui-chip';
-    const attrs = title ? ` title="${escapeHtml(title)}"` : '';
-    return `<span class="${cls}"${attrs}>${escapeHtml(label)}</span>`;
-  }
-
-  function championIconStackHtml(names, icons, tone) {
-    names = names || [];
-    icons = icons || [];
-    if (!names.length) return '<span class="game-review-champ-empty">—</span>';
-    return `<span class="game-review-champ-stack game-review-champ-stack--${tone}">` +
-      names.map((name, index) => iconCellHtml(name, icons[index] || null)).join('') +
-      '</span>';
-  }
 
   function formatMetricValue(value) {
     if (value === null || value === undefined) return '—';
@@ -104,51 +95,6 @@
       return '';
     }
     return '';
-  }
-
-  function renderGameReviewRunesHtml(build) {
-    build = build || {};
-    const keystone = iconCellHtml(build.keystone || 'Keystone', build.keystone_icon);
-    const secondary = iconCellHtml(build.secondary_tree || 'Secondary', build.secondary_tree_icon);
-    return `<div class="game-review-runes">${keystone}<span class="game-review-rune-sep" aria-hidden="true">+</span>${secondary}</div>`;
-  }
-
-  function renderRuneIconRowHtml(names, icons, emptyLabel) {
-    names = names || [];
-    icons = icons || [];
-    if (!names.length) return `<span class="game-review-rune-empty">${escapeHtml(emptyLabel || '—')}</span>`;
-    return names.map((name, index) => iconCellHtml(name, icons[index] || null)).join('');
-  }
-
-  function renderGameReviewRunePageHtml(build) {
-    build = build || {};
-    const hasFull = (build.primary_runes || []).length || (build.secondary_runes || []).length || (build.shards || []).length;
-    if (!hasFull) return renderGameReviewRunesHtml(build);
-    return `<div class="game-review-rune-page">` +
-      `<div class="game-review-rune-tree"><div class="game-review-rune-tree-head">` +
-      iconCellHtml(build.primary_tree || 'Primary', build.primary_tree_icon) +
-      `<span class="game-review-rune-tree-label">Primary</span></div>` +
-      `<div class="game-review-rune-row game-review-rune-row--keystone">${iconCellHtml(build.keystone || 'Keystone', build.keystone_icon)}</div>` +
-      `<div class="game-review-rune-row">${renderRuneIconRowHtml(build.primary_runes, build.primary_rune_icons)}</div></div>` +
-      `<div class="game-review-rune-tree"><div class="game-review-rune-tree-head">` +
-      iconCellHtml(build.secondary_tree || 'Secondary', build.secondary_tree_icon) +
-      `<span class="game-review-rune-tree-label">Secondary</span></div>` +
-      `<div class="game-review-rune-row">${renderRuneIconRowHtml(build.secondary_runes, build.secondary_rune_icons)}</div></div>` +
-      ((build.shards || []).length
-        ? `<div class="game-review-rune-shards"><span class="game-review-rune-tree-label">Shards</span>` +
-          `<div class="game-review-rune-row">${renderRuneIconRowHtml(build.shards, build.shard_icons)}</div></div>`
-        : '') +
-      '</div>';
-  }
-
-  function renderGameReviewSummonersHtml(build) {
-    build = build || {};
-    const icons = build.summoner_icons || [];
-    const spells = build.summoners || [];
-    if (!spells.length) return '—';
-    return `<span class="game-review-summoners">` +
-      spells.map((name, index) => iconCellHtml(name, icons[index] || null)).join('<span class="game-review-summoner-sep" aria-hidden="true">+</span>') +
-      '</span>';
   }
 
   function primaryBehaviorSignal(game) {
@@ -257,48 +203,11 @@
     return { label: 'Absent without pressure', tone: 'bad', hint: objectiveHints['Absent without pressure'] || '' };
   }
 
-  function renderObjectiveDetailsHtml(row, objectiveHints) {
-    const parts = [];
-    const presence = objectivePresenceDetail(row, objectiveHints);
-    parts.push(`<div class="game-review-objective-detail-row"><span class="game-review-objective-detail-label">Your role</span>${chipHtml(presence.label, presence.tone, presence.hint)}</div>`);
-
-    const gainLabels = row.trade_gain_labels || [];
-    const lossLabels = row.trade_loss_labels || [];
-    if (gainLabels.length || lossLabels.length) {
-      const swingChips = gainLabels.map((label) => chipHtml(label, 'good', ''))
-        .concat(lossLabels.map((label) => chipHtml(label, 'bad', '')));
-      parts.push(`<div class="game-review-objective-detail-row game-review-objective-detail-row--swings">` +
-        `<span class="game-review-objective-detail-label">Map trade</span>` +
-        `<div class="game-review-objective-swing-chips">${swingChips.join('')}</div></div>`);
-    }
-
-    const allies = row.pit_ally_champions || [];
-    const enemies = row.pit_enemy_champions || [];
-    if (allies.length || enemies.length) {
-      parts.push(`<div class="game-review-objective-detail-row game-review-objective-detail-row--pit">` +
-        `<span class="game-review-objective-detail-label">At pit${row.manpower_at_pit ? ` (${escapeHtml(row.manpower_at_pit)})` : ''}</span>` +
-        `<div class="game-review-fight-sides">${championIconStackHtml(allies, row.pit_ally_icons, 'ally')}` +
-        `<span class="game-review-fight-vs">vs</span>${championIconStackHtml(enemies, row.pit_enemy_icons, 'enemy')}</div></div>`);
-    }
-
-    if (row.present && row.wards_before != null) {
-      const wardCount = Number(row.wards_before) || 0;
-      const wardLabel = wardCount === 1
-        ? 'You placed 1 ward near objective during setup'
-        : `You placed ${wardCount} wards near objective during setup`;
-      parts.push(`<div class="game-review-objective-detail-row"><span class="game-review-objective-detail-label">Objective</span>` +
-        chipHtml(wardLabel, 'stat', objectiveHints['Wards during setup'] || objectiveHints['Wards before'] || '') + '</div>');
-    }
-
-    if (row.tp_available === true) {
-      parts.push(`<div class="game-review-objective-detail-row"><span class="game-review-objective-detail-label">Summoners</span>` +
-        chipHtml('TP available', 'warn', objectiveHints['TP available'] || '') + '</div>');
-    } else if (row.tp_available === false) {
-      parts.push(`<div class="game-review-objective-detail-row"><span class="game-review-objective-detail-label">Summoners</span>` +
-        chipHtml('No TP', 'stat', objectiveHints['No TP'] || '') + '</div>');
-    }
-
-    return parts.join('');
+  function objectiveWardLabel(row) {
+    const wardCount = Number(row.wards_before) || 0;
+    return wardCount === 1
+      ? 'You placed 1 ward near objective during setup'
+      : `You placed ${wardCount} wards near objective during setup`;
   }
 
   function objectiveKindLabel(row) {
@@ -309,53 +218,6 @@
     if (row.kind !== 'grubs' || row.secured_count == null || row.objective_total == null) return '';
     const bucket = Math.max(0, Math.min(3, Math.round(Number(row.secured_count) || 0)));
     return ` game-review-objective--grubs-${bucket}`;
-  }
-
-  function keyMomentsFeedHtml(game, tooltips) {
-    const deathHints = tooltips.key_moments || {};
-    const deaths = game.deaths || [];
-    const fights = game.fights || [];
-    const parts = [];
-
-    parts.push('<div class="game-review-feed-section"><h4 class="game-review-feed-title">Deaths</h4>');
-    if (!deaths.length) {
-      parts.push('<p class="sub">No deaths recorded.</p>');
-    } else {
-      parts.push('<div class="game-review-feed">' + deaths.map((row) => {
-        const flags = (row.flags || []).map((flag) => chipHtml(flag, 'flag')).join('');
-        const goldGiven = row.gold_given != null ? Number(row.gold_given) : null;
-        const goldHtml = (goldGiven != null && Number.isFinite(goldGiven))
-          ? `<span class="game-review-death-gold" title="${escapeHtml(deathHints.gold_given || '')}">Gave ${Math.round(goldGiven).toLocaleString()}g</span>`
-          : '';
-        return `<div class="game-review-event game-review-event--death"><span class="game-review-event-time">${formatGameTime(row.minute)}</span>` +
-          `<div class="game-review-event-body"><div class="game-review-death-line"><span class="game-review-killed-by">Killed by ` +
-          (row.killer_icon ? iconCellHtml(row.killer || 'Unknown', row.killer_icon) : `<span>${escapeHtml(row.killer || 'Unknown')}</span>`) +
-          `</span>${goldHtml}${flags ? `<span class="ui-chip-row">${flags}</span>` : ''}</div></div></div>`;
-      }).join('') + '</div>');
-    }
-    parts.push('</div>');
-
-    parts.push('<div class="game-review-feed-section"><h4 class="game-review-feed-title">Fights</h4>');
-    if (!fights.length) {
-      parts.push('<p class="sub">No teamfights joined.</p>');
-    } else {
-      parts.push('<div class="game-review-feed">' + fights.map((row) => {
-        const tone = row.fight_won ? 'good' : 'bad';
-        const verdict = row.fight_won ? 'Fight won' : 'Fight lost';
-        const stats = [
-          chipHtml(`${row.kills}/${row.deaths}/${row.assists}`, 'stat'),
-          chipHtml(`${Math.round(Number(row.damage) || 0).toLocaleString()} dmg`, 'stat'),
-        ].join('');
-        return `<div class="game-review-event game-review-event--${tone} game-review-event--subtle">` +
-          `<span class="game-review-event-time">${formatGameTime(row.start_minute)}</span>` +
-          `<div class="game-review-event-body"><div class="game-review-event-headline"><strong>${verdict}</strong>` +
-          `<div class="ui-chip-row">${stats}</div></div>` +
-          `<div class="game-review-fight-sides">${championIconStackHtml(row.ally_champions, row.ally_icons, 'ally')}` +
-          `<span class="game-review-fight-vs">vs</span>${championIconStackHtml(row.enemy_champions, row.enemy_icons, 'enemy')}</div></div></div>`;
-      }).join('') + '</div>');
-    }
-    parts.push('</div>');
-    return parts.join('');
   }
 
   // --- Overview tab ---
@@ -514,6 +376,9 @@
   $: tooltips = data.game_review_tooltips || {};
   $: objectiveHints = tooltips.objectives || {};
   $: objectiveRows = selectedGame ? (selectedGame.objectives || []) : [];
+  $: deathHints = tooltips.key_moments || {};
+  $: deaths = selectedGame?.deaths || [];
+  $: fights = selectedGame?.fights || [];
   $: score = selectedGame?.score || {};
   $: build = selectedGame?.build || {};
   $: dimensions = score.dimensions || [];
@@ -525,12 +390,12 @@
   }
 
   $: metaBits = selectedGame ? [selectedGame.date, formatGameTime(selectedGame.duration_min), selectedGame.side] : [];
-  $: archetypeChip = selectedGame?.archetype ? chipHtml(selectedGame.archetype, selectedGame.result === 'win' ? 'good' : 'bad') : '';
+  $: hasMetaChip = !!selectedGame?.archetype;
+  $: archetypeTone = selectedGame?.result === 'win' ? 'good' : 'bad';
   $: hasLoadoutTeaser = !!(build.keystone_icon || build.secondary_tree_icon || (build.summoners || []).length);
 
-  $: itemsHtml = build.items?.length
-    ? build.items.map((name, index) => iconCellHtml(name, (build.item_icons || [])[index] || null)).join('<span class="core-arrow" aria-hidden="true">→</span>')
-    : '';
+  $: items = build.items || [];
+  $: itemIcons = build.item_icons || [];
 
   $: csStats = data.show_cs_stats ?? true;
   $: if (!csStats && timelineMetric === 'cs') timelineMetric = 'gold';
@@ -590,18 +455,20 @@
               kda={selectedGame.kda}
               score={score.overall || 0}
               metaText={metaBits.join(' · ')}
-              hasMetaChip={!!archetypeChip}
+              {hasMetaChip}
               hasLoadout={hasLoadoutTeaser}
             >
-              <svelte:fragment slot="champion">{@html iconCellHtml(selectedGame.champion || 'You', selectedGame.champion_icon)}</svelte:fragment>
-              <svelte:fragment slot="opponent">{@html iconCellHtml(selectedGame.opponent || 'Opponent', selectedGame.opponent_icon)}</svelte:fragment>
-              <svelte:fragment slot="score-chip">{@html chipHtml(score.tier || '—', 'stable')}</svelte:fragment>
-              <svelte:fragment slot="meta-chip">{@html archetypeChip}</svelte:fragment>
+              <svelte:fragment slot="champion"><IconCellSolo name={selectedGame.champion || 'You'} icon={selectedGame.champion_icon} /></svelte:fragment>
+              <svelte:fragment slot="opponent"><IconCellSolo name={selectedGame.opponent || 'Opponent'} icon={selectedGame.opponent_icon} /></svelte:fragment>
+              <svelte:fragment slot="score-chip"><UiChipBadge tone="stable" label={score.tier || '—'} /></svelte:fragment>
+              <svelte:fragment slot="meta-chip">
+                {#if hasMetaChip}<UiChipBadge tone={archetypeTone} label={selectedGame.archetype} />{/if}
+              </svelte:fragment>
               <svelte:fragment slot="loadout">
-                {@html renderGameReviewRunesHtml(build)}
+                <GameReviewRuneDuo {build} />
                 {#if (build.summoners || []).length}
                   <span class="game-review-rune-sep" aria-hidden="true">·</span>
-                  {@html renderGameReviewSummonersHtml(build)}
+                  <GameReviewSummoners {build} />
                 {/if}
               </svelte:fragment>
             </GameSummaryHeader>
@@ -685,7 +552,71 @@
             </div>
 
             <div class="game-review-panel" id="game-review-panel-key-moments" role="tabpanel" hidden={activeTab !== 'key-moments'}>
-              {@html keyMomentsFeedHtml(selectedGame, tooltips)}
+              <div class="game-review-feed-section">
+                <h4 class="game-review-feed-title">Deaths</h4>
+                {#if !deaths.length}
+                  <p class="sub">No deaths recorded.</p>
+                {:else}
+                  <div class="game-review-feed">
+                    {#each deaths as row}
+                      {@const goldGiven = row.gold_given != null ? Number(row.gold_given) : null}
+                      <div class="game-review-event game-review-event--death">
+                        <span class="game-review-event-time">{formatGameTime(row.minute)}</span>
+                        <div class="game-review-event-body">
+                          <div class="game-review-death-line">
+                            <span class="game-review-killed-by">Killed by
+                              {#if row.killer_icon}
+                                <IconCellSolo name={row.killer || 'Unknown'} icon={row.killer_icon} />
+                              {:else}
+                                <span>{row.killer || 'Unknown'}</span>
+                              {/if}
+                            </span>
+                            {#if goldGiven != null && Number.isFinite(goldGiven)}
+                              <span class="game-review-death-gold" title={deathHints.gold_given || ''}>Gave {Math.round(goldGiven).toLocaleString()}g</span>
+                            {/if}
+                            {#if (row.flags || []).length}
+                              <span class="ui-chip-row">
+                                {#each row.flags as flag}<UiChipBadge tone="flag" label={flag} />{/each}
+                              </span>
+                            {/if}
+                          </div>
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+
+              <div class="game-review-feed-section">
+                <h4 class="game-review-feed-title">Fights</h4>
+                {#if !fights.length}
+                  <p class="sub">No teamfights joined.</p>
+                {:else}
+                  <div class="game-review-feed">
+                    {#each fights as row}
+                      {@const fightTone = row.fight_won ? 'good' : 'bad'}
+                      <div class="game-review-event game-review-event--{fightTone} game-review-event--subtle">
+                        <span class="game-review-event-time">{formatGameTime(row.start_minute)}</span>
+                        <div class="game-review-event-body">
+                          <div class="game-review-event-headline">
+                            <strong>{row.fight_won ? 'Fight won' : 'Fight lost'}</strong>
+                            <div class="ui-chip-row">
+                              <UiChipBadge tone="stat" label={`${row.kills}/${row.deaths}/${row.assists}`} />
+                              <UiChipBadge tone="stat" label={`${Math.round(Number(row.damage) || 0).toLocaleString()} dmg`} />
+                            </div>
+                          </div>
+                          <div class="game-review-fight-sides">
+                            <ChampionIconStack names={row.ally_champions} icons={row.ally_icons} tone="ally" />
+                            <span class="game-review-fight-vs">vs</span>
+                            <ChampionIconStack names={row.enemy_champions} icons={row.enemy_icons} tone="enemy" />
+                          </div>
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+
               <div class="game-review-feed-section">
                 <h4 class="game-review-feed-title">Objectives</h4>
                 {#if !objectiveRows.length}
@@ -694,6 +625,7 @@
                   <div class="game-review-objective-list">
                     {#each objectiveRows as row}
                       {@const outcome = objectiveOutcome(row)}
+                      {@const presence = objectivePresenceDetail(row, objectiveHints)}
                       <Disclosure
                         variant="objective"
                         chevron="trailing"
@@ -701,10 +633,51 @@
                       >
                         <svelte:fragment slot="summary">
                           <span class="game-review-objective-time">{formatGameTime(row.minute)}</span>
-                          <span class="game-review-objective-kind">{@html iconCellHtml(objectiveKindLabel(row), row.objective_icon)}<span>{objectiveKindLabel(row)}</span></span>
+                          <span class="game-review-objective-kind"><IconCellSolo name={objectiveKindLabel(row)} icon={row.objective_icon} /><span>{objectiveKindLabel(row)}</span></span>
                           <span class="game-review-objective-outcome game-review-objective-outcome--{outcome.tone}">{outcome.label}</span>
                         </svelte:fragment>
-                        <div class="game-review-objective-details">{@html renderObjectiveDetailsHtml(row, objectiveHints)}</div>
+                        <div class="game-review-objective-details">
+                          <div class="game-review-objective-detail-row">
+                            <span class="game-review-objective-detail-label">Your role</span>
+                            <UiChipBadge tone={presence.tone} label={presence.label} title={presence.hint} />
+                          </div>
+                          {#if (row.trade_gain_labels || []).length || (row.trade_loss_labels || []).length}
+                            <div class="game-review-objective-detail-row game-review-objective-detail-row--swings">
+                              <span class="game-review-objective-detail-label">Map trade</span>
+                              <div class="game-review-objective-swing-chips">
+                                {#each row.trade_gain_labels || [] as label}<UiChipBadge tone="good" {label} />{/each}
+                                {#each row.trade_loss_labels || [] as label}<UiChipBadge tone="bad" {label} />{/each}
+                              </div>
+                            </div>
+                          {/if}
+                          {#if (row.pit_ally_champions || []).length || (row.pit_enemy_champions || []).length}
+                            <div class="game-review-objective-detail-row game-review-objective-detail-row--pit">
+                              <span class="game-review-objective-detail-label">At pit{row.manpower_at_pit ? ` (${row.manpower_at_pit})` : ''}</span>
+                              <div class="game-review-fight-sides">
+                                <ChampionIconStack names={row.pit_ally_champions} icons={row.pit_ally_icons} tone="ally" />
+                                <span class="game-review-fight-vs">vs</span>
+                                <ChampionIconStack names={row.pit_enemy_champions} icons={row.pit_enemy_icons} tone="enemy" />
+                              </div>
+                            </div>
+                          {/if}
+                          {#if row.present && row.wards_before != null}
+                            <div class="game-review-objective-detail-row">
+                              <span class="game-review-objective-detail-label">Objective</span>
+                              <UiChipBadge tone="stat" label={objectiveWardLabel(row)} title={objectiveHints['Wards during setup'] || objectiveHints['Wards before'] || ''} />
+                            </div>
+                          {/if}
+                          {#if row.tp_available === true}
+                            <div class="game-review-objective-detail-row">
+                              <span class="game-review-objective-detail-label">Summoners</span>
+                              <UiChipBadge tone="warn" label="TP available" title={objectiveHints['TP available'] || ''} />
+                            </div>
+                          {:else if row.tp_available === false}
+                            <div class="game-review-objective-detail-row">
+                              <span class="game-review-objective-detail-label">Summoners</span>
+                              <UiChipBadge tone="stat" label="No TP" title={objectiveHints['No TP'] || ''} />
+                            </div>
+                          {/if}
+                        </div>
                       </Disclosure>
                     {/each}
                   </div>
@@ -714,10 +687,22 @@
 
             <div class="game-review-panel" id="game-review-panel-loadout" role="tabpanel" hidden={activeTab !== 'loadout'}>
               <div class="cards game-review-loadout-cards">
-                <div class="card card--wide"><div class="label">Runes</div><div class="value">{@html renderGameReviewRunePageHtml(build)}</div></div>
+                <div class="card card--wide"><div class="label">Runes</div><div class="value"><GameReviewRunePage {build} /></div></div>
                 <div class="card card--wide game-review-loadout-utilities">
-                  <div class="game-review-loadout-section"><div class="label">Summoners</div><div class="value">{@html renderGameReviewSummonersHtml(build)}</div></div>
-                  <div class="game-review-loadout-section"><div class="label">Item path</div><div class="value core-cell">{@html itemsHtml || '—'}</div></div>
+                  <div class="game-review-loadout-section"><div class="label">Summoners</div><div class="value"><GameReviewSummoners {build} /></div></div>
+                  <div class="game-review-loadout-section">
+                    <div class="label">Item path</div>
+                    <div class="value core-cell">
+                      {#if !items.length}
+                        —
+                      {:else}
+                        {#each items as name, index}
+                          {#if index > 0}<span class="core-arrow" aria-hidden="true">→</span>{/if}
+                          <IconCellSolo {name} icon={itemIcons[index] || null} />
+                        {/each}
+                      {/if}
+                    </div>
+                  </div>
                 </div>
                 <div class="card card--full"><div class="label">Skill progression</div><div class="value"><SkillGrid build={build} /></div></div>
               </div>
