@@ -74,6 +74,13 @@ def test_report_has_a_career_tab_and_panel(tmp_path: Path) -> None:
     assert ">Career</button>" in html
 
 
+def test_career_is_the_second_tab_and_panel(tmp_path: Path) -> None:
+    html = _render(tmp_path)
+    assert html.index('id="tab-career"') < html.index('id="tab-performance"')
+    assert html.index('id="category-career"') < html.index('id="category-performance"')
+    assert html.index('id="tab-summary"') < html.index('id="tab-career"')
+
+
 def test_report_renders_the_career_rules_and_legend(tmp_path: Path) -> None:
     html = _render(tmp_path)
     assert "Career mode" in html

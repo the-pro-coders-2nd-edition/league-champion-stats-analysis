@@ -575,6 +575,14 @@
        "id": "tab-summary"
       },
       {
+       "value": "career",
+       "label": "Career",
+       "active": false,
+       "modifierClass": "career",
+       "ariaControls": "category-career",
+       "id": "tab-career"
+      },
+      {
        "value": "performance",
        "label": "Performance",
        "active": false,
@@ -605,14 +613,6 @@
        "modifierClass": "deepdive",
        "ariaControls": "category-deepdive",
        "id": "tab-deepdive"
-      },
-      {
-       "value": "career",
-       "label": "Career",
-       "active": false,
-       "modifierClass": "career",
-       "ariaControls": "category-career",
-       "id": "tab-career"
       }
      ]
     }
