@@ -3,6 +3,7 @@
   import { link, push } from 'svelte-spa-router';
   import { submitAnalysis, fetchActivity, fetchGroups } from '../lib/api.js';
   import { createPoller } from '../lib/poller.js';
+  import Button from '../components/Button.svelte';
 
   const MAX_PLAYERS = 8;
   const REGION_CHOICES = [
@@ -171,20 +172,21 @@
             autocomplete="off"
             bind:value={playerInputs[index]}
           >
-          <button
-            type="button"
-            class="btn-text remove-player"
+          <Button
+            variant="bare"
+            size="sm"
+            class="remove-player"
             hidden={playerInputs.length === 1}
-            aria-label="Remove player"
+            ariaLabel="Remove player"
             on:click={() => removePlayerRow(index)}
-          >Remove</button>
+          >Remove</Button>
         </div>
       {/each}
     </div>
     <div class="form-actions">
-      <button type="button" class="btn-text" id="add-player" hidden={playerInputs.length >= MAX_PLAYERS} on:click={addPlayerRow}>
+      <Button variant="bare" size="sm" id="add-player" hidden={playerInputs.length >= MAX_PLAYERS} on:click={addPlayerRow}>
         + Add another account
-      </button>
+      </Button>
       <div class="form-row-end">
         <select name="region" aria-label="Region" bind:value={region}>
           {#each REGION_CHOICES as [label, value] (value)}
@@ -196,9 +198,9 @@
             <option value={value}>{value} games</option>
           {/each}
         </select>
-        <button type="submit" class="btn-primary" id="analyze-submit" disabled={submitting}>
+        <Button type="submit" id="analyze-submit" disabled={submitting}>
           {submitting ? 'Checking…' : 'Analyze'}
-        </button>
+        </Button>
       </div>
     </div>
     <p class="hint">Same region for every account. The games menu sets the minimum ranked games a champion and lane need before a report is created.</p>

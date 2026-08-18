@@ -340,22 +340,10 @@ h3 { font-size: 15px; margin: 24px 0 12px; color: var(--color-neutral-400); }
 .peer-pending .sub.is-failed { color: var(--tone-bad-fg); }
 @media (max-width: 860px) {
   .peer-drivers { grid-template-columns: 1fr; }
-  .peer-driver {
-    grid-template-columns: 1fr auto;
-  }
-  .peer-driver-values { grid-column: 1 / -1; }
+  /* .peer-driver / .peer-driver-values mobile overrides moved into TrendRow.svelte's own
+     scoped <style>, so the selector specificity fight against the scoped base rule cannot
+     be lost (RFC-001 step 21). */
 }
-.back-to-top {
-  position: fixed; right: 24px; bottom: 92px; z-index: 40;
-  width: 44px; height: 44px; border-radius: 50%;
-  border: 1px solid var(--color-divider); background: var(--color-surface);
-  color: var(--color-text); cursor: pointer; opacity: 0; pointer-events: none;
-  transition: opacity .2s, border-color .15s, transform .15s;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.back-to-top.is-visible { opacity: 1; pointer-events: auto; }
-.back-to-top:hover { border-color: var(--color-accent); color: var(--color-accent); transform: translateY(-2px); }
-.back-to-top iconify-icon { width: 20px; height: 20px; }
 main.is-filter-loading .cards, main.is-filter-loading .figure, main.is-filter-loading table,
 main.is-filter-loading .rec, main.is-filter-loading .report-hero,
 main.is-filter-loading .score-breakdown-title, main.is-filter-loading .score-set {
@@ -782,10 +770,9 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .form-empty { padding: 24px; color: var(--color-neutral-400); background: var(--color-surface-2); border-radius: 12px; border: 1px dashed var(--color-divider); }
 @media (max-width: 860px) {
   .form-movers { grid-template-columns: 1fr; }
-  .form-mover {
-    grid-template-columns: 1fr auto;
-  }
-  .form-mover-values { grid-column: 1 / -1; }
+  /* .form-mover / .form-mover-values mobile overrides moved into TrendRow.svelte's own
+     scoped <style>, so the selector specificity fight against the scoped base rule cannot
+     be lost (RFC-001 step 21). */
 }
 
 .game-review-layout {

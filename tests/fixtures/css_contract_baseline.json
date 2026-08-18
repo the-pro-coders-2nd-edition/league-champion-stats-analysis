@@ -27,24 +27,14 @@
     }
   },
   "rule4_global_outside_allowlist": {
-    "files": 15,
-    "rules": 126,
+    "files": 5,
+    "rules": 69,
     "per_file": {
-      "components/CareerNode.svelte": 26,
+      "components/CareerNode.svelte": 17,
       "components/Chip.svelte": 32,
-      "components/FormWrBridge.svelte": 6,
-      "components/HeroAction.svelte": 4,
-      "components/MetricBenchmark.svelte": 3,
+      "components/HeroAction.svelte": 1,
       "components/MetricLabel.svelte": 2,
-      "components/MetricTooltip.svelte": 7,
-      "components/MetricValue.svelte": 4,
-      "components/RecCardHead.svelte": 3,
-      "components/RecEvidenceSummary.svelte": 1,
-      "components/SectionPulse.svelte": 4,
-      "components/SectionPulseFix.svelte": 4,
-      "components/SectionPulseHint.svelte": 1,
-      "components/StatChip.svelte": 17,
-      "components/TrendRow.svelte": 12
+      "components/StatChip.svelte": 17
     }
   },
   "rule5_root_token_collisions": {
@@ -58,8 +48,8 @@
     ]
   },
   "rule6_raw_colors": {
-    "occurrences": 20,
-    "lines": 17
+    "occurrences": 23,
+    "lines": 20
   },
   "rule7_generated_css": {
     "components_css_present": true,

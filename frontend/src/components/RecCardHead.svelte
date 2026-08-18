@@ -20,20 +20,20 @@
 <p class="rec-body">{detail}</p>
 
 <style>
-  :global(.rec-head) {
+  .rec-head {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     flex-wrap: wrap;
     margin-bottom: var(--space-2);
   }
-  :global(.rec-title) {
+  .rec-title {
     display: block;
     font-family: var(--font-heading);
     font-weight: 700;
     font-size: 14px;
   }
-  :global(.rec-body) {
+  .rec-body {
     margin: var(--space-2) 0 0;
     color: var(--color-neutral-400);
     font-size: 12px;
