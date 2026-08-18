@@ -380,6 +380,9 @@ img.metric-icon--asset { width: 14px; height: 14px; object-fit: contain; flex-sh
 .metric-icon--purple { color: var(--color-neutral-600); }
 .metric-icon--muted { color: var(--color-neutral-400); }
 .section-title { display: flex; align-items: center; gap: 10px; }
+/* RFC-001 Open Question #1 (resolved): header icons stay suppressed. Every section's icons
+   collapse to 1-2 neutral greys regardless of tone (see .metric-icon--* above) and this rule has
+   uniformly hidden them across the whole app through the entire migration — the de facto answer. */
 .metric-card-label iconify-icon.metric-icon,
 .metric-card-label img.metric-icon--asset { display: none; }
 .section-title iconify-icon.metric-icon { width: 18px; height: 18px; }

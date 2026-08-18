@@ -21,15 +21,33 @@ export function soloIconCellHtml(name, iconHref) {
   return `<span class="icon-cell icon-cell--solo" title="${title}"><img src="${iconHref}" alt="${title}" class="game-icon game-icon--sm"></span>`;
 }
 
+// Single source of truth for "which metric icon (asset image vs iconify glyph) wins, and what
+// class does it get" — shared by MetricLabel.svelte (real DOM) and the string builders below
+// ({@html} consumers not yet converted to components; see RFC-001 step 4). icon_href always
+// wins over iconify.
+export function resolveMetricIcon(iconHref, iconify, tone) {
+  const toneClass = `metric-icon metric-icon--${tone || 'muted'}`;
+  if (iconHref) return { kind: 'img', src: iconHref, className: `${toneClass} metric-icon--asset` };
+  if (iconify) return { kind: 'iconify', icon: iconify, className: toneClass };
+  return null;
+}
+
+function metricIconTagHtml(icon) {
+  if (!icon) return '';
+  if (icon.kind === 'img') {
+    return `<img src="${icon.src}" alt="" class="${icon.className}" aria-hidden="true">`;
+  }
+  return `<iconify-icon icon="${icon.icon}" class="${icon.className}" aria-hidden="true"></iconify-icon>`;
+}
+
 // Mirrors the existing Jinja mover/table row partials, which call the `metric_label` macro
 // with `row.iconify` as its positional `icon` (icon-key) argument rather than `iconify_id`
 // (unlike `metric_card`, which passes it correctly). That icon-key lookup never resolves for
 // real data (row.iconify already holds a resolved "prefix:name" id), so no iconify icon is
-// ever rendered here in practice — only `icon_href` produces a visible icon. Replicated as-is.
+// ever rendered here in practice — only `icon_href` produces a visible icon. Replicated as-is:
+// `row.iconify` is deliberately never passed to resolveMetricIcon.
 function metricIconHtml(row) {
-  if (!row.icon_href) return '';
-  const tone = row.icon_tone || 'muted';
-  return `<img src="${row.icon_href}" alt="" class="metric-icon metric-icon--asset metric-icon--${tone}" aria-hidden="true">`;
+  return metricIconTagHtml(resolveMetricIcon(row.icon_href, '', row.icon_tone));
 }
 
 // Row-object variant: label + icon both come from the row (form/rank-peer delta tables).
@@ -39,5 +57,5 @@ export function metricLabelFromRow(row) {
 
 // Static variant: label/iconify-key/tone are passed explicitly (table headers).
 export function metricLabelWithIconify(label, iconify, tone) {
-  return `<span class="metric-label"><iconify-icon icon="${iconify}" class="metric-icon metric-icon--${tone}" aria-hidden="true"></iconify-icon><span>${escapeHtml(label)}</span></span>`;
+  return `<span class="metric-label">${metricIconTagHtml(resolveMetricIcon('', iconify, tone))}<span>${escapeHtml(label)}</span></span>`;
 }
