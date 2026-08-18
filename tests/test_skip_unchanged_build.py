@@ -29,7 +29,7 @@ def test_skip_when_report_exists_and_no_new_games(tmp_path: Path) -> None:
     pool = BuildPool(champion="Viktor", role="MIDDLE", games=25)
     report_dir = config.output_dir / "reports" / config.reports_group_slug / "viktor_middle"
     report_dir.mkdir(parents=True)
-    (report_dir / "report.html").write_text("ok", encoding="utf-8")
+    (report_dir / "report.json").write_text("ok", encoding="utf-8")
 
     assert should_skip_unchanged_build(
         config, pool, [_record("EUW1_old")], frozenset()
@@ -44,7 +44,7 @@ def test_do_not_skip_when_build_has_new_game(tmp_path: Path) -> None:
     pool = BuildPool(champion="Viktor", role="MIDDLE", games=25)
     report_dir = config.output_dir / "reports" / config.reports_group_slug / "viktor_middle"
     report_dir.mkdir(parents=True)
-    (report_dir / "report.html").write_text("ok", encoding="utf-8")
+    (report_dir / "report.json").write_text("ok", encoding="utf-8")
 
     assert not should_skip_unchanged_build(
         config,
@@ -68,7 +68,7 @@ def test_do_not_skip_when_new_match_ids_is_none(tmp_path: Path) -> None:
     pool = BuildPool(champion="Viktor", role="MIDDLE", games=25)
     report_dir = config.output_dir / "reports" / config.reports_group_slug / "viktor_middle"
     report_dir.mkdir(parents=True)
-    (report_dir / "report.html").write_text("ok", encoding="utf-8")
+    (report_dir / "report.json").write_text("ok", encoding="utf-8")
 
     assert not should_skip_unchanged_build(
         config, pool, [_record("EUW1_old")], None
