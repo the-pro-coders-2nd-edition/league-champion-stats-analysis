@@ -46,8 +46,16 @@ def delta_label(delta: float | None, polarity: int = 1, ref: str | None = None) 
     return f"{arrow} {abs(delta):g}%{suffix}"
 
 
-def verdict(score: float) -> tuple[str, Tone]:
-    """Verdict ``(label, tone)`` for a 0-100 score."""
+def band_verdict(score: float) -> tuple[str, Tone]:
+    """Verdict ``(label, tone)`` for a 0-100 score on the clamp_score (Gold-benchmark
+    band) axis -- see ``analysis/improvement.py:clamp_score``.
+
+    Single source of truth for that axis: RFC-001 Open Question #5. Do NOT use this
+    for baseline-relative scores (``analysis/game_review/score.py``'s
+    ``_component_score``, where 50 means "identical to your own average" rather than
+    a position inside a Gold benchmark band) -- use ``baseline_tier`` there instead.
+    Cross-use between the two axes is forbidden: 50 means something different on each.
+    """
     if score >= 70:
         return ("Strength", "good")
     if score >= 45:
@@ -55,6 +63,11 @@ def verdict(score: float) -> tuple[str, Tone]:
     if score >= 40:
         return ("Watch", "warn")
     return ("Focus", "bad")
+
+
+def verdict(score: float) -> tuple[str, Tone]:
+    """Verdict ``(label, tone)`` for a 0-100 score. Alias of :func:`band_verdict`."""
+    return band_verdict(score)
 
 
 def p_value(p: float | None) -> str:
@@ -93,3 +106,49 @@ def career_node(state: str, hit: int, need: int) -> dict[str, object]:
         "Locked": "flat",
     }
     return {"tone": tone_by_state.get(state, "flat"), "pct": pct}
+
+
+# Matchup verdict strings -> tone (see analysis/matchups.py:_matchup_verdict).
+# "even" maps to "warn", not "flat": the matchup table renders it gold-toned, not neutral.
+_VERDICT_TONES: dict[str, Tone] = {
+    "strong_favorable": "good",
+    "favorable": "good",
+    "lean_favorable": "good",
+    "even": "warn",
+    "lean_unfavorable": "bad",
+    "unfavorable": "bad",
+    "strong_unfavorable": "bad",
+    "thin_sample": "flat",
+}
+
+
+def verdict_tone(verdict: str) -> Tone:
+    """Tone for a matchup verdict string, e.g. ``'favorable'`` or ``'even'``."""
+    return _VERDICT_TONES.get(verdict, "flat")
+
+
+# Matchup focus-tip keys -> tone (see analysis/matchups.py:matchup_advice).
+_FOCUS_TONES: dict[str, Tone] = {
+    "snowball": "good",
+    "press": "good",
+    "edge": "good",
+    "survive": "bad",
+    "caution": "bad",
+    "respect": "bad",
+    "convert": "warn",
+    "protect-lead": "warn",
+    "trades": "warn",
+    "damage": "warn",
+    "scale": "accent",
+    "stabilize": "accent",
+    "farm": "accent",
+    "xp": "accent",
+    "lane": "accent",
+    "sample": "flat",
+    "standard": "flat",
+}
+
+
+def focus_tone(focus_key: str) -> Tone:
+    """Tone for a matchup focus-tip key, e.g. ``'snowball'`` or ``'protect-lead'``."""
+    return _FOCUS_TONES.get(focus_key, "flat")

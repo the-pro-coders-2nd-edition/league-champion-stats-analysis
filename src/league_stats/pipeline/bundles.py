@@ -54,6 +54,7 @@ from league_stats.pipeline.view_models import (
 )
 from league_stats.presentation.graphs import ChartIconResolver, GraphFactory
 from league_stats.presentation.report import improvement_score, score_badge
+from league_stats.presentation.tones import band_verdict
 from league_stats.presentation.tones import p_value as tone_p_value
 from league_stats.presentation.tones import priority_tone as tone_priority_tone
 from league_stats.presentation.tones import verdict as tone_verdict
@@ -203,17 +204,20 @@ def _build_top_tips(bundle: dict[str, Any], *, limit: int = 3) -> list[dict[str,
     return tips
 
 
-_CHIP_STRONG_SCORE = 65.0
-_CHIP_FOCUS_SCORE = 45.0
+# CSS color per tone, for the top-level Improvement score chip. Delegates banding
+# to tones.band_verdict so this always agrees with every other score verdict.
+_TONE_COLORS: dict[str, str] = {
+    "good": "var(--tone-good-fg)",
+    "warn": "var(--tone-warn-fg)",
+    "flat": "var(--color-text)",
+    "bad": "var(--tone-bad-fg)",
+}
 
 
 def _overall_score_verdict(score: float) -> tuple[str, str]:
     """CSS color + verdict label for the top-level Improvement score."""
-    if score >= _CHIP_STRONG_SCORE:
-        return "var(--tone-good-fg)", "Strength"
-    if score >= _CHIP_FOCUS_SCORE:
-        return "var(--color-text)", "Solid"
-    return "var(--tone-bad-fg)", "Focus"
+    label, tone = band_verdict(score)
+    return _TONE_COLORS[tone], label
 
 
 def _annotate_score_components(
@@ -253,17 +257,24 @@ _REC_CATEGORY_SECTIONS: dict[str, str] = {
 }
 
 
+# band_verdict's Tone -> SectionPulse's pulse tone (frontend/src/components/SectionPulse.svelte
+# only special-cases "strong" and "focus"; anything else renders as neutral "solid").
+_PULSE_TONE_BY_TONE: dict[str, str] = {"good": "strong", "bad": "focus"}
+
+
 def _score_verdict_sentence(
     name: str, score: float, *, is_biggest_gap: bool
 ) -> tuple[str, str, str]:
     """Base verdict sentence, tone, and short label for one section score."""
-    if score >= _CHIP_STRONG_SCORE:
-        return f"{name} is a clear strength.", "strong", "Strength"
-    if score >= _CHIP_FOCUS_SCORE:
-        return f"{name} is solid.", "solid", "Solid"
+    label, tone = band_verdict(score)
+    pulse_tone = _PULSE_TONE_BY_TONE.get(tone, "solid")
+    if label == "Strength":
+        return f"{name} is a clear strength.", pulse_tone, label
+    if label == "Solid":
+        return f"{name} is solid.", pulse_tone, label
     if is_biggest_gap:
-        return f"{name} is your biggest room to improve.", "focus", "Focus"
-    return f"{name} needs work.", "focus", "Focus"
+        return f"{name} is your biggest room to improve.", pulse_tone, label
+    return f"{name} needs work.", pulse_tone, label
 
 
 def _build_section_verdicts(bundle: dict[str, Any]) -> dict[str, dict[str, Any]]:
