@@ -56,7 +56,13 @@ from league_stats.utils import setup_logging
 from league_stats.analysis.career.models import BLOCK_SLOTS
 from league_stats.infra.career_store import CareerStore, build_key as career_build_key
 from league_stats.web.watch import WatchPoller, watch_public_fields
-from league_stats.web.chat import ChatError, gemini_reply, load_report_summary, validate_history
+from league_stats.web.chat import (
+    ChatError,
+    gemini_reply,
+    load_report_summary,
+    resolve_chat_stats,
+    validate_history,
+)
 from league_stats.web.jobs import (
     JOB_KIND_ANALYZE,
     JOB_KIND_REGENERATE,
@@ -98,6 +104,8 @@ class ChatRequest(BaseModel):
 
     report: str = Field(min_length=3, max_length=200)
     history: list[Any]
+    tab: str | None = Field(default=None, max_length=32)
+    context: dict[str, Any] | None = None
 
 
 class WatchRequest(BaseModel):
@@ -1216,11 +1224,13 @@ def create_app(
         try:
             history = validate_history(body.history)
             summary = load_report_summary(config.reports_dir, body.report)
+            stats = resolve_chat_stats(summary, body.context)
             text = gemini_reply(
                 config.gemini_api_key,
-                stats=summary,
+                stats=stats,
                 build_label=str(summary.get("build_label", "")),
                 player_name=str(summary.get("player", "")),
+                tab=body.tab,
                 history=history,
             )
         except ChatError as exc:

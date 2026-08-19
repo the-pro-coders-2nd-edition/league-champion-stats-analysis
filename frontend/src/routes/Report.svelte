@@ -588,7 +588,13 @@
       <Graphs data={$view} />
     </div>
 
-    <Chatbot data={payload} sendMessage={sendChatMessage} />
+    <Chatbot
+      data={payload}
+      sendMessage={sendChatMessage}
+      activeTab={activeCategory}
+      view={$view}
+      career={careerLadder}
+    />
   {/if}
 {/if}
 
