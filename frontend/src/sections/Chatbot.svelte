@@ -1,13 +1,13 @@
 <script>
+  import { buildTabContext, STARTER_PROMPTS_BY_TAB } from '../lib/chatContext.js';
+
   export let data = {};
   export let sendMessage;
+  export let activeTab = 'summary';
+  export let view = null;
+  export let career = null;
 
   const CONSENT_STORAGE_KEY = 'chatbotConsentAccepted';
-  const STARTER_PROMPTS = [
-    'What should I focus on to win more games?',
-    'How did my last game go?',
-    'How do I compare to players at my rank?',
-  ];
 
   let isOpen = false;
   let consentChecked = false;
@@ -25,6 +25,8 @@
 
   $: available = !!data.chat_endpoint;
   $: reportRef = data.chat_report_ref || '';
+  $: starterPrompts = STARTER_PROMPTS_BY_TAB[activeTab] || STARTER_PROMPTS_BY_TAB.summary;
+  $: tabContext = buildTabContext(view, career, activeTab);
 
   function escapeHtml(str) {
     const div = document.createElement('div');
@@ -93,7 +95,7 @@
     inputValue = '';
     sending = true;
     try {
-      const replyText = await sendMessage(reportRef, history);
+      const replyText = await sendMessage(reportRef, history, activeTab, tabContext);
       if (!replyText) throw new Error('The assistant returned an empty response.');
       history = [...history, { role: 'model', parts: [{ text: replyText }] }];
     } catch (err) {
@@ -148,7 +150,7 @@
         {#if !history.length}
           <div class="chatbot-starters">
             <p class="chatbot-starters-label">Try asking:</p>
-            {#each STARTER_PROMPTS as prompt}
+            {#each starterPrompts as prompt}
               <button type="button" class="chatbot-starter" on:click={() => handleStarter(prompt)}>{prompt}</button>
             {/each}
           </div>

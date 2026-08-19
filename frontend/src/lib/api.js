@@ -97,11 +97,11 @@ export async function cancelJob(jobId) {
   return data;
 }
 
-export async function sendChatMessage(reportRef, history) {
+export async function sendChatMessage(reportRef, history, tab, context) {
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ report: reportRef, history }),
+    body: JSON.stringify({ report: reportRef, history, tab, context }),
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));

@@ -526,6 +526,55 @@ def test_chat_proxy(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None
     assert captured["stats"]["build_label"] == "Viktor mid"
 
 
+def test_chat_uses_tab_scoped_context_when_provided(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+
+    captured: dict[str, Any] = {}
+
+    def fake_reply(api_key: str, **kwargs: Any) -> str:
+        captured["stats"] = kwargs["stats"]
+        return "Focus on your Career goals."
+
+    monkeypatch.setattr(web_app, "gemini_reply", fake_reply)
+    response = client.post(
+        "/api/chat",
+        json={
+            "report": "test_euw/viktor_middle",
+            "history": [{"role": "user", "parts": [{"text": "What's my next goal?"}]}],
+            "tab": "career",
+            "context": {"player": "Test", "career": {"has_career": True, "blocks": []}},
+        },
+    )
+    assert response.status_code == 200
+    assert captured["stats"] == {"player": "Test", "career": {"has_career": True, "blocks": []}}
+
+
+def test_chat_falls_back_to_full_summary_when_context_too_large(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+
+    captured: dict[str, Any] = {}
+
+    def fake_reply(api_key: str, **kwargs: Any) -> str:
+        captured["stats"] = kwargs["stats"]
+        return "ok"
+
+    monkeypatch.setattr(web_app, "gemini_reply", fake_reply)
+    response = client.post(
+        "/api/chat",
+        json={
+            "report": "test_euw/viktor_middle",
+            "history": [{"role": "user", "parts": [{"text": "hi"}]}],
+            "context": {"filler": "x" * 30000},
+        },
+    )
+    assert response.status_code == 200
+    assert captured["stats"]["build_label"] == "Viktor mid"
+
+
 def test_submit_group_analysis(client: TestClient) -> None:
     response = client.post(
         "/api/analyses",

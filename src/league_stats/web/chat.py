@@ -19,6 +19,16 @@ REQUEST_TIMEOUT_S: Final[float] = 60.0
 
 MAX_HISTORY_MESSAGES: Final[int] = 40
 MAX_MESSAGE_CHARS: Final[int] = 4000
+MAX_CONTEXT_CHARS: Final[int] = 20000
+
+TAB_LABELS: Final[dict[str, str]] = {
+    "summary": "Summary",
+    "games": "Games",
+    "career": "Career",
+    "performance": "Performance",
+    "champion": "Champion",
+    "deepdive": "Deepdive",
+}
 
 
 class ChatError(RuntimeError):
@@ -29,19 +39,42 @@ def _gemini_url(model: str) -> str:
     return f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
-def build_system_instruction(stats: dict[str, Any], build_label: str, player_name: str) -> str:
+def build_system_instruction(
+    stats: dict[str, Any],
+    build_label: str,
+    player_name: str,
+    tab: str | None = None,
+) -> str:
     """Build the coaching system prompt (kept in sync with the Report SPA page)."""
+    tab_label = TAB_LABELS.get(tab or "")
+    scope_note = (
+        f"The JSON below is scoped to the '{tab_label}' tab the player is currently "
+        "viewing, not the full report. Answer from it, but say so plainly if the "
+        "player asks about something outside that scope. "
+        if tab_label
+        else ""
+    )
     return (
         "You are a League of Legends coaching assistant. Answer questions about the "
         f"player's stats using ONLY the JSON data below for {build_label} "
         f"({player_name}). Be concise, cite specific numbers when relevant, and "
         "say so plainly if the data does not cover something asked. "
+        f"{scope_note}"
         "When the player asks about a specific recent game, use recent_games.games[]. "
         "Identify games by index (1 = most recent), date, opponent, or W/L. "
         "Cite game_score, archetype, and highlights when explaining a single game. "
         "If recent_games is empty or missing, say so plainly."
         "\n\nSTATS JSON:\n" + json.dumps(stats)
     )
+
+
+def resolve_chat_stats(summary: dict[str, Any], context: dict[str, Any] | None) -> dict[str, Any]:
+    """Pick the stats blob to send to Gemini: a tab-scoped context if valid, else the full summary."""
+    if context is None:
+        return summary
+    if len(json.dumps(context)) > MAX_CONTEXT_CHARS:
+        return summary
+    return context
 
 
 def validate_history(history: Any) -> list[dict[str, Any]]:
@@ -123,9 +156,10 @@ def gemini_reply(
     build_label: str,
     player_name: str,
     history: list[dict[str, Any]],
+    tab: str | None = None,
 ) -> str:
     """Ask Gemini for a coaching reply, retrying once on the fallback model."""
-    instruction = build_system_instruction(stats, build_label, player_name)
+    instruction = build_system_instruction(stats, build_label, player_name, tab)
     try:
         return _call_gemini(api_key, GEMINI_MODEL, instruction, history)
     except ChatError:
