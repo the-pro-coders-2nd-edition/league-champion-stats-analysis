@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package league_stats_rpc.v1;
+
+service PeersService {
+  // Called by RUNNER when it needs a champion+lane+rank peer baseline.
+  // If not cached, PEERS enqueues its own fetch and calls back into
+  // RunnerService.NotifyPeerBaselineReady when done.
+  rpc RequestBaseline(RequestBaselineRequest) returns (RequestBaselineResponse);
+}
+
+message RequestBaselineRequest {
+  string champion = 1;
+  string lane = 2;
+  string rank = 3;
+}
+
+message RequestBaselineResponse {
+  string request_id = 1;
+  bool cached = 2;
+  // Populated only when cached == true; otherwise RUNNER waits for the
+  // NotifyPeerBaselineReady callback.
+  string baseline_json = 3;
+}

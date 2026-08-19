@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package league_stats_rpc.v1;
+
+enum Region {
+  REGION_UNSPECIFIED = 0;
+  EUROPE = 1;
+  AMERICAS = 2;
+  ASIA = 3;
+}
+
+enum Stage {
+  STAGE_UNSPECIFIED = 0;
+  SUMMARY = 1;
+  PERFORMANCE = 2;
+  DEEP_DIVE = 3;
+  CHAMPION = 4;
+}
+
+message Ack {
+  bool ok = 1;
+  string message = 2;
+}
