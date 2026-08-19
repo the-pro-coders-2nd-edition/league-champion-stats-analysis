@@ -19,7 +19,7 @@
   import { escapeHtml, soloIconCellHtml } from '../lib/html.js';
   import { formatGameTime, pct } from '../lib/format.js';
   import { resizePlotlySoon } from '../lib/plotlyResize.js';
-  import { careerGoalsForGame, goalOutcomeByColumn } from '../lib/careerGameGoals.js';
+  import { careerGoalsForGame, goalOutcomeByColumn, careerGoalChangedAt } from '../lib/careerGameGoals.js';
   import { REPORT_NAV_KEY, handleNavClick } from '../lib/reportNav.js';
   import { getContext } from 'svelte';
 
@@ -151,6 +151,12 @@
   }
 
   function handleListClick(event) {
+    const divider = event.target.closest('[data-career-divider]');
+    if (divider) {
+      event.preventDefault();
+      handleNavClick(reportNav, 'career')(event);
+      return;
+    }
     const row = event.target.closest('.game-review-row');
     if (row) selectedMatchId = row.getAttribute('data-match-id');
   }
@@ -379,14 +385,29 @@
   $: subtitleText = `Last ${gamesCount} game${gamesCount === 1 ? '' : 's'} — follows queue filter.`;
 
   $: isGroupReport = (data.report_players || []).length > 1;
-  $: visibleGames = games.slice(0, 5);
-  $: extraGames = games.slice(5);
+  $: careerWindow = career?.window || 20;
+  $: visibleGames = games.slice(0, careerWindow);
+  $: extraGames = games.slice(careerWindow);
   $: if (!moreOpenInitialized && games.length) {
     moreOpen = extraGames.some((g) => g.match_id === selectedMatchId);
     moreOpenInitialized = true;
   }
-  $: listHtml = visibleGames.map(gameReviewRowHtml).join('');
+  // Where the live Career block started counting: games at or before this line
+  // sit outside its 20-game window, so the divider marks that boundary in the
+  // same list the goal outcomes above already use `since_ms` for.
+  $: careerChangedAt = careerGoalChangedAt(career);
+  $: careerDividerIndex = careerChangedAt
+    ? visibleGames.findIndex((g) => (Number(g.game_creation_ms) || 0) <= careerChangedAt)
+    : -1;
+  $: listHtml = visibleGames
+    .map((game, index) => (index === careerDividerIndex ? careerDividerHtml() + gameReviewRowHtml(game) : gameReviewRowHtml(game)))
+    .join('');
   $: extraGamesHtml = extraGames.map(gameReviewRowHtml).join('');
+
+  function careerDividerHtml() {
+    return '<a href="#career" class="game-review-career-divider" data-career-divider="1">' +
+      '<span>Current Career goal started here</span></a>';
+  }
 
   $: selectedGame = games.find((g) => g.match_id === selectedMatchId) || games[0];
 
@@ -818,4 +839,25 @@
   .game-goal-text { color: var(--color-text); min-width: 0; }
   .game-goal-verdict { font-size: 11px; white-space: nowrap; }
 
+  .game-review-career-divider {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-2) 0;
+    padding: 4px 0;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+  .game-review-career-divider::before,
+  .game-review-career-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--color-accent);
+    opacity: .35;
+  }
 </style>

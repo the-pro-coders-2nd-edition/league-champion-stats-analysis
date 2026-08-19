@@ -298,6 +298,7 @@ def build_career_view(
     return {
         "has_career": True,
         "awaiting_peers": False,
+        "window": window,
         "blocks": blocks,
         "widget": widget,
         "rules": list(CAREER_RULES),
