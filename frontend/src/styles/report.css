@@ -256,7 +256,11 @@ h3 { font-size: 15px; margin: 24px 0 12px; color: var(--color-neutral-400); }
 }
 .score-set {
   background: var(--color-surface); box-shadow: var(--shadow-sm); border-radius: var(--radius-md);
-  padding: var(--space-6); display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  padding: var(--space-6); display: grid;
+  /* Always exactly 3 columns (2 rows of the 6 fixed score categories) -- auto-fit
+     let the column count drift with container width, so the two rows didn't line
+     up whenever the available width fell just short of fitting a 4th 200px track. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-6) var(--space-4); align-items: start;
 }
 /* Score breakdown cells (Overview) -- markup inlined from the deleted ScoreSetItem.svelte;
@@ -344,6 +348,7 @@ h3 { font-size: 15px; margin: 24px 0 12px; color: var(--color-neutral-400); }
   /* .peer-driver / .peer-driver-values mobile overrides moved into TrendRow.svelte's own
      scoped <style>, so the selector specificity fight against the scoped base rule cannot
      be lost (RFC-001 step 21). */
+  .score-set { grid-template-columns: 1fr; }
 }
 main.is-filter-loading .cards, main.is-filter-loading .figure, main.is-filter-loading table,
 main.is-filter-loading .rec, main.is-filter-loading .report-hero,
