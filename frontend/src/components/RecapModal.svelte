@@ -1,8 +1,8 @@
 <script>
+  import { getContext } from 'svelte';
   import Modal from './Modal.svelte';
-  import IconCellSolo from './IconCellSolo.svelte';
   import { careerGoalsForGame } from '../lib/careerGameGoals.js';
-  import { formatGameReviewMetricValue } from '../lib/gameReviewMetricFormat.js';
+  import { REPORT_NAV_KEY, handleNavClick } from '../lib/reportNav.js';
 
   // The ladder carrying `pending_recap` (new_match_ids, progress deltas).
   export let career = null;
@@ -11,9 +11,12 @@
   export let gameReviewAll = null;
   export let onClose = () => {};
 
+  const reportNav = getContext(REPORT_NAV_KEY);
+
   $: recap = career?.pending_recap || null;
   $: open = !!recap;
-  $: liveGoals = (career?.blocks || []).find((b) => b.is_active)?.goals || [];
+  $: liveBlock = (career?.blocks || []).find((b) => b.is_active) || null;
+  $: liveGoals = liveBlock?.goals || [];
   $: allGames = gameReviewAll?.games || [];
   $: newGames = recap
     ? recap.new_match_ids
@@ -22,150 +25,190 @@
         .reverse() // most recent first
     : [];
   $: missingCount = recap ? recap.new_match_ids.length - newGames.length : 0;
-  $: progressRows = (recap?.progress || []).map((item) => {
-    const goal = liveGoals.find((g) => g.column === item.column);
-    return {
-      ...item,
-      text: goal?.text || item.column,
-    };
+  // Every goal in the live block gets its own ring -- a block holds three at
+  // once, not one -- with the before/after delta from this recap when the
+  // block hasn't changed since the reader's last visit.
+  $: goalRings = liveGoals.map((goal) => {
+    const progress = (recap?.progress || []).find((item) => item.column === goal.column);
+    const delta = progress ? progress.after - progress.before : 0;
+    return { ...goal, delta };
   });
 
   function goalMarks(game) {
     return careerGoalsForGame(career, game);
   }
+
+  function goToCareer(event) {
+    handleNavClick(reportNav, 'career')(event);
+    onClose();
+  }
 </script>
 
-<Modal {open} title="What's new since your last visit" size="large" {onClose}>
+<Modal {open} title="Welcome back" size="large" {onClose}>
   {#if recap}
     <div class="recap">
-      {#if progressRows.length}
-        <section class="recap-section">
-          <h4 class="recap-section-title">Career progress</h4>
-          <div class="recap-progress-list">
-            {#each progressRows as row (row.column)}
-              <div class="recap-progress-row">
-                <span class="recap-progress-text">{row.text}</span>
-                <span class="recap-progress-count">
-                  {row.before} → <strong>{row.after}</strong> of {row.need}
-                </span>
+      {#if liveBlock}
+        <a
+          href="#career"
+          class="recap-hero"
+          on:click={goToCareer}
+          title="Open Career mode"
+        >
+          <div class="recap-hero-label">
+            <b>{liveBlock.name}</b>
+            <span>{newGames.length} new game{newGames.length === 1 ? '' : 's'}</span>
+          </div>
+          <div class="recap-rings">
+            {#each goalRings as goal (goal.column)}
+              <div class="recap-ring-item">
+                <div
+                  class="career-ring career-ring--{goal.state_class}"
+                  style="--career-pct: {goal.pct}%"
+                >
+                  <div class="career-mark career-mark--{goal.state_class}">{goal.hit}/{goal.need}</div>
+                </div>
+                {#if goal.delta > 0}
+                  <span class="recap-ring-delta">+{goal.delta}</span>
+                {/if}
               </div>
             {/each}
           </div>
-        </section>
+        </a>
       {/if}
 
-      <section class="recap-section">
-        <h4 class="recap-section-title">
-          {newGames.length} game{newGames.length === 1 ? '' : 's'} since your last visit
-        </h4>
-        {#if missingCount > 0}
-          <p class="recap-missing-note">
-            +{missingCount} more, too old for a detailed recap.
-          </p>
-        {/if}
-        <div class="recap-games">
-          {#each newGames as game (game.match_id)}
-            <div class="recap-game recap-game--{game.result}">
-              <div class="recap-game-head">
-                <IconCellSolo name={game.champion || 'You'} icon={game.champion_icon} />
-                <span class="recap-game-vs">vs</span>
-                <IconCellSolo name={game.opponent || 'Opponent'} icon={game.opponent_icon} />
-                <span class="recap-game-result">{game.result === 'win' ? 'Win' : 'Loss'}</span>
-                <span class="recap-game-score">{game.score?.overall ?? 0}</span>
+      <div class="recap-games">
+        {#each newGames as game, index (game.match_id)}
+          <a
+            href="#career"
+            class="recap-game recap-game--{game.result}"
+            style="animation-delay: {0.45 + index * 0.08}s"
+            on:click={goToCareer}
+            title="Open Career mode"
+          >
+            <div class="recap-game-num">{game.score?.overall ?? 0}</div>
+            <div class="recap-game-num-lbl">score</div>
+            <div class="recap-game-kda">{game.kda}</div>
+            {#if goalMarks(game).length}
+              <div class="recap-game-goals">
+                {#each goalMarks(game) as mark (mark.column)}
+                  <i
+                    class="recap-goal-mark recap-goal-mark--{mark.outcome}"
+                    title={mark.text}
+                  >{mark.outcome === 'met' ? '✓' : mark.outcome === 'missed' ? '✕' : '–'}</i>
+                {/each}
               </div>
-              {#if (game.behaviors_good || []).length || (game.behaviors_bad || []).length}
-                <div class="recap-game-behaviors">
-                  {#each (game.behaviors_good || []).slice(0, 1) as b}
-                    <span class="recap-behavior recap-behavior--good">{b.title}</span>
-                  {/each}
-                  {#each (game.behaviors_bad || []).slice(0, 1) as b}
-                    <span class="recap-behavior recap-behavior--bad">{b.title}</span>
-                  {/each}
-                </div>
-              {/if}
-              {#if goalMarks(game).length}
-                <div class="recap-game-goals">
-                  {#each goalMarks(game) as mark (mark.column)}
-                    <span class="recap-goal-mark recap-goal-mark--{mark.outcome}">
-                      {mark.outcome === 'met' ? '✓' : mark.outcome === 'missed' ? '✕' : '–'}
-                      {mark.text}
-                      {#if mark.outcome !== 'untracked'}
-                        — you did {formatGameReviewMetricValue(mark.column, mark.value)}
-                        (target {formatGameReviewMetricValue(mark.column, mark.target)})
-                      {/if}
-                    </span>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-          {/each}
-        </div>
-      </section>
+            {/if}
+          </a>
+        {/each}
+        {#if missingCount > 0}
+          <div class="recap-more">+{missingCount} more</div>
+        {/if}
+      </div>
     </div>
   {/if}
 </Modal>
 
 <style>
   .recap {
-    display: grid;
-    gap: var(--space-5);
-  }
-  .recap-section-title {
-    margin: 0 0 var(--space-3);
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--color-text);
-  }
-  .recap-missing-note {
-    margin: -8px 0 var(--space-3);
-    font-size: 12px;
-    color: var(--color-neutral-500);
-  }
-  .recap-progress-list {
-    display: grid;
-    gap: var(--space-2);
-  }
-  .recap-progress-row {
     display: flex;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-3);
-    border: 1px solid var(--color-divider);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-2);
-    font-size: 12px;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-8);
+    padding: var(--space-4) 0 var(--space-2);
   }
-  .recap-progress-count { color: var(--color-neutral-400); white-space: nowrap; }
+
+  .recap-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-4);
+    color: inherit;
+    text-decoration: none;
+    opacity: 0;
+    transform: translateY(8px);
+    animation: recapRiseIn .35s .05s ease forwards;
+  }
+  .recap-hero-label { text-align: center; }
+  .recap-hero-label b { display: block; font-size: 16px; }
+  .recap-hero-label span { font-size: 12px; color: var(--color-neutral-500); }
+
+  .recap-rings { display: flex; gap: var(--space-4); flex-wrap: wrap; justify-content: center; }
+  .recap-ring-item {
+    position: relative;
+    opacity: 0;
+    transform: scale(.85);
+    animation: recapRingIn .4s cubic-bezier(.2, 1.2, .4, 1) forwards;
+  }
+  .recap-ring-item:nth-child(1) { animation-delay: .15s; }
+  .recap-ring-item:nth-child(2) { animation-delay: .25s; }
+  .recap-ring-item:nth-child(3) { animation-delay: .35s; }
+
+  /* Reuses CareerNode's own ring/mark classes (declared :global there so this
+     works), scaled up for the hero moment instead of the Career tab's compact
+     list size. CareerNode.svelte itself is untouched. */
+  .recap-ring-item :global(.career-ring) { width: 84px; height: 84px; }
+  .recap-ring-item :global(.career-mark) {
+    width: 68px; height: 68px; font-size: 14px; font-weight: 800;
+  }
+  .recap-ring-delta {
+    position: absolute; top: -4px; right: -4px;
+    background: var(--tone-good-fg); color: var(--color-bg);
+    font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 999px;
+  }
+
   .recap-games {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
     gap: var(--space-3);
   }
   .recap-game {
-    display: grid;
-    gap: var(--space-2);
-    padding: var(--space-3);
-    border: 1px solid var(--color-divider);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-2);
-  }
-  .recap-game--win { border-left: 3px solid var(--tone-good-fg); }
-  .recap-game--loss { border-left: 3px solid var(--tone-bad-fg); }
-  .recap-game-head {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: var(--space-2);
-    font-size: 12px;
+    gap: 6px;
+    width: 108px;
+    padding: var(--space-3) var(--space-2) var(--space-2);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-divider);
+    border-top: 3px solid transparent;
+    background: var(--color-surface-2);
+    color: inherit;
+    text-decoration: none;
+    opacity: 0;
+    transform: translateY(16px) scale(.92);
+    animation: recapCardIn .4s cubic-bezier(.2, 1.2, .4, 1) forwards;
+    transition: border-color .15s;
   }
-  .recap-game-vs { color: var(--color-neutral-500); }
-  .recap-game-result { margin-left: auto; font-weight: 700; }
-  .recap-game-score { color: var(--color-neutral-400); }
-  .recap-game-behaviors { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11px; }
-  .recap-behavior { padding: 2px 6px; border-radius: 999px; background: var(--color-surface); }
-  .recap-behavior--good { color: var(--tone-good-fg); }
-  .recap-behavior--bad { color: var(--tone-bad-fg); }
-  .recap-game-goals { display: grid; gap: 2px; font-size: 11px; }
-  .recap-goal-mark--met { color: var(--tone-good-fg); }
-  .recap-goal-mark--missed { color: var(--tone-bad-fg); }
-  .recap-goal-mark--untracked { color: var(--color-neutral-600); }
+  .recap-game:hover { border-color: var(--color-accent); }
+  .recap-game--win { border-top-color: var(--tone-good-line); }
+  .recap-game--loss { border-top-color: var(--tone-bad-line); }
+  .recap-game-num { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+  .recap-game--win .recap-game-num { color: var(--tone-good-fg); }
+  .recap-game--loss .recap-game-num { color: var(--tone-bad-fg); }
+  .recap-game-num-lbl {
+    font-size: 9px; color: var(--color-neutral-600); text-transform: uppercase; letter-spacing: .06em;
+  }
+  .recap-game-kda { font-size: 11px; color: var(--color-neutral-400); font-variant-numeric: tabular-nums; }
+  .recap-game-goals { display: flex; gap: 4px; margin-top: 2px; }
+  .recap-goal-mark {
+    width: 16px; height: 16px; border-radius: 999px; display: grid; place-items: center;
+    font-style: normal; font-size: 9px; font-weight: 800;
+  }
+  .recap-goal-mark--met { background: var(--tone-good-soft); color: var(--tone-good-fg); }
+  .recap-goal-mark--missed { background: var(--tone-bad-soft); color: var(--tone-bad-fg); }
+  .recap-goal-mark--untracked { background: var(--color-surface-3); color: var(--color-neutral-600); }
+  .recap-more {
+    align-self: center;
+    font-size: 12px;
+    color: var(--color-neutral-500);
+  }
+
+  @keyframes recapRiseIn { to { opacity: 1; transform: translateY(0); } }
+  @keyframes recapRingIn { to { opacity: 1; transform: scale(1); } }
+  @keyframes recapCardIn { to { opacity: 1; transform: translateY(0) scale(1); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .recap-hero, .recap-ring-item, .recap-game { animation: none; opacity: 1; transform: none; }
+  }
 </style>

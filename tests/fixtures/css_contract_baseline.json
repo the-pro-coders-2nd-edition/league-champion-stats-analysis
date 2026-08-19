@@ -27,12 +27,13 @@
     }
   },
   "rule4_global_outside_allowlist": {
-    "files": 5,
-    "rules": 70,
+    "files": 6,
+    "rules": 72,
     "per_file": {
       "components/CareerNode.svelte": 17,
       "components/Chip.svelte": 32,
       "components/MetricLabel.svelte": 2,
+      "components/RecapModal.svelte": 2,
       "components/ReportSkeleton.svelte": 2,
       "components/StatChip.svelte": 17
     }
