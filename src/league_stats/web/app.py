@@ -142,6 +142,15 @@ class CareerDropRequest(BaseModel):
     slot: int = Field(ge=0, lt=BLOCK_SLOTS)
 
 
+class RecapAckRequest(BaseModel):
+    """Body of ``POST /api/players/{slug}/builds/{build_slug}/career/recap/ack``."""
+
+    match_id: str = ""
+    game_ms: int = 0
+    hits: dict[str, int] = Field(default_factory=dict)
+    track_key: str = ""
+
+
 def _parse_player_entry(value: str, tagline: str = "") -> dict[str, str]:
     """Resolve one Riot ID input into ``{riot_id, tagline}``."""
     riot_id = value.strip()
@@ -912,6 +921,26 @@ def create_app(
         db_path, ladder_key, _champion, _role = _career_ladder_ref(slug, build_slug)
         with CareerStore(db_path) as career:
             career.clear_pending_congrats(ladder_key)
+        return {"acknowledged": True}
+
+    @app.post("/api/players/{slug}/builds/{build_slug}/career/recap/ack")
+    def acknowledge_career_recap(
+        slug: str, build_slug: str, body: RecapAckRequest
+    ) -> dict[str, Any]:
+        """Mark the "what's new" recap modal as seen up to one game.
+
+        Recorded by match id/timestamp rather than cleared outright, so a game
+        played while the modal is open is not swallowed by the ack.
+        """
+        db_path, ladder_key, _champion, _role = _career_ladder_ref(slug, build_slug)
+        with CareerStore(db_path) as career:
+            career.ack_recap(
+                ladder_key,
+                match_id=body.match_id,
+                game_ms=body.game_ms,
+                hits=body.hits,
+                track_key=body.track_key,
+            )
         return {"acknowledged": True}
 
     @app.post("/api/players/{slug}/builds/{build_slug}/career/drop")

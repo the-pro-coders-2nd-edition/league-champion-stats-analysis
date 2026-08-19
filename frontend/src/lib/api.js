@@ -121,3 +121,19 @@ export async function dropCareerBlock(slug, buildSlug, slot) {
   if (!response.ok) throw new Error(detailMessage(data, `Drop failed: ${response.status}`));
   return data;
 }
+
+export async function ackCareerRecap(slug, buildSlug, { matchId, gameMs, hits, trackKey }) {
+  const response = await fetch(`/api/players/${slug}/builds/${buildSlug}/career/recap/ack`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      match_id: matchId,
+      game_ms: gameMs,
+      hits,
+      track_key: trackKey,
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(detailMessage(data, `Recap ack failed: ${response.status}`));
+  return data;
+}

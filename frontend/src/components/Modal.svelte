@@ -4,6 +4,9 @@
   export let open = false;
   export let title = '';
   export let onClose = () => {};
+  // 'large' fills most of the viewport, for content-heavy modals (e.g. the
+  // new-games recap) instead of the default small centered dialog.
+  export let size = 'default';
 
   function handleWindowKeydown(event) {
     if (open && event.key === 'Escape') onClose();
@@ -28,7 +31,7 @@
     transition:fade={{ duration: 150 }}
   >
     <div
-      class="modal-panel"
+      class="modal-panel{size === 'large' ? ' modal-panel--large' : ''}"
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -66,6 +69,10 @@
     border-radius: var(--radius-lg);
     background: var(--color-surface);
     box-shadow: var(--shadow-lg);
+  }
+  .modal-panel--large {
+    width: 75vw;
+    max-height: 85vh;
   }
   .modal-head {
     display: flex;

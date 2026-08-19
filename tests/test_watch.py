@@ -84,7 +84,7 @@ def test_watch_defaults_to_off(store: JobStore) -> None:
     row = store.get_player(SLUG)
     assert row is not None
     assert not row["watch_enabled"]
-    assert row["watch_interval_s"] == 180
+    assert row["watch_interval_s"] == 60
 
 
 def test_set_watch_toggles_and_floors_the_interval(store: JobStore) -> None:
@@ -393,7 +393,7 @@ def test_player_status_exposes_watch_state(client: TestClient) -> None:
     before = client.get(f"/api/players/{SLUG}").json()
     assert before["can_watch"] is True
     assert before["watch_enabled"] is False
-    assert before["watch_interval_s"] == 180
+    assert before["watch_interval_s"] == 60
     assert before["last_watch_error"] == ""
 
     client.post(f"/api/players/{SLUG}/watch", json={"interval_s": 600})

@@ -55,6 +55,31 @@ class CareerBlockState:
 
 
 @dataclass(frozen=True)
+class GoalProgress:
+    """One live-block goal's hit count before and after the new games."""
+
+    column: str
+    before: int
+    after: int
+    need: int
+
+
+@dataclass(frozen=True)
+class RecapInfo:
+    """Games newer than the reader's last acknowledged recap, and what changed.
+
+    ``progress`` is empty when the live block itself changed since the last
+    ack (a different track) -- a before/after would compare goals that are no
+    longer the ones on screen.
+    """
+
+    new_match_ids: list[str] = field(default_factory=list)
+    newest_match_id: str = ""
+    newest_game_ms: int = 0
+    progress: list[GoalProgress] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class CareerSnapshot:
     """The ladder as it stands after this run."""
 
@@ -62,6 +87,7 @@ class CareerSnapshot:
     pending_congrats: str = ""
     window: int = WINDOW
     awaiting_peers: bool = False
+    recap: RecapInfo | None = None
 
 
 def advance_career(
@@ -324,6 +350,67 @@ def _retire_live_block(
     _fill_empty_slots(store, key, ctx, components)
 
 
+def _pending_recap(
+    store: CareerStore, key: str, ctx: TrackContext, live: CareerBlockState | None
+) -> RecapInfo | None:
+    """Games newer than the last acknowledged recap, if the reader has never seen them.
+
+    A ladder that has never acknowledged a recap auto-acks its current state
+    instead of surfacing one -- otherwise the very first report a player opens
+    would "recap" their entire match history.
+    """
+    acked_match_id, acked_game_ms, acked_hits, acked_track_key = store.peek_recap_ack(key)
+    newest_ms = newest_game_ms(ctx.matches_df)
+    if not acked_match_id and not acked_game_ms:
+        if newest_ms and "match_id" in ctx.matches_df.columns:
+            newest_row = ctx.matches_df.loc[
+                ctx.matches_df["game_creation_ms"].astype("int64") == newest_ms
+            ]
+            newest_id = str(newest_row["match_id"].iloc[0]) if not newest_row.empty else ""
+            store.ack_recap(
+                key,
+                match_id=newest_id,
+                game_ms=newest_ms,
+                hits=_live_hits_by_column(live),
+                track_key=live.track_key if live else "",
+            )
+        return None
+    if "game_creation_ms" not in ctx.matches_df.columns or "match_id" not in ctx.matches_df.columns:
+        return None
+    created = ctx.matches_df["game_creation_ms"].astype("int64")
+    new_rows = ctx.matches_df.loc[created > acked_game_ms].sort_values(
+        "game_creation_ms", ascending=True
+    )
+    if new_rows.empty:
+        return None
+    progress: list[GoalProgress] = []
+    if live is not None and live.track_key == acked_track_key:
+        for goal, hits in zip(live.goals, live.hits, strict=False):
+            progress.append(
+                GoalProgress(
+                    column=goal.rung.column,
+                    before=acked_hits.get(goal.rung.column, 0),
+                    after=hits,
+                    need=goal.rung.need,
+                )
+            )
+    return RecapInfo(
+        new_match_ids=[str(mid) for mid in new_rows["match_id"].tolist()],
+        newest_match_id=str(new_rows["match_id"].iloc[-1]),
+        newest_game_ms=int(new_rows["game_creation_ms"].iloc[-1]),
+        progress=progress,
+    )
+
+
+def _live_hits_by_column(live: CareerBlockState | None) -> dict[str, int]:
+    if live is None:
+        return {}
+    return {
+        goal.rung.column: hits
+        for goal, hits in zip(live.goals, live.hits, strict=False)
+    }
+
+
 def _snapshot(store: CareerStore, key: str, ctx: TrackContext) -> CareerSnapshot:
     """Assemble the display view: live block measured, queued blocks inert.
 
@@ -351,7 +438,9 @@ def _snapshot(store: CareerStore, key: str, ctx: TrackContext) -> CareerSnapshot
                 display_states=display,
             )
         )
+    live = blocks[0] if blocks else None
     return CareerSnapshot(
         blocks=blocks,
         pending_congrats=store.peek_pending_congrats(key),
+        recap=_pending_recap(store, key, ctx, live),
     )

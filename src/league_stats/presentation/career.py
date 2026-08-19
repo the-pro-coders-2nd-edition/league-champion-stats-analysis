@@ -165,6 +165,7 @@ def empty_career_view() -> dict[str, Any]:
         "rules": list(CAREER_RULES),
         "legend": _legend(WINDOW),
         "congrats": None,
+        "pending_recap": None,
         "step_catalog": [],
     }
 
@@ -218,6 +219,7 @@ def _active_block(block: CareerBlockState, *, window: int) -> dict[str, Any]:
     return {
         "slot": block.slot,
         "position": f"Block {block.slot + 1}",
+        "track_key": block.track_key,
         "name": _track_name(block.track_key),
         "metric": _track_metric(block.track_key),
         "is_active": True,
@@ -295,10 +297,28 @@ def build_career_view(
             ),
         }
 
+    pending_recap = None
+    if snapshot.recap is not None and snapshot.recap.new_match_ids:
+        pending_recap = {
+            "new_match_ids": list(snapshot.recap.new_match_ids),
+            "newest_match_id": snapshot.recap.newest_match_id,
+            "newest_game_ms": snapshot.recap.newest_game_ms,
+            "progress": [
+                {
+                    "column": item.column,
+                    "before": item.before,
+                    "after": item.after,
+                    "need": item.need,
+                }
+                for item in snapshot.recap.progress
+            ],
+        }
+
     return {
         "has_career": True,
         "awaiting_peers": False,
         "window": window,
+        "pending_recap": pending_recap,
         "blocks": blocks,
         "widget": widget,
         "rules": list(CAREER_RULES),

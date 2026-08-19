@@ -56,7 +56,7 @@
     "stale_hash_count": 38
   },
   "rule8_underused_components": {
-    "count": 23,
+    "count": 24,
     "names": [
       "ChampionIconStack",
       "FormWrBridge",
@@ -72,6 +72,7 @@
       "MetricValue",
       "Modal",
       "PeerRankValue",
+      "RecapModal",
       "RecCard",
       "RecCardHead",
       "RecEvidenceSummary",
