@@ -25,3 +25,17 @@ export function setCachedBuild(key, payload) {
     cache.delete(cache.keys().next().value);
   }
 }
+
+// The player-status endpoint (already polled regularly while any report is open) is
+// metadata-only -- cheap to call -- and carries a fresh `generated_at` for every build
+// a player has, not just the one currently displayed. Comparing it against a cached
+// entry's own `generated_at` tells us, for free, whether that entry is still good
+// without a dedicated staleness endpoint. A mismatch drops the entry rather than
+// eagerly refetching -- nobody's looking at that build right now, so the next visit's
+// normal cache-miss fetch is enough.
+export function invalidateIfStale(key, freshGeneratedAt) {
+  const cached = cache.get(key);
+  if (cached && freshGeneratedAt && cached.generated_at !== freshGeneratedAt) {
+    cache.delete(key);
+  }
+}

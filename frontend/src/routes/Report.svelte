@@ -13,7 +13,7 @@
     sendChatMessage,
   } from '../lib/api.js';
   import { createReportState } from '../lib/reportState.js';
-  import { getCachedBuild, setCachedBuild } from '../lib/buildCache.js';
+  import { getCachedBuild, setCachedBuild, invalidateIfStale } from '../lib/buildCache.js';
   import { createPoller } from '../lib/poller.js';
   import SegmentedControl from '../components/SegmentedControl.svelte';
   import AccountFilter from '../sections/AccountFilter.svelte';
@@ -80,6 +80,17 @@
       const data = await fetchPlayerStatus(slug);
       playerBuilds = data.builds || [];
       peerFailed = !!data.peer_failed;
+
+      // This status call is cheap (metadata only) and already carries a fresh
+      // generated_at for every build, not just the one on screen -- use it to drop any
+      // OTHER cached build whose data just went stale, so a later switch to it re-fetches
+      // instead of serving pre-regeneration data. The active build's own staleness is
+      // still handled below via reloadBuild(), which also writes the cache through.
+      (data.builds || []).forEach((entry) => {
+        if (entry.slug !== params.buildSlug) {
+          invalidateIfStale(`${slug}/${entry.slug}`, entry.generated_at);
+        }
+      });
 
       const build = (data.builds || []).find((entry) => entry.slug === params.buildSlug);
       const job = data.active_job;
@@ -232,16 +243,26 @@
       // instant, no skeleton, no re-paying the fetch cost for something already had.
       const cached = getCachedBuild(key);
       if (cached) {
+        // A still-in-flight fetch from a previous switch may have left this true; the
+        // content we're about to show is ready right now, so the skeleton must not
+        // stay up waiting for that unrelated fetch to settle.
+        switchingBuild = false;
         applyPayload(cached);
       } else {
         switchingBuild = true;
-        fetchBuild(params.slug, params.buildSlug)
+        const slug = params.slug;
+        const buildSlug = params.buildSlug;
+        fetchBuild(slug, buildSlug)
           .then((result) => {
             setCachedBuild(key, result);
-            applyPayload(result);
+            // A switch back to an earlier build (served instantly from cache) can
+            // resolve before this fetch does; without this check the late response
+            // would still land and silently overwrite whatever the user is looking at
+            // now with stale data for a build they've already navigated away from.
+            if (key === loadedKey) applyPayload(result);
           })
-          .catch((err) => { error = err; })
-          .finally(() => { switchingBuild = false; });
+          .catch((err) => { if (key === loadedKey) error = err; })
+          .finally(() => { if (key === loadedKey) switchingBuild = false; });
       }
     }
   }
