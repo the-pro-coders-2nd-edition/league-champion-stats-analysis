@@ -194,6 +194,13 @@ def _active_block(block: CareerBlockState, *, window: int) -> dict[str, Any]:
         node["why"] = goal.rung.why
         node["note"] = ""
         node["last"] = index == len(block.goals) - 1
+        # What the goal measures, so Game Review can mark the rows a game was judged
+        # on. since_ms is the start line: a game played before this block appeared was
+        # never counted by it, and must not read as a miss.
+        node["column"] = goal.rung.column
+        node["comparator"] = goal.rung.comparator
+        node["target"] = goal.rung.target
+        node["since_ms"] = goal.since_ms
         items.append(node)
     done = sum(1 for state in block.display_states if state in {"Cleared", "At risk"})
     revoked = "Revoked" in block.display_states

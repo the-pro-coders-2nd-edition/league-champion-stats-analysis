@@ -993,6 +993,20 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
   padding: 6px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
+/* Career goal markers on the rows a live block is judging. The rows are built as
+   HTML strings by GameReview's metricRowHtml, so these cannot be component-scoped. */
+.game-review-stat-row--goal-met,
+.game-review-stat-row--goal-missed,
+.game-review-stat-row--goal-untracked {
+  border-left: 2px solid var(--color-divider);
+  padding-left: 6px;
+  margin-left: -8px;
+}
+.game-review-stat-row--goal-met { border-left-color: var(--tone-good-line); }
+.game-review-stat-row--goal-missed { border-left-color: var(--tone-bad-line); }
+.game-review-stat-row--goal-met .game-review-stat-label { color: var(--tone-good-fg); }
+.game-review-stat-row--goal-missed .game-review-stat-label { color: var(--tone-bad-fg); }
+.game-review-stat-row--goal-untracked .game-review-stat-label { color: var(--color-neutral-600); }
 .game-review-stat-row:last-child { border-bottom: 0; padding-bottom: 0; }
 .game-review-stat-label { font-size: 13px; color: var(--color-text); }
 .game-review-stat-value {

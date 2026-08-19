@@ -553,7 +553,7 @@
     </div>
 
     <div class="report-category-panel{activeCategory === 'games' ? ' is-active' : ''}" id="category-games" data-category="games">
-      <GameReview data={$view} />
+      <GameReview data={$view} career={careerLadder} />
     </div>
 
     <div class="report-category-panel{activeCategory === 'career' ? ' is-active' : ''}" id="category-career" data-category="career">

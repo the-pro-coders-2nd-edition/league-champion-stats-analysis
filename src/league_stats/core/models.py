@@ -961,6 +961,10 @@ class GameDetail(BaseModel):
     match_id: str
     index: int
     date: str
+    # Millisecond timestamp behind ``date``. Game Review compares it with a Career
+    # goal's ``since_ms`` to tell "this block was not tracking yet" from "missed".
+    # Defaults so a game_review payload cached before this field still validates.
+    game_creation_ms: int = 0
     queue: str
     result: Literal["win", "loss"]
     duration_min: float

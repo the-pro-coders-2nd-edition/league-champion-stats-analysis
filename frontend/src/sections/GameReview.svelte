@@ -19,8 +19,16 @@
   import { escapeHtml, soloIconCellHtml } from '../lib/html.js';
   import { formatGameTime, pct } from '../lib/format.js';
   import { resizePlotlySoon } from '../lib/plotlyResize.js';
+  import { careerGoalsForGame, goalOutcomeByColumn } from '../lib/careerGameGoals.js';
+  import { REPORT_NAV_KEY, handleNavClick } from '../lib/reportNav.js';
+  import { getContext } from 'svelte';
 
   export let data;
+  // The resolved Career ladder. Career follows neither the queue nor the window
+  // filter, so it is passed in rather than read off the slice.
+  export let career = null;
+
+  const reportNav = getContext(REPORT_NAV_KEY);
 
   let selectedMatchId = data.game_review_selected_match_id ?? null;
   let activeTab = 'overview';
@@ -236,7 +244,15 @@
       const deltaText = compare.gap_label || (formatGameReviewMetricDelta(key, compare.delta) + ' vs your avg');
       compareHtml = `<span class="game-review-stat-delta ${deltaTone}"${(neutralDelta || !compare.gap_color) ? '' : ` style="color:${compare.gap_color}"`}>${escapeHtml(deltaText)}</span>`;
     }
-    return `<div class="game-review-stat-row" title="${escapeHtml(hint)}"><span class="game-review-stat-label">${escapeHtml(label)}</span>` +
+    // A row the live Career block is judging gets a marker, so the reader can see
+    // which of these numbers their current goal actually counts.
+    const goal = goalByColumn[key];
+    const goalHint = goal ? ` — Career goal: ${goal.text}` : '';
+    const goalClass = goal ? ` game-review-stat-row--goal-${goal.outcome}` : '';
+    const goalMark = goal
+      ? (goal.outcome === 'met' ? '✓ ' : goal.outcome === 'missed' ? '✕ ' : '– ')
+      : '';
+    return `<div class="game-review-stat-row${goalClass}" title="${escapeHtml(hint + goalHint)}"><span class="game-review-stat-label">${goalMark}${escapeHtml(label)}</span>` +
       `<span class="game-review-stat-value ${tone}">${formatGameReviewMetricValue(key, val)}</span>${compareHtml}</div>`;
   }
 
@@ -373,6 +389,8 @@
 
   $: selectedGame = games.find((g) => g.match_id === selectedMatchId) || games[0];
 
+  $: trackedGoals = careerGoalsForGame(career, selectedGame);
+  $: goalByColumn = goalOutcomeByColumn(career, selectedGame);
   $: tooltips = data.game_review_tooltips || {};
   $: objectiveHints = tooltips.objectives || {};
   $: objectiveRows = selectedGame ? (selectedGame.objectives || []) : [];
@@ -493,6 +511,37 @@
                 </div>
               {/if}
             </div>
+
+            {#if trackedGoals.length}
+              <a
+                class="game-goals"
+                href="#career"
+                on:click={(event) => handleNavClick(event, 'career', reportNav)}
+                title="Open Career mode"
+              >
+                <span class="game-goals-head">
+                  <span class="game-goals-label">Career goals tracked for this game</span>
+                  <span class="game-goals-more">Career mode →</span>
+                </span>
+                <span class="game-goals-list">
+                  {#each trackedGoals as goal (goal.column)}
+                    <span class="game-goal game-goal--{goal.outcome}">
+                      <span class="game-goal-mark" aria-hidden="true">
+                        {goal.outcome === 'met' ? '✓' : goal.outcome === 'missed' ? '✕' : '–'}
+                      </span>
+                      <span class="game-goal-text">{goal.text}</span>
+                      <span class="game-goal-verdict">
+                        {goal.outcome === 'met'
+                          ? 'counted'
+                          : goal.outcome === 'missed'
+                            ? 'did not count'
+                            : 'before this block'}
+                      </span>
+                    </span>
+                  {/each}
+                </span>
+              </a>
+            {/if}
 
             <div class="game-review-scoreboard" id="game-review-score-hero">
               <div class="gr-score-list">
@@ -719,3 +768,44 @@
     </div>
   {/if}
 </section>
+
+<style>
+  /* Career goals the live block is judging this game on. A link, not a card: the
+     ladder itself is the place to act on them. */
+  .game-goals {
+    display: grid;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+    padding: var(--space-4);
+    border: 1px solid var(--color-divider);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
+    color: inherit;
+    text-decoration: none;
+    transition: border-color .15s;
+  }
+  .game-goals:hover { border-color: var(--color-accent); }
+  .game-goals-head { display: flex; align-items: baseline; gap: var(--space-3); }
+  .game-goals-label {
+    font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--color-neutral-500);
+  }
+  .game-goals-more { margin-left: auto; font-size: 11px; color: var(--color-accent); }
+  .game-goals-list { display: grid; gap: 6px; }
+  .game-goal {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--space-2);
+    font-size: 12px;
+  }
+  .game-goal-mark { font-weight: 700; text-align: center; }
+  .game-goal--met .game-goal-mark, .game-goal--met .game-goal-verdict { color: var(--tone-good-fg); }
+  .game-goal--missed .game-goal-mark, .game-goal--missed .game-goal-verdict { color: var(--tone-bad-fg); }
+  .game-goal--untracked .game-goal-mark, .game-goal--untracked .game-goal-verdict {
+    color: var(--color-neutral-600);
+  }
+  .game-goal-text { color: var(--color-text); min-width: 0; }
+  .game-goal-verdict { font-size: 11px; white-space: nowrap; }
+
+</style>

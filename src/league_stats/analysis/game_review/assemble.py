@@ -235,6 +235,7 @@ def assemble_game_detail(
         match_id=record.match_id,
         index=index,
         date=_iso_date(record.game_creation_ms),
+        game_creation_ms=record.game_creation_ms,
         queue=_queue_label(record.queue_id),
         result="win" if record.win else "loss",
         duration_min=round(record.duration_min, 1),
