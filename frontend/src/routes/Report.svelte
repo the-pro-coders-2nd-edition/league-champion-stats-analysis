@@ -51,6 +51,25 @@
   let careerPendingSlot = null;
   let dismissedRecapId = null;
 
+  const RECAP_DISMISS_PREFIX = 'recap-dismissed:';
+
+  function loadRecapDismissal(key) {
+    try {
+      return localStorage.getItem(RECAP_DISMISS_PREFIX + key);
+    } catch {
+      return null;
+    }
+  }
+
+  function saveRecapDismissal(key, matchId) {
+    try {
+      localStorage.setItem(RECAP_DISMISS_PREFIX + key, matchId);
+    } catch {
+      // Storage unavailable (private browsing, quota) -- the ack still hits the
+      // server; only cross-reload suppression on this device is lost.
+    }
+  }
+
   function statusSlugFromEndpoint(endpoint) {
     if (!endpoint) return null;
     const match = endpoint.match(/\/api\/players\/([^/]+)$/);
@@ -187,6 +206,7 @@
     const recap = careerLadder?.pending_recap;
     if (!recap) return;
     dismissedRecapId = recap.newest_match_id;
+    saveRecapDismissal(loadedKey, recap.newest_match_id);
     const live = (careerLadder.blocks || []).find((b) => b.is_active);
     const hits = {};
     (live?.goals || []).forEach((goal) => {
@@ -254,6 +274,12 @@
     if (key !== loadedKey) {
       loadedKey = key;
       resetStatusPollState();
+      // Career's on-disk pending_recap only clears the next time this build's
+      // report actually rebuilds (a new game, or a regenerate) -- a watch tick
+      // with nothing new for THIS build re-serves the same stale report.json,
+      // ack or not. Remembering the dismissal here keeps a reload from
+      // re-showing a recap the reader already closed.
+      dismissedRecapId = loadRecapDismissal(key);
       const applyPayload = (result) => {
         payload = result;
         report = createReportState(payload, {
