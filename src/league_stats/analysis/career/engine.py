@@ -268,11 +268,32 @@ def _goal_hits(goal: StoredGoal, ctx: TrackContext) -> int:
     return count_hits(window_df, goal.rung)
 
 
+def _log_newest_game_excluded(key: str, ctx: TrackContext, live: list[StoredGoal]) -> None:
+    """Warn when the newest game is older than every live goal's since_ms.
+
+    Silent to the player otherwise: a game played right as a block promotes
+    can fall before its new start line and never count, with no error shown.
+    """
+    newest_ms = newest_game_ms(ctx.matches_df)
+    if not newest_ms:
+        return
+    if any(newest_ms > goal.since_ms for goal in live):
+        return
+    get_logger("career").info(
+        "Career: newest game for %s predates the live block's since_ms cutoff "
+        "(game=%d, cutoff=%d) — it will not count toward the current goal",
+        key,
+        newest_ms,
+        max(goal.since_ms for goal in live),
+    )
+
+
 def _measure_live_block(store: CareerStore, key: str, ctx: TrackContext) -> None:
     """Recompute and persist every slot-0 state; later slots are not measured."""
     live = _slot_goals(store, key, 0)
     if not live:
         return
+    _log_newest_game_excluded(key, ctx, live)
     states = {
         (goal.slot, goal.goal_index): transition(
             goal.state, _goal_hits(goal, ctx), goal.rung.need
