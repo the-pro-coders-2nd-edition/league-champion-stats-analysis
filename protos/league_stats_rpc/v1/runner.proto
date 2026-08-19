@@ -17,11 +17,39 @@ service RunnerService {
   rpc NotifyPeerBaselineReady(PeerBaselineReadyRequest) returns (Ack);
 }
 
+// Mirrors league_stats.web.jobs.JOB_KIND_* — the job kinds a job row can hold.
+enum JobKind {
+  JOB_KIND_UNSPECIFIED = 0;
+  JOB_KIND_ANALYZE = 1;
+  JOB_KIND_REFRESH = 2;
+  JOB_KIND_REGENERATE = 3;
+}
+
+// One tracked Riot account within a (possibly multi-player) job. Mirrors the
+// per-entry shape produced by league_stats.web.jobs.encode_players.
+message JobPlayer {
+  string riot_id = 1;
+  string tagline = 2;
+}
+
 message EnqueueJobRequest {
   string puuid = 1;
   league_stats_rpc.v1.Region region = 2;
   string match_id = 3;
   string reason = 4;
+  JobKind kind = 5;
+  string riot_id = 6;
+  string tagline = 7;
+  // Filesystem slug for the player/group report (jobs.player_slug).
+  string player_slug = 8;
+  // Full tracked-player set for multi-player/group jobs (jobs.encode_players).
+  // Empty for a single-player job, where riot_id/tagline above are enough.
+  repeated JobPlayer players = 9;
+  // Optional scoping for a per-champion regenerate job (jobs.filter_champion
+  // / jobs.filter_role / jobs.min_games). Empty/unset means "no scoping".
+  string filter_champion = 10;
+  string filter_role = 11;
+  int32 min_games = 12;
 }
 
 message EnqueueJobResponse {
@@ -39,6 +67,13 @@ message StageResult {
   // payload shape is defined by the pipeline, not by this contract).
   string payload_json = 3;
   int64 completed_at_unix = 4;
+  // Non-empty when the job failed; consumers should treat this message as
+  // terminal and surface the error instead of the (likely empty) payload.
+  string error = 5;
+  // True on the last message of the stream, whether the job succeeded or
+  // failed. Lets a consumer distinguish "still in progress" from "done" or
+  // "died mid-stream" without guessing from stage ordering alone.
+  bool final = 6;
 }
 
 message PeerBaselineReadyRequest {
@@ -47,4 +82,9 @@ message PeerBaselineReadyRequest {
   string lane = 3;
   string rank = 4;
   string baseline_json = 5;
+  // Non-empty when PEERS failed to fetch the baseline; baseline_json is then
+  // empty and RUNNER should mark the caller's peer_failed flag (see
+  // league_stats.web.jobs.JobStore.mark_player_peer_failed) instead of
+  // waiting forever for a baseline that will never arrive.
+  string error = 6;
 }

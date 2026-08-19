@@ -15,11 +15,13 @@ class RequestBaselineRequest(_message.Message):
     def __init__(self, champion: _Optional[str] = ..., lane: _Optional[str] = ..., rank: _Optional[str] = ...) -> None: ...
 
 class RequestBaselineResponse(_message.Message):
-    __slots__ = ("request_id", "cached", "baseline_json")
+    __slots__ = ("request_id", "cached", "baseline_json", "error")
     REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
     CACHED_FIELD_NUMBER: _ClassVar[int]
     BASELINE_JSON_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
     request_id: str
     cached: bool
     baseline_json: str
-    def __init__(self, request_id: _Optional[str] = ..., cached: _Optional[bool] = ..., baseline_json: _Optional[str] = ...) -> None: ...
+    error: str
+    def __init__(self, request_id: _Optional[str] = ..., cached: _Optional[bool] = ..., baseline_json: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...

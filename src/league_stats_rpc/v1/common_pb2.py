@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n league_stats_rpc/v1/common.proto\x12\x13league_stats_rpc.v1\"\"\n\x03\x41\x63k\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t*D\n\x06Region\x12\x16\n\x12REGION_UNSPECIFIED\x10\x00\x12\n\n\x06\x45UROPE\x10\x01\x12\x0c\n\x08\x41MERICAS\x10\x02\x12\x08\n\x04\x41SIA\x10\x03*Y\n\x05Stage\x12\x15\n\x11STAGE_UNSPECIFIED\x10\x00\x12\x0b\n\x07SUMMARY\x10\x01\x12\x0f\n\x0bPERFORMANCE\x10\x02\x12\r\n\tDEEP_DIVE\x10\x03\x12\x0c\n\x08\x43HAMPION\x10\x04\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n league_stats_rpc/v1/common.proto\x12\x13league_stats_rpc.v1\"\"\n\x03\x41\x63k\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t*M\n\x06Region\x12\x16\n\x12REGION_UNSPECIFIED\x10\x00\x12\n\n\x06\x45UROPE\x10\x01\x12\x0c\n\x08\x41MERICAS\x10\x02\x12\x08\n\x04\x41SIA\x10\x03\x12\x07\n\x03SEA\x10\x04*Y\n\x05Stage\x12\x15\n\x11STAGE_UNSPECIFIED\x10\x00\x12\x0b\n\x07SUMMARY\x10\x01\x12\x0f\n\x0bPERFORMANCE\x10\x02\x12\r\n\tDEEP_DIVE\x10\x03\x12\x0c\n\x08\x43HAMPION\x10\x04\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,9 +32,9 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'league_stats_rpc.v1.common_
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
   _globals['_REGION']._serialized_start=93
-  _globals['_REGION']._serialized_end=161
-  _globals['_STAGE']._serialized_start=163
-  _globals['_STAGE']._serialized_end=252
+  _globals['_REGION']._serialized_end=170
+  _globals['_STAGE']._serialized_start=172
+  _globals['_STAGE']._serialized_end=261
   _globals['_ACK']._serialized_start=57
   _globals['_ACK']._serialized_end=91
 # @@protoc_insertion_point(module_scope)

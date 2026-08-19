@@ -11,6 +11,7 @@ class Region(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     EUROPE: _ClassVar[Region]
     AMERICAS: _ClassVar[Region]
     ASIA: _ClassVar[Region]
+    SEA: _ClassVar[Region]
 
 class Stage(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -23,6 +24,7 @@ REGION_UNSPECIFIED: Region
 EUROPE: Region
 AMERICAS: Region
 ASIA: Region
+SEA: Region
 STAGE_UNSPECIFIED: Stage
 SUMMARY: Stage
 PERFORMANCE: Stage

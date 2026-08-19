@@ -5,6 +5,7 @@ def test_common_pb2_exposes_enums_and_ack():
     from league_stats_rpc.v1 import common_pb2
 
     assert common_pb2.Region.Name(common_pb2.EUROPE) == "EUROPE"
+    assert common_pb2.Region.Name(common_pb2.SEA) == "SEA"
     assert common_pb2.Stage.Name(common_pb2.SUMMARY) == "SUMMARY"
     ack = common_pb2.Ack(ok=True, message="fine")
     assert ack.ok is True

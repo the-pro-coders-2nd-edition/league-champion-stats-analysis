@@ -21,4 +21,8 @@ message RequestBaselineResponse {
   // Populated only when cached == true; otherwise RUNNER waits for the
   // NotifyPeerBaselineReady callback.
   string baseline_json = 3;
+  // Non-empty when PEERS could not even enqueue the fetch (e.g. rejected the
+  // request outright). Distinct from a later async failure, which is
+  // reported via PeerBaselineReadyRequest.error on the callback instead.
+  string error = 4;
 }

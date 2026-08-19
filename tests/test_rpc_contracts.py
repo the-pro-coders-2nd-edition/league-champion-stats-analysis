@@ -76,6 +76,100 @@ def test_runner_enqueue_job_and_stream_progress():
         server.stop(None)
 
 
+def test_runner_stream_job_progress_reports_failure_as_final():
+    class FakeRunner(runner_pb2_grpc.RunnerServiceServicer):
+        def StreamJobProgress(self, request, context):
+            yield runner_pb2.StageResult(
+                job_id=request.job_id, stage=common_pb2.SUMMARY, payload_json="{}"
+            )
+            yield runner_pb2.StageResult(
+                job_id=request.job_id,
+                stage=common_pb2.STAGE_UNSPECIFIED,
+                error="riot api timed out",
+                final=True,
+            )
+
+    server, port = _start_server(
+        lambda s: runner_pb2_grpc.add_RunnerServiceServicer_to_server(FakeRunner(), s)
+    )
+    try:
+        with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:
+            stub = runner_pb2_grpc.RunnerServiceStub(channel)
+            results = list(
+                stub.StreamJobProgress(runner_pb2.StreamJobProgressRequest(job_id="job-1"))
+            )
+        assert [r.final for r in results] == [False, True]
+        assert results[-1].error == "riot api timed out"
+    finally:
+        server.stop(None)
+
+
+def test_peers_notify_baseline_ready_reports_failure():
+    class FakeRunner(runner_pb2_grpc.RunnerServiceServicer):
+        def NotifyPeerBaselineReady(self, request, context):
+            assert request.error == "peers fetch failed"
+            return common_pb2.Ack(ok=True, message=f"received {request.request_id}")
+
+    server, port = _start_server(
+        lambda s: runner_pb2_grpc.add_RunnerServiceServicer_to_server(FakeRunner(), s)
+    )
+    try:
+        with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:
+            stub = runner_pb2_grpc.RunnerServiceStub(channel)
+            ack = stub.NotifyPeerBaselineReady(
+                runner_pb2.PeerBaselineReadyRequest(
+                    request_id="req-2",
+                    champion="Kayle",
+                    lane="TOP",
+                    rank="EMERALD",
+                    error="peers fetch failed",
+                )
+            )
+        assert ack.ok is True
+        assert ack.message == "received req-2"
+    finally:
+        server.stop(None)
+
+
+def test_runner_enqueue_job_carries_kind_and_players():
+    class FakeRunner(runner_pb2_grpc.RunnerServiceServicer):
+        def EnqueueJob(self, request, context):
+            assert request.kind == runner_pb2.JOB_KIND_REGENERATE
+            assert request.riot_id == "Faker"
+            assert request.tagline == "KR1"
+            assert request.player_slug == "faker-kr1"
+            assert [p.riot_id for p in request.players] == ["Faker", "Duo"]
+            assert request.filter_champion == "Ahri"
+            assert request.min_games == 20
+            return runner_pb2.EnqueueJobResponse(job_id="job-2")
+
+    server, port = _start_server(
+        lambda s: runner_pb2_grpc.add_RunnerServiceServicer_to_server(FakeRunner(), s)
+    )
+    try:
+        with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:
+            stub = runner_pb2_grpc.RunnerServiceStub(channel)
+            response = stub.EnqueueJob(
+                runner_pb2.EnqueueJobRequest(
+                    puuid="puuid-123",
+                    match_id="EUW1_1",
+                    kind=runner_pb2.JOB_KIND_REGENERATE,
+                    riot_id="Faker",
+                    tagline="KR1",
+                    player_slug="faker-kr1",
+                    players=[
+                        runner_pb2.JobPlayer(riot_id="Faker", tagline="KR1"),
+                        runner_pb2.JobPlayer(riot_id="Duo", tagline="KR1"),
+                    ],
+                    filter_champion="Ahri",
+                    min_games=20,
+                )
+            )
+        assert response.job_id == "job-2"
+    finally:
+        server.stop(None)
+
+
 def test_peers_request_baseline_then_runner_notified():
     class FakePeers(peers_pb2_grpc.PeersServiceServicer):
         def RequestBaseline(self, request, context):

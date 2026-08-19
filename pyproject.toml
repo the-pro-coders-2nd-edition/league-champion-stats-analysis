@@ -21,9 +21,9 @@ dependencies = [
     "python-dotenv>=1.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
-    "grpcio>=1.66",
-    "grpcio-tools>=1.66",
-    "protobuf>=5.28",
+    "grpcio>=1.83",
+    "grpcio-tools>=1.83",
+    "protobuf>=7.35.1",
 ]
 
 [dependency-groups]
