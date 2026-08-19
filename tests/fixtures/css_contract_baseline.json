@@ -28,12 +28,12 @@
   },
   "rule4_global_outside_allowlist": {
     "files": 5,
-    "rules": 69,
+    "rules": 70,
     "per_file": {
       "components/CareerNode.svelte": 17,
       "components/Chip.svelte": 32,
-      "components/HeroAction.svelte": 1,
       "components/MetricLabel.svelte": 2,
+      "components/ReportSkeleton.svelte": 2,
       "components/StatChip.svelte": 17
     }
   },
@@ -64,7 +64,6 @@
       "GameReviewRunePage",
       "GameReviewSummoners",
       "GameSummaryHeader",
-      "HeroAction",
       "IconCell",
       "IconOnly",
       "IconStatTable",
@@ -76,9 +75,10 @@
       "RecCardHead",
       "RecEvidenceSummary",
       "ReportPlayerChip",
+      "ReportSkeleton",
       "ScoreDisclosure",
-      "SectionPulseFix",
       "SectionPulseHint",
+      "Skeleton",
       "SkillGrid"
     ]
   },

@@ -28,6 +28,7 @@
   import GameReview from '../sections/GameReview.svelte';
   import Graphs from '../sections/Graphs.svelte';
   import CareerMode from '../sections/CareerMode.svelte';
+  import ReportSkeleton from '../components/ReportSkeleton.svelte';
   import { bindPlotlyDetailsResize, resizePlotlySoon } from '../lib/plotlyResize.js';
 
   export let params = {};
@@ -188,6 +189,10 @@
   let payload = null;
   let error = null;
   let report = null;
+  // True from the moment a build switch starts until its fetch resolves. `payload`/`report`
+  // deliberately keep the previous build's data during that window (see RFC-003) so a
+  // fast rebuild doesn't flash empty -- this flag alone gates the skeleton instead.
+  let switchingBuild = false;
   let playerBuilds = [];
   let playerPageHref = null;
   let navCollapsed = false;
@@ -208,6 +213,7 @@
     const key = `${params.slug}/${params.buildSlug}`;
     if (key !== loadedKey) {
       loadedKey = key;
+      switchingBuild = true;
       resetStatusPollState();
       fetchBuild(params.slug, params.buildSlug)
         .then((result) => {
@@ -219,7 +225,8 @@
             startStatusPoll();
           }
         })
-        .catch((err) => { error = err; });
+        .catch((err) => { error = err; })
+        .finally(() => { switchingBuild = false; });
     }
   }
 
@@ -430,7 +437,7 @@
 {#if error}
   <p class="report-error">Failed to load this report.</p>
 {:else if payload === null || !$view}
-  <p class="report-loading">Loading…</p>
+  <ReportSkeleton category={activeCategory} />
 {:else}
   <div
     class="report-sticky-header"
@@ -500,48 +507,52 @@
     />
   </div>
 
-  <div class="report-category-panel{activeCategory === 'summary' ? ' is-active' : ''}" id="category-summary" data-category="summary">
-    <Overview data={$view} career={careerLadder} onGoToCareer={() => selectCategory('career')} />
-    <Coaching data={$view} />
-  </div>
+  {#if switchingBuild}
+    <ReportSkeleton category={activeCategory} />
+  {:else}
+    <div class="report-category-panel{activeCategory === 'summary' ? ' is-active' : ''}" id="category-summary" data-category="summary">
+      <Overview data={$view} career={careerLadder} onGoToCareer={() => selectCategory('career')} />
+      <Coaching data={$view} />
+    </div>
 
-  <div class="report-category-panel{activeCategory === 'games' ? ' is-active' : ''}" id="category-games" data-category="games">
-    <GameReview data={$view} />
-  </div>
+    <div class="report-category-panel{activeCategory === 'games' ? ' is-active' : ''}" id="category-games" data-category="games">
+      <GameReview data={$view} />
+    </div>
 
-  <div class="report-category-panel{activeCategory === 'career' ? ' is-active' : ''}" id="category-career" data-category="career">
-    <CareerMode
-      career={careerLadder}
-      playerSlug={params.slug}
-      buildSlug={params.buildSlug}
-      busy={jobActive || refreshing}
-      pendingSlot={careerPendingSlot}
-      onDropped={handleCareerDropped}
-    />
-  </div>
+    <div class="report-category-panel{activeCategory === 'career' ? ' is-active' : ''}" id="category-career" data-category="career">
+      <CareerMode
+        career={careerLadder}
+        playerSlug={params.slug}
+        buildSlug={params.buildSlug}
+        busy={jobActive || refreshing}
+        pendingSlot={careerPendingSlot}
+        onDropped={handleCareerDropped}
+      />
+    </div>
 
-  <div class="report-category-panel{activeCategory === 'performance' ? ' is-active' : ''}" id="category-performance" data-category="performance">
-    <FormTracker data={$view} />
-    <RankPeers
-      data={$view}
-      peerStageDetail={peerStageDetail}
-      peerFailed={peerFailed}
-      peerUnavailable={peerUnavailable}
-    />
-  </div>
+    <div class="report-category-panel{activeCategory === 'performance' ? ' is-active' : ''}" id="category-performance" data-category="performance">
+      <FormTracker data={$view} />
+      <RankPeers
+        data={$view}
+        peerStageDetail={peerStageDetail}
+        peerFailed={peerFailed}
+        peerUnavailable={peerUnavailable}
+      />
+    </div>
 
-  <div class="report-category-panel{activeCategory === 'champion' ? ' is-active' : ''}" id="category-champion" data-category="champion">
-    <Matchups data={$view} />
-    <ItemsRunes data={$view} />
-  </div>
+    <div class="report-category-panel{activeCategory === 'champion' ? ' is-active' : ''}" id="category-champion" data-category="champion">
+      <Matchups data={$view} />
+      <ItemsRunes data={$view} />
+    </div>
 
-  <div class="report-category-panel{activeCategory === 'deepdive' ? ' is-active' : ''}" id="category-deepdive" data-category="deepdive">
-    <LaneObjectivesDeaths data={$view} />
-    <VisionEconomyTeamfightsPositioning data={$view} />
-    <Graphs data={$view} />
-  </div>
+    <div class="report-category-panel{activeCategory === 'deepdive' ? ' is-active' : ''}" id="category-deepdive" data-category="deepdive">
+      <LaneObjectivesDeaths data={$view} />
+      <VisionEconomyTeamfightsPositioning data={$view} />
+      <Graphs data={$view} />
+    </div>
 
-  <Chatbot data={payload} sendMessage={sendChatMessage} />
+    <Chatbot data={payload} sendMessage={sendChatMessage} />
+  {/if}
 {/if}
 
 </main>
