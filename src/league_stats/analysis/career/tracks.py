@@ -38,6 +38,7 @@ from league_stats.analysis.career.steps import (
     CATEGORY_SURVIVAL,
     CATEGORY_UTILITY,
     CATEGORY_VISION,
+    STEP_BANK,
     rank_steps,
     steps_for_category,
     at_most_line,
@@ -236,6 +237,36 @@ def _rungs_from_bank(category: str, ctx: TrackContext) -> tuple[Rung, ...] | Non
         seen_columns.add(rung.column)
         chosen.append(rung)
     return tuple(chosen) if chosen else None
+
+
+def build_step_catalog(ctx: TrackContext) -> list[dict[str, Any]]:
+    """Every step in the bank, resolved against this player, grouped by category.
+
+    Unlike a block's live goals, this is not gated by role or by whether the
+    category is currently unlocked: a step off this build's role still builds a
+    real rung from the player's own numbers (the metric is just not one this role
+    is coached on), so the reader can see what any step would ask of them.
+    """
+    categories: list[dict[str, Any]] = []
+    for category in _BANK_CATEGORIES:
+        spec = track_spec(category)
+        steps: list[dict[str, Any]] = []
+        for step in STEP_BANK:
+            if step.category != category:
+                continue
+            rung = step.build(ctx)
+            steps.append({
+                "key": step.key,
+                "text": rung.text if rung is not None else "",
+                "role_mismatch": not step.serves_role(ctx.role),
+                "insufficient_data": rung is None,
+            })
+        categories.append({
+            "key": category,
+            "name": spec.name if spec is not None else category,
+            "steps": steps,
+        })
+    return categories
 
 
 def selectable_track_keys() -> tuple[str, ...]:

@@ -18,7 +18,7 @@ from league_stats.analysis.career.steps import (
     BASELINE_GAMES,
     MAX_STEP_STRETCH,
 )
-from league_stats.analysis.career.tracks import track_spec
+from league_stats.analysis.career.tracks import TrackContext, build_step_catalog, track_spec
 from league_stats.presentation.tones import career_count, career_node
 
 def _pct(fraction: float) -> str:
@@ -165,6 +165,7 @@ def empty_career_view() -> dict[str, Any]:
         "rules": list(CAREER_RULES),
         "legend": _legend(WINDOW),
         "congrats": None,
+        "step_catalog": [],
     }
 
 
@@ -252,8 +253,15 @@ def _locked_block(block: CareerBlockState, previous_name: str) -> dict[str, Any]
     }
 
 
-def build_career_view(snapshot: CareerSnapshot, *, window: int = WINDOW) -> dict[str, Any]:
-    """Blocks, sidebar widget, rules, legend and banner for the report templates."""
+def build_career_view(
+    snapshot: CareerSnapshot, *, window: int = WINDOW, ctx: TrackContext | None = None
+) -> dict[str, Any]:
+    """Blocks, sidebar widget, rules, legend and banner for the report templates.
+
+    ``ctx`` is the same context the ladder itself was just advanced against, so
+    the step catalog it resolves reads off the player's current numbers rather
+    than the numbers a stale block was frozen with.
+    """
     if not snapshot.blocks:
         view = empty_career_view()
         if snapshot.awaiting_peers:
@@ -295,4 +303,5 @@ def build_career_view(snapshot: CareerSnapshot, *, window: int = WINDOW) -> dict
         "rules": list(CAREER_RULES),
         "legend": _legend(window),
         "congrats": congrats,
+        "step_catalog": build_step_catalog(ctx) if ctx is not None else [],
     }

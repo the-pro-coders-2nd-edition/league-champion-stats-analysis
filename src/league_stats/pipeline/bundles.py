@@ -497,7 +497,7 @@ def build_career_bundle(
         key = build_key(player_slug(config.riot_id, config.tagline), config.champion, config.role)
         with CareerStore(config.career_db_path) as store:
             snapshot = advance_career(store, key, ctx, components)
-        return build_career_view(snapshot)
+        return build_career_view(snapshot, ctx=ctx)
     except Exception as exc:  # noqa: BLE001 - a broken ladder must not break the report
         get_logger("career").warning("Career mode skipped: %s", exc)
         return empty_career_view()

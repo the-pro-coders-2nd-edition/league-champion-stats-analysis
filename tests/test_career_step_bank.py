@@ -29,6 +29,7 @@ from league_stats.analysis.career.tracks import (
     TRACKS_BY_KEY,
     TrackContext,
     build_rungs,
+    build_step_catalog,
     selectable_track_keys,
 )
 
@@ -303,3 +304,76 @@ def test_the_six_legacy_keys_still_resolve_for_display() -> None:
     """A ladder on disk stores its key; an unknown key gets its block purged."""
     for key in LEGACY_TRACK_KEYS:
         assert TRACKS_BY_KEY.get(key) is not None
+
+
+# --- the full-bank catalog, for a reader browsing every step that exists ----
+
+
+def test_the_catalog_covers_every_step_in_the_bank_grouped_by_category() -> None:
+    catalog = build_step_catalog(_ctx())
+
+    assert [entry["key"] for entry in catalog] == list(BLOCK_CATEGORY_KEYS)
+    all_keys = [step["key"] for entry in catalog for step in entry["steps"]]
+    assert sorted(all_keys) == sorted(step.key for step in STEP_BANK)
+
+
+def test_a_healthy_players_full_columns_resolve_a_number_for_almost_every_step() -> None:
+    """A handful of "under" steps need headroom to ask for less of; a player who
+    is already at (or floors below) zero on the underlying column has nothing to
+    trim, so those alone are allowed to fall back to ``insufficient_data`` --
+    never a step that could resolve a real number from this player's history.
+
+    ``_integer_under`` targets ``floor(average - 1)`` and declines below zero:
+    HEALTHY's deaths_pre14/greed_deaths/solo_deaths/outnumbered_deaths are all at
+    or near 0, so each floors to a negative target and declines.
+    ``shutdown_hygiene`` (``_stepped_under``) declines the same way when its
+    baseline quantile is 0."""
+    catalog = build_step_catalog(_ctx(role="UTILITY"))
+
+    missing = {
+        step["key"]
+        for entry in catalog
+        for step in entry["steps"]
+        if step["insufficient_data"]
+    }
+    assert missing == {
+        "shutdown_hygiene", "deaths_before_14", "greed_discipline",
+        "no_solo_deaths", "no_outnumbered_deaths",
+    }
+
+    for entry in catalog:
+        for step in entry["steps"]:
+            if step["insufficient_data"]:
+                continue
+            assert step["text"]
+
+
+def test_a_step_missing_its_column_reports_insufficient_data_not_a_crash() -> None:
+    thin = _matches()
+    thin = thin.drop(columns=["gd10"])
+    catalog = build_step_catalog(_ctx(thin))
+
+    laning = next(entry for entry in catalog if entry["key"] == "laning")
+    even_at_10 = next(step for step in laning["steps"] if step["key"] == "even_at_10")
+
+    assert even_at_10["insufficient_data"] is True
+    assert even_at_10["text"] == ""
+
+
+def test_a_role_restricted_step_is_flagged_but_still_resolved_off_role() -> None:
+    catalog = build_step_catalog(_ctx(role="MIDDLE"))
+
+    laning = next(entry for entry in catalog if entry["key"] == "laning")
+    jungle_gold = next(step for step in laning["steps"] if step["key"] == "jungle_gold_at_10")
+
+    assert jungle_gold["role_mismatch"] is True
+    assert jungle_gold["text"]
+
+
+def test_a_step_offered_to_this_role_is_not_flagged() -> None:
+    catalog = build_step_catalog(_ctx(role="JUNGLE"))
+
+    laning = next(entry for entry in catalog if entry["key"] == "laning")
+    jungle_gold = next(step for step in laning["steps"] if step["key"] == "jungle_gold_at_10")
+
+    assert jungle_gold["role_mismatch"] is False

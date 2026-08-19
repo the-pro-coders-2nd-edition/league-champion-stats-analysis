@@ -4,6 +4,7 @@
   import CareerNode from '../components/CareerNode.svelte';
   import MetricTooltip from '../components/MetricTooltip.svelte';
   import Chip from '../components/Chip.svelte';
+  import Modal from '../components/Modal.svelte';
   import SectionHeader from '../components/SectionHeader.svelte';
   import { dropCareerBlock } from '../lib/api.js';
 
@@ -23,8 +24,12 @@
   let confirmSlot = null;
   let droppingSlot = null;
   let dropError = '';
+  let catalogOpen = false;
 
-  $: ladder = career || { has_career: false, blocks: [], rules: [], legend: [], congrats: null };
+  $: ladder = career || {
+    has_career: false, blocks: [], rules: [], legend: [], congrats: null, step_catalog: [],
+  };
+  $: stepCatalog = ladder.step_catalog || [];
   $: canDrop = !!(playerSlug && buildSlug);
   // Career spans every ranked game, so it does not follow the queue filter. The
   // caption says so rather than the ladder disappearing on a filtered view.
@@ -69,6 +74,17 @@
     icon="trending-up"
     scope="All ranked · last 20 games"
   />
+
+  {#if ladder.has_career && stepCatalog.length}
+    <button
+      type="button"
+      class="career-catalog-btn"
+      on:click={() => (catalogOpen = true)}
+    >
+      <iconify-icon icon="lucide:list" aria-hidden="true"></iconify-icon>
+      All steps
+    </button>
+  {/if}
 
   {#if ladder.has_career}
     {#if tracksAllRanked}
@@ -231,6 +247,36 @@
   {/if}
 </section>
 
+<Modal open={catalogOpen} title="Every Career step" onClose={() => (catalogOpen = false)}>
+  <p class="career-catalog-lead">
+    Every step in the bank, with the number your own last 20 games would currently ask for. A
+    block only ever draws its three goals from here — this is the full pool, not a preview of
+    what is coming next.
+  </p>
+  {#each stepCatalog as category}
+    <div class="career-catalog-category">
+      <h4 class="career-catalog-category-name">{category.name}</h4>
+      <div class="career-catalog-steps">
+        {#each category.steps as step}
+          <div
+            class="career-catalog-step"
+            class:career-catalog-step--muted={step.role_mismatch || step.insufficient_data}
+          >
+            {#if step.insufficient_data}
+              <span class="career-catalog-step-text">Not enough data yet</span>
+            {:else}
+              <span class="career-catalog-step-text">{step.text}</span>
+            {/if}
+            {#if step.role_mismatch}
+              <Chip tone="flat" fill={false} bordered={true} label="Not your role" />
+            {/if}
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/each}
+</Modal>
+
 <style>
   /* report.css:2057 pushes .career-block-state right; with the "Block X"
      kicker gone the pill leads the row and the button takes the right edge. */
@@ -323,6 +369,57 @@
     font-size: 12px;
     color: var(--color-neutral-500);
   }
+
+  .career-catalog-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 var(--space-4);
+    border: 1px solid var(--color-divider);
+    background: var(--color-surface-2);
+    color: var(--color-neutral-400);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+  }
+  .career-catalog-btn:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+
+  .career-catalog-lead {
+    margin: 0 0 var(--space-4);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--color-neutral-500);
+  }
+  .career-catalog-category { margin: 0 0 var(--space-4); }
+  .career-catalog-category-name {
+    margin: 0 0 var(--space-2);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--color-text);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .career-catalog-steps { display: grid; gap: var(--space-2); }
+  .career-catalog-step {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-divider);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
+  .career-catalog-step-text { font-size: 12px; line-height: 1.4; color: var(--color-text); }
+  .career-catalog-step--muted { opacity: .55; }
+  .career-catalog-step--muted .career-catalog-step-text { color: var(--color-neutral-500); }
 
   .career-block--skeleton {
     display: grid;

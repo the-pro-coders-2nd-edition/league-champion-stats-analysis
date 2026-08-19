@@ -100,7 +100,7 @@ def _ctx(matches: pd.DataFrame | None = None) -> TrackContext:
 def view(tmp_path: Path) -> dict:
     with CareerStore(tmp_path / "career.sqlite") as store:
         snapshot = advance_career(store, KEY, _ctx(), COMPONENTS)
-    return build_career_view(snapshot)
+    return build_career_view(snapshot, ctx=_ctx())
 
 
 def test_state_class_slugifies() -> None:
@@ -116,6 +116,7 @@ def test_empty_view_still_carries_rules_and_legend() -> None:
     assert empty["blocks"] == []
     assert empty["widget"] == []
     assert empty["congrats"] is None
+    assert empty["step_catalog"] == []
     assert len(empty["rules"]) == len(CAREER_RULES)
     assert [row["name"] for row in empty["legend"]] == [
         "Locked",
@@ -140,6 +141,20 @@ def test_view_has_one_live_block_and_the_rest_locked(view: dict) -> None:
     assert view["blocks"][1]["opacity"] == "0.6"
     assert view["blocks"][0]["position"] == "Block 1"
     assert view["blocks"][-1]["position"] == f"Block {BLOCK_SLOTS}"
+
+
+def test_view_carries_a_step_catalog_grouped_by_category(view: dict) -> None:
+    catalog = view["step_catalog"]
+    assert catalog
+    assert all({"key", "name", "steps"} <= entry.keys() for entry in catalog)
+    laning = next(entry for entry in catalog if entry["key"] == "laning")
+    assert any(step["text"] for step in laning["steps"])
+
+
+def test_build_career_view_without_ctx_omits_the_catalog(tmp_path: Path) -> None:
+    with CareerStore(tmp_path / "career.sqlite") as store:
+        snapshot = advance_career(store, KEY, _ctx(), COMPONENTS)
+    assert build_career_view(snapshot)["step_catalog"] == []
 
 
 def test_live_block_carries_nodes_and_locked_blocks_carry_steps(view: dict) -> None:
