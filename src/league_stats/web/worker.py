@@ -21,6 +21,7 @@ from league_stats.infra.ddragon_assets import DDragonAssets
 from league_stats.infra.riot_api import RiotApiClient, RiotApiError, shared_rate_limiter
 from league_stats.pipeline.fetch import fetch_matches, group_records, resolve_player_contexts
 from league_stats.pipeline.orchestrator import (
+    BuildAnalysisResult,
     BuildBatch,
     NoEligibleBuildsError,
     analyze_build,
@@ -212,7 +213,7 @@ def _run_stage_a(
     job: dict[str, Any],
     batch: BuildBatch,
     new_match_ids: frozenset[str] | set[str] | None,
-) -> tuple[RankedEntry | None, bool]:
+) -> tuple[RankedEntry | None, bool, dict[tuple[str, str], BuildAnalysisResult]]:
     """Render every eligible build without peer data.
 
     Builds with an existing report and no newly fetched games are skipped.
@@ -224,8 +225,11 @@ def _run_stage_a(
     even when nothing changed.
 
     Returns:
-        The player's ranked entry (fetched once) and whether any report is
-        available (newly rendered or already on disk).
+        The player's ranked entry (fetched once), whether any report is
+        available (newly rendered or already on disk), and each analysed
+        pool's frames/stats keyed by (champion, role) -- stage B reuses these
+        for the same records instead of rebuilding them from scratch, since
+        neither depends on peer comparison.
     """
     log = get_logger("worker")
     job_id = int(job["id"])
@@ -233,6 +237,7 @@ def _run_stage_a(
     ranked_resolved = False
     available_any = False
     total = len(batch.pools)
+    analysed: dict[tuple[str, str], BuildAnalysisResult] = {}
     for index, pool in enumerate(batch.pools, start=1):
         _ensure_not_cancelled(store, job_id)
         records = group_records(batch.records, pool.champion, pool.role)
@@ -258,12 +263,13 @@ def _run_stage_a(
             if records:
                 ranked = resolve_ranked(services, batch, records)
                 ranked_resolved = True
-        report = analyze_build(
+        result = analyze_build(
             services, batch, pool, ranked=ranked, peer_comparison=None
         )
-        if report is not None:
+        if result.path is not None:
             available_any = True
-    return ranked, available_any
+            analysed[(pool.champion, pool.role)] = result
+    return ranked, available_any, analysed
 
 
 def _run_stage_b(
@@ -273,6 +279,7 @@ def _run_stage_b(
     batch: BuildBatch,
     ranked: RankedEntry | None,
     new_match_ids: frozenset[str] | set[str] | None,
+    analysed: dict[tuple[str, str], BuildAnalysisResult],
 ) -> None:
     """Build peer comparisons and re-render each report as they land."""
     log = get_logger("worker")
@@ -303,7 +310,16 @@ def _run_stage_b(
         peer = build_peer_for_pool(services, batch, pool, ranked)
         if peer is None:
             continue
-        analyze_build(services, batch, pool, ranked=ranked, peer_comparison=peer)
+        cached = analysed.get((pool.champion, pool.role))
+        analyze_build(
+            services,
+            batch,
+            pool,
+            ranked=ranked,
+            peer_comparison=peer,
+            full_frames=cached.full_frames if cached else None,
+            report_stats=cached.report_stats if cached else None,
+        )
 
 
 def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> None:
@@ -360,7 +376,7 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
 
         store.set_state(job_id, job_states.ANALYZING, detail="Discovering reports…")
         batch = prepare_builds(services, contexts)
-        ranked, available_any = _run_stage_a(
+        ranked, available_any, analysed = _run_stage_a(
             services, store, job, batch, new_match_ids
         )
         _ensure_not_cancelled(store, job_id)
@@ -383,7 +399,7 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
                 detail="Comparing you to players at your rank…",
             )
             _run_stage_b(
-                services, store, job, batch, ranked, new_match_ids
+                services, store, job, batch, ranked, new_match_ids, analysed
             )
         except JobCancelled:
             raise

@@ -60,7 +60,7 @@ from league_stats.pipeline.fetch import (
     group_records,
     load_all_records,
 )
-from league_stats.pipeline.frames import build_analysis_frames
+from league_stats.pipeline.frames import AnalysisFrames, build_analysis_frames
 from league_stats.pipeline.progression import (
     build_progression_views,
     progression_to_template_context,
@@ -70,6 +70,7 @@ from league_stats.analysis.game_review.hints import game_review_tooltips
 from league_stats.pipeline.game_review import build_game_review_views, game_review_to_template_context
 from league_stats.pipeline.services import PlayerContext, Services
 from league_stats.pipeline.summaries import (
+    ReportStats,
     build_domain_summaries,
     build_export_summary,
     compute_report_stats,
@@ -554,8 +555,18 @@ def run_analysis(
     player_builds: list[dict[str, Any]] | None = None,
     assets: DDragonAssets | None = None,
     profile_players: list[dict[str, Any]] | None = None,
+    full_frames: AnalysisFrames | None = None,
+    report_stats: ReportStats | None = None,
 ) -> Path:
-    """Run every analysis, write exports and render the report."""
+    """Run every analysis, write exports and render the report.
+
+    ``full_frames``/``report_stats`` let a caller that already computed them
+    for this exact record set (e.g. the web worker's peer-comparison pass,
+    which re-analyses the same build right after its base pass) skip redoing
+    the single most expensive step -- deepdive frame building plus the
+    RandomForest/correlation/clustering stats train -- neither of which
+    depends on ``peer_comparison``.
+    """
     log = get_logger("pipeline")
     if not records:
         log.error("No qualifying ranked %s games found.", config.build_label)
@@ -578,8 +589,10 @@ def run_analysis(
     meta_players = _meta_players(config, profile_players)
     account_icons = _account_icon_hrefs(meta_players, asset_catalog, run_dir)
 
-    full_frames = build_analysis_frames(records)
-    report_stats = compute_report_stats(full_frames, run_dir)
+    if full_frames is None:
+        full_frames = build_analysis_frames(records)
+    if report_stats is None:
+        report_stats = compute_report_stats(full_frames, run_dir)
 
     # Career must build before Game Review: the live block's goal columns are
     # only known once the ladder has advanced, and Game Review needs them to
@@ -982,6 +995,21 @@ def resolve_ranked(
     return services.client.fetch_solo_rank(batch.primary_puuid)
 
 
+@dataclass
+class BuildAnalysisResult:
+    """A build's report path plus the record-only work behind it.
+
+    ``full_frames``/``report_stats`` depend only on this pool's records, not
+    on peer comparison, so a caller that re-analyses the same pool right after
+    (the web worker's peer-comparison pass) can pass them straight back in
+    and skip redoing the RandomForest/correlation/clustering train.
+    """
+
+    path: Path | None
+    full_frames: AnalysisFrames | None = None
+    report_stats: ReportStats | None = None
+
+
 def analyze_build(
     services: Services,
     batch: BuildBatch,
@@ -989,23 +1017,31 @@ def analyze_build(
     *,
     ranked: RankedEntry | None,
     peer_comparison: PeerComparisonResult | None,
-) -> Path | None:
-    """Run the full analysis + render for one champion+lane build.
-
-    Returns:
-        The report path, or ``None`` when too few games survived parsing.
-    """
+    full_frames: AnalysisFrames | None = None,
+    report_stats: ReportStats | None = None,
+) -> BuildAnalysisResult:
+    """Run the full analysis + render for one champion+lane build."""
     log = get_logger("pipeline")
     records = group_records(batch.records, pool.champion, pool.role)
     if len(records) < services.config.min_games:
         log.warning("Skipping %s: only %d games after parse", pool.build_label, len(records))
-        return None
+        return BuildAnalysisResult(path=None)
     build_config = services.config.model_copy(
         update={"champion": pool.champion, "role": pool.role}
     )
     build_config.report_dir.mkdir(parents=True, exist_ok=True)
     build_config.run_graphs_dir.mkdir(parents=True, exist_ok=True)
-    return run_analysis(
+    if full_frames is None or report_stats is None:
+        # Same ordering run_analysis applies internally, so a frame/stats pair
+        # computed here is interchangeable with one it would have built itself.
+        sorted_records = sorted(
+            records, key=lambda record: record.game_creation_ms, reverse=True
+        )
+        if full_frames is None:
+            full_frames = build_analysis_frames(sorted_records)
+        if report_stats is None:
+            report_stats = compute_report_stats(full_frames, build_config.report_dir)
+    path = run_analysis(
         build_config,
         records,
         peer_comparison=peer_comparison,
@@ -1013,7 +1049,10 @@ def analyze_build(
         player_builds=batch.manifest_builds,
         assets=services.assets,
         profile_players=batch.profile_players,
+        full_frames=full_frames,
+        report_stats=report_stats,
     )
+    return BuildAnalysisResult(path=path, full_frames=full_frames, report_stats=report_stats)
 
 
 def build_peer_for_pool(
@@ -1095,7 +1134,7 @@ def run_all_builds(
             peer = build_peer_for_pool(services, batch, pool, ranked)
         report = analyze_build(
             services, batch, pool, ranked=ranked, peer_comparison=peer
-        )
+        ).path
         if report is not None:
             last_report = report
             analysed_or_kept = True

@@ -11,7 +11,11 @@ import pytest
 from league_stats.core.config import WebConfig
 from league_stats.ingest.parser import BuildPool
 from league_stats.pipeline.fetch import FetchResult
-from league_stats.pipeline.orchestrator import BuildBatch, NoEligibleBuildsError
+from league_stats.pipeline.orchestrator import (
+    BuildAnalysisResult,
+    BuildBatch,
+    NoEligibleBuildsError,
+)
 from league_stats.pipeline.services import PlayerContext
 from league_stats.web import jobs, worker
 from league_stats.web.jobs import JobStore
@@ -96,10 +100,10 @@ def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, **overrides: Any) -> list[s
         # AppConfig (report_needs_peer_comparison reads config.output_dir).
         "report_needs_peer_comparison": lambda config, pool: False,
         "analyze_build": (
-            lambda services, batch, pool, *, ranked, peer_comparison: calls.append(
+            lambda services, batch, pool, *, ranked, peer_comparison, full_frames=None, report_stats=None: calls.append(
                 f"analyze(peer={peer_comparison is not None})"
             )
-            or Path("report.json")
+            or BuildAnalysisResult(path=Path("report.json"))
         ),
         "build_peer_for_pool": (
             lambda services, batch, pool, ranked: calls.append("peer") or object()
