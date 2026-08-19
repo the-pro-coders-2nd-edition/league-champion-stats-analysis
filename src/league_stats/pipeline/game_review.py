@@ -190,11 +190,15 @@ def build_game_review_views(
     assets: DDragonAssets | None = None,
     from_dir: Path | None = None,
     account_icons: dict[str, str] | None = None,
+    goal_columns: tuple[str, ...] = (),
 ) -> GameReviewPayload:
     """Build game review payload with UI icon hrefs.
 
     ``graphs_dir`` is accepted for call-site compatibility; the story timeline
-    is rendered client-side from per-minute series data.
+    is rendered client-side from per-minute series data. ``goal_columns`` are
+    the live Career block's current goal columns, folded into the cache key so
+    a block retiring/dropping (which can change those columns) busts the
+    cached payload instead of serving stale ``career_goal_values``.
     """
     _ = graphs_dir
 
@@ -214,6 +218,7 @@ def build_game_review_views(
                 str(config.progression_baseline_m),
                 from_dir.as_posix() if from_dir is not None else "-",
                 _icons_salt(account_icons),
+                "|".join(goal_columns),
             )
         ),
     )
@@ -228,7 +233,7 @@ def build_game_review_views(
                 )
                 derived.delete(KIND_GAME_REVIEW, fingerprint)
 
-        payload = _build_payload(config, records, frames)
+        payload = _build_payload(config, records, frames, goal_columns=goal_columns)
         result = _enrich_payload(
             payload,
             config=config,

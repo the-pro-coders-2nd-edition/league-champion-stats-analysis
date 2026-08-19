@@ -84,6 +84,13 @@ def _key_stats(game_row: dict[str, Any], *, role: str) -> dict[str, float | int 
     return {key: game_row.get(key) for key in keys}
 
 
+def _career_goal_values(
+    game_row: dict[str, Any], *, goal_columns: tuple[str, ...]
+) -> dict[str, float | int | None]:
+    """Raw value for each live Career goal column, even off the curated key-stat list."""
+    return {column: game_row.get(column) for column in goal_columns}
+
+
 def assemble_game_detail(
     record: MatchRecord,
     frames: AnalysisFrames,
@@ -92,6 +99,7 @@ def assemble_game_detail(
     archetype: str,
     index: int,
     role: str,
+    goal_columns: tuple[str, ...] = (),
 ) -> GameDetail:
     """Build one game review detail payload."""
     game_row = record.to_row()
@@ -253,6 +261,7 @@ def assemble_game_detail(
         key_stats_vs_baseline=compare_key_stats_to_baseline(
             game_row, baseline_means, role=role
         ),
+        career_goal_values=_career_goal_values(game_row, goal_columns=goal_columns),
         deaths=deaths,
         fights=fights,
         objectives=objectives,

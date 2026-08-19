@@ -206,11 +206,6 @@ def _ensure_not_cancelled(store: JobStore, job_id: int) -> None:
         raise JobCancelled()
 
 
-def _job_is_build_scoped(job: dict[str, Any]) -> bool:
-    """True when the job targets a single champion+role build."""
-    return bool(job.get("filter_champion") or job.get("filter_role"))
-
-
 def _run_stage_a(
     services: Services,
     store: JobStore,
@@ -220,8 +215,13 @@ def _run_stage_a(
 ) -> tuple[RankedEntry | None, bool]:
     """Render every eligible build without peer data.
 
-    Builds with an existing report and no newly fetched games are skipped,
-    unless the job is scoped to a single build (explicit champion refresh).
+    Builds with an existing report and no newly fetched games are skipped.
+    A regenerate job (``new_match_ids is None``) always re-analyses, since
+    ``should_skip_unchanged_build`` never skips in that case. Being scoped
+    to a single build (an explicit champion refresh) narrows which pools
+    are considered — it never bypasses the unchanged-build check by itself,
+    since that would force a full rank-comparison rebuild on every refresh
+    even when nothing changed.
 
     Returns:
         The player's ranked entry (fetched once) and whether any report is
@@ -233,11 +233,10 @@ def _run_stage_a(
     ranked_resolved = False
     available_any = False
     total = len(batch.pools)
-    force_rebuild = _job_is_build_scoped(job)
     for index, pool in enumerate(batch.pools, start=1):
         _ensure_not_cancelled(store, job_id)
         records = group_records(batch.records, pool.champion, pool.role)
-        if not force_rebuild and should_skip_unchanged_build(
+        if should_skip_unchanged_build(
             services.config, pool, records, new_match_ids
         ):
             log.info("Skipping %s: no new games since last report", pool.build_label)
@@ -279,17 +278,12 @@ def _run_stage_b(
     log = get_logger("worker")
     job_id = int(job["id"])
     total = len(batch.pools)
-    force_rebuild = _job_is_build_scoped(job)
     for index, pool in enumerate(batch.pools, start=1):
         _ensure_not_cancelled(store, job_id)
         records = group_records(batch.records, pool.champion, pool.role)
-        if (
-            not force_rebuild
-            and should_skip_unchanged_build(
-                services.config, pool, records, new_match_ids
-            )
-            and not report_needs_peer_comparison(services.config, pool)
-        ):
+        if should_skip_unchanged_build(
+            services.config, pool, records, new_match_ids
+        ) and not report_needs_peer_comparison(services.config, pool):
             log.info(
                 "Skipping peer for %s: no new games since last report", pool.build_label
             )

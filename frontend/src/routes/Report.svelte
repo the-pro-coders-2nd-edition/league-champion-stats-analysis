@@ -11,6 +11,7 @@
     fetchPlayerStatus,
     refreshPlayer,
     sendChatMessage,
+    ackCareerRecap,
   } from '../lib/api.js';
   import { createReportState } from '../lib/reportState.js';
   import { getCachedBuild, setCachedBuild, invalidateIfStale } from '../lib/buildCache.js';
@@ -29,6 +30,7 @@
   import GameReview from '../sections/GameReview.svelte';
   import Graphs from '../sections/Graphs.svelte';
   import CareerMode from '../sections/CareerMode.svelte';
+  import RecapModal from '../components/RecapModal.svelte';
   import ReportSkeleton from '../components/ReportSkeleton.svelte';
   import { bindPlotlyDetailsResize, resizePlotlySoon } from '../lib/plotlyResize.js';
 
@@ -47,6 +49,7 @@
   let refreshing = false;
   let jobActive = false;
   let careerPendingSlot = null;
+  let dismissedRecapId = null;
 
   function statusSlugFromEndpoint(endpoint) {
     if (!endpoint) return null;
@@ -179,6 +182,27 @@
     startStatusPoll(3000);
   }
 
+
+  async function handleRecapClose() {
+    const recap = careerLadder?.pending_recap;
+    if (!recap) return;
+    dismissedRecapId = recap.newest_match_id;
+    const live = (careerLadder.blocks || []).find((b) => b.is_active);
+    const hits = {};
+    (live?.goals || []).forEach((goal) => {
+      hits[goal.column] = goal.hit;
+    });
+    try {
+      await ackCareerRecap(params.slug, params.buildSlug, {
+        matchId: recap.newest_match_id,
+        gameMs: recap.newest_game_ms,
+        hits,
+        trackKey: live?.track_key || '',
+      });
+    } catch {
+      // A failed ack just means the recap can resurface next load; not fatal.
+    }
+  }
 
   async function handleRefresh() {
     if (refreshing || jobActive || !payload?.refresh_champion || !payload?.refresh_role) return;
@@ -423,6 +447,12 @@
   // Reports generated before every slice carried the ladder only have one in
   // the all-ranked views, so resolve it from the payload rather than the slice.
   $: careerLadder = resolveCareerView(payload, $view ? $view.career : null);
+  // Dismissed locally the instant the modal closes, so the recap does not
+  // reopen before the ack round-trip lands and the server stops sending it.
+  $: recapCareer = careerLadder?.pending_recap?.newest_match_id === dismissedRecapId
+    ? null
+    : careerLadder;
+  $: gameReviewAll = $view ? $view.game_review?.all : null;
 
   $: queueItems = (payload && $activeSource)
     ? (payload.queue_filter_options || []).map((option) => ({
@@ -625,6 +655,7 @@
       view={$view}
       career={careerLadder}
     />
+    <RecapModal career={recapCareer} {gameReviewAll} onClose={handleRecapClose} />
   {/if}
 {/if}
 

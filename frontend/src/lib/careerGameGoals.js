@@ -20,7 +20,10 @@ function liveGoals(ladder) {
 
 function outcomeFor(goal, game) {
   const stats = game.key_stats || {};
-  const value = stats[goal.column];
+  const goalStats = game.career_goal_values || {};
+  // Not every goal column is in the curated Overview key-stat list, so a goal
+  // outside it falls back to the raw value carried alongside for this purpose.
+  const value = stats[goal.column] ?? goalStats[goal.column];
   if (value === null || value === undefined) return null;
 
   // A block that appeared after this game never counted it. `since_ms` of 0 means
@@ -66,4 +69,11 @@ export function goalOutcomeByColumn(ladder, game) {
     byColumn[goal.column] = goal;
   }
   return byColumn;
+}
+
+/** When the live block started counting games, or 0 if there is none. */
+export function careerGoalChangedAt(ladder) {
+  const goals = liveGoals(ladder);
+  if (!goals.length) return 0;
+  return Number(goals[0].since_ms) || 0;
 }

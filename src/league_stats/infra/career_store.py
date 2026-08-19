@@ -9,6 +9,7 @@ primary account slug.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,7 +54,11 @@ CREATE TABLE IF NOT EXISTS career_used_tracks (
 CREATE TABLE IF NOT EXISTS career_flags (
     build_key TEXT PRIMARY KEY,
     pending_congrats_track TEXT NOT NULL DEFAULT '',
-    pending_drop_slot INTEGER NOT NULL DEFAULT -1
+    pending_drop_slot INTEGER NOT NULL DEFAULT -1,
+    recap_acked_match_id TEXT NOT NULL DEFAULT '',
+    recap_acked_game_ms INTEGER NOT NULL DEFAULT 0,
+    recap_acked_hits_json TEXT NOT NULL DEFAULT '',
+    recap_acked_track_key TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -110,6 +115,21 @@ class CareerStore:
             self._log.info("Adding career_flags.pending_drop_slot")
             self._conn.execute(
                 "ALTER TABLE career_flags ADD COLUMN pending_drop_slot INTEGER NOT NULL DEFAULT -1"
+            )
+            self._conn.commit()
+        if "recap_acked_match_id" not in flag_columns:
+            self._log.info("Adding career_flags recap columns")
+            self._conn.execute(
+                "ALTER TABLE career_flags ADD COLUMN recap_acked_match_id TEXT NOT NULL DEFAULT ''"
+            )
+            self._conn.execute(
+                "ALTER TABLE career_flags ADD COLUMN recap_acked_game_ms INTEGER NOT NULL DEFAULT 0"
+            )
+            self._conn.execute(
+                "ALTER TABLE career_flags ADD COLUMN recap_acked_hits_json TEXT NOT NULL DEFAULT ''"
+            )
+            self._conn.execute(
+                "ALTER TABLE career_flags ADD COLUMN recap_acked_track_key TEXT NOT NULL DEFAULT ''"
             )
             self._conn.commit()
 
@@ -283,6 +303,53 @@ class CareerStore:
         self._conn.execute(
             "UPDATE career_flags SET pending_congrats_track = '' WHERE build_key = ?",
             (key,),
+        )
+        self._conn.commit()
+
+    def peek_recap_ack(self, key: str) -> tuple[str, int, dict[str, int], str]:
+        """Last acknowledged recap: match id, its game_creation_ms, goal hit counts, track key.
+
+        Empty/zero/empty-dict/empty when this ladder has never acknowledged a recap.
+        """
+        row = self._conn.execute(
+            "SELECT recap_acked_match_id, recap_acked_game_ms, recap_acked_hits_json, "
+            "recap_acked_track_key FROM career_flags WHERE build_key = ?",
+            (key,),
+        ).fetchone()
+        if row is None:
+            return "", 0, {}, ""
+        match_id, game_ms, hits_json, track_key = (
+            str(row[0] or ""),
+            int(row[1] or 0),
+            str(row[2] or ""),
+            str(row[3] or ""),
+        )
+        hits: dict[str, int] = {}
+        if hits_json:
+            try:
+                hits = {str(k): int(v) for k, v in json.loads(hits_json).items()}
+            except (ValueError, TypeError, json.JSONDecodeError):
+                hits = {}
+        return match_id, game_ms, hits, track_key
+
+    def ack_recap(
+        self,
+        key: str,
+        *,
+        match_id: str,
+        game_ms: int,
+        hits: dict[str, int],
+        track_key: str,
+    ) -> None:
+        """Record the newest game, goal-hit counts and track a reader has seen recapped."""
+        self._conn.execute(
+            "INSERT INTO career_flags (build_key, recap_acked_match_id, recap_acked_game_ms, "
+            "recap_acked_hits_json, recap_acked_track_key) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(build_key) DO UPDATE SET recap_acked_match_id = excluded.recap_acked_match_id, "
+            "recap_acked_game_ms = excluded.recap_acked_game_ms, "
+            "recap_acked_hits_json = excluded.recap_acked_hits_json, "
+            "recap_acked_track_key = excluded.recap_acked_track_key",
+            (key, match_id, int(game_ms), json.dumps(hits), track_key),
         )
         self._conn.commit()
 

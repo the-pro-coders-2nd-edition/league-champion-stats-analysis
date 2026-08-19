@@ -983,6 +983,10 @@ class GameDetail(BaseModel):
     vs_baseline: list[GameComparisonRow] = Field(default_factory=list)
     key_stats: dict[str, float | int | None] = Field(default_factory=dict)
     key_stats_vs_baseline: list[GameComparisonRow] = Field(default_factory=list)
+    # Raw value per live Career goal column, even when it falls outside
+    # key_stats' curated Overview list. Lets "Career goals for this game"
+    # judge every goal, not just the ones already shown in the Overview tab.
+    career_goal_values: dict[str, float | int | None] = Field(default_factory=dict)
     deaths: list[GameDeathRow] = Field(default_factory=list)
     fights: list[GameFightRow] = Field(default_factory=list)
     objectives: list[GameObjectiveRow] = Field(default_factory=list)

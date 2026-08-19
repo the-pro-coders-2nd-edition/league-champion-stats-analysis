@@ -34,12 +34,12 @@ JOB_KIND_REFRESH = "refresh"
 JOB_KIND_REGENERATE = "regenerate"
 
 # Default gap between watch checks for one group.
-DEFAULT_WATCH_INTERVAL_S = 180
+DEFAULT_WATCH_INTERVAL_S = 60
 
 # Used for ETA display until enough completed jobs exist to average.
 DEFAULT_JOB_DURATION_S = 20 * 60
 
-_SCHEMA = """
+_SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT NOT NULL,
@@ -74,10 +74,10 @@ CREATE TABLE IF NOT EXISTS players (
     peer_completed_at REAL,
     peer_failed INTEGER NOT NULL DEFAULT 0,
     watch_enabled INTEGER NOT NULL DEFAULT 0,
-    watch_interval_s INTEGER NOT NULL DEFAULT 180,
+    watch_interval_s INTEGER NOT NULL DEFAULT {DEFAULT_WATCH_INTERVAL_S},
     last_watch_at REAL,
     last_watch_error TEXT NOT NULL DEFAULT '',
-    watch_seen_json TEXT NOT NULL DEFAULT '{}'
+    watch_seen_json TEXT NOT NULL DEFAULT '{{}}'
 );
 """
 

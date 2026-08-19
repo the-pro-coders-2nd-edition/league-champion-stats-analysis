@@ -355,6 +355,24 @@ def discover_build_pools(
         if games >= min_games
     ]
     pools.sort(key=lambda pool: pool.games, reverse=True)
+
+    near_misses = {
+        (champion, role): games
+        for (champion, role), games in counts.items()
+        if games < min_games
+    }
+    if near_misses:
+        log = get_logger("pipeline")
+        for (champion, role), games in near_misses.items():
+            log.info(
+                "Career: %s %s has %d ranked game(s), below min_games=%d — "
+                "no build pool yet, so it never reaches career progress",
+                champion,
+                role,
+                games,
+                min_games,
+            )
+
     return pools
 
 
