@@ -93,6 +93,7 @@
     place-items: center;
     width: 28px;
     height: 28px;
+    padding: 0;
     border: 1px solid var(--color-divider);
     border-radius: 999px;
     background: var(--color-surface-2);
