@@ -146,11 +146,14 @@ def test_run_all_builds_pools_multi_player_reports(
 
     account_filter = report_payload["account_filter"]
     assert account_filter["enabled"] is True
-    assert account_filter["full_combinations"] is True
-    assert set(account_filter["views"]) == {"Alice#EUW", "Bob#NA1"}
+    # Subsets are computed on demand now, so nothing is precomputed into the payload;
+    # the members list is all the checkbox bar needs in order to render.
+    assert account_filter["full_combinations"] is False
+    assert account_filter["views"] == {}
+    assert account_filter["members"]
     members = {member["key"]: member for member in account_filter["members"]}
     assert members["Alice#EUW"]["games"] == 10
     assert members["Bob#NA1"]["games"] == 15
-    alice_views = account_filter["views"]["Alice#EUW"]
-    assert alice_views["report_views"]["solo"]["total_games"] == 10
-    assert alice_views["report_views"]["all"]["total_games"] == 10
+    # Subset views are no longer precomputed into the payload. That a subset is
+    # correctly scoped to one account's games is covered against the endpoint that
+    # now builds them, in tests/test_web_account_filter.py.

@@ -16,6 +16,7 @@ from typing import Any, AsyncIterator
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 
 from league_stats.core.champions import (
@@ -72,6 +73,10 @@ SPA_DIST_DIR = Path(__file__).resolve().parent / "spa_dist"
 MIN_GAMES_CHOICES: tuple[int, ...] = (5, 10, 15, 20, 25, 30, 50)
 
 MAX_GROUP_PLAYERS = 8
+
+# Responses at least this large are gzipped. Report payloads are megabytes; the
+# job-status polls the report page makes every 3s are a few hundred bytes.
+RESPONSE_COMPRESSION_MIN_BYTES = 4096
 
 
 class AnalysisRequest(BaseModel):
@@ -696,6 +701,15 @@ def create_app(
     app = FastAPI(title=APP_TITLE, lifespan=lifespan)
     app.state.job_store = store
     app.state.web_config = config
+
+    # Report payloads are the largest thing this app serves by orders of magnitude,
+    # and nothing compressed them: a request offering `gzip, br` got back tens of MB
+    # with no content-encoding at all. Plotly's numeric arrays are high-entropy, so
+    # gzip only manages ~1.8x here (measured; brotli reaches 2.5x and zstd 2.9x but
+    # both need a dependency this app does not have). The threshold keeps small JSON
+    # replies -- the status polling the report page does every 3s -- uncompressed,
+    # where framing bytes and CPU would cost more than they save.
+    app.add_middleware(GZipMiddleware, minimum_size=RESPONSE_COMPRESSION_MIN_BYTES)
 
     @app.middleware("http")
     async def revalidate_report_stylesheets(request: Request, call_next):  # type: ignore[no-untyped-def]

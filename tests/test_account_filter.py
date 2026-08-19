@@ -41,9 +41,15 @@ def test_filter_records_by_accounts_no_filter_returns_all() -> None:
     assert filter_records_by_accounts(records, set()) == records
 
 
-def test_account_subset_keys_small_group_all_combinations() -> None:
-    """Groups within the limit get every proper subset precomputed."""
-    subsets = account_subset_keys(["B#1", "A#1", "C#1"])
+def test_account_subset_keys_precomputes_nothing_by_default() -> None:
+    """Precomputing cost 81% of a 123 MB payload for views the default never uses."""
+    assert account_subset_keys(["B#1", "A#1", "C#1"]) == []
+    assert account_subset_keys([f"P{index}#EUW" for index in range(5)]) == []
+
+
+def test_account_subset_keys_still_honours_an_explicit_limit() -> None:
+    """The capability stays so the trade-off can be reversed without a rewrite."""
+    subsets = account_subset_keys(["B#1", "A#1", "C#1"], full_combination_limit=4)
     assert ("A#1",) in subsets
     assert ("A#1", "B#1") in subsets
     # 3 singletons + 3 pairs; the full set is the main report ("all").
@@ -51,10 +57,9 @@ def test_account_subset_keys_small_group_all_combinations() -> None:
     assert ("A#1", "B#1", "C#1") not in subsets
 
 
-def test_account_subset_keys_large_group_singletons_only() -> None:
-    """Groups above the limit only get one view per single account."""
+def test_account_subset_keys_above_an_explicit_limit_gives_singletons() -> None:
     labels = [f"P{index}#EUW" for index in range(5)]
-    subsets = account_subset_keys(labels)
+    subsets = account_subset_keys(labels, full_combination_limit=2)
     assert subsets == [(label,) for label in sorted(labels)]
 
 

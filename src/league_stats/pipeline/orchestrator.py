@@ -441,10 +441,19 @@ def build_report_views(
     return report_views, view_peers, default_queue_filter_key(solo_count, flex_count)
 
 
-# Groups up to this size get every account combination precomputed; larger
-# groups only get "all" + one view per single account (the web API fills in
-# arbitrary combinations on demand).
-ACCOUNT_FULL_COMBINATION_LIMIT = 4
+# How large a group still gets its account subsets precomputed into the payload.
+#
+# Zero, because precomputing cost far more than it saved. A 3-account group shipped
+# a full report for all 6 subsets -- 100 MB of a 123 MB payload, 81% of it -- and
+# the default view uses none of them: reportState.js maps the "all" key to the base
+# payload, not to a subset. So every reader paid 100 MB on every page load and every
+# build switch to make a checkbox they may never tick feel instant.
+#
+# POST /api/players/{slug}/builds/{build_slug}/account-views already computes any
+# combination on demand, and selectAccountKey already caches the result per session
+# behind a spinner; groups larger than the old limit of 4 have always worked that
+# way. Raise this again to trade payload size back for an instant first tick.
+ACCOUNT_FULL_COMBINATION_LIMIT = 0
 
 
 def account_view_key(labels: list[str] | tuple[str, ...]) -> str:
@@ -455,7 +464,12 @@ def account_view_key(labels: list[str] | tuple[str, ...]) -> str:
 def account_subset_keys(
     labels: list[str], *, full_combination_limit: int = ACCOUNT_FULL_COMBINATION_LIMIT
 ) -> list[tuple[str, ...]]:
-    """Proper account subsets to precompute (the full set is the main report)."""
+    """Proper account subsets to precompute (the full set is the main report).
+
+    Empty at the default limit of 0: every combination is computed on demand.
+    """
+    if full_combination_limit <= 0:
+        return []
     ordered = sorted(labels)
     if len(ordered) <= full_combination_limit:
         subsets: list[tuple[str, ...]] = []
