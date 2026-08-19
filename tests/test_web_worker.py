@@ -168,10 +168,13 @@ def test_execute_job_skips_unchanged_builds(
     assert player["peer_completed_at"] is not None
 
 
-def test_execute_scoped_refresh_forces_rebuild(
+def test_execute_scoped_refresh_still_skips_unchanged_build(
     store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Champion-scoped refresh always re-analyses even when skip would apply."""
+    """A champion-scoped refresh narrows the pool but does not bypass the
+    unchanged-build check — an explicit single-build refresh with no new games
+    must not force a full rank-comparison rebuild every time.
+    """
     store.enqueue(
         kind=jobs.JOB_KIND_REFRESH,
         riot_id="Test",
@@ -215,7 +218,36 @@ def test_execute_scoped_refresh_forces_rebuild(
     assert final["state"] == jobs.DONE
     assert captured["filter_champion"] == "Viktor"
     assert captured["filter_role"] == "MIDDLE"
-    assert skip_calls["n"] == 0
+    assert skip_calls["n"] > 0
+    assert calls == ["fetch", "prepare"]
+
+
+def test_execute_scoped_refresh_with_new_games_rebuilds(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A champion-scoped refresh still re-analyses when there are new games."""
+    store.enqueue(
+        kind=jobs.JOB_KIND_REFRESH,
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        player_slug="test_euw",
+        filter_champion="Viktor",
+        filter_role="MIDDLE",
+    )
+    job = store.claim_next()
+    assert job is not None
+
+    calls = _patch_pipeline(
+        monkeypatch,
+        should_skip_unchanged_build=lambda *a, **k: False,
+        report_needs_peer_comparison=lambda *a, **k: True,
+    )
+
+    worker.execute_job(job, store, web_config)
+
+    final = store.get(int(job["id"]))
+    assert final["state"] == jobs.DONE
     assert calls == ["fetch", "prepare", "ranked", "analyze(peer=False)", "peer", "analyze(peer=True)"]
 
 
