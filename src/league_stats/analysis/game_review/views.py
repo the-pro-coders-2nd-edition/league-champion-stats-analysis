@@ -55,8 +55,15 @@ def build_game_review_views(
     config: AppConfig,
     records: list[MatchRecord],
     frames: AnalysisFrames,
+    *,
+    goal_columns: tuple[str, ...] = (),
 ) -> GameReviewPayload:
-    """Build last-N game review bundles for each queue filter."""
+    """Build last-N game review bundles for each queue filter.
+
+    ``goal_columns`` are the live Career block's goal columns, if any -- not
+    every one is in the curated key-stat list, so each game's raw value for
+    them is carried separately (see ``assemble_game_detail``).
+    """
     recent_n = GAME_REVIEW_RECENT_N
     baseline_m = GAME_REVIEW_BASELINE_M
 
@@ -87,6 +94,7 @@ def build_game_review_views(
                 archetype=label_map.get(record.match_id, "Unknown"),
                 index=index,
                 role=config.role,
+                goal_columns=goal_columns,
             )
             games.append(detail)
 

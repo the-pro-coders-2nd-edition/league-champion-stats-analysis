@@ -220,6 +220,25 @@ def should_skip_unchanged_build(
     return new_match_ids.isdisjoint(record.match_id for record in records)
 
 
+def live_block_goal_columns(career: dict[str, Any] | None) -> tuple[str, ...]:
+    """Columns the live Career block's goals are judged on, if any.
+
+    Game Review's curated key-stat list does not cover every column a goal can
+    be built from, so these are threaded into Game Review separately to keep
+    "Career goals for this game" complete regardless of which metric a goal
+    happens to use.
+    """
+    if not career or not career.get("has_career"):
+        return ()
+    blocks = career.get("blocks") or []
+    live = next((block for block in blocks if block.get("is_active")), None)
+    if not live:
+        return ()
+    return tuple(
+        goal["column"] for goal in live.get("goals", []) if goal.get("column")
+    )
+
+
 def report_needs_peer_comparison(config: AppConfig, pool: BuildPool) -> bool:
     """Whether the on-disk build report is still missing rank peer comparison."""
     run_dir = (
@@ -561,6 +580,25 @@ def run_analysis(
 
     full_frames = build_analysis_frames(records)
     report_stats = compute_report_stats(full_frames, run_dir)
+
+    # Career must build before Game Review: the live block's goal columns are
+    # only known once the ladder has advanced, and Game Review needs them to
+    # carry each goal's raw value even when it falls outside the curated
+    # Overview key-stat list (see career_goal_values below).
+    report_views, view_peers, default_queue = build_report_views(
+        config,
+        records,
+        graphs_dir,
+        peer_comparison=peer_comparison,
+        assets=asset_catalog,
+        shared_stats=report_stats,
+    )
+
+    default_window = report_views[default_queue]["default_window"]
+    default_bundle = report_views[default_queue]["windows"][default_window]
+    default_peer = view_peers.get(default_queue, {}).get(default_window)
+    goal_columns = live_block_goal_columns(default_bundle.get("career"))
+
     game_review = build_game_review_views(
         config,
         records,
@@ -569,6 +607,7 @@ def run_analysis(
         assets=asset_catalog,
         from_dir=run_dir,
         account_icons=account_icons,
+        goal_columns=goal_columns,
     )
 
     summary = write_full_exports(
@@ -592,19 +631,6 @@ def run_analysis(
             map_path=asset_catalog.map_icon_path(),
         ),
     ).death_heatmap_png(deaths_dataframe(records))
-
-    report_views, view_peers, default_queue = build_report_views(
-        config,
-        records,
-        graphs_dir,
-        peer_comparison=peer_comparison,
-        assets=asset_catalog,
-        shared_stats=report_stats,
-    )
-
-    default_window = report_views[default_queue]["default_window"]
-    default_bundle = report_views[default_queue]["windows"][default_window]
-    default_peer = view_peers.get(default_queue, {}).get(default_window)
 
     progression_views = build_progression_views(
         config,
