@@ -374,6 +374,10 @@
   $: careerDividerIndex = careerChangedAt
     ? visibleGames.findIndex((g) => (Number(g.game_creation_ms) || 0) <= careerChangedAt)
     : -1;
+  // Named after the live block rather than "Current Career goal" -- a block that
+  // clears fast can be several categories ago by the time this renders, and a
+  // generic label would read as if nothing had changed since.
+  $: liveBlockName = (career?.blocks || []).find((b) => b.is_active)?.name || 'Career';
   $: listHtml = visibleGames
     .map((game, index) => (index === careerDividerIndex ? careerDividerHtml() + gameReviewRowHtml(game) : gameReviewRowHtml(game)))
     .join('');
@@ -381,7 +385,7 @@
 
   function careerDividerHtml() {
     return '<a href="#career" class="game-review-career-divider" data-career-divider="1">' +
-      '<span>Current Career goal started here</span></a>';
+      '<span>' + escapeHtml(liveBlockName) + ' goal started here</span></a>';
   }
 
   $: selectedGame = games.find((g) => g.match_id === selectedMatchId) || games[0];

@@ -87,7 +87,10 @@ FORM_MIN_RECENT: Final[int] = 10
 FORM_MIN_BASELINE: Final[int] = 25
 FORM_SIGNIFICANCE_ALPHA: Final[float] = 0.05
 
-GAME_REVIEW_RECENT_N: Final[int] = 10
+# Must match career.models.WINDOW (kept as a plain constant, not an import, since
+# core must not depend on analysis) -- otherwise Game Review's game list and
+# Career's 20-game counting window silently drift apart again.
+GAME_REVIEW_RECENT_N: Final[int] = 20
 GAME_REVIEW_BASELINE_M: Final[int] = 80
 GAME_REVIEW_MAX_BEHAVIORS: Final[int] = 5
 GAME_REVIEW_MAX_COMPARISONS: Final[int] = 5

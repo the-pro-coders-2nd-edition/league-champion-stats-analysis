@@ -86,16 +86,16 @@ def _make_records(n: int, **kwargs: object) -> list[MatchRecord]:
     return sorted(records, key=lambda record: record.game_creation_ms, reverse=True)
 
 
-def test_slice_last_ten_per_queue() -> None:
-    records = _make_records(14)
+def test_slice_last_twenty_per_queue() -> None:
+    records = _make_records(24)
     records[0] = _parse_record(match_id="EUW1_flex", queue_id=RANKED_FLEX_QUEUE_ID, game_creation_ms=1_800_000_000_000)
     records = sorted(records, key=lambda record: record.game_creation_ms, reverse=True)
     solo = filter_records_by_queue(records, "solo")
     flex = filter_records_by_queue(records, "flex")
     all_q = filter_records_by_queue(records, "all")
-    assert len(slice_recent(solo, GAME_REVIEW_RECENT_N)) == 10
+    assert len(slice_recent(solo, GAME_REVIEW_RECENT_N)) == 20
     assert len(slice_recent(flex, GAME_REVIEW_RECENT_N)) == 1
-    assert len(slice_recent(all_q, GAME_REVIEW_RECENT_N)) == 10
+    assert len(slice_recent(all_q, GAME_REVIEW_RECENT_N)) == 20
 
 
 def _dimension(score, name: str):
@@ -546,7 +546,7 @@ def test_build_game_review_views_serializes() -> None:
     payload = build_game_review_views(_make_config(), records, frames)
     dumped = payload.model_dump()
     assert dumped["recent_n"] == GAME_REVIEW_RECENT_N
-    assert len(dumped["queues"]["all"]["games"]) == 10
+    assert len(dumped["queues"]["all"]["games"]) == 12
     assert dumped["queues"]["all"]["games"][0]["match_id"]
 
 
@@ -567,7 +567,7 @@ def test_build_export_summary_includes_recent_games(tmp_path: Path) -> None:
     )
     assert "recent_games" in summary
     assert summary["recent_games"]["n"] == GAME_REVIEW_RECENT_N
-    assert len(summary["recent_games"]["games"]) == 10
+    assert len(summary["recent_games"]["games"]) == 12
     assert "events_summary" in summary["recent_games"]["games"][0]
 
 
