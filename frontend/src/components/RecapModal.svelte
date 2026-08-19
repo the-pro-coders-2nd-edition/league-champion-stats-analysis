@@ -2,6 +2,7 @@
   import Modal from './Modal.svelte';
   import IconCellSolo from './IconCellSolo.svelte';
   import { careerGoalsForGame } from '../lib/careerGameGoals.js';
+  import { formatGameReviewMetricValue } from '../lib/gameReviewMetricFormat.js';
 
   // The ladder carrying `pending_recap` (new_match_ids, progress deltas).
   export let career = null;
@@ -88,6 +89,10 @@
                     <span class="recap-goal-mark recap-goal-mark--{mark.outcome}">
                       {mark.outcome === 'met' ? '✓' : mark.outcome === 'missed' ? '✕' : '–'}
                       {mark.text}
+                      {#if mark.outcome !== 'untracked'}
+                        — you did {formatGameReviewMetricValue(mark.column, mark.value)}
+                        (target {formatGameReviewMetricValue(mark.column, mark.target)})
+                      {/if}
                     </span>
                   {/each}
                 </div>

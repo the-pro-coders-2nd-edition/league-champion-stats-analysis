@@ -17,7 +17,13 @@
   import GameReviewSummoners from '../components/GameReviewSummoners.svelte';
   import GameReviewKeyMoments from './GameReviewKeyMoments.svelte';
   import { escapeHtml, soloIconCellHtml } from '../lib/html.js';
-  import { formatGameTime, pct } from '../lib/format.js';
+  import { formatGameTime } from '../lib/format.js';
+  import {
+    formatMetricValue,
+    isShareOrParticipationMetric,
+    isGoldDiffMetric,
+    formatGameReviewMetricValue,
+  } from '../lib/gameReviewMetricFormat.js';
   import { resizePlotlySoon } from '../lib/plotlyResize.js';
   import { careerGoalsForGame, goalOutcomeByColumn, careerGoalChangedAt } from '../lib/careerGameGoals.js';
   import { REPORT_NAV_KEY, handleNavClick } from '../lib/reportNav.js';
@@ -44,37 +50,6 @@
   // `iconCell(name, iconHref, true)` from report.html — always icon-only in this section.
   const iconCellHtml = soloIconCellHtml;
 
-  function formatMetricValue(value) {
-    if (value === null || value === undefined) return '—';
-    const num = Number(value);
-    if (!Number.isFinite(num)) return String(value);
-    if (Math.abs(num - Math.round(num)) < 1e-9) return String(Math.round(num));
-    const rounded1 = Math.round(num * 10) / 10;
-    if (Math.abs(num - rounded1) < 1e-9) return rounded1.toFixed(1);
-    return (Math.round(num * 100) / 100).toFixed(2);
-  }
-
-  function isShareOrParticipationMetric(name) {
-    const key = String(name || '').toLowerCase();
-    return key.indexOf('share') !== -1 || key.indexOf('participation') !== -1 ||
-      key.slice(-5) === '_rate' || key === 'objectives_present_rate';
-  }
-
-  function isGoldDiffMetric(name) {
-    const key = String(name || '').toLowerCase();
-    return key === 'gd10' || key === 'gd15' || key.indexOf('gold_diff') !== -1 || key.indexOf('gold diff') !== -1;
-  }
-
-  function formatGameReviewMetricValue(metric, value) {
-    if (value === null || value === undefined) return '—';
-    if (isShareOrParticipationMetric(metric)) return pct(value);
-    if (isGoldDiffMetric(metric)) {
-      const gold = Math.round(Number(value));
-      if (!Number.isFinite(gold)) return String(value);
-      return (gold > 0 ? '+' : '') + gold;
-    }
-    return formatMetricValue(value);
-  }
 
   function formatGameReviewMetricDelta(metric, value) {
     if (value === null || value === undefined) return '—';
@@ -462,7 +437,7 @@
 </script>
 
 <section id="game-review" class="report-section report-section--games">
-  <SectionHeader id="game-review" title="Game Review" icon="swords" scope="Last 10 games" lead={subtitleText} />
+  <SectionHeader id="game-review" title="Game Review" icon="swords" scope={`Last ${careerWindow} games`} lead={subtitleText} />
   {#if !available}
     <div id="game-review-unavailable" class="form-empty">
       <p>No ranked games in this queue for Game Review.</p>
@@ -556,11 +531,12 @@
                       </span>
                       <span class="game-goal-text">{goal.text}</span>
                       <span class="game-goal-verdict">
-                        {goal.outcome === 'met'
-                          ? 'this game hit'
-                          : goal.outcome === 'missed'
-                            ? 'this game missed'
-                            : 'played before tracking'}
+                        {#if goal.outcome === 'untracked'}
+                          played before tracking
+                        {:else}
+                          you did {formatGameReviewMetricValue(goal.column, goal.value)}
+                          (target {formatGameReviewMetricValue(goal.column, goal.target)})
+                        {/if}
                       </span>
                     </span>
                   {/each}
@@ -837,7 +813,7 @@
     color: var(--color-neutral-600);
   }
   .game-goal-text { color: var(--color-text); min-width: 0; }
-  .game-goal-verdict { font-size: 11px; white-space: nowrap; }
+  .game-goal-verdict { font-size: 11px; text-align: right; }
 
   .game-review-career-divider {
     display: flex;
