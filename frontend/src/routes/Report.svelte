@@ -4,7 +4,7 @@
   import { computeWindowScopeLabel, WINDOW_SCOPE_KEY } from '../lib/windowScope.js';
   import { resolveCareerView } from '../lib/careerView.js';
   import { get, writable } from 'svelte/store';
-  import { link } from 'svelte-spa-router';
+  import { link, replace } from 'svelte-spa-router';
   import {
     fetchBuild,
     fetchAccountViews,
@@ -364,17 +364,47 @@
     { value: 'champion', label: 'Champion' },
     { value: 'deepdive', label: 'Deepdive' },
   ];
-  let activeCategory = 'summary';
+  // The URL's tab segment is these exact category values -- no separate slug table
+  // to keep in sync with them (the Career copy drifted from its own constants once
+  // already; this file doesn't need a second version of that mistake).
+  const TAB_VALUES = REPORT_CATEGORIES.map((category) => category.value);
+
+  /** A stale/hand-edited/garbage tab segment must render, not crash -- fall back to
+   *  summary rather than leaving the page blank. */
+  function tabFromParams(rawTab) {
+    return TAB_VALUES.includes(rawTab) ? rawTab : 'summary';
+  }
+
+  let activeCategory = tabFromParams(params.tab);
   $: categoryTabs = REPORT_CATEGORIES.map((category) => ({
     ...category,
     ariaControls: `category-${category.value}`,
   }));
-  function selectCategory(value) {
+  function selectCategory(value, { updateUrl = true } = {}) {
     activeCategory = value;
+    if (updateUrl && params.slug && params.buildSlug) {
+      // replace(), not push(): a tab switch should not add a browser-history entry
+      // (the back button should leave the report, not step back through tabs) --
+      // it only needs the address bar to reflect the tab so it can be bookmarked.
+      replace(`/players/${params.slug}/${params.buildSlug}/${value}`);
+    }
     tick().then(() => {
       const panel = document.getElementById(`category-${value}`);
       if (panel) resizePlotlySoon(panel);
     });
+  }
+
+  // Keeps activeCategory in sync when the URL's tab segment changes without this
+  // component remounting -- a real navigation (typed URL, `use:link` anchor) to a
+  // different tab, or to a different build whose URL omits one entirely. Guarded
+  // on the raw params.tab *value*, not activeCategory: selectCategory's own
+  // `activeCategory = value` assignment would otherwise re-trigger this same block
+  // on every tab click, reading the not-yet-updated params.tab and immediately
+  // reverting the click.
+  let lastSyncedTab = params.tab;
+  $: if (params.tab !== lastSyncedTab) {
+    lastSyncedTab = params.tab;
+    selectCategory(tabFromParams(params.tab), { updateUrl: false });
   }
 
   setContext(REPORT_NAV_KEY, createReportNav(selectCategory));
