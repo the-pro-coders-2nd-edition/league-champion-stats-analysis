@@ -1,6 +1,7 @@
 <script>
   import { getContext } from 'svelte';
   import Modal from './Modal.svelte';
+  import IconCellSolo from './IconCellSolo.svelte';
   import { careerGoalsForGame } from '../lib/careerGameGoals.js';
   import { REPORT_NAV_KEY, handleNavClick } from '../lib/reportNav.js';
 
@@ -70,6 +71,7 @@
                 {#if goal.delta > 0}
                   <span class="recap-ring-delta">+{goal.delta}</span>
                 {/if}
+                <p class="recap-ring-caption">{goal.text}</p>
               </div>
             {/each}
           </div>
@@ -85,6 +87,11 @@
             on:click={goToCareer}
             title="Open Career mode"
           >
+            <div class="recap-game-matchup">
+              <IconCellSolo name={game.champion || 'You'} icon={game.champion_icon} />
+              <span class="recap-game-vs">vs</span>
+              <IconCellSolo name={game.opponent || 'Opponent'} icon={game.opponent_icon} />
+            </div>
             <div class="recap-game-num">{game.score?.overall ?? 0}</div>
             <div class="recap-game-num-lbl">score</div>
             <div class="recap-game-kda">{game.kda}</div>
@@ -132,12 +139,28 @@
   .recap-hero-label b { display: block; font-size: 16px; }
   .recap-hero-label span { font-size: 12px; color: var(--color-neutral-500); }
 
-  .recap-rings { display: flex; gap: var(--space-4); flex-wrap: wrap; justify-content: center; }
+  .recap-rings { display: flex; gap: var(--space-6); flex-wrap: wrap; justify-content: center; }
   .recap-ring-item {
     position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    width: 110px;
     opacity: 0;
     transform: scale(.85);
     animation: recapRingIn .4s cubic-bezier(.2, 1.2, .4, 1) forwards;
+  }
+  .recap-ring-caption {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--color-neutral-400);
+    text-align: center;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .recap-ring-item:nth-child(1) { animation-delay: .15s; }
   .recap-ring-item:nth-child(2) { animation-delay: .25s; }
@@ -167,7 +190,7 @@
     flex-direction: column;
     align-items: center;
     gap: 6px;
-    width: 108px;
+    width: 128px;
     padding: var(--space-3) var(--space-2) var(--space-2);
     border-radius: var(--radius-md);
     border: 1px solid var(--color-divider);
@@ -183,6 +206,8 @@
   .recap-game:hover { border-color: var(--color-accent); }
   .recap-game--win { border-top-color: var(--tone-good-line); }
   .recap-game--loss { border-top-color: var(--tone-bad-line); }
+  .recap-game-matchup { display: flex; align-items: center; gap: 4px; }
+  .recap-game-vs { font-size: 9px; color: var(--color-neutral-600); font-weight: 700; }
   .recap-game-num { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
   .recap-game--win .recap-game-num { color: var(--tone-good-fg); }
   .recap-game--loss .recap-game-num { color: var(--tone-bad-fg); }

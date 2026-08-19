@@ -72,7 +72,8 @@
   }
   .modal-panel--large {
     width: 75vw;
-    max-height: 85vh;
+    height: 75vh;
+    max-height: 75vh;
   }
   .modal-head {
     display: flex;
