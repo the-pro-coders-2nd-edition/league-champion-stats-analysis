@@ -2,6 +2,7 @@
   import { flip } from 'svelte/animate';
   import { fade, fly } from 'svelte/transition';
   import CareerNode from '../components/CareerNode.svelte';
+  import MetricTooltip from '../components/MetricTooltip.svelte';
   import Chip from '../components/Chip.svelte';
   import SectionHeader from '../components/SectionHeader.svelte';
   import { dropCareerBlock } from '../lib/api.js';
@@ -181,9 +182,14 @@
           {:else}
             <div class="career-steps">
               {#each block.steps as step}
+                {@const stepText = typeof step === 'string' ? step : step.text}
+                {@const stepWhy = typeof step === 'string' ? '' : step.why}
                 <div class="career-step">
                   <i class="career-step-bullet"></i>
-                  <p class="career-step-text">{step}</p>
+                  <p class="career-step-text">
+                    {stepText}
+                    {#if stepWhy}<MetricTooltip label="this goal" tooltip={stepWhy} />{/if}
+                  </p>
                 </div>
               {/each}
             </div>

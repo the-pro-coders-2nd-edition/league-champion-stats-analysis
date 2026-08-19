@@ -11,7 +11,12 @@ of leaving the player to guess.
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Any, Final
+
+import pandas as pd
+
+from league_stats.analysis.career.models import WINDOW
+from league_stats.analysis.career.window import recent_window
 
 WHY_BY_COLUMN: Final[dict[str, str]] = {
     # --- Laning / early game -------------------------------------------------
@@ -192,3 +197,107 @@ WHY_BY_COLUMN: Final[dict[str, str]] = {
         "that's already even."
     ),
 }
+
+
+# --- player-specific evidence ----------------------------------------------
+#
+# The dict above explains what a column *is*. On its own that reads as advice, and
+# advice is easy to dismiss: a reader has no way to tell whether the goal was
+# picked for them or handed to everyone. These helpers add the numbers that make
+# the case -- where they sit today, how many recent games already clear the target,
+# and what players at their rank manage -- so the tooltip argues rather than asserts.
+
+# column -> (display scale, decimal places, suffix). Values are shown in the unit
+# the goal sentence itself uses, so "60%" in the tooltip means the same 60% as the
+# goal above it.
+_UNITS: Final[dict[str, tuple[float, int, str]]] = {
+    "damage_share": (100.0, 0, "%"),
+    "damage_taken_share": (100.0, 0, "%"),
+    "objectives_present_rate": (100.0, 0, "%"),
+    "tf_participation": (100.0, 0, "%"),
+    "tf_won_share": (100.0, 0, "%"),
+    "kp15": (100.0, 0, "%"),
+    "kill_participation": (100.0, 0, "%"),
+    "pct_advantaged_fights": (100.0, 0, "%"),
+    "objective_trade_success_rate": (100.0, 0, "%"),
+    "unproductive_absence_rate": (100.0, 0, "%"),
+    "lane_priority": (100.0, 0, "%"),
+    "avg_unspent_gold": (1.0, 0, "g"),
+    "avg_unspent_gold_per_fight": (1.0, 0, "g"),
+    "avg_gold_at_death": (1.0, 0, "g"),
+    "shutdown_given": (1.0, 0, "g"),
+    "gold10": (1.0, 0, "g"),
+    "gd10": (1.0, 0, "g"),
+    "gd15": (1.0, 0, "g"),
+    "gd20": (1.0, 0, "g"),
+    "xpd10": (1.0, 0, " XP"),
+    "time_dead_s": (1.0, 0, "s"),
+    "cspm": (1.0, 1, ""),
+    "vspm": (1.0, 2, ""),
+    "vspm10": (1.0, 2, ""),
+    "ccpm": (1.0, 1, ""),
+    "hpm": (1.0, 0, ""),
+    "first_item_min": (1.0, 1, ""),
+    "first_recall_min": (1.0, 1, ""),
+}
+_DEFAULT_UNIT: Final[tuple[float, int, str]] = (1.0, 1, "")
+
+def format_value(column: str, value: float) -> str:
+    """One metric value in the same units the goal sentence uses."""
+    scale, places, suffix = _UNITS.get(column, _DEFAULT_UNIT)
+    shown = value * scale
+    text = f"{shown:.{places}f}"
+    # A whole number reads as spurious precision with a trailing ".0", but rounding
+    # every count to an integer made the tooltip contradict the goal above it: a
+    # "2.8 enemy wards cleared" goal was explained as "at least 3".
+    if places and text.endswith("." + "0" * places):
+        text = text[: -(places + 1)]
+    return f"{text}{suffix}"
+
+
+def _hits(frame: Any, column: str, target: float, comparator: str) -> int:
+    series = pd.to_numeric(frame[column], errors="coerce").dropna()
+    if comparator == "at_least":
+        return int((series >= target).sum())
+    return int((series < target).sum())
+
+
+def why_for(
+    column: str,
+    ctx: Any,
+    *,
+    target: float,
+    comparator: str,
+    need: int,
+) -> str:
+    """The metric's explanation, followed by this player's numbers on it.
+
+    Degrades to the plain explanation when there is no usable history, so a thin
+    sample never produces a sentence quoting a number that is not there.
+    """
+    reason = WHY_BY_COLUMN.get(column, "")
+    frame = getattr(ctx, "matches_df", None)
+    if frame is None or getattr(frame, "empty", True) or column not in frame.columns:
+        return reason
+
+    recent = recent_window(frame, WINDOW)
+    series = pd.to_numeric(recent[column], errors="coerce").dropna()
+    if series.empty:
+        return reason
+
+    typical = float(series.median())
+    hits = _hits(recent, column, target, comparator)
+    direction = "under" if comparator == "under" else "at least"
+    parts = [
+        f"Your numbers: you are at {format_value(column, typical)} in a typical game, "
+        f"and {hits} of your last {len(series)} games already stay "
+        f"{direction} {format_value(column, target)} — the goal asks for {need} of {WINDOW}."
+    ]
+    peer = (getattr(ctx, "peer_p75", None) or {}).get(column)
+    if peer is not None:
+        parts.append(
+            f"The top quarter of players at your rank sit around "
+            f"{format_value(column, float(peer))}."
+        )
+    evidence = " ".join(parts)
+    return f"{reason}\n\n{evidence}" if reason else evidence

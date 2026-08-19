@@ -147,7 +147,10 @@ def test_live_block_carries_nodes_and_locked_blocks_carry_steps(view: dict) -> N
     assert live["steps"] == []
     assert second["goals"] == []
     assert len(second["steps"]) == 3
-    assert all(isinstance(step, str) and step for step in second["steps"])
+    # Dicts, not bare strings: a queued block's goals carry the same "why" tooltip
+    # as a live one, which the flat-string shape dropped.
+    assert all(step["text"] for step in second["steps"])
+    assert all("why" in step for step in second["steps"])
 
 
 def test_live_block_state_label_and_tone(view: dict) -> None:

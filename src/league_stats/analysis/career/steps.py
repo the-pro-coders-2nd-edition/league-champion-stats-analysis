@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Final, Sequence
 
-from league_stats.analysis.career.explanations import WHY_BY_COLUMN
+from league_stats.analysis.career.explanations import why_for
 from league_stats.analysis.career.models import CLEAR_BAR, SETUP_CLEAR_BAR, Rung
 from league_stats.analysis.career.window import (
     player_mean,
@@ -144,7 +144,7 @@ def _stepped(
         comparator="at_least",
         target=target,
         need=need,
-        why=WHY_BY_COLUMN.get(column, ""),
+        why=why_for(column, ctx, target=target, comparator="at_least", need=need),
     )
 
 
@@ -177,7 +177,7 @@ def _stepped_under(
         comparator="under",
         target=target,
         need=need,
-        why=WHY_BY_COLUMN.get(column, ""),
+        why=why_for(column, ctx, target=target, comparator="under", need=need),
     )
 
 
@@ -187,7 +187,7 @@ def _line(ctx, *, column: str, target: float, text: str, need: int = CLEAR_BAR) 
         return None
     return Rung(
         text=text, column=column, comparator="at_least", target=target, need=need,
-        why=WHY_BY_COLUMN.get(column, ""),
+        why=why_for(column, ctx, target=target, comparator="at_least", need=need),
     )
 
 
@@ -197,7 +197,7 @@ def _none_of(ctx, *, column: str, text: str, need: int = CLEAR_BAR) -> Rung | No
         return None
     return Rung(
         text=text, column=column, comparator="under", target=1.0, need=need,
-        why=WHY_BY_COLUMN.get(column, ""),
+        why=why_for(column, ctx, target=1.0, comparator="under", need=need),
     )
 
 
@@ -213,7 +213,7 @@ def _integer_under(ctx, *, column: str, template: str, need: int = CLEAR_BAR) ->
         comparator="under",
         target=float(target),
         need=need,
-        why=WHY_BY_COLUMN.get(column, ""),
+        why=why_for(column, ctx, target=float(target), comparator="under", need=need),
     )
 
 

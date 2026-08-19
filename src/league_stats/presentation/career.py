@@ -226,7 +226,12 @@ def _locked_block(block: CareerBlockState, previous_name: str) -> dict[str, Any]
         "state_label": "Locked",
         "unlock": f"Opens when {previous_name} is complete.",
         "goals": [],
-        "steps": [goal.rung.text for goal in block.goals],
+        # Dicts, not bare strings: a queued block's goals carry the same "why"
+        # tooltip as a live one. A reader deciding whether the queue is worth
+        # waiting for needs the argument before the block goes live, not after.
+        "steps": [
+            {"text": goal.rung.text, "why": goal.rung.why} for goal in block.goals
+        ],
     }
 
 
