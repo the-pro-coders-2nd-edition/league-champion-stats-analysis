@@ -467,3 +467,95 @@ def test_render_snapshot(report_page: Any, tab: str, viewport_name: str) -> None
     _select_tab(report_page, tab)
     captured = _capture(report_page, tab)
     _assert_matches_baseline(tab, viewport_name, captured)
+
+
+# --------------------------------------------------------------------------------
+# Deep-linkable tabs: the report category is part of the URL (`.../:tab?` in
+# App.svelte), so a bookmark taken from any tab reopens on that tab. These reuse
+# the module's server/browser fixtures directly rather than the viewport-
+# parametrized `report_page` one above, since they test navigation, not rendering.
+# --------------------------------------------------------------------------------
+
+
+def test_direct_navigation_to_a_tab_url_opens_that_tab(browser: Any, report_server: str) -> None:
+    """The entire point of the feature: opening a bookmarked tab URL fresh must show
+    that tab immediately, with no click through the tab bar needed."""
+    context = browser.new_context(viewport=DESKTOP_VIEWPORT)
+    page = context.new_page()
+    try:
+        page.goto(f"{report_server}/#/players/{REPORT_SLUG}/{BUILD_SLUG}/career")
+        page.wait_for_selector(
+            '.report-category-panel.is-active[data-category="career"]',
+            state="attached",
+            timeout=15000,
+        )
+        summary_panel = page.query_selector('.report-category-panel[data-category="summary"]')
+        assert summary_panel is not None
+        assert "is-active" not in (summary_panel.get_attribute("class") or "")
+    finally:
+        context.close()
+
+
+def test_clicking_a_tab_updates_the_url_so_it_can_be_bookmarked(
+    browser: Any, report_server: str
+) -> None:
+    """A tab switch must rewrite the address bar, or a bookmark taken right after
+    clicking a tab would silently reopen on summary instead."""
+    context = browser.new_context(viewport=DESKTOP_VIEWPORT)
+    page = context.new_page()
+    try:
+        page.goto(f"{report_server}/#/players/{REPORT_SLUG}/{BUILD_SLUG}")
+        page.wait_for_selector("#report-category-tabs", state="attached", timeout=15000)
+        page.click('#report-category-tabs button[data-category="career"]')
+        page.wait_for_selector(
+            '.report-category-panel.is-active[data-category="career"]',
+            state="attached",
+            timeout=15000,
+        )
+        assert page.evaluate("window.location.hash") == (
+            f"#/players/{REPORT_SLUG}/{BUILD_SLUG}/career"
+        )
+    finally:
+        context.close()
+
+
+def test_a_tab_switch_does_not_add_a_history_entry(browser: Any, report_server: str) -> None:
+    """Tab switches use replace(), not push(): the back button should leave the
+    report, not step back through the tabs the user happened to click through."""
+    context = browser.new_context(viewport=DESKTOP_VIEWPORT)
+    page = context.new_page()
+    try:
+        # Two real navigations bracket the tab clicks, so "back" has something real
+        # to land on -- a fresh page's history has nothing before its first goto().
+        page.goto(f"{report_server}/")
+        page.goto(f"{report_server}/#/players/{REPORT_SLUG}/{BUILD_SLUG}")
+        page.wait_for_selector("#report-category-tabs", state="attached", timeout=15000)
+        for tab in ("career", "games", "champion"):
+            page.click(f'#report-category-tabs button[data-category="{tab}"]')
+            page.wait_for_selector(
+                f'.report-category-panel.is-active[data-category="{tab}"]',
+                state="attached",
+                timeout=15000,
+            )
+        page.go_back()
+        page.wait_for_timeout(200)
+        # Three replace()s collapsed into the report's one history entry: back from
+        # "champion" must land on the pre-report page, not on "games" or "career".
+        assert page.evaluate("window.location.hash") in ("", "#/")
+    finally:
+        context.close()
+
+
+def test_an_unknown_tab_segment_falls_back_to_summary(browser: Any, report_server: str) -> None:
+    """A stale or hand-edited tab segment must render the report, not a blank page."""
+    context = browser.new_context(viewport=DESKTOP_VIEWPORT)
+    page = context.new_page()
+    try:
+        page.goto(f"{report_server}/#/players/{REPORT_SLUG}/{BUILD_SLUG}/not-a-real-tab")
+        page.wait_for_selector(
+            '.report-category-panel.is-active[data-category="summary"]',
+            state="attached",
+            timeout=15000,
+        )
+    finally:
+        context.close()
