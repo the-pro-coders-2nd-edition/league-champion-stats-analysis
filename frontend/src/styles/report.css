@@ -12,7 +12,9 @@
   --scrollbar-thumb-hover: var(--color-accent);
   /* Sticky queue/game filter bar — anchor scroll targets need this offset */
   --report-sticky-offset: 96px;
+  --nav-width: 240px;
 }
+html.report-nav-collapsed { --nav-width: 72px; }
 html {
   scroll-padding-top: var(--report-sticky-offset);
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
@@ -137,8 +139,12 @@ nav.report-nav.is-collapsed .build-card {
 main {
   --main-pad-x: clamp(16px, 4vw, 48px);
   --main-pad-y: 32px;
-  flex: 1; width: 100%; padding: var(--main-pad-y) var(--main-pad-x); max-width: 1280px;
-  margin: 0 auto;
+  --main-max-width: 1280px;
+  flex: 1; width: 100%; padding: var(--main-pad-y) var(--main-pad-x); max-width: var(--main-max-width);
+  /* Center against the full viewport, not just the space left of the sidebar. */
+  margin-left: max(0px, calc((100vw - var(--main-max-width)) / 2 - var(--nav-width)));
+  margin-right: auto;
+  transition: margin-left .2s ease;
 }
 section { margin-bottom: 64px; scroll-margin-top: var(--report-sticky-offset); }
 .report-section {
@@ -722,6 +728,7 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 .build-card strong { font-size: 12px; font-weight: 600; }
 @media (max-width: 860px) {
   .layout { flex-direction: column; }
+  main { margin-left: auto; }
   nav.report-nav { width: 100%; height: auto; position: static; display: flex; flex-wrap: wrap; align-items: center; transition: none; }
   nav h1 { width: 100%; }
   .nav-header { width: 100%; align-items: center; padding: 0 12px 0 0; }
