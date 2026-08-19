@@ -60,7 +60,7 @@ def _ctx() -> TrackContext:
         matches_df=frame,
         objectives_df=pd.DataFrame({"present": [1] * 8}),
         role="MIDDLE",
-        peer_p75={},
+        peer_p75={"cspm": 7.5, "deaths_pre20": 3.0},
     )
 
 

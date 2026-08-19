@@ -12,6 +12,7 @@ from league_stats.analysis.timeline import TimelineContext, participant_states_a
 from league_stats.analysis.trades import (
     DEFEND_TOWER_WINDOW_AFTER_MS,
     DEFEND_TOWER_WINDOW_BEFORE_MS,
+    OBJECTIVE_VALUES,
     evaluate_objective_trade,
 )
 from league_stats.core.models import BuildingRecord, ObjectiveKind, ObjectiveRecord, Position, Zone
@@ -351,6 +352,36 @@ def split_push_summary(matches_df: pd.DataFrame) -> dict[str, float | None]:
     }
 
 
+_OBJECTIVE_ASSET_IDS = frozenset(OBJECTIVE_VALUES)
+
+
+def _structure_assets(obj: ObjectiveRecord) -> list[str]:
+    assets = list(obj.trade_gain or []) + list(obj.trade_loss or [])
+    return [asset for asset in assets if asset not in _OBJECTIVE_ASSET_IDS]
+
+
+def _is_structure_trade_window(obj: ObjectiveRecord) -> bool:
+    """True when this epic was paired with sidelane pressure or a structure swing."""
+    return bool(
+        obj.sidelane_pressure
+        or obj.macro_role in {"split_pushing", "defending_split"}
+        or _structure_assets(obj)
+    )
+
+
+def _structure_trade_converted(obj: ObjectiveRecord) -> bool:
+    """Converted a real structure trade — not merely winning the epic monster."""
+    if obj.trade_outcome in {"traded_for", "held"}:
+        return True
+    if obj.trade_outcome == "won" and _structure_assets(obj):
+        return True
+    return bool(
+        obj.trade_value_delta is not None
+        and obj.trade_value_delta >= 0
+        and _structure_assets(obj)
+    )
+
+
 def objective_aggregate_rates(objectives: list[ObjectiveRecord]) -> dict[str, float | None]:
     """Per-game objective macro aggregates."""
     if not objectives:
@@ -370,17 +401,8 @@ def objective_aggregate_rates(objectives: list[ObjectiveRecord]) -> dict[str, fl
     )
     split_push = sum(1 for o in objectives if o.macro_role == "split_pushing")
     defend = sum(1 for o in objectives if o.macro_role == "defending_split")
-    trade_attempts = [
-        o
-        for o in objectives
-        if o.trade_outcome in {"traded_for", "traded_away", "held", "won", "lost", "even"}
-    ]
-    trade_wins = sum(
-        1
-        for o in trade_attempts
-        if o.trade_outcome in {"traded_for", "held", "won"}
-        or (o.trade_value_delta is not None and o.trade_value_delta >= 0)
-    )
+    trade_attempts = [o for o in objectives if _is_structure_trade_window(o)]
+    trade_wins = sum(1 for o in trade_attempts if _structure_trade_converted(o))
     return {
         "objectives_accounted_for_rate": round(accounted / total, 3),
         "unproductive_absence_rate": round(unproductive / total, 3),

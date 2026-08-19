@@ -44,6 +44,7 @@ MIN_FEATURE_CORRELATION: float = 0.18
 MIN_LANE_PRIORITY_CORRELATION: float = 0.22
 MIN_SIDE_LANE_DEATHS_PER_GAME: float = 0.6
 MIN_OBJECTIVE_PRESENCE: float = 0.50
+MIN_UNPRODUCTIVE_ABSENCE: float = 0.28
 MIN_DEAD_BEFORE_OBJECTIVE_RATE: float = 0.22
 MAX_AHEAD_WR_AT_15: float = 0.58
 MIN_CS10_FOR_REC: float = 74
@@ -282,7 +283,7 @@ class CoachEngine:
             self._rule_deaths_before_objectives,
             self._rule_objective_presence,
             self._rule_objective_grouping_wins,
-            self._rule_sidelane_trade_wins,
+            self._rule_unproductive_sidelane,
             self._rule_defend_split_wins,
             self._rule_solo_deaths,
             self._rule_outnumbered_deaths,
@@ -698,32 +699,34 @@ class CoachEngine:
             sample_size=split["n_high"] + split["n_low"],
         )
 
-    def _rule_sidelane_trade_wins(self) -> Recommendation | None:
-        if "objective_trade_success_rate" not in self._matches.columns:
+    def _rule_unproductive_sidelane(self) -> Recommendation | None:
+        """Flag TOP absences that are neither a pit play nor a real sidelane convert.
+
+        Win-rate splits on ``objective_trade_success_rate`` are circular: that
+        rate mostly tracks who won the map (and therefore the game).
+        """
+        if "unproductive_absence_rate" not in self._matches.columns:
             return None
-        split = self._stats.winrate_split_test("objective_trade_success_rate", 0.5)
-        if split is None or split["n_high"] < 3:
+        series = pd.to_numeric(self._matches["unproductive_absence_rate"], errors="coerce").dropna()
+        if len(series) < 15:
             return None
-        delta = split["winrate_high"] - split["winrate_low"]
-        if delta < MIN_WINRATE_DELTA:
+        rate = float(series.mean())
+        if rate < MIN_UNPRODUCTIVE_ABSENCE:
             return None
         return Recommendation(
             category="Objectives",
-            title="Sidelane trades correlate with your wins",
+            title="Sidelane absences aren't converting",
             detail=(
-                "When you turn objective timers into cross-map structure trades "
-                f"you win {split['winrate_high']:.0%} versus {split['winrate_low']:.0%} otherwise."
+                f"You were away from {rate:.0%} of epic takes without tower pressure or a hold. "
+                "If you skip the pit, take a plate or T1 on the opposite side — "
+                "hovering mid during the timer is just late."
             ),
-            evidence=(
-                f"WR {split['winrate_high']:.0%} ({split['n_high']} high-trade games) vs "
-                f"{split['winrate_low']:.0%} ({split['n_low']} games), p={split['p_value']:.3f}"
-            ),
-            action="Keep applying real sidelane pressure when objectives spawn",
-            tone=RecommendationTone.POSITIVE,
-            p_value=split["p_value"],
-            effect_size=round(delta, 3),
-            priority=_priority(delta, split["p_value"], split["n_high"] + split["n_low"]),
-            sample_size=split["n_high"] + split["n_low"],
+            evidence=f"Unproductive absence {rate:.0%} across {len(series)} games",
+            action="Convert objective skips into a real sidelane tower or a defend",
+            p_value=None,
+            effect_size=round(rate - MIN_UNPRODUCTIVE_ABSENCE, 3),
+            priority=_priority(rate - MIN_UNPRODUCTIVE_ABSENCE, None, len(series)),
+            sample_size=len(series),
         )
 
     def _rule_defend_split_wins(self) -> Recommendation | None:

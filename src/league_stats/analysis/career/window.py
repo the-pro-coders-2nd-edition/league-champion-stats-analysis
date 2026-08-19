@@ -46,9 +46,16 @@ def count_hits(window_df: pd.DataFrame, rung: Rung) -> int:
     series = pd.to_numeric(window_df[rung.column], errors="coerce").dropna()
     if series.empty:
         return 0
-    if rung.comparator == "at_least":
-        return int((series >= rung.target).sum())
-    return int((series < rung.target).sum())
+    return series_hits(series, rung.comparator, rung.target)
+
+
+def series_hits(series: pd.Series, comparator: str, target: float) -> int:
+    """How many values meet ``comparator`` against ``target``."""
+    if comparator == "at_least":
+        return int((series >= target).sum())
+    if comparator == "at_most":
+        return int((series <= target).sum())
+    return int((series < target).sum())
 
 
 def player_median(matches_df: pd.DataFrame, column: str) -> float | None:

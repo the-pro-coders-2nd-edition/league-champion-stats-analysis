@@ -21,6 +21,7 @@ against a moved median, not from three rungs on one metric.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Callable, Final, Sequence
 
@@ -203,19 +204,33 @@ def _none_of(ctx, *, column: str, text: str, need: int = CLEAR_BAR) -> Rung | No
     )
 
 
+def at_most_line(template: str, target: int) -> str:
+    """Goal copy for an inclusive cap; ``0 or fewer`` reads as ``No``."""
+    text = template.format(target=target)
+    if target == 0:
+        return text.replace("0 or fewer", "No", 1)
+    return text
+
+
 def _integer_under(ctx, *, column: str, template: str, need: int = CLEAR_BAR) -> Rung | None:
-    """One rung one whole unit below the player's rounded average."""
+    """One rung at most ``floor(average - 1)`` — equal or below that cap counts.
+
+    A player averaging 2.5 solo deaths is asked for 1 or fewer, not zero. Asking
+    strictly under a rounded average turned 2.5 into a none-of goal.
+    """
     avg = player_mean(ctx.matches_df, column)
     if avg is None:
         return None
-    target = max(1, round(avg) - 1)
+    target = math.floor(avg - 1.0)
+    if target < 0:
+        return None
     return Rung(
-        text=template.format(target=target),
+        text=at_most_line(template, target),
         column=column,
-        comparator="under",
+        comparator="at_most",
         target=float(target),
         need=need,
-        why=why_for(column, ctx, target=float(target), comparator="under", need=need),
+        why=why_for(column, ctx, target=float(target), comparator="at_most", need=need),
     )
 
 
@@ -327,35 +342,40 @@ STEP_BANK: Final[tuple[StepSpec, ...]] = (
     StepSpec(
         key="deaths_before_20", category=CATEGORY_SURVIVAL, specificity=2,
         build=lambda c: _integer_under(
-            c, column="deaths_pre20", template="Under {target} deaths before 20 min in 15 of 20 games"
+            c, column="deaths_pre20",
+            template="{target} or fewer deaths before 20 min in 15 of 20 games",
         ),
         severity=lambda c: _mean_of(c, "deaths_pre20") / 5.0,
     ),
     StepSpec(
         key="deaths_before_14", category=CATEGORY_SURVIVAL, specificity=2,
         build=lambda c: _integer_under(
-            c, column="deaths_pre14", template="Under {target} deaths before 14 min in 15 of 20 games"
+            c, column="deaths_pre14",
+            template="{target} or fewer deaths before 14 min in 15 of 20 games",
         ),
         severity=lambda c: _mean_of(c, "deaths_pre14") / 4.0,
     ),
     StepSpec(
         key="greed_discipline", category=CATEGORY_SURVIVAL, specificity=3,
-        build=lambda c: _none_of(
-            c, column="greed_deaths", text="No greed death in 15 of 20 games"
+        build=lambda c: _integer_under(
+            c, column="greed_deaths",
+            template="{target} or fewer greed deaths in 15 of 20 games",
         ),
         severity=lambda c: _mean_of(c, "greed_deaths"),
     ),
     StepSpec(
         key="no_solo_deaths", category=CATEGORY_SURVIVAL, specificity=3,
-        build=lambda c: _none_of(
-            c, column="solo_deaths", text="No death caught alone in 15 of 20 games"
+        build=lambda c: _integer_under(
+            c, column="solo_deaths",
+            template="{target} or fewer deaths caught alone in 15 of 20 games",
         ),
         severity=lambda c: _mean_of(c, "solo_deaths") / 2.0,
     ),
     StepSpec(
         key="no_outnumbered_deaths", category=CATEGORY_SURVIVAL, specificity=3,
-        build=lambda c: _none_of(
-            c, column="outnumbered_deaths", text="No death while outnumbered in 15 of 20 games"
+        build=lambda c: _integer_under(
+            c, column="outnumbered_deaths",
+            template="{target} or fewer deaths while outnumbered in 15 of 20 games",
         ),
         severity=lambda c: _mean_of(c, "outnumbered_deaths") / 2.0,
     ),

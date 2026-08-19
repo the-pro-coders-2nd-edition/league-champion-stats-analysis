@@ -78,15 +78,6 @@
         so it shows the same ladder whichever you pick.
       </p>
     {/if}
-    <div class="career-rules">
-      {#each ladder.rules as rule}
-        <div class="career-rule">
-          <div class="career-rule-key">{rule.key}</div>
-          <div class="career-rule-value">{rule.value}</div>
-          <p class="career-rule-note">{rule.note}</p>
-        </div>
-      {/each}
-    </div>
 
     {#if ladder.congrats}
       <div class="career-congrats">
@@ -97,19 +88,6 @@
         </div>
       </div>
     {/if}
-
-    <div class="career-legend">
-      <div class="career-legend-title">The five states a goal can be in</div>
-      {#each ladder.legend as entry}
-        <div class="career-legend-row">
-          <div class="career-ring career-ring--{entry.state_class}" style="--career-pct: {entry.pct}%">
-            <div class="career-mark career-mark--{entry.state_class}">{entry.mark}</div>
-          </div>
-          <div class="career-legend-name career-legend-name--{entry.state_class}">{entry.name}</div>
-          <div class="career-legend-text">{entry.text}</div>
-        </div>
-      {/each}
-    </div>
 
     <div class="career-blocks">
       {#each visibleBlocks as block, index (block.name)}
@@ -211,6 +189,41 @@
         </div>
       {/if}
     </div>
+
+    <h3 class="career-howto">How the ladder works</h3>
+
+    <div class="career-rules">
+      {#each ladder.rules as rule}
+        <div class="career-rule">
+          <div class="career-rule-key">{rule.key}</div>
+          <div class="career-rule-value">{rule.value}</div>
+          <p class="career-rule-note">{rule.note}</p>
+        </div>
+      {/each}
+    </div>
+
+    <div class="career-legend">
+      <div class="career-legend-title">The five states a goal can be in</div>
+      {#each ladder.legend as entry}
+        <div class="career-legend-row">
+          <div class="career-ring career-ring--{entry.state_class}" style="--career-pct: {entry.pct}%">
+            <div class="career-mark career-mark--{entry.state_class}">{entry.mark}</div>
+          </div>
+          <div class="career-legend-name career-legend-name--{entry.state_class}">{entry.name}</div>
+          <div class="career-legend-text">{entry.text}</div>
+        </div>
+      {/each}
+    </div>
+  {:else if ladder.awaiting_peers}
+    <div class="career-blocks">
+      <div class="career-block career-block--skeleton" aria-live="polite">
+        <div class="career-skeleton-head"></div>
+        <div class="career-skeleton-title"></div>
+        <div class="career-skeleton-line"></div>
+        <div class="career-skeleton-line career-skeleton-line--short"></div>
+        <p class="career-skeleton-note">Waiting for rank comparison before setting Career goals…</p>
+      </div>
+    </div>
   {:else}
     <p class="career-empty">
       No career ladder yet. Play a few more ranked games on this build and a set of personal goals will appear here.
@@ -286,6 +299,25 @@
   
   
   
+  .career-howto {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-3);
+    margin: var(--space-6) 0 var(--space-4);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--color-neutral-400);
+  }
+  .career-howto::before,
+  .career-howto::after {
+    content: '';
+    height: 1px;
+    background: var(--color-divider);
+  }
+
   .career-scope-caption {
     margin: 0 0 var(--space-4);
     font-size: 12px;

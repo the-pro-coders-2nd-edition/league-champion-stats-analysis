@@ -211,7 +211,7 @@
   let switchingBuild = false;
   let playerBuilds = [];
   let playerPageHref = null;
-  let navCollapsed = false;
+  let navCollapsed = true;
   let stickyHeaderEl = null;
 
   function syncStickyOffset() {
@@ -317,7 +317,7 @@
 
   onMount(() => {
     try {
-      navCollapsed = localStorage.getItem(NAV_COLLAPSE_KEY) === '1';
+      navCollapsed = localStorage.getItem(NAV_COLLAPSE_KEY) !== '0';
     } catch (err) {
       // Private mode: collapse state lives for this page only.
     }

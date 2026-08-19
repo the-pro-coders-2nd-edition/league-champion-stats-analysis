@@ -128,9 +128,9 @@ def test_death_discipline_tightens_then_pivots_to_the_setup_window() -> None:
     rungs = build_rungs(TRACKS_BY_KEY["death_discipline"], _ctx(matches))
 
     assert rungs is not None
-    assert rungs[0].text == "Under 2 deaths before 20 min in 15 of 20 games"
-    assert rungs[1].text == "Under 1 deaths before 20 min in 15 of 20 games"
-    assert rungs[0].comparator == "under"
+    assert rungs[0].text == "2 or fewer deaths before 20 min in 15 of 20 games"
+    assert rungs[1].text == "1 or fewer deaths before 20 min in 15 of 20 games"
+    assert rungs[0].comparator == "at_most"
     assert rungs[2].column == "deaths_before_neutral_objective"
     assert rungs[2].target == 1.0
     assert rungs[2].need == 12

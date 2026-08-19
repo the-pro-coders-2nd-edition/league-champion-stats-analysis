@@ -26,6 +26,12 @@ def test_jungle_profile_emphasizes_map_impact() -> None:
     assert "Objective presence" in overview_labels
     assert profile.early_section_title == "Early game"
     assert "_rule_cs10" not in profile.coach_rule_ids
+    assert "_rule_unproductive_sidelane" not in profile.coach_rule_ids
+
+
+def test_top_profile_owns_unproductive_sidelane_rule() -> None:
+    assert "_rule_unproductive_sidelane" in role_profile("TOP").coach_rule_ids
+    assert "_rule_unproductive_sidelane" not in role_profile("MIDDLE").coach_rule_ids
 
 
 def test_utility_overview_hides_damage_and_cs() -> None:

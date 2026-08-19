@@ -167,6 +167,33 @@ def test_a_diagnosed_habit_makes_it_into_the_block() -> None:
     assert any("greed death" in text for text in _goal_texts(CATEGORY_SURVIVAL, greedy))
 
 
+def test_caught_alone_asks_floor_of_average_minus_one_inclusive() -> None:
+    """2.5 typical → 1 or fewer; hitting 1 still counts."""
+    step = next(item for item in STEP_BANK if item.key == "no_solo_deaths")
+    rung = step.build(_ctx(_matches(solo_deaths=2.5)))
+
+    assert rung is not None
+    assert rung.comparator == "at_most"
+    assert rung.target == 1.0
+    assert "1 or fewer" in rung.text
+
+
+def test_caught_alone_declines_when_already_below_one() -> None:
+    step = next(item for item in STEP_BANK if item.key == "no_solo_deaths")
+
+    assert step.build(_ctx(_matches(solo_deaths=0.4))) is None
+
+
+def test_a_zero_cap_reads_as_no_instead_of_zero_or_fewer() -> None:
+    step = next(item for item in STEP_BANK if item.key == "deaths_before_20")
+    rung = step.build(_ctx(_matches(deaths_pre20=1.0)))
+
+    assert rung is not None
+    assert rung.target == 0.0
+    assert rung.text.startswith("No deaths before 20 min")
+    assert "0 or fewer" not in rung.text
+
+
 def test_a_clean_player_is_not_told_to_stop_doing_something_they_never_do() -> None:
     clean = _ctx(_matches(greed_deaths=0.0, solo_deaths=0.0))
     texts = _goal_texts(CATEGORY_SURVIVAL, clean)

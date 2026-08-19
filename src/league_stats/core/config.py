@@ -64,7 +64,7 @@ REMAKE_MAX_DURATION_S: Final[int] = 300
 # Ranked surrender vote opens at 15:00; shorter surrender endings are not real games.
 SURRENDER_VOTE_OPENS_S: Final[int] = 900
 GAME_WINDOW_OPTIONS: Final[tuple[int, ...]] = (50, 100)
-DEFAULT_GAME_WINDOW: Final[int] = 100
+DEFAULT_GAME_WINDOW: Final[int] = 50
 QUEUE_FILTER_OPTIONS: Final[tuple[str, ...]] = ("solo", "flex", "all")
 DEFAULT_QUEUE_FILTER: Final[str] = "solo"
 QUEUE_LABELS: Final[dict[str, str]] = {

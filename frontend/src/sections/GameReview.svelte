@@ -34,6 +34,8 @@
   let activeTab = 'overview';
   let moreOpen = false;
   let moreOpenInitialized = false;
+  let scoreDetailsOpen = false;
+  let objectivesOpen = false;
   let timelineMode = 'lane';
   let timelineMetric = 'gold';
   let chartEl;
@@ -180,7 +182,6 @@
       if (share <= 1 / 3) return { label: `${secured}/${total} secured`, tone: 'bad' };
       return { label: `${secured}/${total} secured`, tone: 'mixed' };
     }
-    if (row.trade_outcome === 'held') return { label: 'Held', tone: 'good' };
     const swings = objectiveSplitSwings(row);
     if (row.taken_by_team) {
       if (swings.hasSplitLoss) return { label: 'Trade', tone: 'mixed' };
@@ -516,12 +517,15 @@
               <a
                 class="game-goals"
                 href="#career"
-                on:click={(event) => handleNavClick(event, 'career', reportNav)}
+                on:click={handleNavClick(reportNav, 'career')}
                 title="Open Career mode"
               >
                 <span class="game-goals-head">
-                  <span class="game-goals-label">Career goals tracked for this game</span>
+                  <span class="game-goals-label">Career goals for this game</span>
                   <span class="game-goals-more">Career mode →</span>
+                </span>
+                <span class="game-goals-lead">
+                  Whether this game met the live block's per-game bar. Only games after the block started counting toward the 20-game window.
                 </span>
                 <span class="game-goals-list">
                   {#each trackedGoals as goal (goal.column)}
@@ -532,10 +536,10 @@
                       <span class="game-goal-text">{goal.text}</span>
                       <span class="game-goal-verdict">
                         {goal.outcome === 'met'
-                          ? 'counted'
+                          ? 'this game hit'
                           : goal.outcome === 'missed'
-                            ? 'did not count'
-                            : 'before this block'}
+                            ? 'this game missed'
+                            : 'played before tracking'}
                       </span>
                     </span>
                   {/each}
@@ -552,6 +556,7 @@
                       score={dim.score}
                       hint={dim.hint || (tooltips.score || {})[dim.name] || ''}
                       ingredients={dim.ingredients || []}
+                      bind:open={scoreDetailsOpen}
                     />
                   {/each}
                 {:else}
@@ -685,6 +690,7 @@
                         variant="objective"
                         chevron="trailing"
                         class="game-review-objective game-review-objective--{outcome.tone}{objectiveGrubClass(row)}"
+                        bind:open={objectivesOpen}
                       >
                         <svelte:fragment slot="summary">
                           <span class="game-review-objective-time">{formatGameTime(row.minute)}</span>
@@ -770,8 +776,7 @@
 </section>
 
 <style>
-  /* Career goals the live block is judging this game on. A link, not a card: the
-     ladder itself is the place to act on them. */
+  /* Live Career block: did this one game hit the bar those goals count? */
   .game-goals {
     display: grid;
     gap: var(--space-3);
@@ -791,6 +796,11 @@
     color: var(--color-neutral-500);
   }
   .game-goals-more { margin-left: auto; font-size: 11px; color: var(--color-accent); }
+  .game-goals-lead {
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--color-neutral-400);
+  }
   .game-goals-list { display: grid; gap: 6px; }
   .game-goal {
     display: grid;

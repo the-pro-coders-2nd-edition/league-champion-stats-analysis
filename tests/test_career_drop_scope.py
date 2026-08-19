@@ -105,7 +105,7 @@ def _seed_ladder(client: TestClient, build_slug: str, champion: str, role: str) 
                 matches_df=frame,
                 objectives_df=pd.DataFrame({"present": [1] * 6}),
                 role=role,
-                peer_p75={},
+                peer_p75={"cspm": 7.5},
             ),
             components,
         )

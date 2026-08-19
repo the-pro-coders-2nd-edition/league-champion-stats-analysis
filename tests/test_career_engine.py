@@ -332,7 +332,7 @@ def test_a_healthy_player_still_gets_a_full_ladder(store: CareerStore) -> None:
     assert [block.slot for block in snapshot.blocks] == list(range(BLOCK_SLOTS))
 
 
-def test_a_full_ladder_without_any_peer_percentiles(store: CareerStore) -> None:
+def test_no_ladder_without_peer_percentiles(store: CareerStore) -> None:
     ctx = TrackContext(
         matches_df=_healthy_ctx().matches_df,
         objectives_df=_healthy_ctx().objectives_df,
@@ -341,7 +341,8 @@ def test_a_full_ladder_without_any_peer_percentiles(store: CareerStore) -> None:
     )
     snapshot = advance_career(store, KEY, ctx, WEAK_LANING)
 
-    assert len(snapshot.blocks) == BLOCK_SLOTS
+    assert snapshot.blocks == []
+    assert snapshot.awaiting_peers is True
 
 
 def test_the_weakest_category_becomes_the_live_block(store: CareerStore) -> None:

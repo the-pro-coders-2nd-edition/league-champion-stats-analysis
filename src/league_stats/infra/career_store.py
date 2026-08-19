@@ -15,8 +15,17 @@ from pathlib import Path
 from types import TracebackType
 from typing import Sequence
 
-from league_stats.analysis.career.models import Rung, StoredGoal
+from league_stats.analysis.career.models import Comparator, Rung, StoredGoal
 from league_stats.utils import get_logger
+
+_KNOWN_COMPARATORS: frozenset[str] = frozenset({"at_least", "under", "at_most"})
+
+
+def _load_comparator(value: object) -> Comparator:
+    text = str(value)
+    if text in _KNOWN_COMPARATORS:
+        return text  # type: ignore[return-value]
+    return "at_least"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS career_goals (
@@ -138,7 +147,7 @@ class CareerStore:
                 rung=Rung(
                     text=str(row[3]),
                     column=str(row[4]),
-                    comparator="under" if row[5] == "under" else "at_least",
+                    comparator=_load_comparator(row[5]),
                     target=float(row[6]),
                     need=int(row[7]),
                     why=str(row[11] or ""),
@@ -307,3 +316,25 @@ class CareerStore:
             "UPDATE career_flags SET pending_drop_slot = -1 WHERE build_key = ?", (key,)
         )
         self._conn.commit()
+
+    def clear_all(self) -> dict[str, int]:
+        """Delete every ladder, retired track and pending flag.
+
+        Returns row counts per table before deletion. Safe on an empty store.
+        """
+        counts = self.row_counts()
+        self._conn.executescript(
+            "DELETE FROM career_goals;"
+            "DELETE FROM career_used_tracks;"
+            "DELETE FROM career_flags;"
+        )
+        self._conn.commit()
+        return counts
+
+    def row_counts(self) -> dict[str, int]:
+        """Row counts for each Career table."""
+        counts: dict[str, int] = {}
+        for table in ("career_goals", "career_used_tracks", "career_flags"):
+            row = self._conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+            counts[table] = int(row[0]) if row else 0
+        return counts

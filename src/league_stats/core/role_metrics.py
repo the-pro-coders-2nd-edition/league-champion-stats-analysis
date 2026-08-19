@@ -24,7 +24,7 @@ ALL_COACH_RULES: Final[frozenset[str]] = frozenset(
         "_rule_deaths_before_objectives",
         "_rule_objective_presence",
         "_rule_objective_grouping_wins",
-        "_rule_sidelane_trade_wins",
+        "_rule_unproductive_sidelane",
         "_rule_defend_split_wins",
         "_rule_solo_deaths",
         "_rule_outnumbered_deaths",
@@ -53,7 +53,12 @@ LANER_COACH_RULES: Final[frozenset[str]] = ALL_COACH_RULES - frozenset(
         "_rule_low_kill_participation",
         "_rule_low_vision",
         "_rule_low_cc",
+        "_rule_unproductive_sidelane",
     }
+)
+
+TOP_COACH_RULES: Final[frozenset[str]] = LANER_COACH_RULES | frozenset(
+    {"_rule_unproductive_sidelane"}
 )
 
 JUNGLE_COACH_RULES: Final[frozenset[str]] = ALL_COACH_RULES - frozenset(
@@ -69,6 +74,7 @@ JUNGLE_COACH_RULES: Final[frozenset[str]] = ALL_COACH_RULES - frozenset(
         "_rule_splitting_for_farm",
         "_rule_low_vision",
         "_rule_low_cc",
+        "_rule_unproductive_sidelane",
     }
 )
 
@@ -82,6 +88,7 @@ UTILITY_COACH_RULES: Final[frozenset[str]] = ALL_COACH_RULES - frozenset(
         "_rule_greed_deaths",
         "_rule_side_lane_deaths",
         "_rule_splitting_for_farm",
+        "_rule_unproductive_sidelane",
     }
 )
 
@@ -687,7 +694,7 @@ _PROFILES: dict[str, RoleMetricProfile] = {
         score_components=_top_score(),
         objectives=_top_objectives(),
         peer_metrics=_TOP_PEER,
-        coach_rule_ids=LANER_COACH_RULES,
+        coach_rule_ids=TOP_COACH_RULES,
         ml_features=_LANER_ML,
         early_ml_features=_LANER_EARLY_ML,
     ),

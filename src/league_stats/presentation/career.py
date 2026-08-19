@@ -89,8 +89,8 @@ CAREER_RULES: Final[tuple[dict[str, str], ...]] = (
             f"A stepped target is anchored at a level you already reach in most "
             f"games, then stretched {_STRETCH_PCT}%; lower-is-better goals mirror "
             f"it at P{_MIRROR_PCT} minus {_STRETCH_PCT}%. Peer data can only pull a "
-            "target down, never up. Some goals need no target at all — even gold at "
-            "10 minutes, or no greed deaths."
+            "target down, never up. Some goals need no invented target — even gold "
+            "at 10 minutes, or at most one fewer death than your current average."
         ),
     },
 )
@@ -159,6 +159,7 @@ def empty_career_view() -> dict[str, Any]:
     """The view a report renders when there is no ladder to show yet."""
     return {
         "has_career": False,
+        "awaiting_peers": False,
         "blocks": [],
         "widget": [],
         "rules": list(CAREER_RULES),
@@ -254,7 +255,10 @@ def _locked_block(block: CareerBlockState, previous_name: str) -> dict[str, Any]
 def build_career_view(snapshot: CareerSnapshot, *, window: int = WINDOW) -> dict[str, Any]:
     """Blocks, sidebar widget, rules, legend and banner for the report templates."""
     if not snapshot.blocks:
-        return empty_career_view()
+        view = empty_career_view()
+        if snapshot.awaiting_peers:
+            view["awaiting_peers"] = True
+        return view
 
     blocks: list[dict[str, Any]] = []
     for position, block in enumerate(snapshot.blocks):
@@ -285,6 +289,7 @@ def build_career_view(snapshot: CareerSnapshot, *, window: int = WINDOW) -> dict
 
     return {
         "has_career": True,
+        "awaiting_peers": False,
         "blocks": blocks,
         "widget": widget,
         "rules": list(CAREER_RULES),

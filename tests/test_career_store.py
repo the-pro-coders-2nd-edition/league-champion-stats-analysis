@@ -37,6 +37,22 @@ def test_write_and_load_slot_round_trip(tmp_path: Path) -> None:
     assert goals[1].rung.need == 15
 
 
+def test_at_most_comparator_survives_a_round_trip(tmp_path: Path) -> None:
+    key = build_key("p", "Viktor", "MIDDLE")
+    rungs = [
+        Rung(
+            text="1 or fewer", column="solo_deaths", comparator="at_most",
+            target=1.0, need=15,
+        )
+    ]
+    with _store(tmp_path) as store:
+        store.write_slot(key, 0, "survival", rungs, ["In progress"])
+        goals = store.load_goals(key)
+
+    assert goals[0].rung.comparator == "at_most"
+    assert goals[0].rung.target == 1.0
+
+
 def test_goals_are_ordered_by_slot_then_index(tmp_path: Path) -> None:
     key = build_key("p", "Viktor", "MIDDLE")
     with _store(tmp_path) as store:
@@ -154,3 +170,20 @@ def test_since_ms_is_added_to_a_pre_existing_database(tmp_path: Path) -> None:
     assert len(goals) == 1
     assert goals[0].since_ms == 0
     assert goals[0].state == "Cleared"
+
+
+def test_clear_all_removes_every_ladder(tmp_path: Path) -> None:
+    key = build_key("p", "Viktor", "MIDDLE")
+    with _store(tmp_path) as store:
+        store.write_slot(key, 0, "laning_income", _rungs("a"), ["In progress"] * 3)
+        store.record_used_track(key, "laning_income")
+        store.set_pending_congrats(key, "laning_income")
+
+        counts = store.clear_all()
+
+        assert counts["career_goals"] == 3
+        assert counts["career_used_tracks"] == 1
+        assert counts["career_flags"] == 1
+        assert store.load_goals(key) == []
+        assert store.used_track_keys(key) == set()
+        assert store.peek_pending_congrats(key) == ""

@@ -215,3 +215,25 @@ def test_low_cc_defers_to_peer_comparison(tmp_path: Path) -> None:
     )
     titles = [r.title for r in coach.generate()]
     assert not any("Crowd control trails role norms" in title for title in titles)
+
+
+def test_unproductive_sidelane_fires_for_top_only(tmp_path: Path) -> None:
+    """Win-leaky objective-trade splits are gone; TOP gets absence-conversion instead."""
+    n = 20
+    matches = pd.DataFrame(
+        {
+            "match_id": [f"M{i}" for i in range(n)],
+            "win": [i % 2 for i in range(n)],
+            "unproductive_absence_rate": [0.45] * n,
+            "objective_trade_success_rate": [0.9 if i % 2 else 0.1 for i in range(n)],
+        }
+    )
+    stats = StatisticsEngine(matches, tmp_path, role="TOP")
+    top = CoachEngine(matches, pd.DataFrame(), pd.DataFrame(), stats, role="TOP")
+    mid = CoachEngine(matches, pd.DataFrame(), pd.DataFrame(), stats, role="MIDDLE")
+    top_titles = [r.title for r in top.generate()]
+    mid_titles = [r.title for r in mid.generate()]
+    assert "Sidelane absences aren't converting" in top_titles
+    assert "Sidelane trades correlate with your wins" not in top_titles
+    assert "Sidelane absences aren't converting" not in mid_titles
+    assert "Sidelane trades correlate with your wins" not in mid_titles

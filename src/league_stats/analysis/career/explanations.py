@@ -16,7 +16,7 @@ from typing import Any, Final
 import pandas as pd
 
 from league_stats.analysis.career.models import WINDOW
-from league_stats.analysis.career.window import recent_window
+from league_stats.analysis.career.window import recent_window, series_hits
 
 WHY_BY_COLUMN: Final[dict[str, str]] = {
     # --- Laning / early game -------------------------------------------------
@@ -257,9 +257,7 @@ def format_value(column: str, value: float) -> str:
 
 def _hits(frame: Any, column: str, target: float, comparator: str) -> int:
     series = pd.to_numeric(frame[column], errors="coerce").dropna()
-    if comparator == "at_least":
-        return int((series >= target).sum())
-    return int((series < target).sum())
+    return series_hits(series, comparator, target)
 
 
 def why_for(
@@ -287,7 +285,12 @@ def why_for(
 
     typical = float(series.median())
     hits = _hits(recent, column, target, comparator)
-    direction = "under" if comparator == "under" else "at least"
+    if comparator == "under":
+        direction = "under"
+    elif comparator == "at_most":
+        direction = "at most"
+    else:
+        direction = "at least"
     parts = [
         f"Your numbers: you are at {format_value(column, typical)} in a typical game, "
         f"and {hits} of your last {len(series)} games already stay "

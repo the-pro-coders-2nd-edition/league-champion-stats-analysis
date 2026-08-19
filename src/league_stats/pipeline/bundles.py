@@ -492,6 +492,7 @@ def build_career_bundle(
             objectives_df=frames.objectives_df,
             role=config.role,
             peer_p75=_peer_p75(peer_comparison),
+            peers_ready=peer_comparison is not None,
         )
         key = build_key(player_slug(config.riot_id, config.tagline), config.champion, config.role)
         with CareerStore(config.career_db_path) as store:

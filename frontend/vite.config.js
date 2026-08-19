@@ -6,8 +6,9 @@ export default defineConfig({
   plugins: [svelte({ preprocess: sveltePreprocess() })],
   server: {
     proxy: {
-      '/api': 'http://localhost:8000',
-      '/out': 'http://localhost:8000',
+      // Use 127.0.0.1, not localhost — Node prefers ::1, uvicorn binds IPv4.
+      '/api': 'http://127.0.0.1:8000',
+      '/out': 'http://127.0.0.1:8000',
     },
   },
   build: {

@@ -29,8 +29,12 @@ function outcomeFor(goal, game) {
   const since = Number(goal.since_ms) || 0;
   if (since && created && created <= since) return UNTRACKED;
 
+  const n = Number(value);
   const target = Number(goal.target);
-  const met = goal.comparator === 'under' ? Number(value) < target : Number(value) >= target;
+  let met;
+  if (goal.comparator === 'under') met = n < target;
+  else if (goal.comparator === 'at_most') met = n <= target;
+  else met = n >= target;
   return met ? MET : MISSED;
 }
 

@@ -37,8 +37,8 @@ def _make_records(n: int, *, recent_wins: bool = False) -> list[MatchRecord]:
     return sorted(records, key=lambda record: record.game_creation_ms, reverse=True)
 
 
-def test_default_game_window_key_prefers_100(tmp_path: Path) -> None:
-    """Default window is 100 when enough games exist."""
+def test_default_game_window_key_prefers_50(tmp_path: Path) -> None:
+    """Default window is 50 when enough games exist."""
     assert _default_game_window_key(120) == str(DEFAULT_GAME_WINDOW)
     assert _default_game_window_key(30) == "all"
 
@@ -75,7 +75,7 @@ def test_report_contains_game_window_toggle(tmp_path: Path) -> None:
 
 
 def test_default_window_active_when_enough_games(tmp_path: Path) -> None:
-    """Last 100 is the initial view when at least 100 games exist."""
+    """Last 50 is the initial view when at least 50 games exist."""
     config = _config(tmp_path)
     records = _make_records(120)
     peer = _peer(records)

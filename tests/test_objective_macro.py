@@ -103,6 +103,37 @@ def test_objective_aggregate_rates_account_split_defend() -> None:
     assert rates["objectives_accounted_for_rate"] == 0.667
     assert rates["unproductive_absence_rate"] == 0.333
     assert rates["objectives_split_push_rate"] == 0.333
+    assert rates["objective_trade_success_rate"] == 1.0
+
+
+def test_objective_trade_success_ignores_epic_wins_without_structures() -> None:
+    """Securing dragon with no tower swing is not a sidelane trade."""
+    objectives = [
+        ObjectiveRecord(
+            minute=10.0,
+            kind=ObjectiveKind.DRAGON,
+            taken_by_team=True,
+            present=True,
+            macro_role="present",
+            trade_outcome="won",
+            trade_gain=["dragon"],
+            trade_value_delta=4.0,
+        ),
+        ObjectiveRecord(
+            minute=20.0,
+            kind=ObjectiveKind.BARON,
+            taken_by_team=False,
+            present=False,
+            macro_role="split_pushing",
+            sidelane_pressure=True,
+            trade_outcome="traded_for",
+            trade_gain=["bot_t1"],
+            trade_loss=["baron"],
+            trade_value_delta=2.0,
+        ),
+    ]
+    rates = objective_aggregate_rates(objectives)
+    assert rates["objective_trade_success_rate"] == 1.0
 
 
 def test_split_push_blocked_before_laning_without_tower_fall() -> None:

@@ -45,6 +45,12 @@ def test_count_hits_under_is_strict() -> None:
     assert count_hits(frame, rung) == 2
 
 
+def test_count_hits_at_most_is_inclusive() -> None:
+    rung = Rung(text="", column="solo_deaths", comparator="at_most", target=1.0, need=15)
+    frame = _frame([0.0, 1.0, 2.0], column="solo_deaths")
+    assert count_hits(frame, rung) == 2
+
+
 def test_count_hits_missing_column_is_zero() -> None:
     rung = Rung(text="", column="nope", comparator="at_least", target=1.0, need=15)
     assert count_hits(_frame([1.0]), rung) == 0

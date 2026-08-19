@@ -61,6 +61,7 @@ class CareerSnapshot:
     blocks: list[CareerBlockState] = field(default_factory=list)
     pending_congrats: str = ""
     window: int = WINDOW
+    awaiting_peers: bool = False
 
 
 def advance_career(
@@ -89,6 +90,9 @@ def advance_career(
     _drop_provisional_blocks(store, key, ctx)
     _fill_empty_slots(store, key, ctx, components)
     if not store.load_goals(key):
+        if not ctx.can_seed_blocks():
+            log.info("Career ladder waiting for peer comparison for %s", key)
+            return CareerSnapshot(awaiting_peers=True)
         log.info("No eligible Career tracks for %s yet", key)
         return CareerSnapshot()
 
@@ -102,89 +106,6 @@ def advance_career(
         _measure_live_block(store, key, ctx)
 
     return _snapshot(store, key, ctx)
-
-
-def drop_block(
-    store: CareerStore,
-    key: str,
-    slot: int,
-    ctx: TrackContext,
-    components: Sequence[Any],
-) -> CareerSnapshot:
-    """Discard one block by hand, shift the queue left and generate a replacement.
-
-    Unlike a retire this does not record the track as used and raises no
-    block-complete banner, so a dropped track stays fully eligible. If it is
-    still the best fit for this build it comes straight back, with rungs
-    recomputed against whatever peer data exists now.
-    """
-    log = get_logger("career")
-    if not _slot_goals(store, key, slot):
-        return _snapshot(store, key, ctx)
-
-    dropped = _slot_goals(store, key, slot)[0].track_key
-    store.delete_slot(key, slot)
-    promoted_since = newest_game_ms(ctx.matches_df)
-    for source in range(slot + 1, BLOCK_SLOTS):
-        store.move_slot(key, source, source - 1, since_ms=promoted_since)
-    _fill_empty_slots(store, key, ctx, components)
-    log.info("Career block %s dropped from slot %d for %s", dropped, slot, key)
-
-    _measure_live_block(store, key, ctx)
-    return _snapshot(store, key, ctx)
-
-
-def _drop_orphaned_blocks(store: CareerStore, key: str) -> None:
-    """Discard blocks whose track no longer exists in the pool.
-
-    A track removed from ``TRACK_SPECS`` between releases leaves goals on disk
-    that nothing can regenerate or retarget: :func:`_rungs_for` returns None for
-    it, and if its column went away with it the block can never clear either, so
-    it would hold its slot forever. Dropping it frees the slot for a live track.
-
-    It is not recorded as used -- it is not in the pool to recycle.
-    """
-    orphaned = sorted(
-        {goal.slot for goal in store.load_goals(key) if goal.track_key not in TRACKS_BY_KEY}
-    )
-    if not orphaned:
-        return
-    log = get_logger("career")
-    for slot in orphaned:
-        log.info("Dropping Career slot %d for %s: track left the pool", slot, key)
-        store.delete_slot(key, slot)
-
-
-def _drop_provisional_blocks(store: CareerStore, key: str, ctx: TrackContext) -> None:
-    """Discard blocks frozen before peer percentiles existed, if unstarted.
-
-    Stage A of the web pipeline renders with ``peer_comparison=None``, so a
-    ladder seeded then stepped toward the player's own p75 and its track order
-    never saw the peer significance signals. Deleting those slots here lets
-    :func:`_fill_empty_slots` rebuild them against peers on the same run.
-
-    A block the player has already made progress on is left alone: rung targets
-    must never move under someone closing in on them.
-    """
-    if not ctx.peer_p75:
-        return
-    stale = sorted(
-        {
-            goal.slot
-            for goal in store.load_goals(key)
-            if not goal.peer_seeded and not _slot_started(store, key, goal.slot, ctx)
-        }
-    )
-    for slot in stale:
-        store.delete_slot(key, slot)
-
-
-def _slot_started(store: CareerStore, key: str, slot: int, ctx: TrackContext) -> bool:
-    """Whether any goal in a slot has banked a game or left its opening state."""
-    return any(
-        goal.state != "In progress" or _goal_hits(goal, ctx) > 0
-        for goal in _slot_goals(store, key, slot)
-    )
 
 
 def drop_block(
@@ -279,10 +200,13 @@ def _fill_empty_slots(
 ) -> None:
     """Top the ladder back up to a full set of blocks.
 
-    Runs every report, not just the first: a build whose peer comparison had not
-    landed yet, or whose pool was briefly thin, would otherwise stay short
-    forever.
+    New blocks wait for peer percentiles. Stage A of the web pipeline renders
+    with ``peer_comparison=None``; seeding then would freeze own-p75 rungs and
+    a track order that never saw rank significance. Existing blocks are still
+    measured so a live ladder does not stall while peers catch up.
     """
+    if not ctx.can_seed_blocks():
+        return
     goals = store.load_goals(key)
     taken = {goal.track_key for goal in goals}
     empty = [slot for slot in range(BLOCK_SLOTS) if not any(g.slot == slot for g in goals)]

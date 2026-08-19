@@ -1,4 +1,5 @@
 import { tick } from 'svelte';
+import { writable } from 'svelte/store';
 
 /** Map section element ids to report category tab values. */
 const SECTION_CATEGORIES = {
@@ -48,14 +49,37 @@ export function handleNavClick(reportNav, anchor) {
 }
 
 export function createReportNav(selectCategory) {
+  const highlightId = writable(null);
+  let highlightTimer = null;
+
+  async function setHighlight(sectionId) {
+    if (highlightTimer) {
+      clearTimeout(highlightTimer);
+      highlightTimer = null;
+    }
+    if (!sectionId || !sectionId.startsWith('coaching-tip-')) {
+      highlightId.set(null);
+      return;
+    }
+    highlightId.set(null);
+    await tick();
+    highlightId.set(sectionId);
+    highlightTimer = setTimeout(() => {
+      highlightId.update((current) => (current === sectionId ? null : current));
+      highlightTimer = null;
+    }, 6000);
+  }
+
   return {
+    highlightId,
     async scrollToSection(sectionId) {
       const category = categoryForSection(sectionId);
       if (category) selectCategory(category);
+      await setHighlight(sectionId);
       await tick();
       const el = document.getElementById(sectionId);
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     },
   };

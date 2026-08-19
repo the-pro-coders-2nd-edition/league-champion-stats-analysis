@@ -40,6 +40,7 @@ from league_stats.analysis.career.steps import (
     CATEGORY_VISION,
     rank_steps,
     steps_for_category,
+    at_most_line,
 )
 from league_stats.analysis.career.window import player_mean, player_median, player_quantile
 from league_stats.analysis.coach.engine import MIN_OBJECTIVE_PRESENCE
@@ -95,6 +96,16 @@ class TrackContext:
     objectives_df: pd.DataFrame
     role: str
     peer_p75: dict[str, float] = field(default_factory=dict)
+    peers_ready: bool = False
+
+    def can_seed_blocks(self) -> bool:
+        """Whether new blocks may be frozen.
+
+        The web pipeline sets ``peers_ready`` once stage B has a comparison
+        object, even if that object has no p75 numbers yet. Unit tests that
+        pass a ``peer_p75`` map are treated as ready without the flag.
+        """
+        return self.peers_ready or bool(self.peer_p75)
 
 
 # Category tuples cover every role profile's naming: laners use "Laning",
@@ -493,25 +504,26 @@ def _death_discipline(ctx: TrackContext) -> tuple[Rung, ...] | None:
     avg = player_mean(ctx.matches_df, "deaths_pre20")
     if avg is None:
         return None
-    first = max(1, round(avg) - 1)
-    second = max(1, first - 1)
-    if first == second:
+    first = math.floor(avg - 1.0)
+    second = math.floor(avg - 2.0)
+    if first < 0 or second < 0:
         return None
     if "deaths_before_neutral_objective" not in ctx.matches_df.columns:
         return None
+    pre20 = "{target} or fewer deaths before 20 min in 15 of 20 games"
     return (
         Rung(
-            text=f"Under {first} deaths before 20 min in 15 of 20 games",
+            text=at_most_line(pre20, first),
             column="deaths_pre20",
-            comparator="under",
+            comparator="at_most",
             target=float(first),
             need=CLEAR_BAR,
             why=WHY_BY_COLUMN.get("deaths_pre20", ""),
         ),
         Rung(
-            text=f"Under {second} deaths before 20 min in 15 of 20 games",
+            text=at_most_line(pre20, second),
             column="deaths_pre20",
-            comparator="under",
+            comparator="at_most",
             target=float(second),
             need=CLEAR_BAR,
             why=WHY_BY_COLUMN.get("deaths_pre20", ""),

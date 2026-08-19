@@ -112,6 +112,7 @@ def test_state_class_slugifies() -> None:
 def test_empty_view_still_carries_rules_and_legend() -> None:
     empty = empty_career_view()
     assert empty["has_career"] is False
+    assert empty["awaiting_peers"] is False
     assert empty["blocks"] == []
     assert empty["widget"] == []
     assert empty["congrats"] is None
@@ -240,4 +241,12 @@ def test_congrats_banner_names_the_retired_and_next_block(tmp_path: Path) -> Non
 
 
 def test_no_blocks_falls_back_to_the_empty_view() -> None:
-    assert build_career_view(CareerSnapshot())["has_career"] is False
+    empty = build_career_view(CareerSnapshot())
+    assert empty["has_career"] is False
+    assert empty["awaiting_peers"] is False
+
+
+def test_waiting_for_peers_is_not_the_play_more_games_empty_state() -> None:
+    view = build_career_view(CareerSnapshot(awaiting_peers=True))
+    assert view["has_career"] is False
+    assert view["awaiting_peers"] is True

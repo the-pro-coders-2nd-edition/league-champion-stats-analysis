@@ -1,10 +1,9 @@
 """Blocks frozen before peer percentiles landed, and dropping a block by hand.
 
 Stage A of the web pipeline renders every report with ``peer_comparison=None``
-(``worker.py:262``), so a ladder seeded then steps toward the player's own p75
-and its track order never saw the peer significance signals. Stage B re-renders
-with peers, but ``_fill_empty_slots`` returns early once every slot is taken.
-These tests pin the retarget that closes that window, and the manual drop.
+(``worker.py:262``). New Career blocks wait until stage B has peer percentiles,
+so the ladder is never frozen against the player's own p75. These tests pin
+that wait, the retarget of any leftover unseeded blocks, and the manual drop.
 """
 
 from __future__ import annotations
@@ -114,14 +113,16 @@ def _ladder(store: CareerStore) -> list[tuple[int, str, float]]:
     ]
 
 
-def test_stage_a_ladder_is_retargeted_once_peers_land(store: CareerStore) -> None:
+def test_stage_a_does_not_seed_a_ladder_before_peers_land(store: CareerStore) -> None:
     matches = _matches()
-    advance_career(store, KEY, _ctx(matches, {}), WEAK_LANING)
-    seeded_blind = _ladder(store)
+    snapshot = advance_career(store, KEY, _ctx(matches, {}), WEAK_LANING)
+
+    assert snapshot.blocks == []
+    assert snapshot.awaiting_peers is True
+    assert store.load_goals(KEY) == []
 
     advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)
 
-    assert _ladder(store) != seeded_blind
     live = [row for row in _ladder(store) if row[0] == 0]
     assert {row[1] for row in live} == {"laning"}
     # cspm's anchor is 6.0 (constant across every game) and the peer p75 of 6.3
@@ -130,7 +131,7 @@ def test_stage_a_ladder_is_retargeted_once_peers_land(store: CareerStore) -> Non
     assert 6.3 in [row[2] for row in live]
 
 
-def test_retargeted_ladder_matches_one_seeded_with_peers_from_the_start(
+def test_a_blind_then_peer_run_matches_a_ladder_seeded_with_peers(
     store: CareerStore, tmp_path: Path
 ) -> None:
     matches = _matches()
@@ -143,10 +144,21 @@ def test_retargeted_ladder_matches_one_seeded_with_peers_from_the_start(
 
 
 def test_retarget_leaves_a_block_the_player_has_already_started(store: CareerStore) -> None:
-    """Progress is the line: a started block keeps its frozen targets."""
-    advance_career(store, KEY, _ctx(_matches(), {}), WEAK_LANING)
+    """Progress is the line: a started provisional block keeps its frozen targets."""
+    matches = _matches()
+    advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)
+    live = [goal for goal in store.load_goals(KEY) if goal.slot == 0]
+    store.write_slot(
+        KEY,
+        0,
+        live[0].track_key,
+        [goal.rung for goal in live],
+        ["In progress"] * len(live),
+        since_ms=0,
+        peer_seeded=False,
+    )
     started = _ladder(store)
-    first = [goal for goal in store.load_goals(KEY) if goal.slot == 0][0].rung
+    first = live[0].rung
 
     # Twenty more games that bank progress on whichever goal went live.
     later = _matches(games=40)
@@ -188,24 +200,21 @@ def _retire_the_live_block(store: CareerStore) -> pd.DataFrame:
     return cleared
 
 
-def test_replacement_block_seeded_after_a_blind_retire_is_flagged_provisional(
-    store: CareerStore,
-) -> None:
+def test_blind_retire_does_not_fill_a_provisional_replacement(store: CareerStore) -> None:
     _retire_the_live_block(store)
 
-    replacement = max(goal.slot for goal in store.load_goals(KEY))
-    assert not any(
-        goal.peer_seeded for goal in store.load_goals(KEY) if goal.slot == replacement
-    )
+    assert {goal.slot for goal in store.load_goals(KEY)} == {0}
+    assert all(goal.peer_seeded for goal in store.load_goals(KEY))
 
 
-def test_replacement_block_is_retargeted_on_the_next_run_with_peers(
+def test_replacement_block_is_filled_on_the_next_run_with_peers(
     store: CareerStore,
 ) -> None:
     cleared = _retire_the_live_block(store)
 
     advance_career(store, KEY, _ctx(cleared, PEERS), WEAK_LANING)
 
+    assert {goal.slot for goal in store.load_goals(KEY)} == set(range(BLOCK_SLOTS))
     assert all(goal.peer_seeded for goal in store.load_goals(KEY))
 
 
@@ -267,10 +276,10 @@ def test_dropping_an_empty_slot_is_a_no_op(store: CareerStore) -> None:
     assert _ladder(store) == before
 
 
-def test_goals_written_without_peers_are_flagged_unseeded(store: CareerStore) -> None:
+def test_goals_are_not_written_until_peers_land(store: CareerStore) -> None:
     advance_career(store, KEY, _ctx(_matches(), {}), WEAK_LANING)
 
-    assert all(not goal.peer_seeded for goal in store.load_goals(KEY))
+    assert store.load_goals(KEY) == []
 
 
 def test_since_ms_migration_keeps_older_rows_unseeded(tmp_path: Path) -> None:
@@ -423,8 +432,9 @@ def test_requested_drop_survives_the_two_stage_regenerate(store: CareerStore) ->
     """The drop lands in stage A (peer-blind); stage B retargets the replacement.
 
     A regenerate job runs advance_career twice: worker.py:262 without peers, then
-    worker.py:312 with them. The drop must be performed exactly once, and the
-    block generated to replace it must not keep stage A's own-p75 rungs.
+    worker.py:312 with them. The drop must be performed exactly once. Stage A
+    must not freeze a replacement against own-p75; stage B fills the hole with
+    peer-seeded rungs.
     """
     matches = _matches()
     advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)

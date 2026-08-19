@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Final, Literal
 
 GoalState = Literal["Locked", "In progress", "At risk", "Cleared", "Revoked"]
-Comparator = Literal["at_least", "under"]
+Comparator = Literal["at_least", "under", "at_most"]
 
 GOAL_STATES: Final[tuple[str, ...]] = (
     "Locked",

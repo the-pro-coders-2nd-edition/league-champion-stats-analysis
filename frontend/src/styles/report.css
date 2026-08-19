@@ -155,8 +155,31 @@ section { margin-bottom: 64px; scroll-margin-top: var(--report-sticky-offset); }
 h2 { font-size: 17px; margin-bottom: 6px; }
 .report-page-title { font-size: 30px; font-weight: 700; line-height: 1.15; margin: 0; }
 .report-player-name { color: var(--color-neutral-400); font-size: 14px; margin-top: 4px; }
-.report-players {
-  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;
+.accounts-panel--hero {
+  margin-top: 4px;
+  background: var(--color-surface-2);
+  box-shadow: none;
+  border: 1px solid var(--color-divider);
+  border-radius: 10px;
+}
+.accounts-panel--hero .accounts-panel-head {
+  padding: 8px 12px 6px;
+}
+.accounts-panel--hero .accounts-panel-row {
+  grid-template-columns: 20px minmax(0, 1fr) minmax(88px, auto) 52px 40px;
+  gap: 8px;
+  padding: 5px 12px;
+}
+.accounts-panel--hero .accounts-panel-icon { width: 20px; height: 20px; }
+.accounts-panel--hero .accounts-panel-name { font-size: 12px; }
+.accounts-panel--hero .accounts-panel-rank,
+.accounts-panel--hero .accounts-panel-lp,
+.accounts-panel--hero .accounts-panel-region { font-size: 11px; }
+.accounts-panel-rank {
+  display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px;
+}
+.accounts-panel-rank-icon {
+  width: 22px; height: 22px; object-fit: contain; flex: none;
 }
 h3 { font-size: 15px; margin: 24px 0 12px; color: var(--color-neutral-400); }
 .sub { color: var(--color-neutral-400); margin-bottom: 20px; }
@@ -225,7 +248,7 @@ h3 { font-size: 15px; margin: 24px 0 12px; color: var(--color-neutral-400); }
 }
 .accounts-panel-icon { width: 26px; height: 26px; border-radius: var(--radius-sm); object-fit: cover; }
 .accounts-panel-icon--placeholder { background: var(--color-neutral-800); display: block; }
-.accounts-panel-name { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; min-width: 0; }
+.accounts-panel-name { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .accounts-panel-rank, .accounts-panel-lp, .accounts-panel-region { text-align: right; font-size: 12px; color: var(--color-neutral-400); }
 .hero-score-panel {
   display: flex; flex-direction: column; align-items: stretch; gap: 8px;
@@ -306,9 +329,9 @@ h3 { font-size: 15px; margin: 24px 0 12px; color: var(--color-neutral-400); }
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 14px 0; border-radius: 10px; }
 .table-scroll table { margin: 0; min-width: 640px; }
 .rec-evidence-rows { margin-top: var(--space-2); display: grid; gap: var(--space-1); }
-.rec-evidence-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: var(--space-3); font-size: 11px; }
-.rec-evidence-key { color: var(--color-neutral-600); }
-.rec-evidence-value { color: var(--color-neutral-400); font-variant-numeric: tabular-nums; }
+.rec-evidence-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: var(--space-3); font-size: 11px; line-height: 1.45; margin: 0; }
+.rec-evidence-key { color: var(--color-neutral-600); margin: 0; font-weight: 600; }
+.rec-evidence-value { color: var(--color-neutral-400); font-variant-numeric: tabular-nums; margin: 0; }
 .peer-highlight-list { margin-top: 8px; padding-left: 18px; color: var(--color-neutral-400); }
 .peer-stage-rank { min-width: 0; }
 .peer-rank-value {
@@ -459,6 +482,14 @@ tr:last-child td { border-bottom: none; }
   border-bottom: 5px solid currentColor;
 }
 .rec { background: var(--color-surface); box-shadow: var(--shadow-sm); border-radius: var(--radius-md); padding: var(--space-6); margin: 12px 0; }
+.rec.is-highlighted {
+  outline: 2px solid var(--color-accent);
+  animation: rec-highlight-fade 6s linear forwards;
+}
+@keyframes rec-highlight-fade {
+  from { outline-color: var(--color-accent); }
+  to { outline-color: transparent; }
+}
 .rec-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 24px; align-items: start; }
 .rec-column h3 {
   margin: 0 0 12px; text-transform: uppercase; letter-spacing: .06em;

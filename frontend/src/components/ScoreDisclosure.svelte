@@ -6,9 +6,7 @@
   export let score;
   export let hint = '';
   export let ingredients = [];
-
-  // Own `open` state per instance -- fixes the bug where every dimension shared one flag.
-  let open = false;
+  export let open = false;
 
   $: pct = Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
   $: hasIngredients = (ingredients || []).length > 0;

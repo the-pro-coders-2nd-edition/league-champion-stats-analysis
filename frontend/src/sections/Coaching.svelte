@@ -1,12 +1,20 @@
 <script>
+  import { getContext } from 'svelte';
   import RecCard from '../components/RecCard.svelte';
   import SectionHeader from '../components/SectionHeader.svelte';
   import ShowMore from '../components/ShowMore.svelte';
+  import { REPORT_NAV_KEY } from '../lib/reportNav.js';
+  import { readable } from 'svelte/store';
 
   export let data;
 
+  const reportNav = getContext(REPORT_NAV_KEY);
+  const highlightId = reportNav?.highlightId ?? readable(null);
+
   let showAllPositive = false;
   let showAllNegative = false;
+
+  $: currentHighlight = $highlightId;
 
   $: positive = data.positive_recommendations || [];
   $: negative = data.negative_recommendations || [];
@@ -19,6 +27,13 @@
 
   $: positiveMoreLabel = `Show ${positiveMore.length} more strength${positiveMore.length !== 1 ? 's' : ''}`;
   $: negativeMoreLabel = `Show ${negativeMore.length} more area${negativeMore.length !== 1 ? 's' : ''} to improve`;
+
+  $: if (currentHighlight && positiveMore.some((rec) => rec.anchor === currentHighlight)) {
+    showAllPositive = true;
+  }
+  $: if (currentHighlight && negativeMore.some((rec) => rec.anchor === currentHighlight)) {
+    showAllNegative = true;
+  }
 </script>
 
 <section id="coaching" class="report-section report-section--summary">
@@ -33,12 +48,12 @@
       <h3>Keep doing</h3>
       {#if positive.length}
         {#each positiveVisible as rec (rec.anchor || rec.title)}
-          <RecCard {rec} />
+          <RecCard {rec} highlighted={rec.anchor === currentHighlight} />
         {/each}
         {#if positiveMore.length}
           <ShowMore bind:open={showAllPositive} triggerClass="rec-extend" label={positiveMoreLabel} openLabel="Show less" id="rec-more-positive">
             {#each positiveMore as rec (rec.anchor || rec.title)}
-              <RecCard {rec} />
+              <RecCard {rec} highlighted={rec.anchor === currentHighlight} />
             {/each}
           </ShowMore>
         {/if}
@@ -50,12 +65,12 @@
       <h3>Work on</h3>
       {#if negative.length}
         {#each negativeVisible as rec (rec.anchor || rec.title)}
-          <RecCard {rec} />
+          <RecCard {rec} highlighted={rec.anchor === currentHighlight} />
         {/each}
         {#if negativeMore.length}
           <ShowMore bind:open={showAllNegative} triggerClass="rec-extend" label={negativeMoreLabel} openLabel="Show less" id="rec-more-negative">
             {#each negativeMore as rec (rec.anchor || rec.title)}
-              <RecCard {rec} />
+              <RecCard {rec} highlighted={rec.anchor === currentHighlight} />
             {/each}
           </ShowMore>
         {/if}

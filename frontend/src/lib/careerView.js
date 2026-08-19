@@ -6,6 +6,7 @@
 
 const EMPTY = {
   has_career: false,
+  awaiting_peers: false,
   blocks: [],
   widget: [],
   rules: [],
