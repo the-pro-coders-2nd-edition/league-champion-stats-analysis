@@ -46,7 +46,7 @@ CATEGORY_ECONOMY: Final[str] = "economy"
 CATEGORY_UTILITY: Final[str] = "utility"
 
 # How far past the anchor a single block may ask a player to go.
-MAX_STEP_STRETCH: Final[float] = 0.15
+MAX_STEP_STRETCH: Final[float] = 0.175
 
 # Where a target is anchored, as a quantile of the baseline games.
 #
@@ -58,8 +58,10 @@ MAX_STEP_STRETCH: Final[float] = 0.15
 # 20 games while they were hitting 60% in 2 of their last 10.
 #
 # Anchoring low means the anchor is a level the player already reaches in most
-# games, so the stretch is the only thing being asked for.
-ANCHOR_QUANTILE: Final[float] = 0.35
+# games, so the stretch is the only thing being asked for. Still below the
+# median -- comfortably inside "most games" -- so headroom bumps stay coherent
+# with that reasoning.
+ANCHOR_QUANTILE: Final[float] = 0.45
 
 # Games the anchor is computed over. Deliberately wider than the 20-game
 # measurement window: a percentile taken from 20 games swings hard on one bad run,

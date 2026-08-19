@@ -1,10 +1,11 @@
 """The Career rules panel must describe the engine that is actually running.
 
 The panel drifted: it still said targets came from "your p50 toward peer p75" long
-after they moved to the P35-of-100-games anchor, claimed every goal asks 15 of 20
+after they moved to a percentile-anchored target, claimed every goal asks 15 of 20
 when the setup-window goal asks 12, and said "all three goals" when a block ships
 fewer if the match history is thin. These tests derive every number from the
-constants, so the copy cannot fall behind the code again.
+constants, so the copy cannot fall behind the code again -- including the anchor
+and stretch themselves, which have already moved once (P35+15% to P45+17.5%).
 """
 
 from __future__ import annotations
@@ -67,11 +68,12 @@ def test_the_hold_bar_states_the_ratio_and_the_derived_count() -> None:
 
 
 def test_the_target_rule_names_the_anchor_the_baseline_and_the_stretch() -> None:
+    """``:g`` formatting, not ``int()``: a 17.5% stretch must not truncate to 17%."""
     text = _text("Target")
 
-    assert f"P{int(ANCHOR_QUANTILE * 100)}" in text
+    assert f"P{ANCHOR_QUANTILE * 100:g}" in text
     assert str(BASELINE_GAMES) in text
-    assert f"{int(MAX_STEP_STRETCH * 100)}%" in text
+    assert f"{MAX_STEP_STRETCH * 100:g}%" in text
 
 
 def test_the_target_rule_no_longer_claims_the_retired_median_anchor() -> None:

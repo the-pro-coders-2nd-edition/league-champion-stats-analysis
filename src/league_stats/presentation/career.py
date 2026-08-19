@@ -21,12 +21,21 @@ from league_stats.analysis.career.steps import (
 from league_stats.analysis.career.tracks import track_spec
 from league_stats.presentation.tones import career_count, career_node
 
+def _pct(fraction: float) -> str:
+    """Format a fraction as a percent, keeping a decimal only when there is one.
+
+    ``int()`` truncates instead of rounding, so a 17.5% stretch silently rendered
+    as "17%" the first time this stopped being a whole number.
+    """
+    return f"{fraction * 100:g}"
+
+
 # Every number here is derived from the constants that actually drive the engine.
 # This panel drifted badly once -- it still described a median-anchored target long
 # after that changed -- and tests/test_career_rules_copy.py now pins it.
-_ANCHOR_PCT: Final[int] = int(ANCHOR_QUANTILE * 100)
-_MIRROR_PCT: Final[int] = int((1 - ANCHOR_QUANTILE) * 100)
-_STRETCH_PCT: Final[int] = int(MAX_STEP_STRETCH * 100)
+_ANCHOR_PCT: Final[str] = _pct(ANCHOR_QUANTILE)
+_MIRROR_PCT: Final[str] = _pct(1 - ANCHOR_QUANTILE)
+_STRETCH_PCT: Final[str] = _pct(MAX_STEP_STRETCH)
 
 CAREER_RULES: Final[tuple[dict[str, str], ...]] = (
     {

@@ -24,9 +24,9 @@ KEY = build_key("p", "Thresh", "UTILITY")
 HOUR = 3_600_000
 
 # Peers are well ahead on cspm and vspm; the player is flat, so their own p75
-# equals their p50 and every peer-driven track loses its ceiling without peers.
-# Deliberately just under the +20% stretch cap on this player's medians: peer p75
-# only moves a target when it sits *below* p50 x (1 + MAX_STEP_STRETCH), otherwise
+# equals their anchor and every peer-driven track loses its ceiling without peers.
+# Deliberately just under the +17.5% stretch cap on this player's anchor: peer p75
+# only moves a target when it sits *below* anchor x (1 + MAX_STEP_STRETCH), otherwise
 # the cap decides and a peer-seeded rung is numerically identical to a blind one.
 PEERS = {"cspm": 6.3, "vspm": 0.76, "damage_share": 0.26}
 
@@ -124,8 +124,9 @@ def test_stage_a_ladder_is_retargeted_once_peers_land(store: CareerStore) -> Non
     assert _ladder(store) != seeded_blind
     live = [row for row in _ladder(store) if row[0] == 0]
     assert {row[1] for row in live} == {"laning"}
-    # cspm p50 is 6.0 and the peer p75 of 6.3 sits under the +20% stretch cap of
-    # 7.2, so the peer number is what a retargeted rung actually lands on.
+    # cspm's anchor is 6.0 (constant across every game) and the peer p75 of 6.3
+    # sits under the +17.5% stretch cap of 7.05, so the peer number is what a
+    # retargeted rung actually lands on.
     assert 6.3 in [row[2] for row in live]
 
 
