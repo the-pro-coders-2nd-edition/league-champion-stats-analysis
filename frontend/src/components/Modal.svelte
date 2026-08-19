@@ -93,6 +93,13 @@
     font-size: 14px;
     cursor: pointer;
   }
+  /* iconify-icon renders an inline SVG with its own baseline offset, which
+     visibly de-centers it inside a circular button even under place-items:
+     center. block display removes that baseline, same fix as
+     .report-refresh-btn and .chatbot-toggle. */
+  .modal-close iconify-icon {
+    display: block;
+  }
   .modal-close:hover {
     color: var(--color-text);
     border-color: var(--color-accent);
