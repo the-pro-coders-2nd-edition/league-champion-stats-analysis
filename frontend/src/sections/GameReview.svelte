@@ -485,10 +485,10 @@
               {:else}
                 <div class="game-review-verdict-grid">
                   {#each fixItems as item}
-                    <Callout tone="bad" label="Fix" title={item.title} body={item.detail} />
+                    <Callout tone="bad" edge label="Fix" title={item.title} body={item.detail} />
                   {/each}
                   {#each keep as item}
-                    <Callout tone="good" label="Keep" title={item.title} body={item.detail} />
+                    <Callout tone="good" edge label="Keep" title={item.title} body={item.detail} />
                   {/each}
                 </div>
               {/if}

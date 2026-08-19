@@ -926,10 +926,14 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
 
 .game-review-scoreboard { margin-bottom: 0; }
 
-/* Game review score strips — quiet scan list; color only on the bar */
+/* Game review score strips — quiet scan list; color only on the bar.
+   Always exactly 3 columns: the 6 score dimensions are a fixed set (same
+   categories as the report-wide score breakdown), so a deterministic
+   repeat(3, ...) keeps this grid in visual lockstep with .score-set instead
+   of auto-fill silently picking 4 or 5 columns depending on width. */
 .gr-score-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 14px;
 }
