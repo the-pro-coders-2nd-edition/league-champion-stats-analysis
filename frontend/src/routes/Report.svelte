@@ -13,6 +13,7 @@
     sendChatMessage,
   } from '../lib/api.js';
   import { createReportState } from '../lib/reportState.js';
+  import { getCachedBuild, setCachedBuild } from '../lib/buildCache.js';
   import { createPoller } from '../lib/poller.js';
   import SegmentedControl from '../components/SegmentedControl.svelte';
   import AccountFilter from '../sections/AccountFilter.svelte';
@@ -58,6 +59,10 @@
     const prevWindow = report ? get(report.gameWindow) : null;
     const prevAccount = report ? get(report.accountKey) : null;
     const result = await fetchBuild(params.slug, params.buildSlug);
+    // This runs when a background poll detects the report was regenerated -- the cached
+    // entry for this exact build must be refreshed too, or switching away and back would
+    // show the stale pre-regeneration data instead of what just landed.
+    setCachedBuild(`${params.slug}/${params.buildSlug}`, result);
     payload = result;
     report = createReportState(payload, {
       fetchAccountViews: (accounts) => fetchAccountViews(params.slug, params.buildSlug, accounts),
@@ -213,20 +218,31 @@
     const key = `${params.slug}/${params.buildSlug}`;
     if (key !== loadedKey) {
       loadedKey = key;
-      switchingBuild = true;
       resetStatusPollState();
-      fetchBuild(params.slug, params.buildSlug)
-        .then((result) => {
-          payload = result;
-          report = createReportState(payload, {
-            fetchAccountViews: (accounts) => fetchAccountViews(params.slug, params.buildSlug, accounts),
-          });
-          if (payload.status_endpoint) {
-            startStatusPoll();
-          }
-        })
-        .catch((err) => { error = err; })
-        .finally(() => { switchingBuild = false; });
+      const applyPayload = (result) => {
+        payload = result;
+        report = createReportState(payload, {
+          fetchAccountViews: (accounts) => fetchAccountViews(params.slug, params.buildSlug, accounts),
+        });
+        if (payload.status_endpoint) {
+          startStatusPoll();
+        }
+      };
+      // A build already visited this session is served from the in-memory cache --
+      // instant, no skeleton, no re-paying the fetch cost for something already had.
+      const cached = getCachedBuild(key);
+      if (cached) {
+        applyPayload(cached);
+      } else {
+        switchingBuild = true;
+        fetchBuild(params.slug, params.buildSlug)
+          .then((result) => {
+            setCachedBuild(key, result);
+            applyPayload(result);
+          })
+          .catch((err) => { error = err; })
+          .finally(() => { switchingBuild = false; });
+      }
     }
   }
 
