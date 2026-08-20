@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1fleague_stats_rpc/v1/peers.proto\x12\x13league_stats_rpc.v1\"F\n\x16RequestBaselineRequest\x12\x10\n\x08\x63hampion\x18\x01 \x01(\t\x12\x0c\n\x04lane\x18\x02 \x01(\t\x12\x0c\n\x04rank\x18\x03 \x01(\t\"c\n\x17RequestBaselineResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x0e\n\x06\x63\x61\x63hed\x18\x02 \x01(\x08\x12\x15\n\rbaseline_json\x18\x03 \x01(\t\x12\r\n\x05\x65rror\x18\x04 \x01(\t2|\n\x0cPeersService\x12l\n\x0fRequestBaseline\x12+.league_stats_rpc.v1.RequestBaselineRequest\x1a,.league_stats_rpc.v1.RequestBaselineResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1fleague_stats_rpc/v1/peers.proto\x12\x13league_stats_rpc.v1\"o\n\x16RequestBaselineRequest\x12\x10\n\x08\x63hampion\x18\x01 \x01(\t\x12\x0c\n\x04lane\x18\x02 \x01(\t\x12\x0c\n\x04rank\x18\x03 \x01(\t\x12\x10\n\x08platform\x18\x04 \x01(\t\x12\x15\n\rexclude_puuid\x18\x05 \x01(\t\"c\n\x17RequestBaselineResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x0e\n\x06\x63\x61\x63hed\x18\x02 \x01(\x08\x12\x15\n\rbaseline_json\x18\x03 \x01(\t\x12\r\n\x05\x65rror\x18\x04 \x01(\t2|\n\x0cPeersService\x12l\n\x0fRequestBaseline\x12+.league_stats_rpc.v1.RequestBaselineRequest\x1a,.league_stats_rpc.v1.RequestBaselineResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,9 +32,9 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'league_stats_rpc.v1.peers_p
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
   _globals['_REQUESTBASELINEREQUEST']._serialized_start=56
-  _globals['_REQUESTBASELINEREQUEST']._serialized_end=126
-  _globals['_REQUESTBASELINERESPONSE']._serialized_start=128
-  _globals['_REQUESTBASELINERESPONSE']._serialized_end=227
-  _globals['_PEERSSERVICE']._serialized_start=229
-  _globals['_PEERSSERVICE']._serialized_end=353
+  _globals['_REQUESTBASELINEREQUEST']._serialized_end=167
+  _globals['_REQUESTBASELINERESPONSE']._serialized_start=169
+  _globals['_REQUESTBASELINERESPONSE']._serialized_end=268
+  _globals['_PEERSSERVICE']._serialized_start=270
+  _globals['_PEERSSERVICE']._serialized_end=394
 # @@protoc_insertion_point(module_scope)

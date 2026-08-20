@@ -61,10 +61,11 @@ phase for RUNNER, currently unwired into any production code path (see
 `iter_match_ids(puuid)`-scoped method either (only the unscoped
 `iter_all_match_ids()`), so wiring it in would not fully close this gap
 either, and would add a second Mongo dependency to PEERS beyond what this
-task's brief scopes (`PeerSampleStore` only). Deciding whether to wire
-`RawMatchStore` in (and giving it the missing per-owner method) is left to
-the controller -- see the Task 2 report for the explicit
-DONE_WITH_CONCERNS writeup.
+task's brief scopes (`PeerSampleStore` only). Review round 1 confirmed the
+no-op adapter approach below is the right call for now (see
+`test_resolve_peer_baseline_via_live_sampling_survives_the_noop_store_methods`
+for direct proof the real fallback ladder survives it) -- wiring `RawMatchStore`
+in remains a deliberate follow-up for the controller, not decided here.
 
 `_PeerStoreAdapter` below therefore delegates the six real methods to a real
 `PeerSampleStore`, and implements `iter_match_ids`/`load_match`/`save_match`
@@ -78,6 +79,59 @@ peer row for real, into the real `PeerSampleStore` -- only the raw match
 JSON caching is skipped). This means live sampling can re-download the same
 match from Riot more than once across separate requests instead of hitting
 a local cache -- a real, known inefficiency, not a correctness bug.
+
+Platform routing (review round 1, fix 1)
+-----------------------------------------
+`RequestBaselineRequest` originally had no `platform`/`exclude_puuid` fields.
+Without a `platform` field, `_build_default_riot_client` fell back to
+`AppConfig.routing_platform`'s silent default (`euw1`) whenever
+`PEERS_PLATFORM` was unset -- a KR/NA request would silently get EUW peer
+rows (or an empty store) with no error. The proto now carries both fields
+(it had zero existing callers, so this was a free additive change).
+`RequestBaseline` uses `request.platform` when present, falling back to
+`PEERS_PLATFORM`, then to the shared `RiotApiClient`'s own configured
+platform, in that order. Since `RiotApiClient.platform` has no public setter
+(and `infra/riot_api.py` is out of this task's scope to modify), per-request
+platform routing is done via `_PlatformScopedRiotClient`, a thin wrapper that
+overrides `.platform`/`.platform_base` (the two attributes
+`fetch_league_entries_pages`/`fetch_solo_rank`/`collect_peer_games_from_store`'s
+platform filter actually read) and delegates everything else unchanged to the
+shared client -- multiple concurrent requests for different platforms can
+safely share one underlying `RiotApiClient` (and its rate limiter) this way.
+
+`request.exclude_puuid` is passed straight through to
+`resolve_peer_baseline`'s `exclude_puuid` keyword.
+
+Concurrency (review round 1, fix 2)
+------------------------------------
+Two problems existed: (a) executor saturation -- a live sample can issue up
+to `MAX_MATCH_DOWNLOADS` (400) rate-limited HTTP calls, taking minutes, while
+the fast-path timeout is a few seconds; a request queued behind several such
+samples would silently time out with no signal that it never even started
+running; (b) no dedup -- two identical in-flight `(champion, role, platform,
+tier)` requests each launched an independent, redundant live sample.
+
+Fixed by `_get_or_submit`: in-flight resolutions are tracked in
+`self._inflight`, keyed on `(champion, role, platform, tier)` (division is
+excluded from the key because `RankScope` -- see
+`analysis/peer/rank_scope.py` -- only ever matches on tier, never division,
+so two requests differing only by division would resolve identically; this
+does mean two callers with different `exclude_puuid` values deduped onto the
+same in-flight resolution share one result that only excludes the *first*
+caller's puuid -- a known, accepted simplification matching the review's
+specified dedup key). A second caller for the same key attaches its own
+`request_id`/callback to the *same* `Future` instead of submitting a new one.
+
+For observability, each in-flight resolution tracks a `threading.Event` that
+is set only once a worker thread actually starts running it (not merely
+submitted to the executor's queue). When `RequestBaseline`'s fast-path wait
+times out, it logs -- and increments `PEERS_FAST_PATH_TIMEOUTS_TOTAL`, labeled
+`started="true"/"false"` -- whether the resolution was genuinely running
+(almost certainly live sampling) or still queued behind other in-flight work
+(saturated executor), instead of returning an opaque `cached=False` with no
+way to tell the two apart. `PEERS_INFLIGHT_BASELINES` gauges current
+concurrency. `PEERS_MAX_CONCURRENT_BASELINES` (env var, default 4) bounds the
+executor.
 """
 
 from __future__ import annotations
@@ -93,6 +147,8 @@ from typing import Any, Iterator
 
 import grpc
 import pymongo
+from prometheus_client import Counter, Gauge
+from pymongo import uri_parser as mongo_uri_parser
 
 from league_stats.analysis.peer.baseline import PeerBaseline, resolve_peer_baseline
 from league_stats.core.config import AppConfig
@@ -111,6 +167,24 @@ log = get_logger("peers_service")
 # local reads and comfortably finish well inside this window; level 2 (live
 # Riot sampling, up to `MAX_MATCH_DOWNLOADS` real HTTP calls) does not.
 FAST_PATH_TIMEOUT_S: float = 3.0
+
+PEERS_INFLIGHT_BASELINES = Gauge(
+    "peers_inflight_baselines",
+    "resolve_peer_baseline calls currently running on PEERS' executor "
+    "(does not count requests still queued behind them).",
+)
+PEERS_FAST_PATH_TIMEOUTS_TOTAL = Counter(
+    "peers_fast_path_timeouts_total",
+    "RequestBaseline calls that exceeded the fast-path timeout, labeled by "
+    "whether the underlying resolution had actually started running yet "
+    "('true' = likely live sampling, 'false' = still queued behind other work).",
+    ["started"],
+)
+PEERS_DEDUPED_REQUESTS_TOTAL = Counter(
+    "peers_deduped_requests_total",
+    "RequestBaseline calls that attached to an already in-flight resolution "
+    "for the same (champion, role, platform, tier) instead of starting a new one.",
+)
 
 
 class _PeerStoreAdapter:
@@ -156,6 +230,33 @@ class _PeerStoreAdapter:
         return None
 
 
+class _PlatformScopedRiotClient:
+    """Wraps a shared `RiotApiClient`, overriding `.platform`/`.platform_base`
+    for one request's routing.
+
+    `RiotApiClient.platform` has no public setter and its rate limiter/session
+    are meant to be shared across calls, so this wraps rather than mutates or
+    reconstructs the underlying client. Delegates every other attribute
+    (`fetch_league_entries_pages`, `fetch_match_ids`, `fetch_match`,
+    `fetch_solo_rank`, ...) straight through via `__getattr__`.
+    """
+
+    def __init__(self, base: RiotApiClient, platform: str) -> None:
+        self._base = base
+        self._platform = platform
+
+    @property
+    def platform(self) -> str:
+        return self._platform
+
+    @property
+    def platform_base(self) -> str:
+        return f"https://{self._platform}.api.riotgames.com"
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._base, name)
+
+
 def _parse_rank(raw: str) -> tuple[str, str]:
     """Split a rank string (``"GOLD II"``, ``"GOLD_II"``, or bare ``"CHALLENGER"``)
     into ``(tier, division)``. ``RequestBaselineRequest.rank`` (Phase 0's proto)
@@ -179,11 +280,20 @@ def _encode_baseline(baseline: PeerBaseline | None) -> str:
     return json.dumps(asdict(baseline))
 
 
+def _db_name_from_uri(mongo_uri: str) -> str:
+    """Extract the database name from a Mongo connection URI.
+
+    `rsplit("/", 1)[-1]` (the original implementation) breaks on query params
+    (`?retryWrites=true`) or a bare host with no db path -- use pymongo's own
+    URI parser instead, which handles both correctly.
+    """
+    return mongo_uri_parser.parse_uri(mongo_uri).get("database") or "league_stats"
+
+
 def _build_default_peer_store() -> PeerSampleStore:
     mongo_uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017/league_stats")
-    db_name = mongo_uri.rsplit("/", 1)[-1] or "league_stats"
     client: pymongo.MongoClient = pymongo.MongoClient(mongo_uri)
-    return PeerSampleStore(client, db_name=db_name)
+    return PeerSampleStore(client, db_name=_db_name_from_uri(mongo_uri))
 
 
 def _build_default_riot_client() -> RiotApiClient:
@@ -198,8 +308,19 @@ def _build_default_riot_client() -> RiotApiClient:
     `download_matches` does, which is not part of this call graph. It is a real,
     local, ephemeral SQLite cache (consistent with the rest of this codebase's
     "`.cache` is ephemeral" convention), not the Mongo `PeerSampleStore`.
+
+    `PEERS_PLATFORM`/`PEERS_REGION` here are only the *default* platform/region
+    used when a `RequestBaseline` call carries no `platform` field -- per-request
+    routing overrides this via `_PlatformScopedRiotClient` (see module docstring).
     """
     api_key = os.environ.get("PEERS_RIOT_API_KEY", "")
+    if not api_key:
+        # AppConfig's own validator would raise here too, but its message names
+        # RIOT_API_KEY -- the wrong variable for PEERS. Raise with the right one.
+        raise RuntimeError(
+            "Missing Riot API key for PEERS. Set PEERS_RIOT_API_KEY in the "
+            "environment or a .env file (get one at https://developer.riotgames.com)."
+        )
     config = AppConfig(
         riot_id="peers",
         tagline="peers",
@@ -213,6 +334,16 @@ def _build_default_riot_client() -> RiotApiClient:
     return RiotApiClient(config, http_cache, unused_match_store)
 
 
+class _InFlightResolution:
+    """One shared `resolve_peer_baseline` call, possibly awaited by several callers."""
+
+    __slots__ = ("future", "started")
+
+    def __init__(self, future: "Future[PeerBaseline | None]", started: threading.Event) -> None:
+        self.future = future
+        self.started = started
+
+
 class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
     """Implements PeersService by running `resolve_peer_baseline` unmodified.
 
@@ -221,10 +352,14 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
     `fast_path_timeout_s` (the store/static-fallback levels 0/1/3/4/5, which
     are all local reads), the response carries the resolved baseline directly
     (`cached=True`). When it doesn't -- almost certainly because it fell
-    through to level 2's live Riot sampling -- `RequestBaseline` returns
-    immediately with `cached=False` and a `request_id`, and lets the same
-    future keep running in the background; a completion callback then calls
-    back into `RunnerServiceStub.NotifyPeerBaselineReady` with the result.
+    through to level 2's live Riot sampling, or is queued behind other
+    in-flight work -- `RequestBaseline` returns immediately with `cached=False`
+    and a `request_id`, and lets the same future keep running in the
+    background; a completion callback then calls back into
+    `RunnerServiceStub.NotifyPeerBaselineReady` with the result. Identical
+    concurrent requests (same champion/role/platform/tier) share one
+    in-flight resolution instead of each launching their own (see module
+    docstring, "Concurrency").
     """
 
     def __init__(
@@ -240,9 +375,67 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         self._runner_target = runner_target or os.environ.get("RUNNER_GRPC_TARGET", "localhost:50051")
         self._fast_path_timeout_s = fast_path_timeout_s
         self._executor = executor or ThreadPoolExecutor(
-            max_workers=4, thread_name_prefix="peers-baseline"
+            max_workers=int(os.environ.get("PEERS_MAX_CONCURRENT_BASELINES", "4")),
+            thread_name_prefix="peers-baseline",
         )
-        self._lock = threading.Lock()
+        self._inflight: dict[tuple[str, str, str, str], _InFlightResolution] = {}
+        # RLock, not Lock: _get_or_submit calls future.add_done_callback(_cleanup)
+        # while still holding this lock. If the resolution is fast enough to
+        # already be done by that point (store hits, static fallback -- both
+        # near-instant), concurrent.futures invokes the callback SYNCHRONOUSLY,
+        # on this same thread, before add_done_callback returns -- and _cleanup
+        # itself acquires this lock. A plain Lock deadlocks on that reentrant
+        # acquisition; a real, timing-dependent deadlock, not test flakiness --
+        # it only shows up when the executor thread wins the race often enough
+        # (reliably reproduced under pytest-xdist's parallel workers, rare but
+        # possible in production under load too).
+        self._inflight_lock = threading.RLock()
+
+    def _get_or_submit(
+        self,
+        key: tuple[str, str, str, str],
+        riot_client: Any,
+        adapter: _PeerStoreAdapter,
+        ranked: RankedEntry,
+        champion: str,
+        role: str,
+        exclude_puuid: str | None,
+    ) -> _InFlightResolution:
+        """Return the in-flight resolution for `key`, submitting a new one if needed."""
+        with self._inflight_lock:
+            existing = self._inflight.get(key)
+            if existing is not None and not existing.future.done():
+                PEERS_DEDUPED_REQUESTS_TOTAL.inc()
+                return existing
+
+            started = threading.Event()
+
+            def _run() -> PeerBaseline | None:
+                started.set()
+                PEERS_INFLIGHT_BASELINES.inc()
+                try:
+                    return resolve_peer_baseline(
+                        riot_client,
+                        adapter,
+                        ranked,
+                        champion,
+                        role,
+                        exclude_puuid=exclude_puuid,
+                    )
+                finally:
+                    PEERS_INFLIGHT_BASELINES.dec()
+
+            future = self._executor.submit(_run)
+            record = _InFlightResolution(future=future, started=started)
+            self._inflight[key] = record
+
+            def _cleanup(_future: "Future[PeerBaseline | None]") -> None:
+                with self._inflight_lock:
+                    if self._inflight.get(key) is record:
+                        del self._inflight[key]
+
+            future.add_done_callback(_cleanup)
+            return record
 
     def RequestBaseline(self, request, context):
         champion = request.champion
@@ -253,30 +446,43 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
             context.set_details("champion, lane and a parseable rank are required")
             return peers_pb2.RequestBaselineResponse()
 
+        # Request field wins when present; PEERS_PLATFORM is a last-resort
+        # default (e.g. for a caller that hasn't been updated yet), then the
+        # shared client's own configured platform. See module docstring,
+        # "Platform routing" -- silently defaulting to euw1 with no signal was
+        # the review round 1 finding this replaces.
+        platform = request.platform or os.environ.get("PEERS_PLATFORM") or self._riot_client.platform
+        exclude_puuid = request.exclude_puuid or None
+
         # RankedEntry.league_points/wins/losses are never read anywhere in
         # resolve_peer_baseline's call graph (only `.tier`/`.label`/`.rank`
-        # are) -- see analysis/peer/rank_scope.py -- and RequestBaselineRequest
-        # carries no such data anyway, so they are zeroed here.
+        # are) -- see analysis/peer/rank_scope.py.
         ranked = RankedEntry(tier=tier, rank=division, league_points=0, wins=0, losses=0)
         adapter = _PeerStoreAdapter(self._peer_store)
+        scoped_client = _PlatformScopedRiotClient(self._riot_client, platform)
         request_id = str(uuid.uuid4())
 
-        # RequestBaselineRequest has no puuid field (Phase 0's proto), so there
-        # is no player to exclude from their own peer average -- passing None
-        # matches resolve_peer_baseline's own default.
-        future: Future = self._executor.submit(
-            resolve_peer_baseline,
-            self._riot_client,
-            adapter,
-            ranked,
-            champion,
-            role,
+        dedup_key = (champion.lower(), role.upper(), platform.lower(), tier.upper())
+        record = self._get_or_submit(
+            dedup_key, scoped_client, adapter, ranked, champion, role, exclude_puuid
         )
 
         try:
-            baseline = future.result(timeout=self._fast_path_timeout_s)
+            baseline = record.future.result(timeout=self._fast_path_timeout_s)
         except FutureTimeoutError:
-            future.add_done_callback(
+            started = record.started.is_set()
+            PEERS_FAST_PATH_TIMEOUTS_TOTAL.labels(started=str(started)).inc()
+            log.info(
+                "RequestBaseline fast path timed out for %s %s (%s), request_id=%s: %s",
+                champion,
+                role,
+                platform,
+                request_id,
+                "already running (likely live sampling)"
+                if started
+                else "still queued behind other in-flight work",
+            )
+            record.future.add_done_callback(
                 lambda f: self._on_resolved(f, request_id, champion, role, request.rank)
             )
             return peers_pb2.RequestBaselineResponse(request_id=request_id, cached=False)
@@ -299,7 +505,7 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
     def _on_resolved(
         self, future: "Future[PeerBaseline | None]", request_id: str, champion: str, role: str, rank: str
     ) -> None:
-        """Runs on the executor thread once a backgrounded resolution finishes."""
+        """Runs once a backgrounded resolution finishes (possibly shared by several callers)."""
         try:
             baseline = future.result()
         except Exception as exc:  # noqa: BLE001 -- must still notify RUNNER
@@ -343,5 +549,5 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
                         error=error,
                     )
                 )
-        except grpc.RpcError as exc:
+        except Exception as exc:  # noqa: BLE001 -- a done-callback must never raise silently
             log.error("Failed to notify RUNNER for request_id=%s: %s", request_id, exc)

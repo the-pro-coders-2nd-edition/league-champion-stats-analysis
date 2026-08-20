@@ -13,6 +13,13 @@ message RequestBaselineRequest {
   string champion = 1;
   string lane = 2;
   string rank = 3;
+  // Platform routing host (e.g. "euw1", "kr", "na1") -- required to scope
+  // league-v4 lookups and to filter/key the peer-game store by the right
+  // platform. Without this PEERS has no reliable way to know which platform
+  // a request is for.
+  string platform = 4;
+  // The requesting player's own PUUID, excluded from their own peer average.
+  string exclude_puuid = 5;
 }
 
 message RequestBaselineResponse {
