@@ -107,19 +107,21 @@ def _job_from_request(request: runner_pb2.EnqueueJobRequest, job_id: int) -> dic
 def _to_stage_result(event: dict[str, Any]) -> runner_pb2.StageResult:
     """Translate one adapter event dict into a `StageResult` message.
 
-    `payload_json` is intentionally left empty in every phase-1 event: RUNNER
-    only streams progress (state transitions and current/total counters), not
-    pipeline output -- reports still land on disk under `web_config.output_dir`
-    exactly like the monolith's worker produces them today. A later phase
-    that wants stage output delivered over the wire needs to populate this
-    field from the pipeline's actual result; nothing `RunnerJobAdapter`
-    pushes today carries that payload, so don't assume Task 6's consumer can
-    read report data out of this field.
+    `payload_json` carries the *only* payload `RunnerJobAdapter` pushes in
+    phase 1: a JSON-encoded copy of the resolved `players` list from its
+    `upsert_player` call (see `RunnerJobAdapter.upsert_player`). RUNNER still
+    doesn't stream pipeline/report output through this field -- reports still
+    land on disk under `web_config.output_dir` exactly like the monolith's
+    worker produces them today -- but plumbing this one payload through was
+    the fix for the monolith's `_execute_job_via_runner` losing the
+    profile_icon_id/solo-rank data `execute_job` resolves mid-run. Every other
+    event dict simply has no `payload_json` key, so `event.get("payload_json", "")`
+    naturally stays empty for those.
     """
     return runner_pb2.StageResult(
         job_id=event["job_id"],
         stage=_STAGE_BY_NAME.get(event.get("stage", "stage_a"), common_pb2.STAGE_A),
-        payload_json="",
+        payload_json=event.get("payload_json", ""),
         completed_at_unix=event.get("completed_at_unix", 0),
         error=event.get("error", ""),
         final=event.get("final", False),

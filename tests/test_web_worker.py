@@ -762,3 +762,118 @@ def test_execute_job_grpc_mode_soft_peer_failure_marks_done(
     assert player["base_completed_at"] is not None
     assert player["peer_completed_at"] is None
     assert player["peer_failed"] == 1
+
+
+def test_execute_job_grpc_mode_preserves_existing_enrichment_when_runner_sends_none(
+    store: JobStore, web_config: WebConfig
+) -> None:
+    """RUNNER's payload_json is the only channel for resolved icon/rank data; when
+    a run doesn't send one at all, a prior run's profile_icon_id/solo-rank data in
+    the registry must survive. JobStore.upsert_player does a wholesale players_json
+    overwrite on conflict, so skipping the merge step would silently wipe this out
+    on every grpc-mode run that doesn't itself re-resolve rank data.
+    """
+    from league_stats_rpc.v1 import common_pb2, runner_pb2
+
+    store.upsert_player(
+        slug="test_euw",
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        players=[
+            {
+                "riot_id": "Test",
+                "tagline": "EUW",
+                "profile_icon_id": 99,
+                "solo_tier": "GOLD",
+                "solo_rank": "II",
+                "solo_lp": 40,
+            }
+        ],
+    )
+
+    results = [
+        runner_pb2.StageResult(
+            job_id="scripted-1",
+            stage=common_pb2.STAGE_A,
+            detail="Analyzing Viktor Middle (1/1)",
+            current=1,
+            total=1,
+        ),
+        runner_pb2.StageResult(
+            job_id="scripted-1", stage=common_pb2.STAGE_B, detail="Comparing…"
+        ),
+        runner_pb2.StageResult(
+            job_id="scripted-1", stage=common_pb2.STAGE_B, detail="Report complete", final=True
+        ),
+    ]
+
+    job = _run_scripted_grpc_job(store, web_config, results)
+
+    final = store.get(int(job["id"]))
+    assert final["state"] == jobs.DONE
+
+    player = store.get_player("test_euw")
+    entry = next(p for p in player["players"] if p["riot_id"] == "Test")
+    assert entry["profile_icon_id"] == 99
+    assert entry["solo_tier"] == "GOLD"
+    assert entry["solo_rank"] == "II"
+    assert entry["solo_lp"] == 40
+
+
+def test_execute_job_grpc_mode_round_trips_resolved_player_data_via_payload_json(
+    store: JobStore, web_config: WebConfig
+) -> None:
+    """RunnerJobAdapter.upsert_player pushes RUNNER's freshly-resolved roster
+    through StageResult.payload_json (an existing, previously-unused proto field);
+    _execute_job_via_runner must read it back out and write it into the local
+    registry, instead of relying only on the locally-resolved (icon/rank-less)
+    fallback roster.
+    """
+    import json as _json
+
+    from league_stats_rpc.v1 import common_pb2, runner_pb2
+
+    resolved = [
+        {
+            "riot_id": "Test",
+            "tagline": "EUW",
+            "profile_icon_id": 4242,
+            "solo_tier": "DIAMOND",
+            "solo_rank": "III",
+            "solo_lp": 77,
+        }
+    ]
+
+    results = [
+        runner_pb2.StageResult(
+            job_id="scripted-1",
+            stage=common_pb2.STAGE_A,
+            payload_json=_json.dumps(resolved),
+        ),
+        runner_pb2.StageResult(
+            job_id="scripted-1",
+            stage=common_pb2.STAGE_A,
+            detail="Analyzing Viktor Middle (1/1)",
+            current=1,
+            total=1,
+        ),
+        runner_pb2.StageResult(
+            job_id="scripted-1", stage=common_pb2.STAGE_B, detail="Comparing…"
+        ),
+        runner_pb2.StageResult(
+            job_id="scripted-1", stage=common_pb2.STAGE_B, detail="Report complete", final=True
+        ),
+    ]
+
+    job = _run_scripted_grpc_job(store, web_config, results)
+
+    final = store.get(int(job["id"]))
+    assert final["state"] == jobs.DONE
+
+    player = store.get_player("test_euw")
+    entry = next(p for p in player["players"] if p["riot_id"] == "Test")
+    assert entry["profile_icon_id"] == 4242
+    assert entry["solo_tier"] == "DIAMOND"
+    assert entry["solo_rank"] == "III"
+    assert entry["solo_lp"] == 77

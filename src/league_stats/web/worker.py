@@ -9,6 +9,7 @@ served and the job still completes.
 
 from __future__ import annotations
 
+import json
 import threading
 from pathlib import Path
 from typing import Any
@@ -322,6 +323,41 @@ def _run_stage_b(
         )
 
 
+_PLAYER_ENRICHMENT_FIELDS = ("profile_icon_id", "solo_tier", "solo_rank", "solo_lp")
+
+
+def _merge_player_enrichment(
+    base: list[dict[str, Any]], enrichment: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
+    """Fill missing profile_icon_id/solo-rank fields in `base` from `enrichment`.
+
+    Entries are matched by (riot_id, tagline). Only fills a field `base`
+    doesn't already have -- never overwrites one it does -- so merging in
+    older or emptier data can only add information, never erase what's
+    already known. Used by `_execute_job_via_runner` to keep a grpc-mode
+    job's `store.upsert_player` call from wiping out previously-resolved
+    registry data (`JobStore.upsert_player` does a wholesale `players_json`
+    overwrite on conflict).
+    """
+    if not enrichment:
+        return base
+    lookup = {
+        (str(entry.get("riot_id", "")), str(entry.get("tagline", ""))): entry
+        for entry in enrichment
+    }
+    merged: list[dict[str, Any]] = []
+    for entry in base:
+        key = (str(entry.get("riot_id", "")), str(entry.get("tagline", "")))
+        source = lookup.get(key)
+        result = dict(entry)
+        if source:
+            for field in _PLAYER_ENRICHMENT_FIELDS:
+                if result.get(field) is None and source.get(field) is not None:
+                    result[field] = source[field]
+        merged.append(result)
+    return merged
+
+
 def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> None:
     """Delegate one claimed job to RUNNER over gRPC, replaying its progress into `store`.
 
@@ -381,30 +417,41 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
       described above. Fixing this needs a richer stage/state field on
       `StageResult`, which `runner.proto` does not have; out of this task's
       scope.
-    - `store.upsert_player`'s fully-resolved registry write (puuid,
-      `profile_icon_id`, solo-rank fields -- see `execute_job`'s call to it
-      right after `contexts` resolve) cannot be replayed here in full: that
-      data is resolved by RUNNER's own `_build_job_services`/`fetch_matches`/
-      `resolve_player_contexts` call, deep inside the `execute_job` run RUNNER
-      performs on its own process, and `StageResult` never carries it back
-      (`payload_json` is documented as always empty in phase 1 -- see
-      `RunnerServicer._to_stage_result`). What this function does instead: it
-      resolves the job's roster *locally*, via the same `_tracked_players_for_job`
-      recovery `execute_job` itself relies on (registry -> job's own
+    - `store.upsert_player`'s registry write IS replayed, using RUNNER's actual
+      resolved data where available: `execute_job` (running unmodified inside
+      RUNNER) calls `RunnerJobAdapter.upsert_player` with the fully-resolved
+      roster (`PlayerContext.as_player_dict()`: riot_id/tagline plus optional
+      `profile_icon_id`/`solo_tier`/`solo_rank`/`solo_lp` -- note there is no
+      puuid in this dict anywhere; `JobStore.upsert_player`/`as_player_dict`
+      never carry one, so there is nothing puuid-related to lose here).
+      `RunnerJobAdapter.upsert_player` pushes that roster out as a
+      JSON-encoded `StageResult.payload_json` (an existing, previously-unused
+      field on `runner.proto`'s `StageResult` -- no proto change was needed),
+      and this function parses it back out below and uses it as the
+      resolved-player data for its own local `store.upsert_player` call.
+    - This function also resolves the job's roster *locally* before ever
+      contacting RUNNER, via the same `_tracked_players_for_job` recovery
+      `execute_job` itself relies on (registry -> job's own
       `players`/`players_json` -> on-disk report metadata, using this
       monolith's own real `store` and `web_config.output_dir` -- not RUNNER's,
       which live in a separate container with no shared volume for `output/`
       in this repo's `docker-compose.yml`), and sends that already-resolved
       roster to RUNNER as `EnqueueJobRequest.players`. This fixes the
       roster-recovery problem RUNNER's own `RunnerJobAdapter.get_player`/disk
-      fallback cannot solve (see below) without any `runner.proto` change,
-      since `players` was already part of the wire contract. It also uses that
-      same locally-resolved roster for a best-effort local
-      `store.upsert_player` call once stage A is inferred complete, keeping
-      riot_id/tagline/region current -- but it cannot populate puuid,
-      `profile_icon_id` or solo-rank fields, since those never cross the wire.
-      Carrying that data back needs new fields on `StageResult` (or a
-      dedicated response), which is out of this task's scope.
+      fallback cannot solve (see below), and is also the fallback used for the
+      local `store.upsert_player` call above if RUNNER's `payload_json` never
+      arrives for some reason (e.g. an older RUNNER build).
+    - The local `store.upsert_player` call never erases previously-known
+      `profile_icon_id`/solo-rank data: before writing, it reads the existing
+      registry row (`store.get_player(slug)`) and fills any field the new
+      data (RUNNER's `payload_json`, or the local fallback roster) doesn't
+      have from the existing row (see `_merge_player_enrichment`) -- so a run
+      that itself resolves nothing new (e.g. `resolve_player_contexts`
+      returning no rank) can only add information, never overwrite existing
+      data with blanks. `JobStore.upsert_player` itself does a wholesale
+      `players_json` overwrite on conflict, so skipping this merge would
+      silently wipe out previously-resolved icon/rank data on every grpc-mode
+      run that doesn't independently re-resolve it.
     - Why the roster-recovery fallback matters at all: `_tracked_players_for_job`
       (used by RUNNER's own unmodified `execute_job` run, via `RunnerJobAdapter`)
       falls back to `job_store.get_player(slug)` and then to on-disk report
@@ -480,21 +527,38 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
         log.info("Job %d handed to RUNNER as %s", job_id, response.job_id)
 
         seen_stage_b = False
+        resolved_players: list[dict[str, Any]] | None = None
         for result in stub.StreamJobProgress(
             runner_pb2.StreamJobProgressRequest(job_id=response.job_id)
         ):
+            if result.payload_json:
+                # RunnerJobAdapter.upsert_player's resolved roster (see docstring) --
+                # never final/error, so it's safe to just capture and move on.
+                try:
+                    parsed = json.loads(result.payload_json)
+                except (TypeError, ValueError):
+                    parsed = None
+                if isinstance(parsed, list):
+                    resolved_players = [entry for entry in parsed if isinstance(entry, dict)]
+                continue
             if result.stage == common_pb2.STAGE_B and not seen_stage_b:
                 seen_stage_b = True
-                # Best-effort registry refresh: keeps riot_id/tagline/region current
-                # using the roster this function already resolved locally, but cannot
-                # carry puuid/profile_icon_id/solo-rank -- those are only known inside
-                # RUNNER's own execute_job run and never cross the wire (see docstring).
+                # Registry refresh: prefer RUNNER's freshly-resolved roster (from
+                # payload_json above) over the locally-resolved fallback, then fill
+                # any still-missing profile_icon_id/solo-rank fields from what the
+                # registry already had -- never erase existing data (see docstring).
+                existing = store.get_player(slug)
+                existing_players = (existing or {}).get("players") or []
+                merged_players = _merge_player_enrichment(
+                    resolved_players if resolved_players is not None else tracked,
+                    existing_players,
+                )
                 store.upsert_player(
                     slug=slug,
                     riot_id=str(job.get("riot_id", "")),
                     tagline=str(job.get("tagline", "")),
                     region=str(job.get("region", "")),
-                    players=tracked or None,
+                    players=merged_players or None,
                 )
                 store.mark_player_base_complete(slug)
                 store.set_state(

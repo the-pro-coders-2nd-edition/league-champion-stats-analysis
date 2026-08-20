@@ -22,7 +22,13 @@ for pipeline-level progress events:
   (which drops the ``stage`` argument pipeline callers pass it -- ``store.update_progress``
   never learns which pipeline stage triggered the call).
 - ``upsert_player(*, slug, riot_id, tagline, region, players=None)`` -- called
-  once per job after contexts resolve.
+  once per job after contexts resolve, carrying the fully-resolved
+  ``players`` list (``PlayerContext.as_player_dict()``: riot_id/tagline plus
+  optional ``profile_icon_id``/``solo_tier``/``solo_rank``/``solo_lp`` -- see
+  ``league_stats.pipeline.services.PlayerContext``). RUNNER has no player
+  registry of its own, but this data is genuinely useful to the caller's
+  registry, so it is pushed out as a progress event's ``payload_json``
+  instead of being dropped -- see this method's own docstring.
 - ``get_player(slug)`` -- **not listed in the task brief**, but genuinely
   required: ``_build_job_services`` calls ``_tracked_players_for_job(job, job_store, ...)``,
   which calls ``job_store.get_player(job_slug)`` whenever the job's own
@@ -33,14 +39,17 @@ for pipeline-level progress events:
   ``mark_player_peer_failed(slug)`` -- called once each at the corresponding
   pipeline milestone.
 
-RUNNER has no player registry or cancel button wiring in this phase, so the
-registry-shaped methods (``upsert_player``, ``get_player``, ``mark_player_*``)
-are no-ops and ``is_cancelled`` always returns ``False`` -- see the docstring
-on that method for the resulting limitation.
+RUNNER has no player registry or cancel button wiring in this phase, so
+``get_player`` and the ``mark_player_*`` methods are no-ops and
+``is_cancelled`` always returns ``False`` -- see the docstring on that method
+for the resulting limitation. ``upsert_player`` is *not* a no-op: it forwards
+its resolved ``players`` payload to the caller over the wire (see its own
+docstring) -- RUNNER itself still keeps no registry of this data.
 """
 
 from __future__ import annotations
 
+import json
 import queue
 import time
 from typing import Any
@@ -132,7 +141,21 @@ class RunnerJobAdapter:
         region: str,
         players: list[dict[str, Any]] | None = None,
     ) -> None:
-        """No-op: RUNNER has no player registry in this phase."""
+        """Push the resolved ``players`` list out as a ``payload_json`` event.
+
+        RUNNER keeps no player registry of its own in this phase, but ``players``
+        here is the fully-resolved roster ``execute_job`` just computed (riot_id/
+        tagline plus optional ``profile_icon_id``/``solo_tier``/``solo_rank``/
+        ``solo_lp`` -- see ``PlayerContext.as_player_dict``; note ``puuid`` is
+        never part of this dict, so there is nothing puuid-related to lose here).
+        Silently discarding it would mean the caller's own registry can never
+        learn a player's icon/rank from a job routed through RUNNER. Instead,
+        this is pushed through ``payload_json`` -- otherwise unused by every
+        other event this adapter pushes -- so ``RunnerServicer._to_stage_result``
+        forwards it as-is and the monolith's ``_execute_job_via_runner`` can
+        read it back out and fold it into its own registry write.
+        """
+        self._push(payload_json=json.dumps(players or []))
 
     def get_player(self, slug: str) -> dict[str, Any] | None:
         """No-op: RUNNER has no player registry in this phase.
