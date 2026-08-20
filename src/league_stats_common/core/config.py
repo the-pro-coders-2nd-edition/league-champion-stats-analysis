@@ -1,0 +1,611 @@
+"""Application configuration.
+
+Configuration is resolved in order of precedence:
+
+1. CLI options,
+2. environment variables (``RIOT_API_KEY``, ``ANALYZER_*`` / legacy ``VIKTOR_*``),
+3. a ``.env`` file in the project root (when a variable is not already set),
+4. an optional ``config.toml`` file,
+5. built-in defaults.
+"""
+
+from __future__ import annotations
+
+import os
+import tomllib
+from pathlib import Path
+from typing import Any, Final, Literal
+
+from league_stats_common.core.champions import (
+    build_label,
+    champion_slug,
+    normalize_role,
+    players_group_slug,
+    role_display,
+)
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# Platform routing values -> regional routing hosts used by account-v1/match-v5.
+PLATFORM_TO_REGION: Final[dict[str, str]] = {
+    "euw1": "europe",
+    "eun1": "europe",
+    "tr1": "europe",
+    "ru": "europe",
+    "me1": "europe",
+    "na1": "americas",
+    "br1": "americas",
+    "la1": "americas",
+    "la2": "americas",
+    "oc1": "sea",
+    "kr": "asia",
+    "jp1": "asia",
+    "vn2": "sea",
+    "tw2": "sea",
+    "sg2": "sea",
+    "ph2": "sea",
+    "th2": "sea",
+}
+VALID_REGIONS: Final[frozenset[str]] = frozenset({"europe", "americas", "asia", "sea"})
+VALID_PLATFORMS: Final[frozenset[str]] = frozenset(PLATFORM_TO_REGION.keys())
+PACKAGE_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
+DEFAULT_TEMPLATE_DIR: Final[Path] = PACKAGE_ROOT / "presentation" / "templates"
+REGION_DEFAULT_PLATFORM: Final[dict[str, str]] = {
+    "europe": "euw1",
+    "americas": "na1",
+    "asia": "kr",
+    "sea": "oc1",
+}
+
+RANKED_SOLO_QUEUE_ID: Final[int] = 420
+RANKED_FLEX_QUEUE_ID: Final[int] = 440
+RANKED_QUEUE_IDS: Final[tuple[int, ...]] = (RANKED_SOLO_QUEUE_ID, RANKED_FLEX_QUEUE_ID)
+REMAKE_MAX_DURATION_S: Final[int] = 300
+# Ranked surrender vote opens at 15:00; shorter surrender endings are not real games.
+SURRENDER_VOTE_OPENS_S: Final[int] = 900
+GAME_WINDOW_OPTIONS: Final[tuple[int, ...]] = (50, 100)
+DEFAULT_GAME_WINDOW: Final[int] = 50
+QUEUE_FILTER_OPTIONS: Final[tuple[str, ...]] = ("solo", "flex", "all")
+DEFAULT_QUEUE_FILTER: Final[str] = "solo"
+QUEUE_LABELS: Final[dict[str, str]] = {
+    "solo": "Solo/Duo",
+    "flex": "Flex",
+    "all": "All ranked",
+}
+QUEUE_SUBTITLE_LABELS: Final[dict[str, str]] = {
+    "solo": "ranked solo queue",
+    "flex": "ranked flex queue",
+    "all": "ranked",
+}
+
+FORM_RECENT_DEFAULT: Final[int] = 20
+FORM_BASELINE_DEFAULT: Final[int] = 80
+FORM_OVERLAP_DEFAULT: Final[bool] = False
+PROGRESSION_PRESETS_V1: Final[tuple[tuple[int, int], ...]] = ((20, 80),)
+PROGRESSION_PRESETS_V2: Final[tuple[tuple[int, int], ...]] = ((10, 50), (20, 80), (30, 100))
+FORM_MIN_RECENT: Final[int] = 10
+FORM_MIN_BASELINE: Final[int] = 25
+FORM_SIGNIFICANCE_ALPHA: Final[float] = 0.05
+
+# Must match career.models.WINDOW (kept as a plain constant, not an import, since
+# core must not depend on analysis) -- otherwise Game Review's game list and
+# Career's 20-game counting window silently drift apart again.
+GAME_REVIEW_RECENT_N: Final[int] = 20
+GAME_REVIEW_BASELINE_M: Final[int] = 80
+GAME_REVIEW_MAX_BEHAVIORS: Final[int] = 5
+GAME_REVIEW_MAX_COMPARISONS: Final[int] = 5
+
+
+class PlayerIdentity(BaseModel):
+    """One tracked Riot account."""
+
+    riot_id: str
+    tagline: str
+
+    @property
+    def label(self) -> str:
+        """Display label (``Name#TAG``)."""
+        return f"{self.riot_id}#{self.tagline}"
+
+
+class AppConfig(BaseModel):
+    """Validated runtime configuration for a full analysis run."""
+
+    riot_id: str
+    tagline: str
+    players: list[PlayerIdentity] = Field(default_factory=list)
+    region: str = "europe"
+    platform: str | None = None
+    api_key: str
+    # NOTE(security): when chat_endpoint is unset, gemini_api_key is embedded
+    # into the generated static HTML so browser JS can call Gemini directly.
+    # Web-served reports set chat_endpoint instead, which routes chat through
+    # the backend proxy and keeps the key out of the HTML.
+    gemini_api_key: str | None = None
+    # Web-served reports only: backend chat proxy URL and player status URL.
+    # When set, the rendered report calls these instead of embedding secrets.
+    chat_endpoint: str | None = None
+    status_endpoint: str | None = None
+    match_count: int = Field(default=500, ge=1, le=2000)
+    min_games: int = Field(default=20, ge=1)
+    champion: str = ""
+    role: str = "MIDDLE"
+    filter_champion: str | None = None
+    filter_role: str | None = None
+    # When set (web jobs), report paths use this slug instead of deriving it
+    # from ``players``. Keeps refresh writes inside the folder the user opened.
+    output_reports_slug: str | None = None
+    queue_id: int = RANKED_SOLO_QUEUE_ID
+    output_dir: Path = Path("output")
+    cache_dir: Path = Path(".cache")
+    template_dir: Path = DEFAULT_TEMPLATE_DIR
+    requests_per_second: int = Field(default=18, ge=1)
+    requests_per_two_minutes: int = Field(default=95, ge=1)
+    max_retries: int = Field(default=5, ge=0)
+    request_timeout_s: float = Field(default=15.0, gt=0)
+    verbose: bool = False
+    progression_recent_n: int = Field(default=FORM_RECENT_DEFAULT, ge=1)
+    progression_baseline_m: int = Field(default=FORM_BASELINE_DEFAULT, ge=1)
+    progression_overlap: bool = FORM_OVERLAP_DEFAULT
+    progression_min_recent: int = Field(default=FORM_MIN_RECENT, ge=1)
+    progression_min_baseline: int = Field(default=FORM_MIN_BASELINE, ge=1)
+    progression_alpha: float = Field(default=FORM_SIGNIFICANCE_ALPHA, gt=0, lt=1)
+
+    @model_validator(mode="after")
+    def _default_players(self) -> "AppConfig":
+        """Ensure at least the primary player is tracked."""
+        if not self.players:
+            self.players = [PlayerIdentity(riot_id=self.riot_id, tagline=self.tagline)]
+        return self
+
+    @property
+    def players_label(self) -> str:
+        """Comma-separated display label for all tracked players."""
+        return ", ".join(player.label for player in self.players)
+
+    @property
+    def reports_group_slug(self) -> str:
+        """Filesystem slug for this player or multi-player group."""
+        pinned = (self.output_reports_slug or "").strip()
+        if pinned:
+            return pinned
+        return players_group_slug([(player.riot_id, player.tagline) for player in self.players])
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def _normalise_role(cls, value: str) -> str:
+        """Accept lane aliases (``mid``, ``support``, ...) and Riot values."""
+        return normalize_role(str(value))
+
+    @property
+    def role_display(self) -> str:
+        """Short lane label for reports (``mid``, ``top``, ...)."""
+        return role_display(self.role)
+
+    @property
+    def build_label(self) -> str:
+        """Champion + lane label (e.g. ``Viktor mid``)."""
+        return build_label(self.champion, self.role)
+
+    @property
+    def player_reports_dir(self) -> Path:
+        """Directory holding every build report for this player or group."""
+        return self.output_dir / "reports" / self.reports_group_slug
+
+    @property
+    def report_dir(self) -> Path:
+        """Per-player/champion/lane output directory (overwritten on re-run)."""
+        return (
+            self.output_dir
+            / "reports"
+            / self.reports_group_slug
+            / champion_slug(self.champion, self.role)
+        )
+
+    @property
+    def run_graphs_dir(self) -> Path:
+        """Graph assets for the current report run."""
+        return self.report_dir / "graphs"
+
+    @field_validator("region", mode="before")
+    @classmethod
+    def _normalise_region(cls, value: str) -> str:
+        """Accept both regional ("europe") and platform ("euw1") routing values."""
+        region = str(value).strip().lower()
+        region = PLATFORM_TO_REGION.get(region, region)
+        if region not in VALID_REGIONS:
+            raise ValueError(
+                f"Unknown region {value!r}; use one of {sorted(VALID_REGIONS)} "
+                f"or a platform code like 'euw1'."
+            )
+        return region
+
+    @field_validator("platform", mode="before")
+    @classmethod
+    def _normalise_platform(cls, value: str | None) -> str | None:
+        """Normalise an optional platform routing value."""
+        if value is None:
+            return None
+        platform = str(value).strip().lower()
+        if platform not in VALID_PLATFORMS:
+            raise ValueError(
+                f"Unknown platform {value!r}; use one of {sorted(VALID_PLATFORMS)}."
+            )
+        return platform
+
+    @classmethod
+    def platform_from_region_input(cls, region_input: str) -> str | None:
+        """If ``region_input`` is a platform code, return it."""
+        key = str(region_input).strip().lower()
+        return key if key in VALID_PLATFORMS else None
+
+    @property
+    def routing_platform(self) -> str:
+        """Platform host for league-v4 / summoner-v4 (e.g. ``euw1``)."""
+        if self.platform:
+            return self.platform
+        return REGION_DEFAULT_PLATFORM.get(self.region, "euw1")
+
+    @field_validator("api_key")
+    @classmethod
+    def _check_api_key(cls, value: str) -> str:
+        """Reject an obviously missing API key early with a clear message."""
+        if not value or value == "RGAPI-xxxxxxxx":
+            raise ValueError(
+                "Missing Riot API key. Set RIOT_API_KEY in the environment or a "
+                ".env file, or pass --api-key "
+                "(get one at https://developer.riotgames.com)."
+            )
+        return value
+
+    @property
+    def db_path(self) -> Path:
+        """Path of the SQLite match store."""
+        return self.cache_dir / "matches.sqlite"
+
+    @property
+    def career_db_path(self) -> Path:
+        """Path of the SQLite Career mode store."""
+        return self.cache_dir / "career.sqlite"
+
+    @property
+    def derived_db_path(self) -> Path:
+        """Path of the SQLite cache of derived analysis artifacts."""
+        return self.cache_dir / "derived.sqlite"
+
+    @property
+    def http_cache_dir(self) -> Path:
+        """Directory of the diskcache HTTP cache."""
+        return self.cache_dir / "http"
+
+    @property
+    def assets_dir(self) -> Path:
+        """Shared champion/rune icons for generated HTML reports."""
+        return self.output_dir / "assets"
+
+    def ensure_directories(self) -> None:
+        """Create output, player report and cache directories if missing."""
+        for path in (self.output_dir, self.player_reports_dir, self.cache_dir):
+            path.mkdir(parents=True, exist_ok=True)
+
+
+def _read_toml(path: Path) -> dict[str, Any]:
+    """Read a TOML config file, returning an empty dict when absent.
+
+    Args:
+        path: Path of the TOML file.
+
+    Returns:
+        Parsed key/value pairs (top-level table only).
+    """
+    if not path.is_file():
+        return {}
+    with path.open("rb") as fh:
+        return tomllib.load(fh)
+
+
+def _load_env_file() -> None:
+    """Load ``.env`` from the working directory or project root."""
+    paths = [
+        Path.cwd() / ".env",
+        PACKAGE_ROOT.parent.parent / ".env",
+        PACKAGE_ROOT / ".env",
+    ]
+    seen: set[Path] = set()
+    for path in paths:
+        resolved = path.resolve()
+        if resolved in seen or not path.is_file():
+            continue
+        seen.add(resolved)
+        load_dotenv(path, override=False, encoding="utf-8-sig")
+
+
+def _missing_api_key_hint() -> str:
+    """Build a helpful message when no API key was resolved."""
+    env_paths = [Path.cwd() / ".env", Path(__file__).resolve().parent / ".env"]
+    for path in env_paths:
+        if path.is_file() and path.stat().st_size == 0:
+            return (
+                f"Missing Riot API key. {path} exists but is empty — save the file "
+                "in your editor (Ctrl+S), set RIOT_API_KEY in the environment, or pass --api-key."
+            )
+    return (
+        "Missing Riot API key. Set RIOT_API_KEY in the environment or a .env file "
+        "(get one at https://developer.riotgames.com), or pass --api-key."
+    )
+
+
+# Stand-in for callers that only resolve paths; never sent to Riot.
+_PATHS_ONLY_API_KEY: Final[str] = "RGAPI-paths-only"
+
+
+def load_config(
+    config_file: Path | None = None,
+    *,
+    require_api_key: bool = True,
+    **overrides: Any,
+) -> AppConfig:
+    """Build an :class:`AppConfig` from file, environment and overrides.
+
+    Args:
+        config_file: Optional path to a ``config.toml``; defaults to
+            ``./config.toml`` when present.
+        require_api_key: Set ``False`` when the caller only needs resolved paths
+            (cache locations, report directories) and will never call Riot. A
+            placeholder key is substituted so path resolution stays in one place
+            instead of being duplicated by keyless callers.
+        **overrides: CLI-level overrides; ``None`` values are ignored.
+
+    Returns:
+        A fully validated configuration object.
+
+    Raises:
+        pydantic.ValidationError: If required values are missing or invalid.
+    """
+    _load_env_file()
+    data: dict[str, Any] = _read_toml(config_file or Path("config.toml"))
+    env_map = {
+        "api_key": os.environ.get("RIOT_API_KEY"),
+        "riot_id": os.environ.get("ANALYZER_RIOT_ID") or os.environ.get("VIKTOR_RIOT_ID"),
+        "tagline": os.environ.get("ANALYZER_TAGLINE") or os.environ.get("VIKTOR_TAGLINE"),
+        "region": os.environ.get("ANALYZER_REGION") or os.environ.get("VIKTOR_REGION"),
+        "platform": os.environ.get("ANALYZER_PLATFORM") or os.environ.get("VIKTOR_PLATFORM"),
+        "gemini_api_key": os.environ.get("GEMINI_API_KEY"),
+    }
+    data.update({k: v for k, v in env_map.items() if v})
+    players_override = overrides.pop("players", None)
+    if players_override:
+        data["players"] = players_override
+        primary = players_override[0]
+        data["riot_id"] = primary.riot_id
+        data["tagline"] = primary.tagline
+    region_override = overrides.get("region")
+    if region_override and not data.get("platform") and not overrides.get("platform"):
+        inferred = AppConfig.platform_from_region_input(str(region_override))
+        if inferred:
+            data["platform"] = inferred
+    data.update({k: v for k, v in overrides.items() if v is not None})
+    progression_table = data.pop("progression", None)
+    if isinstance(progression_table, dict):
+        mapping = {
+            "recent_n": "progression_recent_n",
+            "baseline_m": "progression_baseline_m",
+            "overlap": "progression_overlap",
+            "min_recent": "progression_min_recent",
+            "min_baseline": "progression_min_baseline",
+            "alpha": "progression_alpha",
+        }
+        for src, dest in mapping.items():
+            if src in progression_table:
+                data[dest] = progression_table[src]
+    if not data.get("api_key"):
+        if require_api_key:
+            raise ValueError(_missing_api_key_hint())
+        data["api_key"] = _PATHS_ONLY_API_KEY
+    return AppConfig(**data)
+
+
+def load_paths_config(config_file: Path | None = None, **overrides: Any) -> AppConfig:
+    """Build config for offline commands that do not call the Riot API."""
+    return load_config(
+        config_file=config_file,
+        api_key="RGAPI-offline-only",
+        riot_id="offline",
+        tagline="OFF",
+        **overrides,
+    )
+
+
+class WebConfig(BaseModel):
+    """Configuration for the web server and its background worker."""
+
+    host: str = "127.0.0.1"
+    port: int = Field(default=8000, ge=1, le=65535)
+    # Number of concurrent analysis jobs. Keep at 1 for a dev Riot key: all
+    # jobs share one rate limit, so parallelism only helps with a production key.
+    worker_concurrency: int = Field(default=1, ge=1, le=8)
+    worker_poll_interval_s: float = Field(default=1.0, gt=0)
+    app_db_path: Path = Path("data") / "app.sqlite"
+    output_dir: Path = Path("output")
+    gemini_api_key: str | None = None
+    # Opt-in delegation of job execution to RUNNER over gRPC (Phase 1 of the
+    # microservices migration). Default "in_process" keeps today's behavior
+    # unchanged — the worker runs `execute_job` itself, exactly as before.
+    runner_mode: Literal["in_process", "grpc"] = "in_process"
+    runner_grpc_target: str = "localhost:50051"
+    # Opt-in delegation of new-game detection to CRON-watch running as its own
+    # process against the same `app.sqlite` (Phase 2 of the microservices
+    # migration). Default "in_process" keeps today's behavior unchanged — the
+    # monolith starts its own WatchPoller in `create_app`'s lifespan, exactly as
+    # before. Setting "grpc" skips starting that in-process poller: it MUST be
+    # set once CRON-watch is deployed against the shared DB, otherwise both
+    # pollers race over the same `watch_seen_json` state (see
+    # `league_stats.cron_watch.service`'s module docstring for the full
+    # correctness argument).
+    watch_mode: Literal["in_process", "grpc"] = "in_process"
+    # Opt-in delegation of rank-peer baseline resolution to PEERS over gRPC
+    # (Phase 3 of the microservices migration). Default "in_process" keeps
+    # today's behavior unchanged -- stage B calls `build_peer_for_pool`
+    # (`league_stats.pipeline.orchestrator`), which runs `resolve_peer_baseline`
+    # in this process exactly as before. Setting "grpc" makes stage B call
+    # PEERS' `RequestBaseline` instead (see `league_stats.web.worker`'s
+    # `_build_peer_for_pool_via_grpc`).
+    #
+    # HARD PRECONDITION, unlike `runner_mode`/`watch_mode` above: this only
+    # works when THIS PROCESS is itself running as RUNNER (`runner/__main__.py`,
+    # i.e. hosting a `RunnerServiceServicer`), because PEERS' slow (live-
+    # sampling) path calls back into `RunnerService.NotifyPeerBaselineReady`
+    # (`runner/service.py`) in whichever process issued the original
+    # `RequestBaseline` call, and that callback is only ever routed to
+    # `web/worker.py`'s module-global, in-memory `_peer_baseline_waiters`
+    # registry -- there is no cross-process delivery mechanism. Setting
+    # `peers_mode="grpc"` on the monolith's own web app (which never hosts a
+    # `RunnerServiceServicer`) does not raise or fail fast: every peer
+    # comparison that falls through to PEERS' slow path silently blocks for
+    # the full `_PEERS_BASELINE_WAIT_TIMEOUT_S` (`web/worker.py`) waiting for a
+    # callback that can never arrive, then skips that build's peer comparison
+    # with only a warning log. This is intentionally not hard-validated here
+    # (unlike, say, rejecting an invalid `Literal` value) because "is this
+    # process RUNNER" is a deployment-topology fact this config object cannot
+    # observe on its own; `WebConfig`'s own validator below only logs a loud
+    # warning when `peers_mode="grpc"` is set, it cannot refuse construction.
+    peers_mode: Literal["in_process", "grpc"] = "in_process"
+    peers_grpc_target: str = "localhost:50053"
+    # Opt-in subscription to CronWatch's WatchUpdates push stream (Phase 4 of the
+    # microservices migration). This gates only the gRPC SUBSCRIBER, which is
+    # only useful when a separate CronWatch process is watching the same
+    # `app.sqlite` (i.e. `watch_mode="grpc"` deployments, such as docker-compose).
+    # The welcome-back feature itself is NOT gated on this var: `create_app`
+    # always wires `WatchPoller`'s own `on_new_game` hook (`web/watch.py`,
+    # already carrying the same `compute_welcome_back_summary` payload
+    # CronWatch computes) straight into the always-constructed
+    # `WelcomeBackCache`, so a plain in-process deployment (e.g. the VPS
+    # single-monolith `watch_mode="in_process"` topology) gets welcome-back
+    # notifications with no CronWatch process and no gRPC involved at all.
+    # Setting this var additionally starts `WelcomeBackSubscriber`, which feeds
+    # the same cache from a separate CronWatch deployment's push stream --
+    # useful when THAT process is the one detecting games (`watch_mode="grpc"`),
+    # since in that topology this process's own `WatchPoller` is not started
+    # and cannot fire `on_new_game` itself.
+    cron_watch_grpc_target: str | None = None
+    # Opt-in swap of RUNNER's local SQLite match cache for the Mongo-backed
+    # `RawMatchStore` (Phase 5 of the microservices migration). Default
+    # "sqlite" keeps today's behavior unchanged -- `web/worker.py`'s
+    # `_build_job_services` constructs `MatchStore(config.db_path)` exactly
+    # as before. Setting "mongo" makes it construct `RawMatchStore` against
+    # `runner_mongo_uri` instead.
+    #
+    # HARD PRECONDITION, validated below (unlike `peers_mode="grpc"`'s own
+    # topology precondition above, which this object cannot verify and only
+    # warns about): only valid together with `peers_mode="grpc"`.
+    # `RawMatchStore` does not implement any of `MatchStore`'s peer-game
+    # methods (`iter_unverified_puuids`, `iter_unverified_puuids_for_build`,
+    # `set_puuid_rank`, `upsert_peer_game`, `load_peer_games`,
+    # `count_peer_games`) -- the in-process peer path (`build_peer_for_pool`,
+    # `peers_mode="in_process"`) calls all of them, so pairing
+    # `runner_storage_mode="mongo"` with `peers_mode="in_process"` would
+    # crash the moment stage B reaches its first build's peer comparison.
+    runner_storage_mode: Literal["sqlite", "mongo"] = "sqlite"
+    # This class-level default is only used when neither RUNNER_MONGO_URI nor
+    # the shared MONGO_URI is set in the environment -- `load_web_config`
+    # below falls back to MONGO_URI (already set on every Mongo-backed
+    # service's compose block) before ever reaching this default, so a real
+    # docker-compose deployment never actually observes this value.
+    runner_mongo_uri: str = "mongodb://localhost:27017/league_stats"
+
+    @model_validator(mode="after")
+    def _validate_runner_storage_mode(self) -> "WebConfig":
+        """Fail loudly on `runner_storage_mode="mongo"` without `peers_mode="grpc"`.
+
+        See the field comment above for the full argument. Unlike
+        `peers_mode="grpc"`'s own topology precondition (unverifiable from
+        this object alone, so it only warns), this combination is fully
+        knowable from these two field values, so it raises instead.
+        """
+        if self.runner_storage_mode == "mongo" and self.peers_mode != "grpc":
+            raise ValueError(
+                "runner_storage_mode='mongo' requires peers_mode='grpc'. "
+                "RawMatchStore does not implement MatchStore's peer-game "
+                "methods (iter_unverified_puuids, iter_unverified_puuids_for_build, "
+                "set_puuid_rank, upsert_peer_game, load_peer_games, "
+                "count_peer_games), which the in-process peer path "
+                "(peers_mode='in_process') calls."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _warn_on_peers_grpc_topology_precondition(self) -> "WebConfig":
+        """Loudly flag `peers_mode="grpc"`'s hard precondition at construction time.
+
+        See the field comment above for the full correctness argument. This
+        cannot distinguish the one correct topology (this process IS RUNNER,
+        hosting `RunnerServiceServicer`) from the broken one (this is the
+        monolith's own web app, running `execute_job` in-process, with no
+        `RunnerServiceServicer` anywhere in this process) -- both produce a
+        `WebConfig` with `peers_mode="grpc"` that looks identical from here.
+        So this warns unconditionally rather than staying silent, matching
+        the "warn loudly" alternative for a precondition this object cannot
+        itself verify.
+        """
+        if self.peers_mode == "grpc":
+            from league_stats.utils import get_logger
+
+            get_logger("web_config").warning(
+                "peers_mode=grpc is set. This ONLY works when this process is "
+                "itself running as RUNNER (runner/__main__.py) -- PEERS' async "
+                "callback (NotifyPeerBaselineReady) is only ever delivered to "
+                "the in-memory waiter registry of the process that issued the "
+                "matching RequestBaseline call. If this is the monolith's own "
+                "web app (not RUNNER), every peer comparison that falls through "
+                "to PEERS' slow path will silently stall for the full "
+                "baseline-wait timeout and then skip, with no callback ever "
+                "able to arrive."
+            )
+        return self
+
+    @property
+    def reports_dir(self) -> Path:
+        """Root directory of generated player reports."""
+        return self.output_dir / "reports"
+
+
+def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebConfig:
+    """Build a :class:`WebConfig` from ``[web]`` table, environment and overrides.
+
+    Environment variables: ``ANALYZER_WEB_HOST``, ``ANALYZER_WEB_PORT``,
+    ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``, ``ANALYZER_RUNNER_MODE``,
+    ``RUNNER_GRPC_TARGET``, ``ANALYZER_WATCH_MODE``, ``ANALYZER_PEERS_MODE``,
+    ``PEERS_GRPC_TARGET``, ``CRON_WATCH_GRPC_TARGET``,
+    ``ANALYZER_RUNNER_STORAGE_MODE``, ``RUNNER_MONGO_URI`` (falls back to
+    ``MONGO_URI`` when unset).
+    """
+    _load_env_file()
+    data: dict[str, Any] = {}
+    table = _read_toml(config_file or Path("config.toml")).get("web")
+    if isinstance(table, dict):
+        data.update(table)
+    env_map = {
+        "host": os.environ.get("ANALYZER_WEB_HOST"),
+        "port": os.environ.get("ANALYZER_WEB_PORT"),
+        "worker_concurrency": os.environ.get("ANALYZER_WORKER_CONCURRENCY"),
+        "gemini_api_key": os.environ.get("GEMINI_API_KEY"),
+        "runner_mode": os.environ.get("ANALYZER_RUNNER_MODE"),
+        "runner_grpc_target": os.environ.get("RUNNER_GRPC_TARGET"),
+        "watch_mode": os.environ.get("ANALYZER_WATCH_MODE"),
+        "peers_mode": os.environ.get("ANALYZER_PEERS_MODE"),
+        "peers_grpc_target": os.environ.get("PEERS_GRPC_TARGET"),
+        "cron_watch_grpc_target": os.environ.get("CRON_WATCH_GRPC_TARGET"),
+        "runner_storage_mode": os.environ.get("ANALYZER_RUNNER_STORAGE_MODE"),
+        # Falls back to the shared MONGO_URI (already set on every Mongo-backed
+        # service's compose block, e.g. `peers/service.py`'s own
+        # `_build_default_peer_store`) when RUNNER_MONGO_URI isn't set --
+        # without this fallback, enabling runner_storage_mode=mongo in the real
+        # docker-compose deployment would silently default to
+        # "mongodb://localhost:27017/league_stats" instead of the compose
+        # network's `mongo` service, since only MONGO_URI (not
+        # RUNNER_MONGO_URI) is set on `runner`'s environment block.
+        "runner_mongo_uri": os.environ.get("RUNNER_MONGO_URI") or os.environ.get("MONGO_URI"),
+    }
+    data.update({k: v for k, v in env_map.items() if v})
+    data.update({k: v for k, v in overrides.items() if v is not None})
+    return WebConfig(**data)

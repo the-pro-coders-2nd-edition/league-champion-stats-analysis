@@ -21,6 +21,7 @@ from league_stats.core.config import RANKED_QUEUE_IDS
 from league_stats.web.jobs import JOB_KIND_REFRESH, JobStore
 from league_stats.web.welcome_back import compute_welcome_back_summary
 from league_stats.utils import current_trace_id, get_logger, set_trace_id
+from league_stats_common.watch_fields import watch_public_fields  # noqa: F401
 
 # Detection must not crowd out the analysis jobs it triggers: both share one
 # process-wide rate limiter. A dev key allows 100 requests per 2 minutes, so this
@@ -340,13 +341,3 @@ class WatchPoller:
         self._failures[slug] = self._failures.get(slug, 0) + 1
         self._log.warning("Watch check failed for %s: %s", slug, message)
         self._store.record_watch_tick(slug, error=message[:200], at=self._now())
-
-
-def watch_public_fields(row: dict[str, Any]) -> dict[str, Any]:
-    """Watch state for API responses."""
-    return {
-        "watch_enabled": bool(row.get("watch_enabled")),
-        "watch_interval_s": int(row.get("watch_interval_s") or 0),
-        "last_watch_at": row.get("last_watch_at"),
-        "last_watch_error": str(row.get("last_watch_error") or ""),
-    }
