@@ -26,6 +26,7 @@ import asyncio
 import os
 
 import grpc
+from prometheus_client import start_http_server
 
 from league_stats.core.config import load_config, load_web_config
 from league_stats.cron_watch.service import CronWatchServicer
@@ -68,6 +69,7 @@ def _build_client(region: str) -> RiotApiClient:
 
 async def serve() -> None:
     port = os.environ.get("CRON_WATCH_GRPC_PORT", "50052")
+    metrics_port = int(os.environ.get("CRON_WATCH_METRICS_PORT", "9101"))
     web_config = load_web_config()
     # Shared file with the monolith's `app` service -- a docker-compose volume
     # mount, not a per-service path. See this module's docstring.
@@ -79,10 +81,18 @@ async def serve() -> None:
     server.add_insecure_port(f"0.0.0.0:{port}")
 
     await server.start()
+    # Minimal Prometheus /metrics HTTP surface -- same pattern as RUNNER
+    # (cron_watch_tick_duration_seconds, cron_watch_new_games_detected_total,
+    # see cron_watch/service.py). `start_http_server` is synchronous and spins
+    # up its own background thread, so calling it here from inside `serve`'s
+    # coroutine works the same as it would from a plain sync entrypoint.
+    start_http_server(metrics_port)
     # Must run after `server.start()`: `WatchPoller.start()` calls
     # `asyncio.create_task(...)`, which requires a running event loop.
     await servicer.start()
-    log.info("CRON-watch gRPC service listening on :%s", port)
+    log.info(
+        "CRON-watch gRPC service listening on :%s (metrics on :%s/metrics)", port, metrics_port
+    )
     try:
         await server.wait_for_termination()
     finally:

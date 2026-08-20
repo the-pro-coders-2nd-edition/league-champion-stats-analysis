@@ -164,6 +164,7 @@ import time
 from typing import Any, AsyncIterator, Callable
 
 import grpc
+from prometheus_client import Counter, Histogram
 
 from league_stats.core.config import REGION_DEFAULT_PLATFORM
 from league_stats.utils import get_logger
@@ -172,6 +173,19 @@ from league_stats.web.watch import MatchIdSource, WatchPoller
 from league_stats_rpc.v1 import common_pb2, cron_watch_pb2, cron_watch_pb2_grpc
 
 log = get_logger("cron_watch_service")
+
+# CRON-watch's own Prometheus metrics -- same pattern RUNNER established
+# (`runner/service.py`'s RUNNER_JOB_DURATION/RUNNER_JOBS_TOTAL): a `Histogram`
+# + `Counter`, recorded from this servicer and served by `start_http_server`
+# in `cron_watch/__main__.py`.
+CRON_WATCH_TICK_DURATION = Histogram(
+    "cron_watch_tick_duration_seconds",
+    "Time WatchPoller.tick() took to sweep all watched groups once.",
+)
+CRON_WATCH_NEW_GAMES_TOTAL = Counter(
+    "cron_watch_new_games_detected_total",
+    "New games detected via WatchPoller's on_new_game hook.",
+)
 
 # Non-empty on purpose -- see the module docstring: JobStore.decode_players
 # drops any tracked player with an empty tagline.
@@ -207,9 +221,35 @@ class CronWatchServicer(cron_watch_pb2_grpc.CronWatchServiceServicer):
     ) -> None:
         self._store = store
         self._poller = WatchPoller(store, client_factory, on_new_game=self._on_new_game)
+        self._instrument_tick()
         # `None` is the wildcard key: a `WatchUpdates` call with no puuid filter
         # subscribes to every account's updates.
         self._subscribers: dict[str | None, list["asyncio.Queue[cron_watch_pb2.WelcomeBackUpdate]"]] = {}
+
+    def _instrument_tick(self) -> None:
+        """Time every `WatchPoller.tick()` sweep as `cron_watch_tick_duration_seconds`.
+
+        Unlike RUNNER (which wraps `execute_job` at its own call site in
+        `_run_job`), this servicer never calls `tick()` itself -- it is
+        `WatchPoller._loop`'s own background task that calls `self.tick()`
+        (see this module's docstring's sync-vs-aio design note). So instead
+        of wrapping a call site here, the bound `tick` method is replaced on
+        the `WatchPoller` instance: a plain instance attribute shadows the
+        class method for regular attribute lookup, including the `self.tick()`
+        calls `WatchPoller._loop` makes internally, so this still times every
+        real sweep without editing `web/watch.py` (shared with the monolith's
+        in-process poller, whose behavior this task must leave unchanged).
+        """
+        original_tick = self._poller.tick
+
+        async def _timed_tick() -> list[str]:
+            start = time.perf_counter()
+            try:
+                return await original_tick()
+            finally:
+                CRON_WATCH_TICK_DURATION.observe(time.perf_counter() - start)
+
+        self._poller.tick = _timed_tick
 
     # ------------------------------------------------------------ lifecycle
     # For whoever wires up CronWatch's real entrypoint: these must be called
@@ -245,6 +285,7 @@ class CronWatchServicer(cron_watch_pb2_grpc.CronWatchServiceServicer):
         `fetch_match` call was budget-skipped or failed, in which case
         `match_summary_json` ships as `"{}"` rather than blocking the update.
         """
+        CRON_WATCH_NEW_GAMES_TOTAL.inc()
         update = cron_watch_pb2.WelcomeBackUpdate(
             puuid=slug,
             new_match_id=new_match_id,

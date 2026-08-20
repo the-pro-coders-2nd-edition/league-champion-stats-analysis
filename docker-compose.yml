@@ -33,6 +33,7 @@ services:
     environment:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - RUNNER_GRPC_PORT=50051
+      - RUNNER_METRICS_PORT=9100
     env_file:
       - .env
     # No `ports:` here on purpose: RUNNER is only ever dialed by `app` over the
@@ -48,6 +49,7 @@ services:
     environment:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - CRON_WATCH_GRPC_PORT=50052
+      - CRON_WATCH_METRICS_PORT=9101
     env_file:
       - .env
     volumes:
