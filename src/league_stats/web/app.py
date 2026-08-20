@@ -708,10 +708,15 @@ def create_app(
         store.recover_orphans()
         if start_worker:
             worker.start()
-            watcher.start()
+            # watch_mode == "grpc" means CRON-watch polls this same app.sqlite
+            # externally; starting this poller too would race it over
+            # watch_seen_json (see league_stats.cron_watch.service's docstring).
+            if config.watch_mode == "in_process":
+                watcher.start()
         yield
         if start_worker:
-            await watcher.stop()
+            if config.watch_mode == "in_process":
+                await watcher.stop()
             worker.stop()
         store.close()
 

@@ -433,6 +433,16 @@ class WebConfig(BaseModel):
     # unchanged — the worker runs `execute_job` itself, exactly as before.
     runner_mode: Literal["in_process", "grpc"] = "in_process"
     runner_grpc_target: str = "localhost:50051"
+    # Opt-in delegation of new-game detection to CRON-watch running as its own
+    # process against the same `app.sqlite` (Phase 2 of the microservices
+    # migration). Default "in_process" keeps today's behavior unchanged — the
+    # monolith starts its own WatchPoller in `create_app`'s lifespan, exactly as
+    # before. Setting "grpc" skips starting that in-process poller: it MUST be
+    # set once CRON-watch is deployed against the shared DB, otherwise both
+    # pollers race over the same `watch_seen_json` state (see
+    # `league_stats.cron_watch.service`'s module docstring for the full
+    # correctness argument).
+    watch_mode: Literal["in_process", "grpc"] = "in_process"
 
     @property
     def reports_dir(self) -> Path:
@@ -445,7 +455,7 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
 
     Environment variables: ``ANALYZER_WEB_HOST``, ``ANALYZER_WEB_PORT``,
     ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``, ``ANALYZER_RUNNER_MODE``,
-    ``RUNNER_GRPC_TARGET``.
+    ``RUNNER_GRPC_TARGET``, ``ANALYZER_WATCH_MODE``.
     """
     _load_env_file()
     data: dict[str, Any] = {}
@@ -459,6 +469,7 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
         "gemini_api_key": os.environ.get("GEMINI_API_KEY"),
         "runner_mode": os.environ.get("ANALYZER_RUNNER_MODE"),
         "runner_grpc_target": os.environ.get("RUNNER_GRPC_TARGET"),
+        "watch_mode": os.environ.get("ANALYZER_WATCH_MODE"),
     }
     data.update({k: v for k, v in env_map.items() if v})
     data.update({k: v for k, v in overrides.items() if v is not None})

@@ -701,3 +701,128 @@ def test_chat_rejects_bad_requests(client: TestClient) -> None:
         },
     )
     assert response.status_code == 400
+
+
+# ---------------------------------------------------------- watch_mode (Task 6)
+
+
+class _FakeWatcher:
+    """Stand-in for WatchPoller that records start()/stop() calls only."""
+
+    instances: list["_FakeWatcher"] = []
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.started = False
+        self.stopped = False
+        _FakeWatcher.instances.append(self)
+
+    def start(self) -> None:
+        self.started = True
+
+    async def stop(self) -> None:
+        self.stopped = True
+
+
+class _FakeWorker:
+    """Stand-in for AnalysisWorker: no real threads, just start()/stop() calls."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+
+def test_watch_mode_in_process_starts_the_watcher_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """watch_mode defaults to "in_process": create_app's lifespan must still start
+    the monolith's own WatchPoller exactly as before this task."""
+    monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
+    _FakeWatcher.instances = []
+    monkeypatch.setattr(web_app, "WatchPoller", _FakeWatcher)
+    monkeypatch.setattr(web_app, "AnalysisWorker", _FakeWorker)
+
+    config = WebConfig(app_db_path=tmp_path / "app.sqlite", output_dir=tmp_path / "output")
+    assert config.watch_mode == "in_process"
+    application = web_app.create_app(config, start_worker=True)
+    with TestClient(application):
+        watcher = _FakeWatcher.instances[0]
+        assert watcher.started is True
+        assert watcher.stopped is False
+    assert watcher.stopped is True
+
+
+def test_watch_mode_grpc_skips_starting_the_watcher(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """watch_mode="grpc" must NOT start the in-process WatchPoller: CRON-watch is
+    expected to poll the same app.sqlite externally instead. Starting both would
+    race over watch_seen_json (see league_stats.cron_watch.service's docstring)."""
+    monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
+    _FakeWatcher.instances = []
+    monkeypatch.setattr(web_app, "WatchPoller", _FakeWatcher)
+    monkeypatch.setattr(web_app, "AnalysisWorker", _FakeWorker)
+
+    config = WebConfig(
+        app_db_path=tmp_path / "app.sqlite",
+        output_dir=tmp_path / "output",
+        watch_mode="grpc",
+    )
+    application = web_app.create_app(config, start_worker=True)
+    with TestClient(application):
+        watcher = _FakeWatcher.instances[0]
+        assert watcher.started is False
+    assert watcher.stopped is False
+
+
+def test_watch_mode_grpc_does_not_change_worker_startup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """watch_mode only gates the watcher; the analysis worker still starts/stops
+    normally regardless of watch_mode."""
+    monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
+    started: list[bool] = []
+    stopped: list[bool] = []
+
+    class RecordingWorker(_FakeWorker):
+        def start(self) -> None:
+            started.append(True)
+
+        def stop(self) -> None:
+            stopped.append(True)
+
+    monkeypatch.setattr(web_app, "WatchPoller", _FakeWatcher)
+    monkeypatch.setattr(web_app, "AnalysisWorker", RecordingWorker)
+
+    config = WebConfig(
+        app_db_path=tmp_path / "app.sqlite",
+        output_dir=tmp_path / "output",
+        watch_mode="grpc",
+    )
+    application = web_app.create_app(config, start_worker=True)
+    with TestClient(application):
+        assert started == [True]
+    assert stopped == [True]
+
+
+def test_watch_mode_default_does_not_start_watcher_when_start_worker_false(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """start_worker=False (as every other test in this module uses) must keep
+    skipping the watcher entirely, regardless of watch_mode -- this task must not
+    change that existing test-mode behavior."""
+    monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
+    _FakeWatcher.instances = []
+    monkeypatch.setattr(web_app, "WatchPoller", _FakeWatcher)
+    monkeypatch.setattr(web_app, "AnalysisWorker", _FakeWorker)
+
+    config = WebConfig(app_db_path=tmp_path / "app.sqlite", output_dir=tmp_path / "output")
+    application = web_app.create_app(config, start_worker=False)
+    with TestClient(application):
+        watcher = _FakeWatcher.instances[0]
+        assert watcher.started is False
+    assert watcher.stopped is False
