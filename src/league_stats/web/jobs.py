@@ -5,12 +5,14 @@ and the background worker thread(s); a lock serialises access to the single
 connection. Jobs survive restarts: queued jobs are picked up again, while
 jobs that were mid-run are marked failed by :meth:`JobStore.recover_orphans`.
 
-**Architectural decision (Phase 5, Task 2, closed):** `JobStore` stays on SQLite
-permanently by design, not as a migration gap. Phase 2's Task 4 proved shared-
-SQLite with `BEGIN IMMEDIATE` guards works correctly across processes; RUNNER's
-gRPC job-id namespace has no natural mapping to the queue schema; and the UI's
-queue-position/ETA features query `JobStore`'s SQL directly with no clear benefit
-from Mongo migration.
+**Migration note:** a Phase 5 decision once called this store's SQLite
+backing permanent; that decision was reopened, and the current direction
+is to eventually move this store to Mongo too, closing the last SQLite
+dependency in the app. See
+``~/.claude/docs/league-champion-stats-analysis/superpowers/specs/2026-08-20-full-sqlite-removal-path.md``
+for the reasoning and the scoped plan (sized similarly to the CRON-watch
+extraction phase — not a quick follow-up). Until that phase is greenlit
+and done, this store stays exactly as implemented below.
 """
 
 from __future__ import annotations
