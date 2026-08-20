@@ -155,6 +155,32 @@ def test_a_new_match_id_enqueues_a_refresh(store: JobStore) -> None:
     assert jobs[0]["kind"] == JOB_KIND_REFRESH
 
 
+def test_a_new_match_id_mints_a_trace_id_for_the_enqueued_refresh(store: JobStore) -> None:
+    """`WatchPoller` is self-driven (an internal asyncio.Task, not tied to any
+    incoming request or RPC), so it never inherits a trace_id -- it must mint
+    one at enqueue time (Phase 6 final review, Finding 1) rather than leaving
+    the job's `trace_id` column empty, the same way the gRPC server
+    interceptor mints one for a call with no upstream trace_id."""
+    from league_stats.utils import set_trace_id
+
+    set_trace_id("")
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    clock = Clock()
+    poller = _poller(store, client, clock)
+
+    _tick(poller)  # baseline
+    client.newest["puuid-hugros"] = {RANKED_SOLO_QUEUE_ID: ["EUW1_2"]}
+    clock.advance(120)
+    _tick(poller)
+
+    jobs = store.list_active_jobs()
+    assert len(jobs) == 1
+    assert jobs[0]["trace_id"]
+    assert len(jobs[0]["trace_id"]) == 32
+    int(jobs[0]["trace_id"], 16)
+
+
 def test_a_new_flex_match_id_enqueues_a_refresh(store: JobStore) -> None:
     """A player's solo queue is unchanged but their flex queue has a new game.
 

@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     stage_current INTEGER,
     stage_total INTEGER,
     error TEXT NOT NULL DEFAULT '',
+    trace_id TEXT NOT NULL DEFAULT '',
     created_at REAL NOT NULL,
     started_at REAL,
     finished_at REAL,
@@ -219,6 +220,10 @@ class JobStore:
                 self._conn.execute("ALTER TABLE jobs ADD COLUMN filter_role TEXT")
             if "min_games" not in job_columns:
                 self._conn.execute("ALTER TABLE jobs ADD COLUMN min_games INTEGER")
+            if "trace_id" not in job_columns:
+                self._conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN trace_id TEXT NOT NULL DEFAULT ''"
+                )
             self._conn.commit()
         except Exception:
             self._conn.rollback()
@@ -238,12 +243,18 @@ class JobStore:
         filter_champion: str | None = None,
         filter_role: str | None = None,
         min_games: int | None = None,
+        trace_id: str | None = None,
     ) -> tuple[dict[str, Any], bool]:
         """Queue a job, deduplicating against an existing active job.
 
         Optional ``filter_champion`` / ``filter_role`` scope analysis to one
         build (used by per-champion report refresh). ``min_games`` overrides
         the config threshold for how many ranked games a build needs.
+        ``trace_id`` is the originating trace for this job (the HTTP request's
+        or CronWatch detection's own trace_id) -- persisted so
+        ``AnalysisWorker`` can restore it on the worker thread when the job is
+        claimed, letting it survive the hand-off to a long-lived worker thread
+        that has no contextvars link back to whatever set it.
 
         Returns:
             ``(job, created)`` — the active or newly created job row.
@@ -252,6 +263,7 @@ class JobStore:
         champion = (filter_champion or "").strip() or None
         role = (filter_role or "").strip() or None
         games_threshold = int(min_games) if min_games is not None else None
+        trace = trace_id or ""
         with self._lock:
             # `BEGIN IMMEDIATE` (not the module's default deferred BEGIN, which
             # only takes a lock at the first *write*) makes the
@@ -276,8 +288,8 @@ class JobStore:
                     """
                     INSERT INTO jobs (kind, player_slug, riot_id, tagline, region,
                                       players_json, filter_champion, filter_role,
-                                      min_games, state, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                      min_games, trace_id, state, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         kind,
@@ -289,6 +301,7 @@ class JobStore:
                         champion,
                         role,
                         games_threshold,
+                        trace,
                         QUEUED,
                         now,
                         now,

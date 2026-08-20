@@ -337,6 +337,57 @@ def test_run_job_wraps_execute_job_so_a_crash_still_yields_a_final_event(
     assert "boom" in results[-1].error
 
 
+def test_enqueue_job_threads_the_callers_trace_id_into_the_spawned_job_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase 6 final review, Finding 1: `EnqueueJob`'s own handler runs on the
+    thread `TraceServerInterceptor` set the incoming trace_id on, but the
+    actual job runs on a brand-new `threading.Thread` (`_run_job`) with its
+    own, unrelated `contextvars.Context`. Without explicitly threading the
+    captured trace_id through, it would be silently lost the moment
+    `_run_job`'s thread starts, even though the RPC itself carried it
+    correctly.
+    """
+    from league_stats.infra.trace_context import TraceServerInterceptor
+    from league_stats.utils import current_trace_id
+
+    observed: list[str] = []
+
+    def _recording_execute_job(job, store, web_config):
+        observed.append(current_trace_id())
+        # Emit a terminal event ourselves (skipping the real pipeline) so
+        # StreamJobProgress's consumer below doesn't block waiting for one.
+        store.set_state(job["id"], job_states.DONE, detail="stub")
+
+    monkeypatch.setattr(runner_service, "execute_job", _recording_execute_job)
+    servicer = RunnerServicer(web_config=WebConfig())
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=4), interceptors=[TraceServerInterceptor()]
+    )
+    runner_pb2_grpc.add_RunnerServiceServicer_to_server(servicer, server)
+    port = server.add_insecure_port("127.0.0.1:0")
+    server.start()
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        stub = runner_pb2_grpc.RunnerServiceStub(channel)
+        request = runner_pb2.EnqueueJobRequest(
+            riot_id="Test",
+            tagline="EUW",
+            region=common_pb2.EUROPE,
+            kind=runner_pb2.JOB_KIND_REGENERATE,
+            player_slug="test_euw",
+        )
+        response = stub.EnqueueJob(request, metadata=(("trace-id", "upstream-trace-123"),))
+        list(
+            stub.StreamJobProgress(runner_pb2.StreamJobProgressRequest(job_id=response.job_id))
+        )
+    finally:
+        channel.close()
+        server.stop(grace=None)
+
+    assert observed == ["upstream-trace-123"]
+
+
 # ------------------------------------------------------- NotifyPeerBaselineReady
 
 

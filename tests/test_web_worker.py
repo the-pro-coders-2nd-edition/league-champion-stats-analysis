@@ -1506,3 +1506,179 @@ def test_build_peer_for_pool_via_grpc_returns_none_below_min_games(
     result = worker._build_peer_for_pool_via_grpc(services, batch, pool, ranked, web_config)
 
     assert result is None
+
+
+# -------------------------------- trace_id JobStore hand-off (Phase 6 final review, Finding 1)
+
+
+@pytest.fixture(autouse=True)
+def _reset_trace_id_for_worker_tests():
+    """Every trace_id test starts from, and leaves, an unset ContextVar."""
+    from league_stats.utils import set_trace_id
+
+    set_trace_id("")
+    yield
+    set_trace_id("")
+
+
+def test_enqueue_persists_trace_id_and_claim_next_returns_it(store: JobStore) -> None:
+    """`JobStore.enqueue`'s new `trace_id` column round-trips through `claim_next`,
+    the same column both a real HTTP request (`app.py`) and CronWatch's
+    `WatchPoller._enqueue_refresh` now write."""
+    job, created = store.enqueue(
+        kind=jobs.JOB_KIND_ANALYZE,
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        player_slug="test_euw",
+        trace_id="enqueue-time-trace",
+    )
+    assert created
+    assert job["trace_id"] == "enqueue-time-trace"
+
+    claimed = store.claim_next()
+    assert claimed is not None
+    assert claimed["trace_id"] == "enqueue-time-trace"
+
+
+def test_enqueue_without_trace_id_defaults_to_empty_string(store: JobStore) -> None:
+    """A caller that never had a trace_id (e.g. a pre-migration test row) must
+    not crash `enqueue`/`claim_next` -- the column defaults to ``''``."""
+    job, _created = store.enqueue(
+        kind=jobs.JOB_KIND_ANALYZE,
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        player_slug="test_euw",
+    )
+    assert job["trace_id"] == ""
+
+
+def test_execute_job_restores_trace_id_from_job_before_grpc_delegation(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`execute_job` must call `set_trace_id` from the claimed job's `trace_id`
+    column before doing anything else -- in particular before the `runner_mode
+    == "grpc"` branch would open a channel to RUNNER, so `TraceClientInterceptor`
+    attaches the real originating trace_id instead of whatever this long-lived
+    worker thread happened to have left over from a previous job."""
+    from league_stats.utils import current_trace_id, set_trace_id
+
+    set_trace_id("stale-trace-from-a-previous-job")
+    store.enqueue(
+        kind=jobs.JOB_KIND_ANALYZE,
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        player_slug="test_euw",
+        trace_id="this-jobs-real-trace",
+    )
+    set_trace_id("stale-trace-from-a-previous-job")
+    job = store.claim_next()
+    assert job is not None
+
+    observed: list[str] = []
+    monkeypatch.setattr(
+        worker,
+        "_execute_job_via_runner",
+        lambda *a, **k: observed.append(current_trace_id()),
+    )
+    grpc_web_config = web_config.model_copy(update={"runner_mode": "grpc"})
+
+    worker.execute_job(job, store, grpc_web_config)
+
+    assert observed == ["this-jobs-real-trace"]
+
+
+def test_execute_job_leaves_trace_id_untouched_when_job_has_none(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RUNNER's own internal `execute_job` call (job dict built from
+    `EnqueueJobRequest`, which has no trace_id field) must not clobber the
+    trace_id `RunnerServicer._run_job` already set on this thread from the
+    real gRPC call it received."""
+    from league_stats.utils import current_trace_id, set_trace_id
+
+    set_trace_id("set-by-runners-run-job")
+    job = _claimed_job(store)
+    job["trace_id"] = ""
+
+    observed: list[str] = []
+    monkeypatch.setattr(
+        worker, "_execute_job_via_runner", lambda *a, **k: observed.append(current_trace_id())
+    )
+    grpc_web_config = web_config.model_copy(update={"runner_mode": "grpc"})
+
+    worker.execute_job(job, store, grpc_web_config)
+
+    assert observed == ["set-by-runners-run-job"]
+
+
+def test_trace_id_survives_jobstore_handoff_through_a_real_runner_server(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """End-to-end proof for Finding 1: a job enqueued under a known trace_id
+    (mimicking `app.py`'s `current_trace_id()`-sourced enqueue) makes RUNNER's
+    own `execute_job` run -- on the background thread `RunnerServicer.EnqueueJob`
+    spawns -- observe that exact trace_id, via a real `grpc.server` with
+    `TraceServerInterceptor` registered exactly like `runner/__main__.py` does,
+    and a real `RunnerServicer.EnqueueJob`/`_run_job` thread hand-off (not a
+    scripted/mocked servicer).
+    """
+    from concurrent import futures
+
+    import grpc
+
+    from league_stats.infra.trace_context import TraceServerInterceptor
+    from league_stats.runner import service as runner_service
+    from league_stats.utils import current_trace_id, set_trace_id
+    from league_stats_rpc.v1 import runner_pb2_grpc
+
+    observed: list[str] = []
+
+    def _recording_execute_job(job: dict[str, Any], adapter: Any, cfg: Any) -> None:
+        observed.append(current_trace_id())
+        # Emit a terminal event ourselves (skipping the real pipeline) so
+        # StreamJobProgress's consumer below doesn't block waiting for one.
+        from league_stats.web import jobs as job_states
+
+        adapter.set_state(job["id"], job_states.DONE, detail="stub")
+
+    monkeypatch.setattr(runner_service, "execute_job", _recording_execute_job)
+
+    runner_web_config = web_config.model_copy(update={"output_dir": tmp_path / "runner_output"})
+    servicer = runner_service.RunnerServicer(web_config=runner_web_config)
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=4),
+        interceptors=[TraceServerInterceptor()],
+    )
+    runner_pb2_grpc.add_RunnerServiceServicer_to_server(servicer, server)
+    port = server.add_insecure_port("127.0.0.1:0")
+    server.start()
+    try:
+        # Enqueue under a known originating trace_id, exactly like app.py's
+        # submit_analysis passing trace_id=current_trace_id().
+        set_trace_id("originating-http-trace-xyz")
+        store.enqueue(
+            kind=jobs.JOB_KIND_ANALYZE,
+            riot_id="Test",
+            tagline="EUW",
+            region="euw1",
+            player_slug="test_euw",
+            trace_id=current_trace_id(),
+        )
+        # Simulate the worker thread being idle/reused from an earlier, unrelated
+        # job before claiming this one -- proves the value comes from the job
+        # row, not merely from this test having never cleared the ContextVar.
+        set_trace_id("")
+        job = store.claim_next()
+        assert job is not None
+
+        grpc_web_config = web_config.model_copy(
+            update={"runner_mode": "grpc", "runner_grpc_target": f"127.0.0.1:{port}"}
+        )
+        worker.execute_job(job, store, grpc_web_config)
+    finally:
+        server.stop(grace=None)
+
+    assert observed == ["originating-http-trace-xyz"]

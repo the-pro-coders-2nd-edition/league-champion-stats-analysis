@@ -13,13 +13,14 @@ from __future__ import annotations
 
 import asyncio
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
 from league_stats.core.config import RANKED_QUEUE_IDS
 from league_stats.web.jobs import JOB_KIND_REFRESH, JobStore
 from league_stats.web.welcome_back import compute_welcome_back_summary
-from league_stats.utils import get_logger
+from league_stats.utils import current_trace_id, get_logger, set_trace_id
 
 # Detection must not crowd out the analysis jobs it triggers: both share one
 # process-wide rate limiter. A dev key allows 100 requests per 2 minutes, so this
@@ -311,6 +312,15 @@ class WatchPoller:
     ) -> bool:
         players = list(row.get("players") or [])
         primary = players[0] if players else {}
+        # This detection loop is self-driven (an internal asyncio.Task, not tied
+        # to any incoming request or RPC), so it never inherits a trace_id from
+        # anywhere -- current_trace_id() would read the ContextVar's unset
+        # default ("") here. Mint one, the same "originate if absent" rule the
+        # HTTP middleware and gRPC server interceptor already use, so a
+        # CronWatch-detected new game still gets a trace_id worth persisting
+        # and propagating down through AnalysisWorker -> RUNNER.
+        trace_id = current_trace_id() or uuid.uuid4().hex
+        set_trace_id(trace_id)
         job, created = self._store.enqueue(
             kind=JOB_KIND_REFRESH,
             riot_id=str(primary.get("riot_id") or row.get("riot_id") or ""),
@@ -318,6 +328,7 @@ class WatchPoller:
             region=str(row.get("region") or "euw1"),
             player_slug=slug,
             players=players or None,
+            trace_id=trace_id,
         )
         if created:
             self._log.info("Watch found a new game for %s; queued a refresh", slug)

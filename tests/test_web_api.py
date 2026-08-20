@@ -102,6 +102,42 @@ def test_landing_page_shows_profile_icons(client: TestClient) -> None:
     assert group["is_group"] is True
 
 
+def test_submit_analysis_persists_the_requests_trace_id_on_the_job(
+    client: TestClient,
+) -> None:
+    """Phase 6 final review, Finding 1: the HTTP request's trace_id (minted or
+    forwarded by `originate_trace_id`, echoed back as `X-Trace-Id`) must be
+    persisted on the enqueued `JobStore` row -- not just echoed to the client
+    -- so `AnalysisWorker` can later restore it before calling RUNNER."""
+    response = client.post(
+        "/api/analyses",
+        json={"riot_id": "New#EUW", "region": "euw1"},
+        headers={"x-trace-id": "caller-supplied-trace-abc"},
+    )
+    assert response.headers["X-Trace-Id"] == "caller-supplied-trace-abc"
+    job_id = response.json()["job"]["id"]
+
+    row = client.job_store.get(job_id)  # type: ignore[attr-defined]
+    assert row["trace_id"] == "caller-supplied-trace-abc"
+
+
+def test_refresh_player_persists_the_requests_trace_id_on_the_job(
+    client: TestClient,
+) -> None:
+    """Same as above for `_enqueue_player_job`'s call site (used by
+    `/refresh`, `/regenerate` and the career-ladder drop route)."""
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+
+    response = client.post(
+        "/api/players/test_euw/refresh", headers={"x-trace-id": "refresh-trace-xyz"}
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job"]["id"]
+
+    row = client.job_store.get(job_id)  # type: ignore[attr-defined]
+    assert row["trace_id"] == "refresh-trace-xyz"
+
+
 def test_groups_endpoint_matches_landing_page_data(client: TestClient) -> None:
     _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
     client.post("/api/analyses", json={"riot_id": "New#EUW", "region": "euw1"})

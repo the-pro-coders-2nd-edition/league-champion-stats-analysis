@@ -53,7 +53,7 @@ from prometheus_client import Counter, Histogram
 
 from league_stats.core.config import load_web_config
 from league_stats.runner.adapter import RunnerJobAdapter
-from league_stats.utils import get_logger
+from league_stats.utils import current_trace_id, get_logger, set_trace_id
 from league_stats.web import jobs as job_states
 from league_stats.web.jobs import encode_players
 from league_stats.web.worker import execute_job, resolve_peer_baseline_notification
@@ -183,7 +183,19 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
             return next(self._ids)
 
     def EnqueueJob(self, request, context):
-        """Build a job dict, spawn a background thread running execute_job, return its id."""
+        """Build a job dict, spawn a background thread running execute_job, return its id.
+
+        Captures `current_trace_id()` here, on the RPC handler's own thread --
+        this is where `TraceServerInterceptor` set it (see `trace_context.py`'s
+        module docstring: it wraps the handler's *behavior* function so
+        `set_trace_id` runs on this exact thread). The job itself runs on a
+        brand-new `threading.Thread` below, which starts with a fresh,
+        unrelated `contextvars.Context` -- without explicitly threading the
+        captured value through to `_run_job`, the trace_id picked up from the
+        incoming gRPC call would be silently lost the moment `_run_job`'s
+        thread starts, even though `EnqueueJob`'s own handler saw it correctly.
+        """
+        trace_id = current_trace_id()
         if request.kind not in _KIND_TO_STR:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details(
@@ -203,7 +215,7 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
         adapter = RunnerJobAdapter(job_id=job_id, events=events)
         thread = threading.Thread(
             target=self._run_job,
-            args=(job, adapter, events, job_id_str),
+            args=(job, adapter, events, job_id_str, trace_id),
             name=f"runner-job-{job_id}",
             daemon=True,
         )
@@ -216,8 +228,21 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
         adapter: RunnerJobAdapter,
         events: "queue.SimpleQueue[dict[str, Any]]",
         job_id_str: str,
+        trace_id: str = "",
     ) -> None:
         """Run `execute_job`, guaranteeing a terminal event even on a crash.
+
+        `set_trace_id(trace_id)` is the very first thing this (freshly
+        spawned) thread does: this thread starts with an empty ContextVar
+        context, so without this call, everything `execute_job` logs/does on
+        this thread -- and any further gRPC call it makes onward, e.g. to
+        PEERS via `TraceClientInterceptor` -- would carry no trace_id at all,
+        even though `EnqueueJob` correctly captured one from its own inbound
+        call (see that method's docstring). `execute_job` itself only
+        overwrites this when its own `job` dict carries a non-empty
+        `trace_id` (a real `JobStore` row's column) -- the job dict built here
+        from `EnqueueJobRequest` never has one, so this call is what actually
+        establishes it for RUNNER's run.
 
         `execute_job` catches broadly (`except Exception`) internally and
         always transitions to a terminal job state on that path -- but a few
@@ -238,6 +263,7 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
         which RUNNER doesn't have); a soft peer failure still counts as a
         RUNNER-level success.
         """
+        set_trace_id(trace_id)
         start = time.perf_counter()
         try:
             execute_job(job, adapter, self._web_config)

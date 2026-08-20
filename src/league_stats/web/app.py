@@ -56,7 +56,7 @@ from league_stats.presentation.brand_assets import (
 )
 from league_stats.presentation.report import discover_player_builds, is_group_player_label
 from league_stats.presentation.report_json import rewrite_web_asset_hrefs
-from league_stats.utils import set_trace_id, setup_logging
+from league_stats.utils import current_trace_id, set_trace_id, setup_logging
 from league_stats.analysis.career.models import BLOCK_SLOTS
 from league_stats.infra.career_store import CareerStore, build_key as career_build_key
 from league_stats.web.watch import WatchPoller, watch_public_fields
@@ -917,6 +917,7 @@ def create_app(
             player_slug=slug,
             players=tracked,
             min_games=min_games,
+            trace_id=current_trace_id(),
         )
         return {
             "job": _job_public(store, job),
@@ -1205,6 +1206,7 @@ def create_app(
             players=tracked,
             filter_champion=filter_champion,
             filter_role=filter_role,
+            trace_id=current_trace_id(),
         )
         return {"job": _job_public(store, job), "created": created, "player_slug": slug}
 
@@ -1409,6 +1411,19 @@ def create_app(
 
     @app.get("/metrics", include_in_schema=False)
     def metrics() -> Response:
+        """Unlike RUNNER/CronWatch/PEERS' dedicated internal-only metrics ports,
+        this reuses api-ui's own public HTTP server (see this route's original
+        docstring above HTTP_REQUEST_DURATION), so nothing at this layer
+        restricts who can read it. Phase 6 final review, Finding 3: gated at
+        the reverse-proxy layer instead -- `deploy/run.sh`'s `write_caddyfile()`
+        wraps `/metrics` in a `route` block that 403s any request whose
+        `remote_ip` is outside Caddy's `private_ranges`, so only same-host/
+        private-network callers (e.g. Prometheus, an operator over a VPN) ever
+        reach this handler in the deployed topology. Not gated here in Python
+        because the deployed topology always sits behind that Caddy layer;
+        a test hitting this app directly (bypassing Caddy, as `TestClient`
+        does) intentionally still gets a 200, matching every other route here.
+        """
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     @app.get("/riot.txt", response_class=PlainTextResponse)

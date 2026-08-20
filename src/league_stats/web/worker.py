@@ -47,7 +47,7 @@ from league_stats.presentation.report import discover_player_builds
 from league_stats.web import jobs as job_states
 from league_stats.web.jobs import JOB_KIND_REGENERATE, JobStore, decode_players
 from league_stats.web.progress import JobCancelled, JobProgressReporter
-from league_stats.utils import get_logger
+from league_stats.utils import get_logger, set_trace_id
 
 CHAT_ENDPOINT = "/api/chat"
 
@@ -1062,7 +1062,25 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
 
 
 def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> None:
-    """Run one claimed job end to end, updating its state as stages complete."""
+    """Run one claimed job end to end, updating its state as stages complete.
+
+    Restores the originating trace_id (`JobStore`'s `trace_id` column,
+    persisted at enqueue time by `app.py`'s HTTP handlers and `WatchPoller`'s
+    self-originated detection) onto this thread's ContextVar *before* doing
+    anything else -- in particular before the `runner_mode == "grpc"` branch
+    below opens a channel to RUNNER, so `TraceClientInterceptor` attaches the
+    real originating trace_id rather than whatever (if anything) this
+    long-lived worker thread happened to have left over from a previous job.
+    `job.get("trace_id")` is only falsy for a job dict that never had a
+    trace_id to begin with (e.g. RUNNER's own internal `execute_job` call,
+    whose job dict is built from `EnqueueJobRequest`, which carries no
+    trace_id field) -- in that case this leaves whatever the caller already
+    set (e.g. RUNNER's own `_run_job`, which sets it from the gRPC call it
+    received) untouched, rather than clobbering it with an empty string.
+    """
+    trace_id = job.get("trace_id")
+    if trace_id:
+        set_trace_id(trace_id)
     if web_config.runner_mode == "grpc":
         _execute_job_via_runner(job, store, web_config)
         return
