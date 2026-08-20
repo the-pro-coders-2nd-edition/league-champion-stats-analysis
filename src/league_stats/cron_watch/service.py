@@ -91,17 +91,61 @@ routing CRON-watch's refreshes through it would make every watch-triggered
 job invisible to the landing page's busy dots, the player page's active-job
 banner, and job cancellation, unless something else also wrote a matching
 row into `JobStore` (which nothing does, and which would just be option
-(b) again with extra plumbing). `JobStore` is also already set up for
-safe concurrent multi-connection access to one file (`PRAGMA
-journal_mode=WAL`, `PRAGMA busy_timeout=30000`, `check_same_thread=False`;
-see `web/jobs.py`), so (b) needs no changes there. This class's
-constructor therefore keeps taking a `JobStore` instance (pointed at the
-shared file by whoever wires up CRON-watch's real entrypoint -- Task 5),
-exactly as Task 2 already built it; see
+(b) again with extra plumbing). This class's constructor therefore keeps
+taking a `JobStore` instance (pointed at the shared file by whoever wires
+up CRON-watch's real entrypoint -- Task 5), exactly as Task 2 already
+built it; see
 `tests/test_cron_watch_service.py::test_a_cron_watch_enqueued_job_surfaces_through_the_monolith_job_api`
 for an end-to-end proof using two independent `JobStore` connections onto
 one file, one driven through this servicer and the other through a real
 `web.app.create_app()` instance.
+
+Correction (found in review, do not repeat this claim): `JobStore`'s
+`PRAGMA journal_mode=WAL` / `PRAGMA busy_timeout=30000` /
+`check_same_thread=False` (see `web/jobs.py`) prevent `SQLITE_BUSY` errors
+under concurrent access, but they do NOT make a check-then-insert sequence
+atomic across separate processes -- `JobStore._lock` (a `threading.Lock`)
+is process-local and provides zero cross-process protection. `enqueue`'s
+existing-active-job dedup (SELECT for an active job, then INSERT if none)
+was a real TOCTOU race under option (b): two processes (the monolith and
+CRON-watch) could both see "no active job for this slug" and both insert,
+producing duplicate active jobs the UI's busy-dots and cancel button don't
+expect. Fixed alongside this note by wrapping that check-then-insert in an
+explicit `BEGIN IMMEDIATE` transaction in `JobStore.enqueue`
+(`web/jobs.py`), which takes SQLite's write lock before the SELECT so a
+second process's own `BEGIN IMMEDIATE` blocks (up to `busy_timeout`) until
+the first transaction commits or rolls back, making the dedup check
+atomic across processes too, not just across threads.
+
+CRITICAL PRECONDITION for whoever builds Task 6 (the monolith's opt-in
+`watch_mode`): once CRON-watch is deployed, the monolith's own in-process
+`WatchPoller` (started unconditionally today in `web/app.py`'s
+`create_app`, around the `watcher.start()` call in its `lifespan`) MUST
+NOT also run against the same `app.sqlite`. Both pollers independently
+read the same `watch_enabled` rows and both call `record_watch_tick(slug,
+seen=..., ...)`, which persists `watch_seen_json` -- whichever poller
+ticks first "consumes" the new match id (the other then sees
+`queues_seen.get(key) == newest[0]` and treats it as already-seen), so
+roughly half of all new-game detections would silently never reach
+CRON-watch's `on_new_game` hook (the entire reason this service exists),
+on top of doubling Riot API calls against one shared rate-limit budget.
+This is NOT a hypothetical for later -- it is the direct, immediate
+consequence of deploying CRON-watch under option (b) without also gating
+the monolith's poller. Task 6 must make `watcher.start()` conditional on
+`watch_mode == "in_process"` (default), mirroring exactly how Phase 1's
+Task 6 made `execute_job`'s in-process path conditional on `runner_mode`
+-- this is not optional polish, it is a correctness requirement for this
+task's own chosen design to work as intended.
+
+Handoff note for Task 5 (CRON-watch's entrypoint): `JobStore.recover_orphans()`
+(`web/jobs.py`) marks every job in `RUNNING_STATES` as failed, and runs
+unconditionally on every `JobStore`-backed startup path in this codebase
+today (see `web/app.py`'s `lifespan`, which calls it even when
+`start_worker=False`). On a shared `app.sqlite`, a naive CRON-watch
+entrypoint that also calls `recover_orphans()` on its own startup would
+kill the monolith's genuinely in-flight jobs, not just its own orphans.
+CRON-watch's entrypoint must NOT call `recover_orphans()` on the shared
+store -- that is the monolith's responsibility alone.
 
 Similarly, `RegisterAccountRequest.region` is `league_stats_rpc.v1.Region`,
 which is continent-grained (EUROPE/AMERICAS/ASIA/SEA), while `JobStore` rows

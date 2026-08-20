@@ -220,38 +220,56 @@ class JobStore:
         role = (filter_role or "").strip() or None
         games_threshold = int(min_games) if min_games is not None else None
         with self._lock:
-            existing = self._active_job_for(player_slug)
-            if existing is not None:
-                return existing, False
-            now = time.time()
-            cursor = self._conn.execute(
-                """
-                INSERT INTO jobs (kind, player_slug, riot_id, tagline, region,
-                                  players_json, filter_champion, filter_role,
-                                  min_games, state, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    kind,
-                    player_slug,
-                    riot_id,
-                    tagline,
-                    region,
-                    encode_players(tracked),
-                    champion,
-                    role,
-                    games_threshold,
-                    QUEUED,
-                    now,
-                    now,
-                ),
-            )
-            self._conn.execute(
-                "UPDATE players SET last_job_id = ? WHERE slug = ?",
-                (cursor.lastrowid, player_slug),
-            )
-            self._conn.commit()
-            return self._get(int(cursor.lastrowid)), True
+            # `BEGIN IMMEDIATE` (not the module's default deferred BEGIN, which
+            # only takes a lock at the first *write*) makes the
+            # check-then-insert below atomic across separate OS processes
+            # sharing this file, not just across threads in this one process.
+            # Without it, two processes (e.g. the monolith and CRON-watch)
+            # could both run `_active_job_for` and see "nothing active" before
+            # either INSERTs, defeating this dedup entirely -- WAL mode and
+            # `busy_timeout` alone only prevent SQLITE_BUSY errors, they do
+            # not make this sequence atomic. See
+            # `cron_watch/service.py`'s module docstring for the fuller
+            # writeup of this gap and why this class's own `threading.Lock`
+            # (process-local) does not cover it.
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                existing = self._active_job_for(player_slug)
+                if existing is not None:
+                    self._conn.rollback()
+                    return existing, False
+                now = time.time()
+                cursor = self._conn.execute(
+                    """
+                    INSERT INTO jobs (kind, player_slug, riot_id, tagline, region,
+                                      players_json, filter_champion, filter_role,
+                                      min_games, state, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        kind,
+                        player_slug,
+                        riot_id,
+                        tagline,
+                        region,
+                        encode_players(tracked),
+                        champion,
+                        role,
+                        games_threshold,
+                        QUEUED,
+                        now,
+                        now,
+                    ),
+                )
+                self._conn.execute(
+                    "UPDATE players SET last_job_id = ? WHERE slug = ?",
+                    (cursor.lastrowid, player_slug),
+                )
+                self._conn.commit()
+                return self._get(int(cursor.lastrowid)), True
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def get(self, job_id: int) -> dict[str, Any] | None:
         """Load one job by id."""
