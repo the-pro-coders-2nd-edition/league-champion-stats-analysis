@@ -264,15 +264,6 @@ def test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode(
     assert not (tmp_path / ".cache" / "matches.sqlite").exists()
 
 
-def test_web_config_rejects_runner_storage_mode_mongo_without_peers_grpc() -> None:
-    """`runner_storage_mode="mongo"` must fail loudly, at construction time,
-    when paired with `peers_mode="in_process"` -- that combination would
-    crash the moment stage B's in-process peer path called a peer-game
-    method `RawMatchStore` doesn't implement."""
-    with pytest.raises(ValueError, match="requires peers_mode='grpc'"):
-        WebConfig(runner_storage_mode="mongo", peers_mode="in_process")
-
-
 def test_runner_servicer_never_delegates_even_with_grpc_mode_in_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

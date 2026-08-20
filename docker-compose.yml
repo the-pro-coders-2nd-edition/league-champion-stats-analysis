@@ -20,6 +20,15 @@ services:
       # `peers` service's own comment below for the topology this is meant
       # to be enabled on instead.
       - ANALYZER_PEERS_MODE=in_process
+      # Pinned explicitly for the same reason as ANALYZER_PEERS_MODE above:
+      # runner_storage_mode=mongo REQUIRES peers_mode=grpc (WebConfig raises
+      # otherwise). Since api-ui pins peers_mode=in_process here, inheriting
+      # ANALYZER_RUNNER_STORAGE_MODE=mongo from the shared .env (the natural
+      # way to enable it for `runner` below) would trip that validator and
+      # crash api-ui at startup the moment it built a WebConfig -- api-ui runs
+      # execute_job itself whenever runner_mode is in_process (its own
+      # default), so this isn't a hypothetical.
+      - ANALYZER_RUNNER_STORAGE_MODE=sqlite
       # Without this, api-ui's WelcomeBackSubscriber is never constructed (it's
       # gated on this var being set -- see WebConfig.cron_watch_grpc_target), so
       # the welcome-back feature would have no live gRPC path in this
@@ -94,6 +103,12 @@ services:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - CRON_WATCH_GRPC_PORT=50052
       - CRON_WATCH_METRICS_PORT=9101
+      # Same reasoning as api-ui's pin above: cron-watch's __main__ also calls
+      # load_web_config() (to build the WebConfig its own JobStore/enqueue
+      # path needs), and its peers_mode is never pinned to grpc here, so
+      # inheriting ANALYZER_RUNNER_STORAGE_MODE=mongo from the shared .env
+      # would trip WebConfig's runner_storage_mode validator and crash it too.
+      - ANALYZER_RUNNER_STORAGE_MODE=sqlite
     env_file:
       - .env
     volumes:

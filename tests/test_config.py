@@ -179,6 +179,35 @@ def test_load_web_config_reads_runner_mongo_uri_from_env(
     assert config.runner_mongo_uri == "mongodb://mongo.internal:27017/league_stats"
 
 
+def test_load_web_config_runner_mongo_uri_falls_back_to_mongo_uri(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RUNNER_MONGO_URI is unset in the real docker-compose deployment -- only
+    the shared MONGO_URI is (see docker-compose.yml's `runner` service). Without
+    this fallback, enabling runner_storage_mode=mongo there would silently
+    dial the wrong (default localhost) Mongo instance instead of the compose
+    network's `mongo` service."""
+    monkeypatch.delenv("RUNNER_MONGO_URI", raising=False)
+    monkeypatch.setenv("MONGO_URI", "mongodb://mongo:27017/league_stats")
+    monkeypatch.chdir(tmp_path)
+
+    config = load_web_config()
+    assert config.runner_mongo_uri == "mongodb://mongo:27017/league_stats"
+
+
+def test_load_web_config_runner_mongo_uri_prefers_explicit_override_over_mongo_uri(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When both are set, RUNNER_MONGO_URI (the RUNNER-specific override) wins
+    over the shared MONGO_URI."""
+    monkeypatch.setenv("MONGO_URI", "mongodb://mongo:27017/league_stats")
+    monkeypatch.setenv("RUNNER_MONGO_URI", "mongodb://mongo-for-runner-only:27017/league_stats")
+    monkeypatch.chdir(tmp_path)
+
+    config = load_web_config()
+    assert config.runner_mongo_uri == "mongodb://mongo-for-runner-only:27017/league_stats"
+
+
 def test_load_web_config_reads_runner_grpc_target_from_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

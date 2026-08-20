@@ -506,6 +506,11 @@ class WebConfig(BaseModel):
     # `runner_storage_mode="mongo"` with `peers_mode="in_process"` would
     # crash the moment stage B reaches its first build's peer comparison.
     runner_storage_mode: Literal["sqlite", "mongo"] = "sqlite"
+    # This class-level default is only used when neither RUNNER_MONGO_URI nor
+    # the shared MONGO_URI is set in the environment -- `load_web_config`
+    # below falls back to MONGO_URI (already set on every Mongo-backed
+    # service's compose block) before ever reaching this default, so a real
+    # docker-compose deployment never actually observes this value.
     runner_mongo_uri: str = "mongodb://localhost:27017/league_stats"
 
     @model_validator(mode="after")
@@ -571,7 +576,8 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
     ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``, ``ANALYZER_RUNNER_MODE``,
     ``RUNNER_GRPC_TARGET``, ``ANALYZER_WATCH_MODE``, ``ANALYZER_PEERS_MODE``,
     ``PEERS_GRPC_TARGET``, ``CRON_WATCH_GRPC_TARGET``,
-    ``ANALYZER_RUNNER_STORAGE_MODE``, ``RUNNER_MONGO_URI``.
+    ``ANALYZER_RUNNER_STORAGE_MODE``, ``RUNNER_MONGO_URI`` (falls back to
+    ``MONGO_URI`` when unset).
     """
     _load_env_file()
     data: dict[str, Any] = {}
@@ -590,7 +596,15 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
         "peers_grpc_target": os.environ.get("PEERS_GRPC_TARGET"),
         "cron_watch_grpc_target": os.environ.get("CRON_WATCH_GRPC_TARGET"),
         "runner_storage_mode": os.environ.get("ANALYZER_RUNNER_STORAGE_MODE"),
-        "runner_mongo_uri": os.environ.get("RUNNER_MONGO_URI"),
+        # Falls back to the shared MONGO_URI (already set on every Mongo-backed
+        # service's compose block, e.g. `peers/service.py`'s own
+        # `_build_default_peer_store`) when RUNNER_MONGO_URI isn't set --
+        # without this fallback, enabling runner_storage_mode=mongo in the real
+        # docker-compose deployment would silently default to
+        # "mongodb://localhost:27017/league_stats" instead of the compose
+        # network's `mongo` service, since only MONGO_URI (not
+        # RUNNER_MONGO_URI) is set on `runner`'s environment block.
+        "runner_mongo_uri": os.environ.get("RUNNER_MONGO_URI") or os.environ.get("MONGO_URI"),
     }
     data.update({k: v for k, v in env_map.items() if v})
     data.update({k: v for k, v in overrides.items() if v is not None})

@@ -285,6 +285,63 @@ def test_build_peer_comparison_matches_finish_peer_comparison_for_the_same_basel
     assert via_build.comparisons, "expected real comparisons to have been computed"
 
 
+def test_finish_peer_comparison_reads_user_history_via_raw_match_store() -> None:
+    """Direct proof that `finish_peer_comparison`'s user-history scan
+    (`collect_user_history_peers`, which calls `store.iter_match_ids` then
+    `store.load_match`) works against a real `RawMatchStore` (mongomock-
+    backed), not just a hand-rolled stub like `_NoHistoryStore` above.
+
+    This is the third call site Phase 5 Task 1's investigation flagged as
+    needing `RawMatchStore.iter_match_ids` (alongside stage A's
+    `discover_build_pools`/`load_all_records`): RUNNER's `peers_mode="grpc"`
+    path (`web/worker.py`'s `_build_peer_for_pool_via_grpc`) calls
+    `finish_peer_comparison(..., store=services.store, ...)`, and
+    `services.store` is a `RawMatchStore` whenever `runner_storage_mode=
+    "mongo"`. The end-to-end test in `test_runner_service.py`
+    (`test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode`)
+    short-circuits on `ranked is None` before ever reaching this code, so it
+    doesn't cover this path -- this test closes that gap directly and
+    cheaply, without needing a full ranked-resolution end-to-end run.
+    """
+    import mongomock
+
+    from league_stats.analysis.peer.comparison import finish_peer_comparison
+    from league_stats.infra.raw_match_store import RawMatchStore
+
+    match = make_match()
+    match_id = match["metadata"]["matchId"]
+    # Mirror matchup: the red-side mid laner (a different puuid, not excluded)
+    # also plays Viktor mid -- scanning the tracked player's own match history
+    # for "other Viktor mid games" must find this participant.
+    match["info"]["participants"][5]["championName"] = "Viktor"
+    match["info"]["participants"][5]["teamPosition"] = "MIDDLE"
+    opponent_puuid = match["info"]["participants"][5]["puuid"]
+
+    mongo_client = mongomock.MongoClient()
+    store = RawMatchStore(mongo_client, db_name="league_stats_finish_peer_test")
+    store.save_match(match_id, MY_PUUID, match)
+    store.save_timeline(match_id, {"info": {"frames": []}})
+
+    baseline = _sample_baseline()
+    matches_df = _sample_matches_df()
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+    result = finish_peer_comparison(
+        baseline,
+        matches_df=matches_df,
+        records=[],
+        store=store,
+        user_puuid=MY_PUUID,
+        ranked=ranked,
+        champion="Viktor",
+        role="MIDDLE",
+    )
+
+    assert result is not None
+    assert opponent_puuid != MY_PUUID
+    assert "1 other Viktor mid" in result.source, result.source
+
+
 def test_build_peer_comparison_returns_none_when_unranked() -> None:
     """No rank resolved -> no baseline lookup is even attempted."""
     from league_stats.analysis.peer.comparison import build_peer_comparison
