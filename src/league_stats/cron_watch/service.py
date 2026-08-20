@@ -150,18 +150,18 @@ class CronWatchServicer(cron_watch_pb2_grpc.CronWatchServiceServicer):
                 return row
         return None
 
-    def _on_new_game(self, slug: str, job_id: str) -> None:
+    def _on_new_game(self, slug: str, job_id: str, new_match_id: str) -> None:
         """`WatchPoller`'s new-game observer hook: fan out to `WatchUpdates` subscribers.
 
-        `new_match_id`/`match_summary_json` are left empty: WatchPoller's hook
-        (by design, see `watch.py`) only ever passes `(slug, job_id)`, not the
-        detected match id or a computed summary -- surfacing those would need
-        a separate follow-up to widen what WatchPoller reports, not something
-        to smuggle in here.
+        `new_match_id` is the real match id `WatchPoller._check_group` detected
+        (threaded through its `on_new_game` hook). `match_summary_json` is left
+        empty on purpose -- computing a lightweight per-match summary from that
+        id is Task 3's job, not this one; wiring it in here would be inventing
+        scope this task was not asked to cover.
         """
         update = cron_watch_pb2.WelcomeBackUpdate(
             puuid=slug,
-            new_match_id="",
+            new_match_id=new_match_id,
             match_summary_json="",
             detected_at_unix=int(time.time()),
         )

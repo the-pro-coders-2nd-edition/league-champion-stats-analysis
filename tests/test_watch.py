@@ -262,18 +262,19 @@ def test_an_api_failure_backs_off_and_is_surfaced(store: JobStore) -> None:
     assert client.match_id_calls == calls
 
 
-def test_on_new_game_hook_fires_with_slug_and_job_id(store: JobStore) -> None:
+def test_on_new_game_hook_fires_with_slug_job_id_and_match_id(store: JobStore) -> None:
     """The optional observer hook is called once a refresh is genuinely enqueued,
-    and not on the baseline tick where nothing looks new yet."""
+    carrying the real newly-detected match id, and not on the baseline tick
+    where nothing looks new yet."""
     store.set_watch(SLUG, enabled=True, interval_s=60)
     client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
     clock = Clock()
-    calls: list[tuple[str, str]] = []
+    calls: list[tuple[str, str, str]] = []
     poller = WatchPoller(
         store,
         lambda region: client,
         now=clock,
-        on_new_game=lambda slug, job_id: calls.append((slug, job_id)),
+        on_new_game=lambda slug, job_id, match_id: calls.append((slug, job_id, match_id)),
     )
 
     _tick(poller)  # baseline: must not fire the hook
@@ -284,9 +285,37 @@ def test_on_new_game_hook_fires_with_slug_and_job_id(store: JobStore) -> None:
     _tick(poller)
 
     assert len(calls) == 1
-    fired_slug, fired_job_id = calls[0]
+    fired_slug, fired_job_id, fired_match_id = calls[0]
     assert fired_slug == SLUG
     assert fired_job_id == str(store.list_active_jobs()[0]["id"])
+    assert fired_match_id == "EUW1_2"
+
+
+def test_on_new_game_hook_reports_the_flex_match_id_when_flex_is_what_changed(
+    store: JobStore,
+) -> None:
+    """Regression guard for the tiebreak: when only the flex queue changed,
+    the hook must report the flex match id, not a stale/empty solo one."""
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient(
+        {"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"], RANKED_FLEX_QUEUE_ID: ["EUW1_F1"]}}
+    )
+    clock = Clock()
+    calls: list[tuple[str, str, str]] = []
+    poller = WatchPoller(
+        store,
+        lambda region: client,
+        now=clock,
+        on_new_game=lambda slug, job_id, match_id: calls.append((slug, job_id, match_id)),
+    )
+
+    _tick(poller)  # baseline
+    client.newest["puuid-hugros"][RANKED_FLEX_QUEUE_ID] = ["EUW1_F2"]
+    clock.advance(120)
+    _tick(poller)
+
+    assert len(calls) == 1
+    assert calls[0][2] == "EUW1_F2"
 
 
 def test_on_new_game_hook_defaults_to_none_and_does_not_raise(store: JobStore) -> None:

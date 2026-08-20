@@ -194,6 +194,7 @@ def test_watch_updates_streams_a_notification_when_force_refresh_finds_a_new_gam
 
             update = next(updates)
         assert update.puuid == "hugros"
+        assert update.new_match_id == "EUW1_2"
         assert update.detected_at_unix > 0
     finally:
         server.stop()

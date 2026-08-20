@@ -87,17 +87,20 @@ class WatchPoller:
         *,
         now: Callable[[], float] = time.time,
         budget: _Budget | None = None,
-        on_new_game: Callable[[str, str], None] | None = None,
+        on_new_game: Callable[[str, str, str], None] | None = None,
     ) -> None:
         self._store = store
         self._client_factory = client_factory
         self._now = now
         self._budget = budget or _Budget()
-        # Optional observer: called with (slug, job_id) whenever a refresh is
-        # newly enqueued. Nothing in this module uses it -- it exists so a
-        # consumer such as CronWatchServicer's WatchUpdates RPC can push a
-        # notification the moment a new game is detected, without WatchPoller
-        # itself knowing anything about gRPC.
+        # Optional observer: called with (slug, job_id, new_match_id) whenever a
+        # refresh is newly enqueued. `new_match_id` is whichever queue's newest
+        # match id was detected as changed in this tick (see `_check_group`'s
+        # tiebreak comment when more than one queue changes at once). Nothing in
+        # this module uses it -- it exists so a consumer such as
+        # CronWatchServicer's WatchUpdates RPC can push a notification the
+        # moment a new game is detected, without WatchPoller itself knowing
+        # anything about gRPC.
         self._on_new_game = on_new_game
         self._failures: dict[str, int] = {}
         self._puuids: dict[str, str] = {}
@@ -192,6 +195,14 @@ class WatchPoller:
             return False
 
         found_new = False
+        # The most recently detected new match id, kept for the on_new_game hook.
+        # If both queues changed in the same tick (rare -- both a solo and a flex
+        # game finished between two ticks), the flex one wins simply because
+        # RANKED_QUEUE_IDS is checked in (solo, flex) order and this is
+        # overwritten on every change; there's no ordering signal available to
+        # prefer one over the other (both were merely "not seen before this
+        # tick"), so "last one detected" is as good a tiebreak as any.
+        new_match_id = ""
         for player in players:
             label = f"{player.get('riot_id', '')}#{player.get('tagline', '')}"
             try:
@@ -221,6 +232,7 @@ class WatchPoller:
                 if queues_seen.get(key) != newest[0]:
                     queues_seen[key] = newest[0]
                     found_new = True
+                    new_match_id = newest[0]
 
         self._failures.pop(slug, None)
         first_look = row.get("last_watch_at") is None
@@ -234,7 +246,7 @@ class WatchPoller:
             self._log.info("Watch baseline recorded for %s", slug)
             return False
 
-        return self._enqueue_refresh(row, slug)
+        return self._enqueue_refresh(row, slug, new_match_id)
 
     async def _puuid_for(
         self, client: MatchIdSource, label: str, player: dict[str, Any]
@@ -251,7 +263,7 @@ class WatchPoller:
         self._puuids[label] = puuid
         return puuid
 
-    def _enqueue_refresh(self, row: dict[str, Any], slug: str) -> bool:
+    def _enqueue_refresh(self, row: dict[str, Any], slug: str, new_match_id: str = "") -> bool:
         players = list(row.get("players") or [])
         primary = players[0] if players else {}
         job, created = self._store.enqueue(
@@ -265,7 +277,7 @@ class WatchPoller:
         if created:
             self._log.info("Watch found a new game for %s; queued a refresh", slug)
             if self._on_new_game is not None:
-                self._on_new_game(slug, str(job.get("id", "")))
+                self._on_new_game(slug, str(job.get("id", "")), new_match_id)
         return created
 
     def _note_failure(self, slug: str, message: str) -> None:
