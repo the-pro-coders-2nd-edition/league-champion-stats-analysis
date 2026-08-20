@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from league_stats_rpc.v1 import common_pb2 as league__stats__rpc_dot_v1_dot_common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n$league_stats_rpc/v1/cron_watch.proto\x12\x13league_stats_rpc.v1\x1a league_stats_rpc/v1/common.proto\"T\n\x16RegisterAccountRequest\x12\r\n\x05puuid\x18\x01 \x01(\t\x12+\n\x06region\x18\x02 \x01(\x0e\x32\x1b.league_stats_rpc.v1.Region\"$\n\x13\x46orceRefreshRequest\x12\r\n\x05puuid\x18\x01 \x01(\t\"$\n\x13WatchUpdatesRequest\x12\r\n\x05puuid\x18\x01 \x01(\t\"s\n\x11WelcomeBackUpdate\x12\r\n\x05puuid\x18\x01 \x01(\t\x12\x14\n\x0cnew_match_id\x18\x02 \x01(\t\x12\x1f\n\x17\x63\x61reer_progression_json\x18\x03 \x01(\t\x12\x18\n\x10\x64\x65tected_at_unix\x18\x04 \x01(\x03\x32\xa4\x02\n\x10\x43ronWatchService\x12X\n\x0fRegisterAccount\x12+.league_stats_rpc.v1.RegisterAccountRequest\x1a\x18.league_stats_rpc.v1.Ack\x12R\n\x0c\x46orceRefresh\x12(.league_stats_rpc.v1.ForceRefreshRequest\x1a\x18.league_stats_rpc.v1.Ack\x12\x62\n\x0cWatchUpdates\x12(.league_stats_rpc.v1.WatchUpdatesRequest\x1a&.league_stats_rpc.v1.WelcomeBackUpdate0\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n$league_stats_rpc/v1/cron_watch.proto\x12\x13league_stats_rpc.v1\x1a league_stats_rpc/v1/common.proto\"T\n\x16RegisterAccountRequest\x12\r\n\x05puuid\x18\x01 \x01(\t\x12+\n\x06region\x18\x02 \x01(\x0e\x32\x1b.league_stats_rpc.v1.Region\"$\n\x13\x46orceRefreshRequest\x12\r\n\x05puuid\x18\x01 \x01(\t\"$\n\x13WatchUpdatesRequest\x12\r\n\x05puuid\x18\x01 \x01(\t\"n\n\x11WelcomeBackUpdate\x12\r\n\x05puuid\x18\x01 \x01(\t\x12\x14\n\x0cnew_match_id\x18\x02 \x01(\t\x12\x1a\n\x12match_summary_json\x18\x03 \x01(\t\x12\x18\n\x10\x64\x65tected_at_unix\x18\x04 \x01(\x03\x32\xa4\x02\n\x10\x43ronWatchService\x12X\n\x0fRegisterAccount\x12+.league_stats_rpc.v1.RegisterAccountRequest\x1a\x18.league_stats_rpc.v1.Ack\x12R\n\x0c\x46orceRefresh\x12(.league_stats_rpc.v1.ForceRefreshRequest\x1a\x18.league_stats_rpc.v1.Ack\x12\x62\n\x0cWatchUpdates\x12(.league_stats_rpc.v1.WatchUpdatesRequest\x1a&.league_stats_rpc.v1.WelcomeBackUpdate0\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -39,7 +39,7 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_WATCHUPDATESREQUEST']._serialized_start=219
   _globals['_WATCHUPDATESREQUEST']._serialized_end=255
   _globals['_WELCOMEBACKUPDATE']._serialized_start=257
-  _globals['_WELCOMEBACKUPDATE']._serialized_end=372
-  _globals['_CRONWATCHSERVICE']._serialized_start=375
-  _globals['_CRONWATCHSERVICE']._serialized_end=667
+  _globals['_WELCOMEBACKUPDATE']._serialized_end=367
+  _globals['_CRONWATCHSERVICE']._serialized_start=370
+  _globals['_CRONWATCHSERVICE']._serialized_end=662
 # @@protoc_insertion_point(module_scope)

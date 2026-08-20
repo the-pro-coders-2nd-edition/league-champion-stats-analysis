@@ -26,13 +26,13 @@ class WatchUpdatesRequest(_message.Message):
     def __init__(self, puuid: _Optional[str] = ...) -> None: ...
 
 class WelcomeBackUpdate(_message.Message):
-    __slots__ = ("puuid", "new_match_id", "career_progression_json", "detected_at_unix")
+    __slots__ = ("puuid", "new_match_id", "match_summary_json", "detected_at_unix")
     PUUID_FIELD_NUMBER: _ClassVar[int]
     NEW_MATCH_ID_FIELD_NUMBER: _ClassVar[int]
-    CAREER_PROGRESSION_JSON_FIELD_NUMBER: _ClassVar[int]
+    MATCH_SUMMARY_JSON_FIELD_NUMBER: _ClassVar[int]
     DETECTED_AT_UNIX_FIELD_NUMBER: _ClassVar[int]
     puuid: str
     new_match_id: str
-    career_progression_json: str
+    match_summary_json: str
     detected_at_unix: int
-    def __init__(self, puuid: _Optional[str] = ..., new_match_id: _Optional[str] = ..., career_progression_json: _Optional[str] = ..., detected_at_unix: _Optional[int] = ...) -> None: ...
+    def __init__(self, puuid: _Optional[str] = ..., new_match_id: _Optional[str] = ..., match_summary_json: _Optional[str] = ..., detected_at_unix: _Optional[int] = ...) -> None: ...

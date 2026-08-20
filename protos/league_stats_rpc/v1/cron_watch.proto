@@ -32,8 +32,12 @@ message WatchUpdatesRequest {
 message WelcomeBackUpdate {
   string puuid = 1;
   string new_match_id = 2;
-  // JSON-encoded career progression payload, computed from the match
-  // summary alone (no timeline, no full pipeline).
-  string career_progression_json = 3;
+  // JSON-encoded lightweight summary (win/loss, K/D/A, CS/min, damage
+  // share) computed directly from the new match's summary alone — NOT the
+  // career/recap engine's ladder progression, which still only updates
+  // when the full stage-A pipeline runs. See analysis/career/engine.py's
+  // advance_career() for why: it needs the full analyzed report, not a
+  // raw match summary, so it cannot be this field's source.
+  string match_summary_json = 3;
   int64 detected_at_unix = 4;
 }
