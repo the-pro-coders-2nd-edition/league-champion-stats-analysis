@@ -17,5 +17,16 @@ services:
     ports:
       - "27017:27017"
 
+  runner:
+    build: .
+    command: ["uv", "run", "python", "-m", "league_stats.runner"]
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/league_stats
+      - RUNNER_GRPC_PORT=50051
+    env_file:
+      - .env
+    depends_on:
+      - mongo
+
 volumes:
   mongo-data:
