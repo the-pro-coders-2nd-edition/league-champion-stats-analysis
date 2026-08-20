@@ -32,10 +32,11 @@ from league_stats.core.config import load_config, load_web_config
 from league_stats.cron_watch.service import CronWatchServicer
 from league_stats.infra.cache import HttpCache, MatchStore
 from league_stats.infra.riot_api import RiotApiClient, shared_rate_limiter
-from league_stats.utils import get_logger
+from league_stats.utils import get_logger, setup_logging
 from league_stats.web.jobs import JobStore
 from league_stats_rpc.v1 import cron_watch_pb2_grpc
 
+setup_logging(service="cron-watch", version=os.environ.get("GIT_COMMIT", "dev"))
 log = get_logger("cron_watch")
 
 

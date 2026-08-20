@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 
 from league_stats.core.config import AppConfig, PlayerIdentity, load_config
@@ -70,7 +71,7 @@ def build_services(
     players: list[PlayerIdentity] | None = None,
 ) -> Services:
     """Load configuration and construct every service."""
-    setup_logging(verbose)
+    setup_logging(service="cli", version=os.environ.get("GIT_COMMIT", "dev"), verbose=verbose)
     config = load_config(
         riot_id=riot_id,
         tagline=tagline,

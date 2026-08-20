@@ -8,6 +8,7 @@ the anti-diagonal ``x + y = MAP_SIZE``.
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import math
 import sys
@@ -62,11 +63,50 @@ LANE_TOWER_POSITIONS: Final[tuple[Position, ...]] = (
 
 LOGGER_NAME: Final[str] = "league_champion_analyzer"
 
+# Per-request/per-call trace id, propagated across a service's call graph.
+# Module-level so every logger built from `get_logger` (children included)
+# shares the same context. Default "" (no trace in flight).
+_trace_id: contextvars.ContextVar[str] = contextvars.ContextVar("trace_id", default="")
 
-def setup_logging(verbose: bool = False) -> logging.Logger:
+
+def set_trace_id(trace_id: str) -> None:
+    """Set the trace id for the current execution context."""
+    _trace_id.set(trace_id)
+
+
+def current_trace_id() -> str:
+    """Return the trace id for the current execution context (``""`` if unset)."""
+    return _trace_id.get()
+
+
+class _ContextTagFilter(logging.Filter):
+    """Stamp every record with `service`/`version`/`trace_id`.
+
+    `trace_id` is read from the ContextVar on every `filter()` call, not
+    captured once at construction time -- a single logger/handler instance
+    lives for the whole process and handles many different trace contexts
+    over its lifetime, so baking the value in here would make every record
+    after the first show a stale trace id.
+    """
+
+    def __init__(self, service: str, version: str) -> None:
+        super().__init__()
+        self._service = service
+        self._version = version
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.service = self._service
+        record.version = self._version
+        record.trace_id = current_trace_id()
+        return True
+
+
+def setup_logging(service: str, version: str, verbose: bool = False) -> logging.Logger:
     """Configure and return the application logger.
 
     Args:
+        service: Service name tagged on every log record (e.g. ``"api-ui"``).
+        version: Build/version identifier tagged on every log record.
         verbose: When ``True`` the log level is DEBUG, otherwise INFO.
 
     Returns:
@@ -76,8 +116,13 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stderr)
         handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s", "%H:%M:%S")
+            logging.Formatter(
+                "%(asctime)s %(levelname)-7s %(name)s "
+                "[service=%(service)s version=%(version)s trace_id=%(trace_id)s]: %(message)s",
+                "%H:%M:%S",
+            )
         )
+        handler.addFilter(_ContextTagFilter(service, version))
         logger.addHandler(handler)
     logger.setLevel(logging.DEBUG if verbose else logging.INFO)
     return logger

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 
 import uvicorn
 
@@ -20,7 +21,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("-v", "--verbose", action="store_true", help="Debug logging")
     args = parser.parse_args(argv)
 
-    setup_logging(args.verbose)
+    setup_logging(service="api-ui", version=os.environ.get("GIT_COMMIT", "dev"), verbose=args.verbose)
     web_config = load_web_config(host=args.host, port=args.port)
     uvicorn.run(create_app(web_config), host=web_config.host, port=web_config.port)
 

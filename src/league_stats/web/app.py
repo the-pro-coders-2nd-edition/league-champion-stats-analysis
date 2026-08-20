@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -723,7 +724,7 @@ def create_app(
     web_config: WebConfig | None = None, *, start_worker: bool = True
 ) -> FastAPI:
     """Build the FastAPI application (worker optional, for tests)."""
-    setup_logging(False)
+    setup_logging(service="api-ui", version=os.environ.get("GIT_COMMIT", "dev"))
     config = web_config or load_web_config()
     config.output_dir.mkdir(parents=True, exist_ok=True)
     config.reports_dir.mkdir(parents=True, exist_ok=True)

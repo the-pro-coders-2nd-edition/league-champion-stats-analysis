@@ -8,8 +8,9 @@ from prometheus_client import start_http_server
 
 from league_stats_rpc.v1 import runner_pb2_grpc
 from league_stats.runner.service import RunnerServicer
-from league_stats.utils import get_logger
+from league_stats.utils import get_logger, setup_logging
 
+setup_logging(service="runner", version=os.environ.get("GIT_COMMIT", "dev"))
 log = get_logger("runner")
 
 
