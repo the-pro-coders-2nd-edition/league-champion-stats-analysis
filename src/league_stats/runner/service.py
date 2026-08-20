@@ -50,7 +50,7 @@ from league_stats.runner.adapter import RunnerJobAdapter
 from league_stats.utils import get_logger
 from league_stats.web import jobs as job_states
 from league_stats.web.jobs import encode_players
-from league_stats.web.worker import execute_job
+from league_stats.web.worker import execute_job, resolve_peer_baseline_notification
 from league_stats_rpc.v1 import common_pb2, runner_pb2, runner_pb2_grpc
 
 log = get_logger("runner_service")
@@ -297,13 +297,52 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
             yield _to_stage_result(event)
 
     def NotifyPeerBaselineReady(self, request, context):
-        """Minimal stub: real PEERS wiring is Phase 3's job, not this one."""
-        log.info(
-            "NotifyPeerBaselineReady received for request_id=%s (champion=%s, lane=%s, "
-            "rank=%s) -- not yet wired to the peer stage (Phase 3)",
+        """Real Phase 3 implementation, replacing Phase 1's logging-only stub.
+
+        Called by PEERS when a baseline it could not resolve fast enough to
+        answer synchronously (`PeersServicer.RequestBaseline`'s `cached=False`
+        path) finally lands. This delivers `request.baseline_json`/`request.error`
+        to whichever `_build_peer_for_pool_via_grpc` call (running on one of
+        this process's own job worker threads, inside `execute_job`) is
+        blocked waiting on `request.request_id` -- see
+        `league_stats.web.worker.resolve_peer_baseline_notification` and its
+        module-level `_peer_baseline_waiters` registry for the actual
+        coordination mechanism (a `queue.SimpleQueue` per in-flight request_id,
+        mirroring the same shape `RunnerJobAdapter`/`self._queues` already use
+        for per-job progress -- `RunnerServiceServicer` is a plain synchronous
+        servicer, not `grpc.aio`, so there is no `asyncio.Event` to hang this
+        off of).
+
+        Returns `ok=False` (not an RPC error) when no waiter is registered for
+        this `request_id` -- e.g. the waiting thread already gave up after its
+        own wait timeout and moved on, or this notification is a duplicate/
+        stray callback. PEERS' own `_notify_runner` only logs a failed
+        delivery; it does not retry, so there is nothing productive an RPC
+        error would accomplish here beyond what the `ok` flag + log line
+        already communicate.
+        """
+        delivered = resolve_peer_baseline_notification(
+            request.request_id,
+            baseline_json=request.baseline_json,
+            error=request.error,
+        )
+        if delivered:
+            log.info(
+                "NotifyPeerBaselineReady delivered for request_id=%s (champion=%s, "
+                "lane=%s, rank=%s, error=%s)",
+                request.request_id,
+                request.champion,
+                request.lane,
+                request.rank,
+                request.error or "none",
+            )
+            return common_pb2.Ack(ok=True, message="delivered")
+        log.warning(
+            "NotifyPeerBaselineReady for request_id=%s (champion=%s, lane=%s, rank=%s) "
+            "has no waiting stage-B thread -- already timed out, or an unknown request_id",
             request.request_id,
             request.champion,
             request.lane,
             request.rank,
         )
-        return common_pb2.Ack(ok=True, message="received (peer stage wiring is Phase 3)")
+        return common_pb2.Ack(ok=False, message="no waiter for this request_id")

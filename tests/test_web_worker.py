@@ -910,3 +910,346 @@ def test_execute_job_grpc_mode_round_trips_resolved_player_data_via_payload_json
     assert entry["solo_tier"] == "DIAMOND"
     assert entry["solo_rank"] == "III"
     assert entry["solo_lp"] == 77
+
+
+# --------------------------------------------------------- peers_mode (Task 3)
+
+
+def test_web_config_peers_mode_defaults_to_in_process() -> None:
+    assert WebConfig().peers_mode == "in_process"
+
+
+def test_web_config_peers_mode_can_be_set_to_grpc() -> None:
+    assert WebConfig(peers_mode="grpc").peers_mode == "grpc"
+
+
+def test_execute_job_peers_in_process_mode_does_not_call_peers_grpc_path(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`peers_mode` defaults to "in_process" -- stage B must call
+    `build_peer_for_pool` exactly as before Task 3, with `_build_peer_for_pool_via_grpc`
+    never even attempted. This is the "provably unchanged" proof for the default path.
+    """
+    assert web_config.peers_mode == "in_process"
+    job = _claimed_job(store)
+    calls = _patch_pipeline(monkeypatch)
+
+    def boom(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("_build_peer_for_pool_via_grpc must not run in in_process mode")
+
+    monkeypatch.setattr(worker, "_build_peer_for_pool_via_grpc", boom)
+
+    worker.execute_job(job, store, web_config)
+
+    final = store.get(int(job["id"]))
+    assert final["state"] == jobs.DONE
+    assert final["error"] == ""
+    assert calls == ["fetch", "prepare", "ranked", "analyze(peer=False)", "peer", "analyze(peer=True)"]
+
+
+def test_execute_job_peers_grpc_mode_calls_grpc_path_not_in_process(
+    store: JobStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`peers_mode="grpc"` must route stage B's peer resolution through
+    `_build_peer_for_pool_via_grpc` instead of `build_peer_for_pool`."""
+    grpc_web_config = WebConfig(
+        app_db_path=tmp_path / "app.sqlite",
+        output_dir=tmp_path / "output",
+        peers_mode="grpc",
+    )
+    job = _claimed_job(store)
+    grpc_peer_calls = {"n": 0}
+
+    def in_process_boom(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("build_peer_for_pool must not run in peers_mode=grpc")
+
+    def grpc_peer_stub(services: Any, batch: Any, pool: Any, ranked: Any, web_config: Any) -> Any:
+        grpc_peer_calls["n"] += 1
+        return object()
+
+    calls = _patch_pipeline(
+        monkeypatch,
+        build_peer_for_pool=in_process_boom,
+        _build_peer_for_pool_via_grpc=grpc_peer_stub,
+    )
+
+    worker.execute_job(job, store, grpc_web_config)
+
+    final = store.get(int(job["id"]))
+    assert final["state"] == jobs.DONE
+    assert grpc_peer_calls["n"] == 1
+    assert "peer" not in calls
+
+
+# ------------------------------------------------- _build_peer_for_pool_via_grpc
+
+
+class _FakeRecord:
+    """Minimal stand-in for `MatchRecord`; only `to_row()` is used by the
+    grpc peer path (`matches_df = pd.DataFrame([r.to_row() for r in records])`)."""
+
+    def __init__(self, **row: Any) -> None:
+        self._row = row
+
+    def to_row(self) -> dict[str, Any]:
+        return self._row
+
+
+def _fake_services_for_grpc_peer(min_games: int = 1) -> Any:
+    from league_stats.core.config import AppConfig
+
+    config = AppConfig(
+        riot_id="Test",
+        tagline="EUW",
+        api_key="RGAPI-test",
+        min_games=min_games,
+        platform="euw1",
+    )
+    # `_peer_comparison_from_baseline` calls `collect_user_history_peers(store, ...)`,
+    # which iterates `store.iter_match_ids(exclude_puuid)` -- an empty iterator keeps
+    # it a no-op (no history rows) without needing a real MatchStore in these tests.
+    store = SimpleNamespace(iter_match_ids=lambda puuid: iter(()))
+    return SimpleNamespace(config=config, store=store)
+
+
+def _start_peers_server(servicer: Any) -> tuple[Any, int]:
+    from concurrent import futures
+
+    import grpc
+
+    from league_stats_rpc.v1 import peers_pb2_grpc
+
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
+    peers_pb2_grpc.add_PeersServiceServicer_to_server(servicer, server)
+    port = server.add_insecure_port("127.0.0.1:0")
+    server.start()
+    return server, port
+
+
+def _peer_records() -> list[_FakeRecord]:
+    return [
+        _FakeRecord(win=1, kda=4.0, dpm=500.0, deaths=3, cspm=6.0)
+        for _ in range(3)
+    ]
+
+
+def test_build_peer_for_pool_via_grpc_uses_cached_baseline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PEERS' fast path (`cached=True`) must resolve without waiting on any
+    async callback."""
+    import json as _json
+    from dataclasses import asdict
+
+    from league_stats.analysis.peer.baseline import PeerBaseline
+    from league_stats.core.models import RankedEntry
+    from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
+
+    baseline = PeerBaseline(
+        metrics={"kda": 3.0, "win": 0.5},
+        games=60,
+        players=10,
+        source="peer store",
+        confidence="high",
+        fallback_level=0,
+    )
+
+    class _CachedPeersServicer(peers_pb2_grpc.PeersServiceServicer):
+        def RequestBaseline(self, request, context):
+            self.request = request
+            return peers_pb2.RequestBaselineResponse(
+                request_id="req-1", cached=True, baseline_json=_json.dumps(asdict(baseline))
+            )
+
+    servicer = _CachedPeersServicer()
+    server, port = _start_peers_server(servicer)
+    try:
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        services = _fake_services_for_grpc_peer()
+        monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
+        batch = BuildBatch(
+            pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid"
+        )
+        pool = BuildPool(champion="Ahri", role="MIDDLE", games=25)
+        ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+        result = worker._build_peer_for_pool_via_grpc(services, batch, pool, ranked, web_config)
+    finally:
+        server.stop(grace=None)
+
+    assert result is not None
+    assert servicer.request.champion == "Ahri"
+    assert servicer.request.lane == "MIDDLE"
+    assert servicer.request.platform == "euw1"
+    assert servicer.request.exclude_puuid == "my-puuid"
+    assert result.peer_games == 60
+    assert result.peer_players == 10
+    assert result.champion == "Ahri"
+    assert result.role == "MIDDLE"
+
+
+def test_build_peer_for_pool_via_grpc_waits_for_async_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PEERS' slow path (`cached=False`) must block until
+    `resolve_peer_baseline_notification` (RUNNER's real
+    `NotifyPeerBaselineReady` handler) delivers the result for the matching
+    `request_id`."""
+    import json as _json
+    import threading as _threading
+    import time as _time
+    from dataclasses import asdict
+
+    from league_stats.analysis.peer.baseline import PeerBaseline
+    from league_stats.core.models import RankedEntry
+    from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
+
+    baseline = PeerBaseline(
+        metrics={"kda": 5.0},
+        games=80,
+        players=15,
+        source="live sample",
+        confidence="medium",
+        fallback_level=2,
+    )
+
+    class _SlowPeersServicer(peers_pb2_grpc.PeersServiceServicer):
+        def RequestBaseline(self, request, context):
+            return peers_pb2.RequestBaselineResponse(request_id="req-async-1", cached=False)
+
+    server, port = _start_peers_server(_SlowPeersServicer())
+
+    def _deliver_later() -> None:
+        _time.sleep(0.2)
+        worker.resolve_peer_baseline_notification(
+            "req-async-1", baseline_json=_json.dumps(asdict(baseline)), error=""
+        )
+
+    _threading.Thread(target=_deliver_later, daemon=True).start()
+
+    try:
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        services = _fake_services_for_grpc_peer()
+        monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
+        batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
+        pool = BuildPool(champion="Ahri", role="MIDDLE", games=25)
+        ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+        result = worker._build_peer_for_pool_via_grpc(services, batch, pool, ranked, web_config)
+    finally:
+        server.stop(grace=None)
+
+    assert result is not None
+    assert result.peer_games == 80
+    assert result.fallback_level == 2
+
+
+def test_build_peer_for_pool_via_grpc_times_out_if_peers_never_calls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `cached=False` response with no matching `NotifyPeerBaselineReady`
+    callback must not hang stage B forever -- it must give up and return
+    `None` after `_PEERS_BASELINE_WAIT_TIMEOUT_S`, and must clean up its own
+    waiter entry so it doesn't leak."""
+    from league_stats.core.models import RankedEntry
+    from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
+
+    class _NeverCallsBackServicer(peers_pb2_grpc.PeersServiceServicer):
+        def RequestBaseline(self, request, context):
+            return peers_pb2.RequestBaselineResponse(request_id="req-timeout-1", cached=False)
+
+    server, port = _start_peers_server(_NeverCallsBackServicer())
+    monkeypatch.setattr(worker, "_PEERS_BASELINE_WAIT_TIMEOUT_S", 0.2)
+
+    try:
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        services = _fake_services_for_grpc_peer()
+        monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
+        batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
+        pool = BuildPool(champion="Ahri", role="MIDDLE", games=25)
+        ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+        result = worker._build_peer_for_pool_via_grpc(services, batch, pool, ranked, web_config)
+    finally:
+        server.stop(grace=None)
+
+    assert result is None
+    assert "req-timeout-1" not in worker._peer_baseline_waiters
+
+
+def test_build_peer_for_pool_via_grpc_returns_none_when_peers_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RUNNER must not crash or hang stage B when PEERS is unreachable --
+    a soft failure (None) for this one build, same as any other
+    `build_peer_for_pool` exception."""
+    import socket
+
+    from league_stats.core.models import RankedEntry
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        free_port = probe.getsockname()[1]
+
+    monkeypatch.setattr(worker, "_PEERS_REQUEST_TIMEOUT_S", 1.0)
+    web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{free_port}")
+    services = _fake_services_for_grpc_peer()
+    monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
+    batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
+    pool = BuildPool(champion="Ahri", role="MIDDLE", games=25)
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+    result = worker._build_peer_for_pool_via_grpc(services, batch, pool, ranked, web_config)
+
+    assert result is None
+
+
+def test_build_peer_for_pool_via_grpc_returns_none_on_peers_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `RequestBaselineResponse.error` (PEERS could not enqueue/resolve at
+    all) must be a soft `None`, not an exception -- and must not register a
+    waiter, since PEERS explicitly documents no callback ever follows this case."""
+    from league_stats.core.models import RankedEntry
+    from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
+
+    class _ErrorPeersServicer(peers_pb2_grpc.PeersServiceServicer):
+        def RequestBaseline(self, request, context):
+            return peers_pb2.RequestBaselineResponse(
+                request_id="req-error-1", cached=True, error="no peer baseline available"
+            )
+
+    server, port = _start_peers_server(_ErrorPeersServicer())
+    try:
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        services = _fake_services_for_grpc_peer()
+        monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
+        batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
+        pool = BuildPool(champion="Ahri", role="MIDDLE", games=25)
+        ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+        result = worker._build_peer_for_pool_via_grpc(services, batch, pool, ranked, web_config)
+    finally:
+        server.stop(grace=None)
+
+    assert result is None
+    assert "req-error-1" not in worker._peer_baseline_waiters
+
+
+def test_build_peer_for_pool_via_grpc_returns_none_below_min_games(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same `min_games` gate as the in-process path -- must not even attempt
+    a PEERS call when there aren't enough games."""
+    from league_stats.core.models import RankedEntry
+
+    web_config = WebConfig(peers_grpc_target="127.0.0.1:1")  # never dialed
+    services = _fake_services_for_grpc_peer(min_games=99)
+    monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
+    batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
+    pool = BuildPool(champion="Ahri", role="MIDDLE", games=25)
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+    result = worker._build_peer_for_pool_via_grpc(services, batch, pool, ranked, web_config)
+
+    assert result is None

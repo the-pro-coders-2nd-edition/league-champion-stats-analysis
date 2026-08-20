@@ -443,6 +443,17 @@ class WebConfig(BaseModel):
     # `league_stats.cron_watch.service`'s module docstring for the full
     # correctness argument).
     watch_mode: Literal["in_process", "grpc"] = "in_process"
+    # Opt-in delegation of rank-peer baseline resolution to PEERS over gRPC
+    # (Phase 3 of the microservices migration). Default "in_process" keeps
+    # today's behavior unchanged -- stage B calls `build_peer_for_pool`
+    # (`league_stats.pipeline.orchestrator`), which runs `resolve_peer_baseline`
+    # in this process exactly as before. Setting "grpc" makes stage B call
+    # PEERS' `RequestBaseline` instead (see `league_stats.web.worker`'s
+    # `_build_peer_for_pool_via_grpc`); PEERS calls back into this process's
+    # `RunnerServicer.NotifyPeerBaselineReady` for baselines it cannot resolve
+    # fast enough to answer synchronously.
+    peers_mode: Literal["in_process", "grpc"] = "in_process"
+    peers_grpc_target: str = "localhost:50053"
 
     @property
     def reports_dir(self) -> Path:
@@ -455,7 +466,8 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
 
     Environment variables: ``ANALYZER_WEB_HOST``, ``ANALYZER_WEB_PORT``,
     ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``, ``ANALYZER_RUNNER_MODE``,
-    ``RUNNER_GRPC_TARGET``, ``ANALYZER_WATCH_MODE``.
+    ``RUNNER_GRPC_TARGET``, ``ANALYZER_WATCH_MODE``, ``ANALYZER_PEERS_MODE``,
+    ``PEERS_GRPC_TARGET``.
     """
     _load_env_file()
     data: dict[str, Any] = {}
@@ -470,6 +482,8 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
         "runner_mode": os.environ.get("ANALYZER_RUNNER_MODE"),
         "runner_grpc_target": os.environ.get("RUNNER_GRPC_TARGET"),
         "watch_mode": os.environ.get("ANALYZER_WATCH_MODE"),
+        "peers_mode": os.environ.get("ANALYZER_PEERS_MODE"),
+        "peers_grpc_target": os.environ.get("PEERS_GRPC_TARGET"),
     }
     data.update({k: v for k, v in env_map.items() if v})
     data.update({k: v for k, v in overrides.items() if v is not None})

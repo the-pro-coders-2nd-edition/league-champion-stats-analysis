@@ -246,6 +246,54 @@ def test_run_job_wraps_execute_job_so_a_crash_still_yields_a_final_event(
     assert "boom" in results[-1].error
 
 
+# ------------------------------------------------------- NotifyPeerBaselineReady
+
+
+def test_notify_peer_baseline_ready_delivers_to_a_registered_waiter() -> None:
+    """The real (Phase 3) implementation must forward to
+    `league_stats.web.worker.resolve_peer_baseline_notification`, which
+    `_build_peer_for_pool_via_grpc` blocks on -- this is what replaced Phase 1's
+    logging-only stub."""
+    from league_stats.web import worker as web_worker
+
+    events = web_worker._register_peer_baseline_waiter("req-notify-1")
+    servicer = RunnerServicer(web_config=WebConfig())
+
+    request = runner_pb2.PeerBaselineReadyRequest(
+        request_id="req-notify-1",
+        champion="Ahri",
+        lane="MIDDLE",
+        rank="GOLD II",
+        baseline_json='{"games": 42}',
+        error="",
+    )
+    ack = servicer.NotifyPeerBaselineReady(request, context=None)
+
+    assert ack.ok is True
+    delivered = events.get_nowait()
+    assert delivered == {"baseline_json": '{"games": 42}', "error": ""}
+
+
+def test_notify_peer_baseline_ready_reports_ok_false_when_no_waiter() -> None:
+    """A callback for a `request_id` nobody is waiting on (already timed out,
+    or unknown) must not raise -- it's reported via `ok=False`, not an RPC
+    error, mirroring PEERS' own `_notify_runner`, which only logs a failed
+    delivery and never retries."""
+    servicer = RunnerServicer(web_config=WebConfig())
+
+    request = runner_pb2.PeerBaselineReadyRequest(
+        request_id="req-nobody-waiting",
+        champion="Ahri",
+        lane="MIDDLE",
+        rank="GOLD II",
+        baseline_json="",
+        error="some failure",
+    )
+    ack = servicer.NotifyPeerBaselineReady(request, context=None)
+
+    assert ack.ok is False
+
+
 def test_stream_job_progress_reconnect_after_terminal_returns_immediately(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
