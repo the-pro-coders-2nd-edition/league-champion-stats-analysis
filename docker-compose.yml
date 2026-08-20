@@ -8,6 +8,14 @@ services:
     environment:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - RUNNER_GRPC_TARGET=runner:50051
+    volumes:
+      # Shared with `cron-watch`: both open their own `JobStore` connection
+      # onto the same `data/app.sqlite` file (see
+      # `league_stats/cron_watch/service.py`'s "shared SQLite volume" design
+      # note). Without this mount each container would see its own, empty
+      # `data/` directory and CRON-watch's enqueued jobs would never surface
+      # through this service's job-status API.
+      - app-data:/app/data
     depends_on:
       - mongo
 
@@ -33,5 +41,24 @@ services:
     depends_on:
       - mongo
 
+  cron-watch:
+    build: .
+    command: ["uv", "run", "python", "-m", "league_stats.cron_watch"]
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/league_stats
+      - CRON_WATCH_GRPC_PORT=50052
+    env_file:
+      - .env
+    volumes:
+      # Shared with `app` -- see the comment on `app`'s volume above. This is
+      # the whole mechanism Task 4's "option (b)" design depends on: CRON-watch
+      # enqueues jobs by writing directly into this file, not by calling RUNNER.
+      - app-data:/app/data
+    # No `ports:` here on purpose, same reasoning as `runner`: nothing outside
+    # the compose network dials CRON-watch directly today.
+    depends_on:
+      - mongo
+
 volumes:
   mongo-data:
+  app-data:
