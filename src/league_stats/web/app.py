@@ -902,6 +902,7 @@ def create_app(
             "base_completed_at": player["base_completed_at"] if player else None,
             "peer_completed_at": player["peer_completed_at"] if player else None,
             "can_watch": player is not None,
+            "welcome_back": welcome_back_cache.get(slug),
             **watch_public_fields(player or {}),
         }
 

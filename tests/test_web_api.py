@@ -337,6 +337,46 @@ def test_player_status_serves_existing_reports(client: TestClient) -> None:
     assert client.get("/api/players/unknown_player").status_code == 404
 
 
+def test_player_status_includes_welcome_back_field(client: TestClient) -> None:
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+
+    # No cache entry: welcome_back should be null
+    response = client.get("/api/players/test_euw")
+    assert response.status_code == 200
+    body = response.json()
+    assert "welcome_back" in body
+    assert body["welcome_back"] is None
+
+    # Record something in the cache
+    welcome_back_data = {
+        "new_match_id": "match123",
+        "match_summary": {
+            "win": True,
+            "kills": 5,
+            "deaths": 2,
+            "assists": 10,
+            "kda": 7.5,
+            "cs_min": 6.5,
+            "damage_share": 0.35,
+        },
+        "detected_at_unix": 1692604800,
+    }
+    cache = client.app.state.welcome_back_cache  # type: ignore[attr-defined]
+    cache.record("test_euw", welcome_back_data)
+
+    # Cache entry exists: should be returned and consumed
+    response = client.get("/api/players/test_euw")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["welcome_back"] == welcome_back_data
+
+    # Consumed: next call should have None again
+    response = client.get("/api/players/test_euw")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["welcome_back"] is None
+
+
 def test_get_build_payload_returns_report_json(client: TestClient) -> None:
     report_dir = _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
     (report_dir / "report.json").write_text(
