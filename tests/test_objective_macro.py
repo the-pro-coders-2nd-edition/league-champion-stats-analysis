@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from league_stats.analysis.buildings import (
+from league_stats_runner.analysis.buildings import (
     classify_structure_position,
     extract_buildings,
     lane_tower_fallen_before,
     split_push_allowed,
 )
-from league_stats.analysis.objective_macro import enrich_objectives, objective_aggregate_rates
-from league_stats.analysis.objectives import extract_objectives, extract_objectives_enriched
-from league_stats.analysis.timeline import build_context
-from league_stats.core.models import BuildingRecord, ObjectiveKind, ObjectiveRecord, Position
+from league_stats_runner.analysis.objective_macro import enrich_objectives, objective_aggregate_rates
+from league_stats_runner.analysis.objectives import extract_objectives, extract_objectives_enriched
+from league_stats_runner.analysis.timeline import build_context
+from league_stats_common.core.models import BuildingRecord, ObjectiveKind, ObjectiveRecord, Position
 from tests.fixtures import MY_PUUID, make_match, make_timeline
 
 
@@ -167,7 +167,7 @@ def test_split_push_allowed_early_when_lane_tower_fallen() -> None:
 
 
 def test_unproductive_absence_not_penalized_when_accounted() -> None:
-    from league_stats.analysis.game_review.score import compute_game_score
+    from league_stats_runner.analysis.game_review.score import compute_game_score
 
     baseline = {
         "objectives_present_rate": 0.6,
@@ -205,7 +205,7 @@ def test_unproductive_absence_not_penalized_when_accounted() -> None:
 def test_split_push_summary_aggregates_matches_df() -> None:
     import pandas as pd
 
-    from league_stats.analysis.objective_macro import split_push_summary
+    from league_stats_runner.analysis.objective_macro import split_push_summary
 
     frame = pd.DataFrame(
         [
@@ -235,7 +235,7 @@ def test_split_push_summary_aggregates_matches_df() -> None:
 
 
 def test_top_role_profile_includes_split_push_metrics() -> None:
-    from league_stats.core.role_metrics import role_profile
+    from league_stats_common.core.role_metrics import role_profile
 
     profile = role_profile("TOP")
     assert profile.objectives

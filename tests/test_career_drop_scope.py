@@ -16,8 +16,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from league_stats.core.config import WebConfig
-from league_stats.web.app import create_app
+from league_stats_common.core.config import WebConfig
+from league_stats_api_ui.app import create_app
 
 SLUG = "hugros_euw"
 BUILD = "aatrox_top"
@@ -69,11 +69,11 @@ def _seed_ladder(client: TestClient, build_slug: str, champion: str, role: str) 
     """Give the build a ladder so the drop route finds a block in slot 0."""
     import pandas as pd
 
-    from league_stats.analysis.career.engine import advance_career
-    from league_stats.analysis.career.tracks import TrackContext
-    from league_stats.core.champions import player_slug
-    from league_stats.core.config import load_config
-    from league_stats.infra.career_store import CareerStore, build_key
+    from league_stats_runner.analysis.career.engine import advance_career
+    from league_stats_runner.analysis.career.tracks import TrackContext
+    from league_stats_common.core.champions import player_slug
+    from league_stats_common.core.config import load_config
+    from league_stats_common.infra.career_store import CareerStore, build_key
 
     class _C:
         def __init__(self, name: str, score: float) -> None:

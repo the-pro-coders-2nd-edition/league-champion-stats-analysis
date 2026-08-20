@@ -5,9 +5,9 @@ from __future__ import annotations
 import mongomock
 import pytest
 
-from league_stats.analysis.peer import benchmark_cache as _benchmark_cache
-from league_stats.infra.ddragon_assets import DDragonAssets
-from league_stats.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
+from league_stats_peers.analysis.peer import benchmark_cache as _benchmark_cache
+from league_stats_common.infra.ddragon_assets import DDragonAssets
+from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
 
 
 @pytest.fixture(autouse=True)

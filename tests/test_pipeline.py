@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from league_stats.analysis.peer import build_comparisons
-from league_stats.core.config import AppConfig
-from league_stats.pipeline.orchestrator import run_analysis
-from league_stats.core.models import MatchRecord, PeerComparisonResult, RankedEntry
-from league_stats.ingest.parser import ItemCatalog, MatchParser
+from league_stats_peers.analysis.peer import build_comparisons
+from league_stats_common.core.config import AppConfig
+from league_stats_runner.pipeline.orchestrator import run_analysis
+from league_stats_common.core.models import MatchRecord, PeerComparisonResult, RankedEntry
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 
 OPPONENTS = ["Syndra", "Orianna", "Akali", "Ahri", "Zed"]
@@ -168,8 +168,8 @@ def test_web_stage_a_report_shows_peer_pending_placeholder(tmp_path: Path) -> No
 
 def test_peer_report_marks_meta_ready_and_keeps_export(tmp_path: Path) -> None:
     """Peer stage writes has_peer_comparison into meta and the CSV export."""
-    from league_stats.analysis.peer import build_comparisons
-    from league_stats.core.models import PeerComparisonResult, RankedEntry
+    from league_stats_peers.analysis.peer import build_comparisons
+    from league_stats_common.core.models import PeerComparisonResult, RankedEntry
 
     config = AppConfig(
         riot_id="Test",

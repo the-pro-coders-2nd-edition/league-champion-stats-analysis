@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from league_stats.core.config import AppConfig
-from league_stats.core.models import MetricDelta
-from league_stats.analysis.deaths import death_heatmap_coords
-from league_stats.infra.ddragon_assets import DDragonAssets
-from league_stats.presentation.graphs import ChartIconResolver, GraphFactory
-from league_stats.presentation.metric_colors import LOSS_HEX
-from league_stats.utils import MAP_SIZE
+from league_stats_common.core.config import AppConfig
+from league_stats_common.core.models import MetricDelta
+from league_stats_runner.analysis.deaths import death_heatmap_coords
+from league_stats_common.infra.ddragon_assets import DDragonAssets
+from league_stats_runner.presentation.graphs import ChartIconResolver, GraphFactory
+from league_stats_runner.presentation.metric_colors import LOSS_HEX
+from league_stats_common.utils import MAP_SIZE
 
 
 def _config(tmp_path: Path) -> AppConfig:

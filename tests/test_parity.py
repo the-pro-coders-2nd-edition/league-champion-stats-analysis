@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from league_stats.presentation.metric_colors import interpolate_metric_color
+from league_stats_runner.presentation.metric_colors import interpolate_metric_color
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "parity_cases.json"

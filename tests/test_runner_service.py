@@ -3,7 +3,7 @@ store adapter that streams progress instead of writing to SQLite."""
 
 import queue
 
-from league_stats.runner.adapter import RunnerJobAdapter
+from league_stats_runner.adapter import RunnerJobAdapter
 
 
 def test_adapter_set_state_pushes_a_stage_result():
@@ -62,13 +62,13 @@ from pathlib import Path
 import grpc
 import pytest
 
-from league_stats.core.config import WebConfig
-from league_stats.core.champions import players_group_slug
-from league_stats.infra.cache import MatchStore
-from league_stats.infra.riot_api import RiotApiClient
-from league_stats.runner import service as runner_service
-from league_stats.runner.service import RunnerServicer
-from league_stats.web import jobs as job_states
+from league_stats_common.core.config import WebConfig
+from league_stats_common.core.champions import players_group_slug
+from league_stats_common.infra.cache import MatchStore
+from league_stats_common.infra.riot_api import RiotApiClient
+from league_stats_runner import service as runner_service
+from league_stats_runner.service import RunnerServicer
+import league_stats_common.infra.jobs as job_states
 from league_stats_rpc.v1 import common_pb2, runner_pb2, runner_pb2_grpc
 from tests.fixtures import MY_PUUID, make_player_match, make_timeline
 
@@ -194,8 +194,8 @@ def test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode(
     """
     import mongomock
 
-    from league_stats.infra.raw_match_store import RawMatchStore
-    from league_stats.web import worker as web_worker
+    from league_stats_runner.infra.raw_match_store import RawMatchStore
+    import league_stats_runner.worker as web_worker
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(RiotApiClient, "resolve_puuid", lambda self, riot_id, tagline: MY_PUUID)
@@ -348,8 +348,8 @@ def test_enqueue_job_threads_the_callers_trace_id_into_the_spawned_job_thread(
     `_run_job`'s thread starts, even though the RPC itself carried it
     correctly.
     """
-    from league_stats.infra.trace_context import TraceServerInterceptor
-    from league_stats.utils import current_trace_id
+    from league_stats_common.infra.trace_context import TraceServerInterceptor
+    from league_stats_common.utils import current_trace_id
 
     observed: list[str] = []
 
@@ -396,7 +396,7 @@ def test_notify_peer_baseline_ready_delivers_to_a_registered_waiter() -> None:
     `league_stats.web.worker.resolve_peer_baseline_notification`, which
     `_build_peer_for_pool_via_grpc` blocks on -- this is what replaced Phase 1's
     logging-only stub."""
-    from league_stats.web import worker as web_worker
+    import league_stats_runner.worker as web_worker
 
     events = web_worker._register_peer_baseline_waiter("req-notify-1")
     servicer = RunnerServicer(web_config=WebConfig())
@@ -428,7 +428,7 @@ def test_notify_peer_baseline_ready_reports_ok_false_when_no_waiter() -> None:
     instead. See `test_build_peer_for_pool_via_grpc_survives_notification_arriving_before_waiter_registers`
     (`test_web_worker.py`) for the real end-to-end proof of that path.
     """
-    from league_stats.web import worker as web_worker
+    import league_stats_runner.worker as web_worker
 
     servicer = RunnerServicer(web_config=WebConfig())
 

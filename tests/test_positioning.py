@@ -5,10 +5,10 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from league_stats.analysis.positioning import extract_positioning, positioning_hints, positioning_summary
-from league_stats.analysis.timeline import build_context
-from league_stats.core.models import MatchRecord
-from league_stats.ingest.parser import ItemCatalog, MatchParser
+from league_stats_runner.analysis.positioning import extract_positioning, positioning_hints, positioning_summary
+from league_stats_runner.analysis.timeline import build_context
+from league_stats_common.core.models import MatchRecord
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 
 
@@ -34,7 +34,7 @@ def test_extract_positioning_from_context() -> None:
 
 
 def test_positioning_summary_includes_role_columns(record: MatchRecord) -> None:
-    from league_stats.pipeline.frames import build_analysis_frames
+    from league_stats_runner.pipeline.frames import build_analysis_frames
 
     frames = build_analysis_frames([record])
     summary = positioning_summary(frames.matches_df, record.role)

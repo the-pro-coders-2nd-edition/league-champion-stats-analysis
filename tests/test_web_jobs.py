@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from league_stats.web import jobs
-from league_stats.web.jobs import JobStore
+import league_stats_common.infra.jobs as jobs
+from league_stats_common.infra.jobs import JobStore
 
 
 @pytest.fixture()

@@ -8,15 +8,15 @@ import mongomock
 import pymongo
 import pytest
 
-import league_stats.analysis.peer.benchmark_cache as benchmark_cache
-from league_stats.analysis.peer.benchmark_cache import (
+import league_stats_peers.analysis.peer.benchmark_cache as benchmark_cache
+from league_stats_peers.analysis.peer.benchmark_cache import (
     CACHE_TTL_S,
     read_live_cache,
     write_live_cache,
 )
-from league_stats.analysis.peer.benchmark_fetcher import BenchmarkSnapshot
-from league_stats.analysis.peer.comparison import current_patch
-from league_stats.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
+from league_stats_peers.analysis.peer.benchmark_fetcher import BenchmarkSnapshot
+from league_stats_peers.analysis.peer.comparison import current_patch
+from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
 
 
 @pytest.fixture()
@@ -87,7 +87,7 @@ def test_entry_older_than_the_ttl_is_ignored(
     write_live_cache("euw1", "GOLD", "Zac", "JUNGLE", _snapshot(), patch="14.23")
     later = _time.time() + CACHE_TTL_S + 60
     monkeypatch.setattr(
-        "league_stats.analysis.peer.benchmark_cache.time.time", lambda: later
+        "league_stats_peers.analysis.peer.benchmark_cache.time.time", lambda: later
     )
 
     assert read_live_cache("euw1", "GOLD", "Zac", "JUNGLE", patch="14.23") is None
@@ -99,7 +99,7 @@ def test_entry_just_inside_the_ttl_is_kept(
     write_live_cache("euw1", "GOLD", "Zac", "JUNGLE", _snapshot(), patch="14.23")
     later = _time.time() + CACHE_TTL_S - 60
     monkeypatch.setattr(
-        "league_stats.analysis.peer.benchmark_cache.time.time", lambda: later
+        "league_stats_peers.analysis.peer.benchmark_cache.time.time", lambda: later
     )
 
     assert read_live_cache("euw1", "GOLD", "Zac", "JUNGLE", patch="14.23") is not None
@@ -196,7 +196,7 @@ class TestFileFallbackWithNoMongo:
 
 def test_current_patch_reads_the_newest_game() -> None:
     from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
-    from league_stats.ingest.parser import ItemCatalog, MatchParser
+    from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 
     base = MatchParser(ItemCatalog(FAKE_ITEMS)).parse(make_match(), make_timeline(), MY_PUUID)
     old = base.model_copy(update={"patch": "14.22", "game_creation_ms": 1_000})

@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from league_stats.core.models import RankedEntry
-from league_stats.infra.derived import KIND_SLICE, DerivedStore
-from league_stats.pipeline import bundles as bundles_module
-from league_stats.pipeline.orchestrator import build_report_views
+from league_stats_common.core.models import RankedEntry
+from league_stats_runner.infra.derived import KIND_SLICE, DerivedStore
+from league_stats_runner.pipeline import bundles as bundles_module
+from league_stats_runner.pipeline.orchestrator import build_report_views
 from tests.test_reports import _config, _make_records, _peer
 
 RANKED = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75)
@@ -49,7 +49,7 @@ def test_second_run_builds_no_bundles(tmp_path: Path, monkeypatch: pytest.Monkey
         calls["n"] += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr("league_stats.pipeline.orchestrator.build_window_bundle", counted)
+    monkeypatch.setattr("league_stats_runner.pipeline.orchestrator.build_window_bundle", counted)
     build_report_views(config, recs, config.run_graphs_dir, peer_comparison=_peer(recs))
 
     assert calls["n"] == 0, "an unchanged record set should be fully cached"
@@ -74,7 +74,7 @@ def test_a_new_game_invalidates_every_slice(
         calls["n"] += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr("league_stats.pipeline.orchestrator.build_window_bundle", counted)
+    monkeypatch.setattr("league_stats_runner.pipeline.orchestrator.build_window_bundle", counted)
     build_report_views(config, grown, config.run_graphs_dir, peer_comparison=_peer(grown))
 
     assert calls["n"] == 9, "3 queues x 3 windows all depend on the shared model"
@@ -86,7 +86,7 @@ def test_a_code_change_invalidates_slices(
     (_, _, _), config, recs = _views(tmp_path)
 
     monkeypatch.setattr(
-        "league_stats.infra.derived.code_version", lambda kind: "0badc0de0badc0de"
+        "league_stats_runner.infra.derived.code_version", lambda kind: "0badc0de0badc0de"
     )
     calls = {"n": 0}
     original = bundles_module.build_window_bundle
@@ -95,7 +95,7 @@ def test_a_code_change_invalidates_slices(
         calls["n"] += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr("league_stats.pipeline.orchestrator.build_window_bundle", counted)
+    monkeypatch.setattr("league_stats_runner.pipeline.orchestrator.build_window_bundle", counted)
     build_report_views(config, recs, config.run_graphs_dir, peer_comparison=_peer(recs))
 
     assert calls["n"] > 0

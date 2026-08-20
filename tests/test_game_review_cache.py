@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from league_stats.infra.derived import KIND_GAME_REVIEW, DerivedStore
-from league_stats.pipeline import game_review as gr
-from league_stats.pipeline.frames import build_analysis_frames
+from league_stats_runner.infra.derived import KIND_GAME_REVIEW, DerivedStore
+from league_stats_runner.pipeline import game_review as gr
+from league_stats_runner.pipeline.frames import build_analysis_frames
 from tests.test_reports import _config, _make_records
 
 

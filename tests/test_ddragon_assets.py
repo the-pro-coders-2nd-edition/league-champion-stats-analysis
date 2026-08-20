@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from league_stats.core.config import AppConfig
-from league_stats.infra.ddragon_assets import (
+from league_stats_common.core.config import AppConfig
+from league_stats_common.infra.ddragon_assets import (
     DDragonAssets,
     build_item_name_to_id,
     build_summoner_icon_files,
@@ -143,8 +143,8 @@ def test_prepare_rank_emblem_trims_transparent_padding(tmp_path: Path) -> None:
     import numpy as np
     import matplotlib.pyplot as plt
 
-    from league_stats.infra import ddragon_assets as assets_mod
-    from league_stats.infra.ddragon_assets import prepare_rank_emblem, _png_dimensions
+    import league_stats_common.infra.ddragon_assets as assets_mod
+    from league_stats_common.infra.ddragon_assets import prepare_rank_emblem, _png_dimensions
 
     path = tmp_path / "emblem-diamond.png"
     canvas = np.zeros((720, 1280, 4), dtype=float)
@@ -201,7 +201,7 @@ def test_prepare_objective_icon_knocks_out_edge_black(tmp_path: Path) -> None:
     import numpy as np
     import matplotlib.pyplot as plt
 
-    from league_stats.infra.ddragon_assets import prepare_objective_icon, _png_dimensions
+    from league_stats_common.infra.ddragon_assets import prepare_objective_icon, _png_dimensions
 
     path = tmp_path / "dragon.png"
     canvas = np.zeros((64, 64, 4), dtype=float)
@@ -257,7 +257,7 @@ def test_crop_minion_icon(tmp_path: Path) -> None:
     import matplotlib.pyplot as plt
     import numpy as np
 
-    from league_stats.infra.ddragon_assets import _crop_top_half_png, _needs_minion_crop, _png_dimensions
+    from league_stats_common.infra.ddragon_assets import _crop_top_half_png, _needs_minion_crop, _png_dimensions
 
     source = tmp_path / "source.png"
     destination = tmp_path / "minions.png"

@@ -5,7 +5,7 @@ service. Tested against mongomock -- no real MongoDB connection."""
 import mongomock
 import pytest
 
-from league_stats.infra.peer_sample_store import PeerSampleStore
+from league_stats_peers.infra.peer_sample_store import PeerSampleStore
 
 
 @pytest.fixture

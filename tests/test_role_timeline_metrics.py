@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from league_stats.analysis.jungle import extract_jungle_metrics
-from league_stats.analysis.support import extract_support_metrics
-from league_stats.analysis.timeline import build_context, extract_roams
+from league_stats_runner.analysis.jungle import extract_jungle_metrics
+from league_stats_runner.analysis.support import extract_support_metrics
+from league_stats_runner.analysis.timeline import build_context, extract_roams
 from tests.fixtures import make_player_match, make_timeline
 
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from league_stats.analysis.teamfights import detect_teamfights
-from league_stats.analysis.timeline import build_context
+from league_stats_runner.analysis.teamfights import detect_teamfights
+from league_stats_runner.analysis.timeline import build_context
 from tests.fixtures import MY_PUUID, make_match, make_timeline
 
 

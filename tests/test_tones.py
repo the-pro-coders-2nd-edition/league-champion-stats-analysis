@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from league_stats.presentation.tones import (
+from league_stats_runner.presentation.tones import (
     band_verdict,
     career_count,
     career_node,
@@ -21,7 +21,7 @@ from league_stats.presentation.tones import (
     verdict,
     verdict_tone,
 )
-from league_stats.pipeline.bundles import _overall_score_verdict, _score_verdict_sentence
+from league_stats_runner.pipeline.bundles import _overall_score_verdict, _score_verdict_sentence
 
 
 @pytest.mark.parametrize(

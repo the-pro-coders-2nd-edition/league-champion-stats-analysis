@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from league_stats.web.welcome_back import compute_welcome_back_summary
+from league_stats_cron_watch.welcome_back import compute_welcome_back_summary
 from tests.fixtures import MY_PUUID, make_player_match
 
 

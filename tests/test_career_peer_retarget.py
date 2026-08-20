@@ -14,10 +14,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from league_stats.analysis.career.engine import advance_career, drop_block
-from league_stats.analysis.career.models import BLOCK_SLOTS
-from league_stats.analysis.career.tracks import TrackContext
-from league_stats.infra.career_store import CareerStore, build_key
+from league_stats_runner.analysis.career.engine import advance_career, drop_block
+from league_stats_runner.analysis.career.models import BLOCK_SLOTS
+from league_stats_runner.analysis.career.tracks import TrackContext
+from league_stats_common.infra.career_store import CareerStore, build_key
 
 KEY = build_key("p", "Thresh", "UTILITY")
 HOUR = 3_600_000
@@ -343,7 +343,7 @@ def test_no_pending_drop_by_default(store: CareerStore) -> None:
 
 def test_career_view_exposes_the_slot_index_for_each_block(store: CareerStore) -> None:
     """The drop button posts a slot, so the payload has to carry one."""
-    from league_stats.presentation.career import build_career_view
+    from league_stats_runner.presentation.career import build_career_view
 
     snapshot = advance_career(store, KEY, _ctx(_matches(), PEERS), WEAK_LANING)
     view = build_career_view(snapshot)

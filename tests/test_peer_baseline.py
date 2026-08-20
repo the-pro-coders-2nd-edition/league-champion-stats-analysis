@@ -6,10 +6,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from league_stats.analysis.peer.baseline import resolve_peer_baseline
-from league_stats.analysis.peer.ingest import ingest_match
-from league_stats.infra.cache import MatchStore
-from league_stats.core.models import RankedEntry
+from league_stats_peers.analysis.peer.baseline import resolve_peer_baseline
+from league_stats_peers.analysis.peer.ingest import ingest_match
+from league_stats_common.infra.cache import MatchStore
+from league_stats_common.core.models import RankedEntry
 from tests.fixtures import make_match
 
 
@@ -43,7 +43,7 @@ def test_resolve_peer_baseline_uses_role_only_when_champion_missing(
     tmp_path, ranked: RankedEntry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Role-only static benchmarks are the last fallback."""
-    import league_stats.analysis.peer.baseline as peer_baseline
+    import league_stats_peers.analysis.peer.baseline as peer_baseline
 
     monkeypatch.setattr(peer_baseline, "try_static_benchmark", lambda *args, **kwargs: None)
     store = MatchStore(tmp_path / "matches.sqlite")
@@ -66,7 +66,7 @@ def test_resolve_peer_baseline_uses_store_when_enough_games(
     tmp_path, ranked: RankedEntry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Exact-rank store samples are preferred when the target count is met."""
-    import league_stats.analysis.peer.baseline as peer_baseline
+    import league_stats_peers.analysis.peer.baseline as peer_baseline
 
     monkeypatch.setattr(peer_baseline, "MIN_EXACT_GAMES", 2)
     store = MatchStore(tmp_path / "matches.sqlite")
@@ -99,7 +99,7 @@ def test_resolve_peer_baseline_high_confidence_at_hundred_games(
     tmp_path, ranked: RankedEntry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Exact-rank store achieves high confidence once HIGH_CONFIDENCE_GAMES is met."""
-    import league_stats.analysis.peer.baseline as peer_baseline
+    import league_stats_peers.analysis.peer.baseline as peer_baseline
 
     monkeypatch.setattr(peer_baseline, "MIN_EXACT_GAMES", 2)
     monkeypatch.setattr(peer_baseline, "HIGH_CONFIDENCE_GAMES", 2)
@@ -131,7 +131,7 @@ def test_resolve_peer_baseline_wider_scope_requires_fifty_games(
     tmp_path, ranked: RankedEntry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Fewer than 50 verified games falls through to static benchmarks."""
-    import league_stats.analysis.peer.baseline as peer_baseline
+    import league_stats_peers.analysis.peer.baseline as peer_baseline
 
     monkeypatch.setattr(peer_baseline, "try_static_benchmark", lambda *args, **kwargs: None)
     monkeypatch.setattr(peer_baseline, "try_role_benchmark", lambda *args, **kwargs: None)

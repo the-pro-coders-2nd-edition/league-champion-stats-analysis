@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from league_stats.core.models import MatchRecord
-from league_stats.ingest.parser import ItemCatalog, MatchParser
-from league_stats.pipeline.bundles import filter_records_by_accounts
-from league_stats.pipeline.orchestrator import account_subset_keys, account_view_key
+from league_stats_common.core.models import MatchRecord
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
+from league_stats_runner.pipeline.bundles import filter_records_by_accounts
+from league_stats_runner.pipeline.orchestrator import account_subset_keys, account_view_key
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_player_match, make_timeline
 
 ALT_PUUID = "alt-puuid-22222222-2222-2222-2222-222222222222"

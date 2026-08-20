@@ -8,8 +8,8 @@ from typing import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from league_stats.core.config import WebConfig
-from league_stats.web import app as web_app
+from league_stats_common.core.config import WebConfig
+import league_stats_api_ui.app as web_app
 
 
 @pytest.fixture()

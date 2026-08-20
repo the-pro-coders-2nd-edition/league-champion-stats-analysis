@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from league_stats.core.config import AppConfig
-from league_stats.infra.derived import (
+from league_stats_common.core.config import AppConfig
+from league_stats_runner.infra.derived import (
     KIND_GAME_REVIEW,
     KIND_RECORD,
     KIND_SLICE,
@@ -81,7 +81,7 @@ def test_a_different_code_version_is_a_miss(
     assert store.get(KIND_RECORD, "a") == {"v": 1}
 
     monkeypatch.setattr(
-        "league_stats.infra.derived.code_version", lambda kind: "deadbeefdeadbeef"
+        "league_stats_runner.infra.derived.code_version", lambda kind: "deadbeefdeadbeef"
     )
     assert store.get(KIND_RECORD, "a") is None
 
@@ -95,7 +95,7 @@ def test_code_version_is_stable_and_kind_specific() -> None:
 def test_purge_stale_versions(store: DerivedStore, monkeypatch: pytest.MonkeyPatch) -> None:
     store.put(KIND_RECORD, "a", {"v": 1})
     monkeypatch.setattr(
-        "league_stats.infra.derived.code_version", lambda kind: "deadbeefdeadbeef"
+        "league_stats_runner.infra.derived.code_version", lambda kind: "deadbeefdeadbeef"
     )
     assert store.purge_stale_versions() >= 1
     monkeypatch.undo()

@@ -7,9 +7,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from league_stats.analysis.peer.cache import patch_sort_key, select_by_patch
-from league_stats.analysis.peer.ingest import extract_peer_rows
-from league_stats.infra.cache import MatchStore
+from league_stats_peers.analysis.peer.cache import patch_sort_key, select_by_patch
+from league_stats_peers.analysis.peer.ingest import extract_peer_rows
+from league_stats_common.infra.cache import MatchStore
 
 
 def _rows(spec: dict[str, int]) -> list[dict[str, Any]]:

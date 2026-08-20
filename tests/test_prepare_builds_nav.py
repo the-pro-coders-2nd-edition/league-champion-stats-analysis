@@ -7,11 +7,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from league_stats.ingest.parser import BuildPool
-from league_stats.pipeline import orchestrator
-from league_stats.pipeline.orchestrator import _merge_manifest_with_disk, prepare_builds
-from league_stats.pipeline.services import PlayerContext
-from league_stats.presentation.report import build_manifest_entry
+from league_stats_runner.ingest.parser import BuildPool
+from league_stats_runner.pipeline import orchestrator
+from league_stats_runner.pipeline.orchestrator import _merge_manifest_with_disk, prepare_builds
+from league_stats_runner.pipeline.services import PlayerContext
+from league_stats_runner.presentation.report import build_manifest_entry
 
 
 def _write_meta(player_dir: Path, slug: str, *, champion: str, role: str, games: int) -> None:

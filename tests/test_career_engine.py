@@ -8,10 +8,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from league_stats.analysis.career.engine import advance_career
-from league_stats.analysis.career.models import BLOCK_SLOTS
-from league_stats.analysis.career.tracks import TrackContext
-from league_stats.infra.career_store import CareerStore, build_key
+from league_stats_runner.analysis.career.engine import advance_career
+from league_stats_runner.analysis.career.models import BLOCK_SLOTS
+from league_stats_runner.analysis.career.tracks import TrackContext
+from league_stats_common.infra.career_store import CareerStore, build_key
 
 KEY = build_key("p", "Viktor", "MIDDLE")
 

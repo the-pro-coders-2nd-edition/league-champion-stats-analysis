@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from league_stats.core.champions import parse_riot_id, players_group_slug
-from league_stats.core.config import AppConfig, WebConfig, load_config, load_web_config
+from league_stats_common.core.champions import parse_riot_id, players_group_slug
+from league_stats_common.core.config import AppConfig, WebConfig, load_config, load_web_config
 
 
 def test_parse_riot_id_splits_name_and_tag() -> None:

@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from league_stats.infra.cache import MatchStore
-from league_stats.core.config import PlayerIdentity, load_config
-from league_stats.infra.ddragon_assets import DDragonAssets
-from league_stats.ingest.parser import ItemCatalog, MatchParser, discover_build_pools
-from league_stats.pipeline.fetch import group_records
-from league_stats.pipeline.orchestrator import run_all_builds
-from league_stats.pipeline.services import PlayerContext, Services
+from league_stats_common.infra.cache import MatchStore
+from league_stats_common.core.config import PlayerIdentity, load_config
+from league_stats_common.infra.ddragon_assets import DDragonAssets
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser, discover_build_pools
+from league_stats_runner.pipeline.fetch import group_records
+from league_stats_runner.pipeline.orchestrator import run_all_builds
+from league_stats_runner.pipeline.services import PlayerContext, Services
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_player_match, make_timeline
 from tests.test_build_pools import _config, _seed_store
 
@@ -80,9 +80,9 @@ def test_run_all_builds_pools_multi_player_reports(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Batch analysis pools qualifying games from multiple players."""
-    from league_stats.infra.cache import HttpCache
-    from league_stats.core.models import RankedEntry
-    from league_stats.infra.riot_api import RiotApiClient
+    from league_stats_common.infra.cache import HttpCache
+    from league_stats_common.core.models import RankedEntry
+    from league_stats_common.infra.riot_api import RiotApiClient
 
     config = load_config(
         api_key="RGAPI-test",

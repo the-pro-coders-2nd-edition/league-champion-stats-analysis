@@ -15,13 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from league_stats.core.config import AppConfig
-from league_stats.core.models import RankedEntry
-from league_stats.infra.cache import HttpCache, MatchStore
-from league_stats.infra.ddragon_assets import DDragonAssets
-from league_stats.infra.riot_api import RiotApiClient
-from league_stats.pipeline.orchestrator import run_all_builds
-from league_stats.pipeline.services import PlayerContext, Services
+from league_stats_common.core.config import AppConfig
+from league_stats_common.core.models import RankedEntry
+from league_stats_common.infra.cache import HttpCache, MatchStore
+from league_stats_common.infra.ddragon_assets import DDragonAssets
+from league_stats_common.infra.riot_api import RiotApiClient
+from league_stats_runner.pipeline.orchestrator import run_all_builds
+from league_stats_runner.pipeline.services import PlayerContext, Services
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_player_match, make_timeline
 
 

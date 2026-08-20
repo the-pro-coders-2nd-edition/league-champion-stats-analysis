@@ -9,10 +9,10 @@ from typing import Any, Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from league_stats.core.config import WebConfig
-from league_stats.infra.cache import MatchStore
-from league_stats.pipeline.services import PlayerContext
-from league_stats.web import app as web_app
+from league_stats_common.core.config import WebConfig
+from league_stats_common.infra.cache import MatchStore
+from league_stats_runner.pipeline.services import PlayerContext
+import league_stats_api_ui.app as web_app
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_player_match, make_timeline
 
 ALT_PUUID = "alt-puuid-22222222-2222-2222-2222-222222222222"

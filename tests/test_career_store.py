@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from league_stats.analysis.career.models import Rung
-from league_stats.infra.career_store import CareerStore, build_key
+from league_stats_runner.analysis.career.models import Rung
+from league_stats_common.infra.career_store import CareerStore, build_key
 
 
 def _rungs(prefix: str) -> list[Rung]:

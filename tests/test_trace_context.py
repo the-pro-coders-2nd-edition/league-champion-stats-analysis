@@ -15,13 +15,13 @@ import grpc
 import grpc.aio
 import pytest
 
-from league_stats.infra.trace_context import (
+from league_stats_common.infra.trace_context import (
     AsyncTraceClientInterceptor,
     AsyncTraceServerInterceptor,
     TraceClientInterceptor,
     TraceServerInterceptor,
 )
-from league_stats.utils import current_trace_id, set_trace_id
+from league_stats_common.utils import current_trace_id, set_trace_id
 from league_stats_rpc.v1 import common_pb2, cron_watch_pb2, cron_watch_pb2_grpc
 from league_stats_rpc.v1 import runner_pb2, runner_pb2_grpc
 from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc

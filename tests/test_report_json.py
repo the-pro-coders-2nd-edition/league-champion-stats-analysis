@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from league_stats.core.models import PeerComparisonResult
-from league_stats.presentation.report_json import context_to_json, rewrite_web_asset_hrefs
+from league_stats_common.core.models import PeerComparisonResult
+from league_stats_runner.presentation.report_json import context_to_json, rewrite_web_asset_hrefs
 
 
 @dataclass

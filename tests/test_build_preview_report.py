@@ -34,7 +34,7 @@ def test_build_preview_reports_cover_configured_champions(tmp_path: Path) -> Non
 
     module.build_preview(tmp_path / "output")
 
-    from league_stats.presentation.report import discover_reports
+    from league_stats_runner.presentation.report import discover_reports
 
     entries = discover_reports(tmp_path / "output")
     champions = {entry["champion"] for entry in entries}

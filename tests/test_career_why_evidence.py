@@ -15,11 +15,11 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from league_stats.analysis.career.engine import CareerBlockState, CareerSnapshot
-from league_stats.analysis.career.explanations import WHY_BY_COLUMN, format_value, why_for
-from league_stats.analysis.career.models import CLEAR_BAR, Rung, StoredGoal
-from league_stats.analysis.career.tracks import TrackContext
-from league_stats.presentation.career import build_career_view
+from league_stats_runner.analysis.career.engine import CareerBlockState, CareerSnapshot
+from league_stats_runner.analysis.career.explanations import WHY_BY_COLUMN, format_value, why_for
+from league_stats_runner.analysis.career.models import CLEAR_BAR, Rung, StoredGoal
+from league_stats_runner.analysis.career.tracks import TrackContext
+from league_stats_runner.presentation.career import build_career_view
 
 HOUR = 3_600_000
 
@@ -173,8 +173,8 @@ def test_the_live_block_keeps_its_why_too() -> None:
 
 def test_the_target_in_the_tooltip_matches_the_number_in_the_goal() -> None:
     """A "2.8 wards cleared" goal explained as "at least 3" contradicts itself."""
-    from league_stats.analysis.career.steps import STEP_BANK
-    from league_stats.analysis.career.tracks import TrackContext
+    from league_stats_runner.analysis.career.steps import STEP_BANK
+    from league_stats_runner.analysis.career.tracks import TrackContext
 
     row = {
         "cspm": 6.2, "vspm": 0.92, "damage_share": 0.23, "deaths_pre20": 2.0,

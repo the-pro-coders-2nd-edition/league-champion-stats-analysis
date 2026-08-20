@@ -9,10 +9,10 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from league_stats.core.config import RANKED_FLEX_QUEUE_ID, RANKED_SOLO_QUEUE_ID, WebConfig
-from league_stats.web.app import create_app
-from league_stats.web.jobs import JOB_KIND_REFRESH, JobStore
-from league_stats.web.watch import _Budget, WatchPoller, _backoff_for
+from league_stats_common.core.config import RANKED_FLEX_QUEUE_ID, RANKED_SOLO_QUEUE_ID, WebConfig
+from league_stats_api_ui.app import create_app
+from league_stats_common.infra.jobs import JOB_KIND_REFRESH, JobStore
+from league_stats_cron_watch.watch import _Budget, WatchPoller, _backoff_for
 from tests.fixtures import make_player_match
 
 SLUG = "hugros_euw"
@@ -161,7 +161,7 @@ def test_a_new_match_id_mints_a_trace_id_for_the_enqueued_refresh(store: JobStor
     one at enqueue time (Phase 6 final review, Finding 1) rather than leaving
     the job's `trace_id` column empty, the same way the gRPC server
     interceptor mints one for a call with no upstream trace_id."""
-    from league_stats.utils import set_trace_id
+    from league_stats_common.utils import set_trace_id
 
     set_trace_id("")
     store.set_watch(SLUG, enabled=True, interval_s=60)
@@ -451,8 +451,8 @@ def test_on_new_game_hook_defaults_to_none_and_does_not_raise(store: JobStore) -
 
 
 def test_in_process_hook_populates_the_welcome_back_cache(store: JobStore) -> None:
-    from league_stats.web.app import _record_welcome_back
-    from league_stats.web.welcome_back_cache import WelcomeBackCache
+    from league_stats_api_ui.app import _record_welcome_back
+    from league_stats_api_ui.welcome_back_cache import WelcomeBackCache
 
     store.set_watch(SLUG, enabled=True, interval_s=60)
     client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
@@ -487,8 +487,8 @@ def test_in_process_hook_does_not_record_an_empty_summary(store: JobStore) -> No
     """When the extra fetch_match call is skipped/fails, _check_group's summary
     comes back as `{}` -- recording that would render a fabricated "Defeat
     0/0/0" toast, so `_record_welcome_back` must drop it instead."""
-    from league_stats.web.app import _record_welcome_back
-    from league_stats.web.welcome_back_cache import WelcomeBackCache
+    from league_stats_api_ui.app import _record_welcome_back
+    from league_stats_api_ui.welcome_back_cache import WelcomeBackCache
 
     store.set_watch(SLUG, enabled=True, interval_s=60)
     client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
@@ -591,9 +591,9 @@ def test_career_banner_ack_route(tmp_path: Path) -> None:
     """A reader can retire a Career banner that watch rebuilds must not eat."""
     import json
 
-    from league_stats.core.champions import player_slug
-    from league_stats.core.config import load_config
-    from league_stats.infra.career_store import CareerStore, build_key as career_build_key
+    from league_stats_common.core.champions import player_slug
+    from league_stats_common.core.config import load_config
+    from league_stats_common.infra.career_store import CareerStore, build_key as career_build_key
 
     config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite")
     build_dir = config.reports_dir / SLUG / "viktor_middle"

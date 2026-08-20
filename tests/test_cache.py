@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from league_stats.infra.cache import MatchStore
+from league_stats_common.infra.cache import MatchStore
 
 
 def test_store_roundtrip(tmp_path: Path) -> None:

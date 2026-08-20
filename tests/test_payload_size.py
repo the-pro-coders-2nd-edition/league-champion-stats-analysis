@@ -18,12 +18,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from league_stats.core.config import WebConfig
-from league_stats.pipeline.orchestrator import (
+from league_stats_common.core.config import WebConfig
+from league_stats_runner.pipeline.orchestrator import (
     ACCOUNT_FULL_COMBINATION_LIMIT,
     account_subset_keys,
 )
-from league_stats.web.app import create_app
+from league_stats_api_ui.app import create_app
 
 SLUG = "group_euw"
 BUILD = "aatrox_top"

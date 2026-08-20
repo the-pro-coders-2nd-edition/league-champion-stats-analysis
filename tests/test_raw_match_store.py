@@ -5,7 +5,7 @@ against mongomock — no real MongoDB connection."""
 import mongomock
 import pytest
 
-from league_stats.infra.raw_match_store import RawMatchStore
+from league_stats_runner.infra.raw_match_store import RawMatchStore
 
 
 @pytest.fixture

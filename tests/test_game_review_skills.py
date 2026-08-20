@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from league_stats.core.skills import build_skill_levels_by_level
+from league_stats_runner.core.skills import build_skill_levels_by_level
 
 
 def test_build_skill_levels_by_level_tracks_cumulative_ranks() -> None:

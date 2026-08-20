@@ -7,11 +7,11 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from league_stats.analysis.coach.engine import CoachEngine
-from league_stats.analysis.economy import economy_summary, recall_gold_severity
-from league_stats.analysis.statistics import StatisticsEngine
-from league_stats.core.role_metrics import MetricSpec, resolve_metric_value
-from league_stats.ingest.parser import ItemCatalog, MatchParser
+from league_stats_runner.analysis.coach.engine import CoachEngine
+from league_stats_runner.analysis.economy import economy_summary, recall_gold_severity
+from league_stats_runner.analysis.statistics import StatisticsEngine
+from league_stats_common.core.role_metrics import MetricSpec, resolve_metric_value
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 
 

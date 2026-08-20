@@ -6,7 +6,7 @@ import logging
 
 import pytest
 
-from league_stats.utils import current_trace_id, get_logger, set_trace_id, setup_logging
+from league_stats_common.utils import current_trace_id, get_logger, set_trace_id, setup_logging
 
 
 @pytest.fixture(autouse=True)
@@ -119,9 +119,9 @@ def test_importing_grpc_entrypoint_modules_does_not_configure_logging():
     still unconfigured, then calling `setup_logging` and confirming it
     actually takes effect.
     """
-    import league_stats.cron_watch.__main__  # noqa: F401
-    import league_stats.peers.__main__  # noqa: F401
-    import league_stats.runner.__main__  # noqa: F401
+    import league_stats_cron_watch.__main__  # noqa: F401
+    import league_stats_peers.__main__  # noqa: F401
+    import league_stats_runner.__main__  # noqa: F401
 
     logger = logging.getLogger("league_champion_analyzer")
     assert logger.handlers == []

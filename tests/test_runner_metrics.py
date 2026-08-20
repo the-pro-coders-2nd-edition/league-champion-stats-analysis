@@ -14,9 +14,9 @@ import time
 from prometheus_client import CollectorRegistry, Counter, Histogram
 from prometheus_client.parser import text_string_to_metric_families
 
-from league_stats.core.config import WebConfig
-from league_stats.runner import service as runner_service
-from league_stats.runner.service import RunnerServicer
+from league_stats_common.core.config import WebConfig
+from league_stats_runner import service as runner_service
+from league_stats_runner.service import RunnerServicer
 
 
 def _sample_value(registry_text: str, metric_name: str, labels: dict[str, str] | None = None) -> float | None:

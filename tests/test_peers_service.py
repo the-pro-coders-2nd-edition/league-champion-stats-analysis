@@ -16,14 +16,14 @@ import grpc
 import mongomock
 import pytest
 
-from league_stats.analysis.peer.baseline import PeerBaseline
-from league_stats.analysis.peer.ingest import ingest_match
-from league_stats.core.config import VALID_PLATFORMS
-from league_stats.core.models import RankedEntry
-from league_stats.infra.cache import HttpCache, MatchStore
-from league_stats.infra.peer_sample_store import PeerSampleStore
-from league_stats.peers import service as peers_service
-from league_stats.peers.service import (
+from league_stats_peers.analysis.peer.baseline import PeerBaseline
+from league_stats_peers.analysis.peer.ingest import ingest_match
+from league_stats_common.core.config import VALID_PLATFORMS
+from league_stats_common.core.models import RankedEntry
+from league_stats_common.infra.cache import HttpCache, MatchStore
+from league_stats_peers.infra.peer_sample_store import PeerSampleStore
+from league_stats_peers import service as peers_service
+from league_stats_peers.service import (
     PeersServicer,
     _build_riot_client_for_platform,
     _db_name_from_uri,
@@ -282,7 +282,7 @@ def test_request_baseline_resolves_synchronously_from_the_peer_store(
 ):
     """Enough exact-rank store games (level 0) resolves well inside the fast-path
     timeout, so the response carries the baseline directly (cached=True)."""
-    import league_stats.analysis.peer.baseline as peer_baseline
+    import league_stats_peers.analysis.peer.baseline as peer_baseline
 
     monkeypatch.setattr(peer_baseline, "MIN_EXACT_GAMES", 2)
 
@@ -456,7 +456,7 @@ def test_request_baseline_uses_request_platform_and_exclude_puuid(
     broken `_PlatformScopedRiotClient` look correct). This request asks for
     "na1"; it should resolve using na1-platform rows only, with the given
     puuid excluded from the peer average."""
-    import league_stats.analysis.peer.baseline as peer_baseline
+    import league_stats_peers.analysis.peer.baseline as peer_baseline
 
     monkeypatch.setattr(peer_baseline, "MIN_EXACT_GAMES", 2)
 
@@ -898,13 +898,13 @@ def test_resolve_peer_baseline_via_live_sampling_survives_the_noop_store_methods
     store bootstrap in `collect_peer_games_from_store`, which calls
     `iter_match_ids`/`load_match` -- survives running against `_PeerStoreAdapter`'s
     no-op stubs for those three methods, exactly as it would in production."""
-    import league_stats.analysis.peer.baseline as peer_baseline
+    import league_stats_peers.analysis.peer.baseline as peer_baseline
 
     monkeypatch.setattr(
-        "league_stats.analysis.peer.benchmark_fetcher.MIN_BENCHMARK_GAMES", 3
+        "league_stats_peers.analysis.peer.benchmark_fetcher.MIN_BENCHMARK_GAMES", 3
     )
-    monkeypatch.setattr("league_stats.analysis.peer.benchmark_fetcher.TARGET_PEER_GAMES", 3)
-    monkeypatch.setattr("league_stats.analysis.peer.benchmark_fetcher.MAX_MATCH_DOWNLOADS", 10)
+    monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.TARGET_PEER_GAMES", 3)
+    monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.MAX_MATCH_DOWNLOADS", 10)
     # Keep this test off the real on-disk live-sample file cache.
     monkeypatch.setattr(peer_baseline, "read_live_cache", lambda *a, **k: None)
     monkeypatch.setattr(peer_baseline, "write_live_cache", lambda *a, **k: None)

@@ -16,9 +16,9 @@ import pytest
 from prometheus_client import CollectorRegistry, Counter, Histogram
 from prometheus_client.parser import text_string_to_metric_families
 
-from league_stats.core.config import RANKED_SOLO_QUEUE_ID
-from league_stats.cron_watch.service import CronWatchServicer
-from league_stats.web.jobs import JobStore
+from league_stats_common.core.config import RANKED_SOLO_QUEUE_ID
+from league_stats_cron_watch.service import CronWatchServicer
+from league_stats_common.infra.jobs import JobStore
 from tests.test_watch import FakeClient
 
 SLUG = "hugros"

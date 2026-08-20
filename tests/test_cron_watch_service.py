@@ -21,10 +21,10 @@ import grpc
 import pytest
 from fastapi.testclient import TestClient
 
-from league_stats.core.config import RANKED_SOLO_QUEUE_ID, WebConfig
-from league_stats.cron_watch.service import CronWatchServicer
-from league_stats.web.app import create_app
-from league_stats.web.jobs import JOB_KIND_REFRESH, JobStore
+from league_stats_common.core.config import RANKED_SOLO_QUEUE_ID, WebConfig
+from league_stats_cron_watch.service import CronWatchServicer
+from league_stats_api_ui.app import create_app
+from league_stats_common.infra.jobs import JOB_KIND_REFRESH, JobStore
 from league_stats_rpc.v1 import common_pb2, cron_watch_pb2, cron_watch_pb2_grpc
 from tests.test_watch import FakeClient
 
@@ -205,7 +205,7 @@ def test_watch_updates_streams_a_notification_when_force_refresh_finds_a_new_gam
 def test_require_riot_api_key_raises_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     """Extracted validation from `cron_watch/__main__.py`'s `serve()` must
     fail loudly when `CRON_WATCH_RIOT_API_KEY` is unset."""
-    from league_stats.cron_watch.__main__ import _require_riot_api_key
+    from league_stats_cron_watch.__main__ import _require_riot_api_key
 
     monkeypatch.delenv("CRON_WATCH_RIOT_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="CRON_WATCH_RIOT_API_KEY"):
@@ -218,7 +218,7 @@ def test_serve_fails_fast_when_the_riot_api_key_is_missing(
     """`serve()` must raise before ever calling `server.start()` when the key
     is missing, instead of starting successfully and silently never detecting
     a new game (the finding's exact failure mode)."""
-    from league_stats.cron_watch.__main__ import serve
+    from league_stats_cron_watch.__main__ import serve
 
     monkeypatch.delenv("CRON_WATCH_RIOT_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="CRON_WATCH_RIOT_API_KEY"):
@@ -246,7 +246,7 @@ def test_serve_accepts_a_riot_api_key_supplied_only_via_dotenv(
     missing key) proves `serve()` got past both `load_web_config()` and the
     key check in the right order.
     """
-    import league_stats.cron_watch.__main__ as main_module
+    import league_stats_cron_watch.__main__ as main_module
 
     monkeypatch.delenv("CRON_WATCH_RIOT_API_KEY", raising=False)
     (tmp_path / ".env").write_text(

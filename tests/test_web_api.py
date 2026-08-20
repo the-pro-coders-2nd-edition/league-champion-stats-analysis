@@ -9,9 +9,9 @@ from typing import Any, Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from league_stats.core.config import WebConfig
-from league_stats.web import app as web_app
-from league_stats.web import jobs
+from league_stats_common.core.config import WebConfig
+import league_stats_api_ui.app as web_app
+import league_stats_common.infra.jobs as jobs
 
 
 def _write_report(output_dir: Path, slug: str, build_slug: str, **meta: Any) -> Path:
@@ -255,7 +255,7 @@ def test_submit_rejects_unknown_riot_id(
 def test_submit_rejects_riot_api_outage(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from league_stats.infra.riot_api import RiotApiError
+    from league_stats_common.infra.riot_api import RiotApiError
 
     def boom(
         players: list[dict[str, str]], region: str, output_dir: Path
@@ -273,7 +273,7 @@ def test_submit_rejects_riot_api_outage(
 def test_verify_players_exist_raises_for_404(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from league_stats.infra.riot_api import RiotApiError
+    from league_stats_common.infra.riot_api import RiotApiError
 
     class FakeClient:
         def resolve_puuid(self, riot_id: str, tagline: str) -> str:

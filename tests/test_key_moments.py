@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from league_stats.analysis.key_moments import (
+from league_stats_runner.analysis.key_moments import (
     DEDUP_WINDOW_MS,
     SCRUB_AFTER_MS,
     SCRUB_BEFORE_MS,
     detect_key_moments,
 )
-from league_stats.analysis.timeline import (
+from league_stats_runner.analysis.timeline import (
     build_context,
     build_death_intervals,
     build_position_tracks,
@@ -18,7 +18,7 @@ from league_stats.analysis.timeline import (
     positions_at_ms,
     team_gold_series,
 )
-from league_stats.ingest.parser import ItemCatalog, MatchParser
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 
 

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from league_stats.core.role_metrics import (
+from league_stats_common.core.role_metrics import (
     compare_metrics_for_profile,
     resolve_metric_value,
     role_profile,
 )
-from league_stats.pipeline.view_models import cards_from_specs, overview_card_entries
+from league_stats_runner.pipeline.view_models import cards_from_specs, overview_card_entries
 
 
 def test_utility_profile_excludes_laning_peer_metrics() -> None:

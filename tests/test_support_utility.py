@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from league_stats.analysis.game_review.score import compute_game_score
-from league_stats.analysis.improvement import support_utility_impact
-from league_stats.analysis.peer.comparison import build_comparisons
-from league_stats.analysis.support import utility_summary
-from league_stats.ingest.parser import ItemCatalog, MatchParser
+from league_stats_runner.analysis.game_review.score import compute_game_score
+from league_stats_runner.analysis.improvement import support_utility_impact
+from league_stats_peers.analysis.peer.comparison import build_comparisons
+from league_stats_runner.analysis.support import utility_summary
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 
 _GOLD = {

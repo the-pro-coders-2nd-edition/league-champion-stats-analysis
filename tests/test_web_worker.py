@@ -8,17 +8,18 @@ from typing import Any
 
 import pytest
 
-from league_stats.core.config import WebConfig
-from league_stats.ingest.parser import BuildPool
-from league_stats.pipeline.fetch import FetchResult
-from league_stats.pipeline.orchestrator import (
+from league_stats_common.core.config import WebConfig
+from league_stats_runner.ingest.parser import BuildPool
+from league_stats_runner.pipeline.fetch import FetchResult
+from league_stats_runner.pipeline.orchestrator import (
     BuildAnalysisResult,
     BuildBatch,
     NoEligibleBuildsError,
 )
-from league_stats.pipeline.services import PlayerContext
-from league_stats.web import jobs, worker
-from league_stats.web.jobs import JobStore
+from league_stats_runner.pipeline.services import PlayerContext
+import league_stats_common.infra.jobs as jobs
+import league_stats_runner.worker as worker
+from league_stats_common.infra.jobs import JobStore
 
 
 def _fake_context(
@@ -562,7 +563,7 @@ def test_build_job_services_defaults_to_sqlite_match_store(
 ) -> None:
     """runner_storage_mode defaults to "sqlite" -- _build_job_services must keep
     constructing a real MatchStore, provably unchanged from before this task."""
-    from league_stats.infra.cache import MatchStore
+    from league_stats_common.infra.cache import MatchStore
 
     monkeypatch.setenv("RIOT_API_KEY", "RGAPI-test")
     assert web_config.runner_storage_mode == "sqlite"
@@ -595,7 +596,7 @@ def test_build_job_services_uses_raw_match_store_in_mongo_mode(
     of dialing a real Mongo."""
     import mongomock
 
-    from league_stats.infra.raw_match_store import RawMatchStore
+    from league_stats_runner.infra.raw_match_store import RawMatchStore
 
     monkeypatch.setenv("RIOT_API_KEY", "RGAPI-test")
     monkeypatch.chdir(tmp_path)
@@ -693,9 +694,9 @@ def test_execute_job_grpc_mode_delegates_to_runner_and_replays_progress(
 
     import grpc
 
-    from league_stats.infra.cache import MatchStore
-    from league_stats.infra.riot_api import RiotApiClient
-    from league_stats.runner.service import RunnerServicer
+    from league_stats_common.infra.cache import MatchStore
+    from league_stats_common.infra.riot_api import RiotApiClient
+    from league_stats_runner.service import RunnerServicer
     from league_stats_rpc.v1 import runner_pb2_grpc
     from tests.fixtures import MY_PUUID, make_player_match, make_timeline
 
@@ -1092,7 +1093,7 @@ class _FakeRecord:
 
 
 def _fake_services_for_grpc_peer(min_games: int = 1) -> Any:
-    from league_stats.core.config import AppConfig
+    from league_stats_common.core.config import AppConfig
 
     config = AppConfig(
         riot_id="Test",
@@ -1137,8 +1138,8 @@ def test_build_peer_for_pool_via_grpc_uses_cached_baseline(
     import json as _json
     from dataclasses import asdict
 
-    from league_stats.analysis.peer.baseline import PeerBaseline
-    from league_stats.core.models import RankedEntry
+    from league_stats_peers.analysis.peer.baseline import PeerBaseline
+    from league_stats_common.core.models import RankedEntry
     from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
 
     baseline = PeerBaseline(
@@ -1196,8 +1197,8 @@ def test_build_peer_for_pool_via_grpc_waits_for_async_callback(
     import time as _time
     from dataclasses import asdict
 
-    from league_stats.analysis.peer.baseline import PeerBaseline
-    from league_stats.core.models import RankedEntry
+    from league_stats_peers.analysis.peer.baseline import PeerBaseline
+    from league_stats_common.core.models import RankedEntry
     from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
 
     baseline = PeerBaseline(
@@ -1247,7 +1248,7 @@ def test_build_peer_for_pool_via_grpc_times_out_if_peers_never_calls_back(
     callback must not hang stage B forever -- it must give up and return
     `None` after `_PEERS_BASELINE_WAIT_TIMEOUT_S`, and must clean up its own
     waiter entry so it doesn't leak."""
-    from league_stats.core.models import RankedEntry
+    from league_stats_common.core.models import RankedEntry
     from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
 
     class _NeverCallsBackServicer(peers_pb2_grpc.PeersServiceServicer):
@@ -1283,8 +1284,8 @@ def test_build_peer_for_pool_via_grpc_notices_cancellation_within_the_poll_inter
     `waiter.get(timeout=900)` call with no cancellation poll in between."""
     import time as _time
 
-    from league_stats.core.models import RankedEntry
-    from league_stats.web.progress import JobCancelled
+    from league_stats_common.core.models import RankedEntry
+    from league_stats_runner.progress import JobCancelled
     from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
 
     class _NeverCallsBackServicer(peers_pb2_grpc.PeersServiceServicer):
@@ -1338,7 +1339,7 @@ def test_build_peer_for_pool_via_grpc_returns_none_when_peers_unreachable(
     `build_peer_for_pool` exception."""
     import socket
 
-    from league_stats.core.models import RankedEntry
+    from league_stats_common.core.models import RankedEntry
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
@@ -1391,9 +1392,9 @@ def test_build_peer_for_pool_via_grpc_survives_notification_arriving_before_wait
 
     import grpc
 
-    from league_stats.analysis.peer.baseline import PeerBaseline
-    from league_stats.core.models import RankedEntry
-    from league_stats.runner.service import RunnerServicer
+    from league_stats_peers.analysis.peer.baseline import PeerBaseline
+    from league_stats_common.core.models import RankedEntry
+    from league_stats_runner.service import RunnerServicer
     from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc, runner_pb2, runner_pb2_grpc
 
     baseline = PeerBaseline(
@@ -1462,7 +1463,7 @@ def test_build_peer_for_pool_via_grpc_returns_none_on_peers_error(
     """A `RequestBaselineResponse.error` (PEERS could not enqueue/resolve at
     all) must be a soft `None`, not an exception -- and must not register a
     waiter, since PEERS explicitly documents no callback ever follows this case."""
-    from league_stats.core.models import RankedEntry
+    from league_stats_common.core.models import RankedEntry
     from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
 
     class _ErrorPeersServicer(peers_pb2_grpc.PeersServiceServicer):
@@ -1494,7 +1495,7 @@ def test_build_peer_for_pool_via_grpc_returns_none_below_min_games(
 ) -> None:
     """Same `min_games` gate as the in-process path -- must not even attempt
     a PEERS call when there aren't enough games."""
-    from league_stats.core.models import RankedEntry
+    from league_stats_common.core.models import RankedEntry
 
     web_config = WebConfig(peers_grpc_target="127.0.0.1:1")  # never dialed
     services = _fake_services_for_grpc_peer(min_games=99)
@@ -1514,7 +1515,7 @@ def test_build_peer_for_pool_via_grpc_returns_none_below_min_games(
 @pytest.fixture(autouse=True)
 def _reset_trace_id_for_worker_tests():
     """Every trace_id test starts from, and leaves, an unset ContextVar."""
-    from league_stats.utils import set_trace_id
+    from league_stats_common.utils import set_trace_id
 
     set_trace_id("")
     yield
@@ -1562,7 +1563,7 @@ def test_execute_job_restores_trace_id_from_job_before_grpc_delegation(
     == "grpc"` branch would open a channel to RUNNER, so `TraceClientInterceptor`
     attaches the real originating trace_id instead of whatever this long-lived
     worker thread happened to have left over from a previous job."""
-    from league_stats.utils import current_trace_id, set_trace_id
+    from league_stats_common.utils import current_trace_id, set_trace_id
 
     set_trace_id("stale-trace-from-a-previous-job")
     store.enqueue(
@@ -1597,7 +1598,7 @@ def test_execute_job_leaves_trace_id_untouched_when_job_has_none(
     `EnqueueJobRequest`, which has no trace_id field) must not clobber the
     trace_id `RunnerServicer._run_job` already set on this thread from the
     real gRPC call it received."""
-    from league_stats.utils import current_trace_id, set_trace_id
+    from league_stats_common.utils import current_trace_id, set_trace_id
 
     set_trace_id("set-by-runners-run-job")
     job = _claimed_job(store)
@@ -1629,9 +1630,9 @@ def test_trace_id_survives_jobstore_handoff_through_a_real_runner_server(
 
     import grpc
 
-    from league_stats.infra.trace_context import TraceServerInterceptor
-    from league_stats.runner import service as runner_service
-    from league_stats.utils import current_trace_id, set_trace_id
+    from league_stats_common.infra.trace_context import TraceServerInterceptor
+    from league_stats_runner import service as runner_service
+    from league_stats_common.utils import current_trace_id, set_trace_id
     from league_stats_rpc.v1 import runner_pb2_grpc
 
     observed: list[str] = []
@@ -1640,7 +1641,7 @@ def test_trace_id_survives_jobstore_handoff_through_a_real_runner_server(
         observed.append(current_trace_id())
         # Emit a terminal event ourselves (skipping the real pipeline) so
         # StreamJobProgress's consumer below doesn't block waiting for one.
-        from league_stats.web import jobs as job_states
+        import league_stats_common.infra.jobs as job_states
 
         adapter.set_state(job["id"], job_states.DONE, detail="stub")
 

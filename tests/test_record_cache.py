@@ -8,14 +8,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from league_stats.core.config import AppConfig
-from league_stats.core.models import MatchRecord
-from league_stats.core.progress import ProgressReporter
-from league_stats.infra.cache import MatchStore
-from league_stats.infra.derived import KIND_RECORD, DerivedStore
-from league_stats.ingest import parser as parser_module
-from league_stats.pipeline.fetch import load_all_records
-from league_stats.pipeline.services import Services
+from league_stats_common.core.config import AppConfig
+from league_stats_common.core.models import MatchRecord
+from league_stats_common.core.progress import ProgressReporter
+from league_stats_common.infra.cache import MatchStore
+from league_stats_runner.infra.derived import KIND_RECORD, DerivedStore
+from league_stats_runner.ingest import parser as parser_module
+from league_stats_runner.pipeline.fetch import load_all_records
+from league_stats_runner.pipeline.services import Services
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 
 PUUID = MY_PUUID
@@ -139,7 +139,7 @@ def test_a_code_change_forces_a_reparse(
     load_all_records(services, PUUID)
 
     monkeypatch.setattr(
-        "league_stats.infra.derived.code_version", lambda kind: "cafebabecafebabe"
+        "league_stats_runner.infra.derived.code_version", lambda kind: "cafebabecafebabe"
     )
     calls = {"n": 0}
     original = parser_module.MatchParser.parse

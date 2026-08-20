@@ -8,21 +8,21 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from league_stats.analysis.peer.benchmarks import adjacent_tiers, resolve_benchmark_path, tier_benchmark
-from league_stats.analysis.peer.comparison import (
+from league_stats_peers.analysis.peer.benchmarks import adjacent_tiers, resolve_benchmark_path, tier_benchmark
+from league_stats_peers.analysis.peer.comparison import (
     build_comparisons,
     compare_metrics_for_role,
     peer_recommendations,
 )
-from league_stats.analysis.peer.comparison import _extract_champion_role_from_match
-from league_stats.core.models import RankedEntry
+from league_stats_peers.analysis.peer.comparison import _extract_champion_role_from_match
+from league_stats_common.core.models import RankedEntry
 from tests.fixtures import MY_PUUID, make_match
 
 
 @pytest.fixture
 def benchmark_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Provide a temporary Viktor mid benchmark file for static loader tests."""
-    import league_stats.analysis.peer.benchmarks as benchmarks
+    import league_stats_peers.analysis.peer.benchmarks as benchmarks
 
     directory = tmp_path / "benchmarks"
     directory.mkdir()
@@ -84,7 +84,7 @@ def test_adjacent_tiers_includes_neighbours() -> None:
 
 def test_infer_platform_from_match_id() -> None:
     """Match id prefixes map to platform routing hosts."""
-    from league_stats.infra.riot_api import RiotApiClient
+    from league_stats_common.infra.riot_api import RiotApiClient
 
     assert RiotApiClient.infer_platform_from_match_id("EUW1_12345") == "euw1"
     assert RiotApiClient.infer_platform_from_match_id("EUN1_999") == "eun1"
@@ -120,8 +120,8 @@ def test_extract_champion_role_filters_lane() -> None:
 
 def test_comparison_summary_handles_none_delta_pct() -> None:
     """Summary lines work when peer average is zero (no % gap)."""
-    from league_stats.analysis.peer.comparison import _comparison_summary_line
-    from league_stats.core.models import MetricComparison
+    from league_stats_peers.analysis.peer.comparison import _comparison_summary_line
+    from league_stats_common.core.models import MetricComparison
 
     comp = MetricComparison(
         metric="gd10",
@@ -171,8 +171,8 @@ def test_peer_recommendations_flag_weaknesses() -> None:
 
 def test_comparisons_dataframe_from_result() -> None:
     """Comparison export is one row per metric."""
-    from league_stats.analysis.peer.comparison import comparisons_dataframe
-    from league_stats.core.models import MetricComparison, PeerComparisonResult
+    from league_stats_peers.analysis.peer.comparison import comparisons_dataframe
+    from league_stats_common.core.models import MetricComparison, PeerComparisonResult
 
     result = PeerComparisonResult(
         rank_label="Gold II",
@@ -220,7 +220,7 @@ class _NoHistoryStore:
 
 
 def _sample_baseline():
-    from league_stats.analysis.peer.baseline import PeerBaseline
+    from league_stats_peers.analysis.peer.baseline import PeerBaseline
 
     return PeerBaseline(
         metrics={"win": 0.55, "kda": 3.2, "dpm": 620.0, "deaths": 4.5, "cspm": 7.0},
@@ -249,8 +249,8 @@ def test_build_peer_comparison_matches_finish_peer_comparison_for_the_same_basel
     `finish_peer_comparison` (given that same baseline directly) does --
     proving the fix-round-1 extraction changed nothing about the in-process
     path's behavior."""
-    import league_stats.analysis.peer.comparison as comparison_module
-    from league_stats.analysis.peer.comparison import build_peer_comparison, finish_peer_comparison
+    import league_stats_peers.analysis.peer.comparison as comparison_module
+    from league_stats_peers.analysis.peer.comparison import build_peer_comparison, finish_peer_comparison
 
     baseline = _sample_baseline()
     monkeypatch.setattr(comparison_module, "resolve_peer_baseline", lambda *a, **k: baseline)
@@ -305,8 +305,8 @@ def test_finish_peer_comparison_reads_user_history_via_raw_match_store() -> None
     """
     import mongomock
 
-    from league_stats.analysis.peer.comparison import finish_peer_comparison
-    from league_stats.infra.raw_match_store import RawMatchStore
+    from league_stats_peers.analysis.peer.comparison import finish_peer_comparison
+    from league_stats_runner.infra.raw_match_store import RawMatchStore
 
     match = make_match()
     match_id = match["metadata"]["matchId"]
@@ -344,7 +344,7 @@ def test_finish_peer_comparison_reads_user_history_via_raw_match_store() -> None
 
 def test_build_peer_comparison_returns_none_when_unranked() -> None:
     """No rank resolved -> no baseline lookup is even attempted."""
-    from league_stats.analysis.peer.comparison import build_peer_comparison
+    from league_stats_peers.analysis.peer.comparison import build_peer_comparison
 
     result = build_peer_comparison(
         client=object(),
@@ -362,8 +362,8 @@ def test_build_peer_comparison_returns_none_when_unranked() -> None:
 def test_build_peer_comparison_returns_none_when_no_baseline(monkeypatch: pytest.MonkeyPatch) -> None:
     """`resolve_peer_baseline` returning `None` (e.g. every fallback level
     exhausted) must be a soft `None`, not an exception."""
-    import league_stats.analysis.peer.comparison as comparison_module
-    from league_stats.analysis.peer.comparison import build_peer_comparison
+    import league_stats_peers.analysis.peer.comparison as comparison_module
+    from league_stats_peers.analysis.peer.comparison import build_peer_comparison
 
     monkeypatch.setattr(comparison_module, "resolve_peer_baseline", lambda *a, **k: None)
     ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
