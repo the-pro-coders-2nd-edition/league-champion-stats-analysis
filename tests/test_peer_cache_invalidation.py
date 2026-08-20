@@ -145,6 +145,55 @@ def test_write_live_cache_swallows_errors_from_a_broken_store(
     write_live_cache("euw1", "GOLD", "Zac", "JUNGLE", _snapshot(), patch="14.23")
 
 
+class TestFileFallbackWithNoMongo:
+    """Phase 5 final review, Finding 1: prove the file cache actually works when
+    Mongo is unreachable, on the real production topology (`deploy/run.sh`'s bare
+    systemd unit, and local `uv run python main.py`) -- both default to
+    `peers_mode="in_process"` with no Mongo instance available at all.
+
+    This bypasses the autouse `_peer_live_cache_uses_mongomock` fixture's
+    mongomock store by overriding `benchmark_cache._store` with `_RaisingStore`,
+    which raises on every `read`/`write` exactly like a real unreachable Mongo
+    caught by pymongo's `serverSelectionTimeoutMS` guard would. The autouse
+    fixture's `_LIVE_CACHE_DIR` -> tmp_path redirect stays in effect, so the
+    file cache used here is real file I/O against a throwaway directory, not a
+    mock -- this genuinely exercises the on-disk read/write path, not just
+    Mongo's fail-soft guard.
+    """
+
+    def test_write_then_read_round_trips_via_the_file_cache(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(benchmark_cache, "_store", _RaisingStore())
+
+        write_live_cache("euw1", "GOLD", "Zac", "JUNGLE", _snapshot(games=63), patch="14.23")
+        cached = read_live_cache("euw1", "GOLD", "Zac", "JUNGLE", patch="14.23")
+
+        assert cached is not None
+        assert cached.from_cache is True
+        assert cached.games_sampled == 63
+        assert cached.metrics == {"win": 0.52, "cspm": 7.4}
+
+    def test_the_round_trip_actually_touched_the_on_disk_file(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(benchmark_cache, "_store", _RaisingStore())
+
+        write_live_cache("euw1", "GOLD", "Zac", "JUNGLE", _snapshot(), patch="14.23")
+
+        path = benchmark_cache._cache_path("euw1", "GOLD", "Zac", "JUNGLE")
+        assert path.is_file()
+
+    def test_a_stale_file_entry_is_still_rejected_with_mongo_unreachable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(benchmark_cache, "_store", _RaisingStore())
+
+        write_live_cache("euw1", "GOLD", "Zac", "JUNGLE", _snapshot(), patch="14.23")
+
+        assert read_live_cache("euw1", "GOLD", "Zac", "JUNGLE", patch="14.24") is None
+
+
 def test_current_patch_reads_the_newest_game() -> None:
     from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
     from league_stats.ingest.parser import ItemCatalog, MatchParser

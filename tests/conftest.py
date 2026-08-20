@@ -19,7 +19,7 @@ def _skip_ddragon_downloads(request: pytest.FixtureRequest, monkeypatch: pytest.
 
 
 @pytest.fixture(autouse=True)
-def _peer_live_cache_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
+def _peer_live_cache_uses_mongomock(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Default every test's PEERS live-benchmark cache (Phase 5, Task 3) to an
     in-memory mongomock store instead of a real Mongo connection.
 
@@ -33,9 +33,15 @@ def _peer_live_cache_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
     assert on live-cache behavior (`test_peer_cache_invalidation.py`, some of
     `test_peer_blend.py`) install their own dedicated mongomock store per test,
     which simply runs after this one and overrides it.
+
+    Also redirects the file-cache fallback (Phase 5 final review, Finding 1 --
+    `write_live_cache` now writes to both Mongo and an on-disk JSON cache) at
+    `_LIVE_CACHE_DIR` into a per-test tmp directory, so running the suite
+    never litters the real `data/benchmarks/live/` directory with cache files.
     """
     monkeypatch.setattr(
         _benchmark_cache,
         "_store",
         LiveBenchmarkCacheStore(mongomock.MongoClient(), db_name="test_default_live_cache"),
     )
+    monkeypatch.setattr(_benchmark_cache, "_LIVE_CACHE_DIR", tmp_path / "live_cache")

@@ -18,7 +18,6 @@ from typing import Any
 
 import pandas as pd
 import pymongo
-from pymongo import uri_parser as mongo_uri_parser
 
 from league_stats.analysis.peer import current_patch, finish_peer_comparison
 from league_stats.analysis.peer.baseline import PeerBaseline
@@ -27,6 +26,7 @@ from league_stats.core.config import PLATFORM_TO_REGION, PlayerIdentity, WebConf
 from league_stats.core.models import PeerComparisonResult, RankedEntry
 from league_stats.infra.cache import HttpCache, MatchStore
 from league_stats.infra.ddragon_assets import DDragonAssets
+from league_stats.infra.mongo import db_name_from_uri as _db_name_from_uri
 from league_stats.infra.raw_match_store import RawMatchStore
 from league_stats.infra.riot_api import RiotApiClient, RiotApiError, shared_rate_limiter
 from league_stats.ingest.parser import BuildPool
@@ -310,6 +310,13 @@ def _build_mongo_client(mongo_uri: str) -> pymongo.MongoClient:
     return a `mongomock.MongoClient` instead of dialing a real Mongo --
     matching the pattern this module already uses for stubbing gRPC calls
     (e.g. `_build_peer_for_pool_via_grpc`).
+
+    No short `serverSelectionTimeoutMS` here (unlike `analysis.peer.
+    benchmark_cache`'s best-effort live cache): `RawMatchStore` backs
+    `runner_storage_mode="mongo"`'s match persistence, a required store for
+    the job pipeline when that mode is on, not an optional cache -- there is
+    no fallback path if this client fails fast, so waiting out pymongo's
+    ~30s default on a slow/starting-up Mongo is the right tradeoff.
     """
     with _SHARED_MONGO_CLIENTS_LOCK:
         client = _SHARED_MONGO_CLIENTS.get(mongo_uri)
@@ -317,19 +324,6 @@ def _build_mongo_client(mongo_uri: str) -> pymongo.MongoClient:
             client = pymongo.MongoClient(mongo_uri)
             _SHARED_MONGO_CLIENTS[mongo_uri] = client
         return client
-
-
-def _db_name_from_uri(mongo_uri: str) -> str:
-    """Extract the database name from a Mongo connection URI.
-
-    Duplicated from `peers/service.py`'s helper of the same name (no shared
-    Mongo-utility module exists yet in this codebase; every service that
-    talks to Mongo defines its own client/db-name wiring, e.g. `peers/
-    service.py`'s `_build_default_peer_store`) -- uses pymongo's own URI
-    parser rather than a naive `rsplit`, which breaks on query params or a
-    bare host with no db path.
-    """
-    return mongo_uri_parser.parse_uri(mongo_uri).get("database") or "league_stats"
 
 
 def _build_job_services(

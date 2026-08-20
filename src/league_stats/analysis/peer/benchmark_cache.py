@@ -1,4 +1,4 @@
-"""Mongo-backed cache for live-sampled peer benchmarks.
+"""Mongo-primary, file-fallback cache for live-sampled peer benchmarks.
 
 Cache entries are keyed by ``{platform}_{tier}_{champion_slug}`` (the same
 string the old on-disk cache used as its filename stem -- see "Migration
@@ -21,13 +21,35 @@ moving from Gold IV to Gold I does not change who your peers are.
 Migration history (Phase 5, Task 3)
 ------------------------------------
 This cache used to be a directory of JSON files under
-``data/benchmarks/live/`` (``{platform}_{tier}_{champion_slug}.json``). It is
-now backed by Mongo (``infra.live_benchmark_cache_store.LiveBenchmarkCacheStore``)
-instead, with the exact same key shape and staleness semantics (patch + tier
-match, ``CACHE_TTL_S`` = 3 days) -- ``read_live_cache``/``write_live_cache``
-keep their original signatures, so no caller (``analysis/peer/baseline.py``)
-needed to change. The old ``data/benchmarks/live/`` directory and any JSON
-files already in it are left untouched on disk -- simply unused from now on.
+``data/benchmarks/live/`` (``{platform}_{tier}_{champion_slug}.json``). Task 3
+moved it to Mongo (``infra.live_benchmark_cache_store.LiveBenchmarkCacheStore``),
+with the exact same key shape and staleness semantics (patch + tier match,
+``CACHE_TTL_S`` = 3 days) -- ``read_live_cache``/``write_live_cache`` keep
+their original signatures, so no caller (``analysis/peer/baseline.py``)
+needed to change.
+
+Mongo-primary, file-fallback (Phase 5 final review, Finding 1)
+-------------------------------------------------------------------
+Task 3 made Mongo the *only* backend, which silently regressed the one real
+deployment this app has: `deploy/run.sh` runs a bare systemd unit on a VPS
+with no Mongo, and local dev (`uv run python main.py`) has no Mongo either --
+both default to `peers_mode="in_process"`. On both, every read became a
+guaranteed miss (after paying `_SERVER_SELECTION_TIMEOUT_MS` to find that
+out) and every write became a silent no-op, so the file cache Task 3 removed
+was actually the *only* working cache on that topology. The old on-disk
+JSON cache is therefore back as a fallback layer, not a replacement:
+
+* ``read_live_cache`` tries Mongo first; if Mongo returns a hit, that's used.
+  If Mongo returns ``None`` -- whether a genuine miss or an unreachable
+  server caught by the ``PyMongoError`` guard below -- it falls back to the
+  file cache before finally reporting a miss.
+* ``write_live_cache`` writes to *both* backends, each best-effort. Whichever
+  one is actually reachable on a given deployment (Mongo in compose, the
+  filesystem on the bare VPS) ends up with a working cache; the other write
+  simply fails soft.
+
+The old ``data/benchmarks/live/`` directory and its filename scheme
+(``{platform}_{tier}_{champion_slug}.json``) are unchanged from before Task 3.
 
 Fail-soft on a broken/unreachable Mongo, on both read and write
 -------------------------------------------------------------------
@@ -47,18 +69,26 @@ inside a user-facing request path must not stall for pymongo's ~30s default.
 
 from __future__ import annotations
 
+import json
 import os
 import time
+from pathlib import Path
 from typing import Any, Final
 
 import pymongo
-from pymongo import uri_parser as mongo_uri_parser
 
 from league_stats.analysis.peer.benchmark_fetcher import BenchmarkSnapshot, MIN_BENCHMARK_GAMES
 from league_stats.core.champions import champion_slug
 from league_stats.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
+from league_stats.infra.mongo import db_name_from_uri as _db_name_from_uri
 
 CACHE_TTL_S: Final[float] = 3 * 24 * 3600  # 3 days
+
+# Fallback file cache -- see "Mongo-primary, file-fallback" above. Same
+# directory/filename scheme the pre-Task-3 file cache used.
+_LIVE_CACHE_DIR: Final[Path] = (
+    Path(__file__).resolve().parents[2] / "data" / "benchmarks" / "live"
+)
 
 # Margin added on top of CACHE_TTL_S for the Mongo TTL index (see
 # LiveBenchmarkCacheStore) -- purely a housekeeping backstop against unbounded
@@ -78,16 +108,6 @@ _SERVER_SELECTION_TIMEOUT_MS: Final[int] = 4000
 # Tests monkeypatch this attribute directly with a mongomock-backed store,
 # the same way the old file cache's tests monkeypatched `_LIVE_CACHE_DIR`.
 _store: LiveBenchmarkCacheStore | None = None
-
-
-def _db_name_from_uri(mongo_uri: str) -> str:
-    """Extract the database name from a Mongo connection URI.
-
-    Mirrors `peers/service.py`'s `_db_name_from_uri` -- uses pymongo's own URI
-    parser rather than a naive `rsplit`, which breaks on query params or a
-    bare host with no db path.
-    """
-    return mongo_uri_parser.parse_uri(mongo_uri).get("database") or "league_stats"
 
 
 def _get_store() -> LiveBenchmarkCacheStore:
@@ -110,6 +130,11 @@ def _cache_key(platform: str, tier: str, champion: str, role: str) -> str:
     return f"{platform.lower()}_{tier.upper()}_{slug}"
 
 
+def _cache_path(platform: str, tier: str, champion: str, role: str) -> Path:
+    key = _cache_key(platform, tier, champion, role)
+    return _LIVE_CACHE_DIR / f"{key}.json"
+
+
 def _patch_is_stale(stored: str, wanted: str) -> bool:
     """Whether a cached sample's patch disqualifies it.
 
@@ -123,28 +148,14 @@ def _patch_is_stale(stored: str, wanted: str) -> bool:
     return stored != wanted
 
 
-def read_live_cache(
-    platform: str,
-    tier: str,
-    champion: str,
-    role: str,
-    *,
-    patch: str = "",
+def _snapshot_from_data(
+    data: dict[str, Any], platform: str, *, patch: str
 ) -> BenchmarkSnapshot | None:
-    """Return a cached benchmark snapshot if it is still valid."""
-    key = _cache_key(platform, tier, champion, role)
-    try:
-        data: dict[str, Any] | None = _get_store().read(key)
-    except pymongo.errors.PyMongoError:
-        # Fail-soft, mirroring the old file cache's `except (OSError,
-        # json.JSONDecodeError): return None` -- a broken/unreachable Mongo
-        # must degrade to a cache miss, not blow up resolve_peer_baseline and
-        # skip the static-benchmark fallback levels a real miss would still
-        # reach. See this module's docstring.
-        return None
-    if data is None:
-        return None
+    """Turn a raw cached document into a `BenchmarkSnapshot`, or None if it's stale/thin.
 
+    Shared by both backends (Mongo and file) so the patch/TTL/min-games gates
+    stay identical regardless of which one actually served the hit.
+    """
     if _patch_is_stale(str(data.get("patch", "")), patch):
         return None
 
@@ -165,6 +176,70 @@ def read_live_cache(
     )
 
 
+def _read_file_cache(
+    platform: str, tier: str, champion: str, role: str, *, patch: str
+) -> BenchmarkSnapshot | None:
+    path = _cache_path(platform, tier, champion, role)
+    if not path.is_file():
+        return None
+    try:
+        with path.open(encoding="utf-8") as fh:
+            data: dict[str, Any] = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        # Fail-soft, same as the pre-Task-3 file cache: a broken/missing file
+        # degrades to a miss, it never blows up resolve_peer_baseline.
+        return None
+    return _snapshot_from_data(data, platform, patch=patch)
+
+
+def _write_file_cache(
+    platform: str, tier: str, champion: str, role: str, data: dict[str, Any]
+) -> None:
+    try:
+        _LIVE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        path = _cache_path(platform, tier, champion, role)
+        with path.open("w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+    except OSError:
+        # Best-effort, mirroring the old file cache's `except OSError: pass`
+        # -- a failed cache write must never break a successful live sample.
+        pass
+
+
+def read_live_cache(
+    platform: str,
+    tier: str,
+    champion: str,
+    role: str,
+    *,
+    patch: str = "",
+) -> BenchmarkSnapshot | None:
+    """Return a cached benchmark snapshot if it is still valid.
+
+    Tries the Mongo-backed store first; if that misses -- a genuine miss, or
+    an unreachable/broken Mongo caught by the `PyMongoError` guard below --
+    falls back to the on-disk JSON cache before finally reporting a miss. See
+    this module's docstring ("Mongo-primary, file-fallback").
+    """
+    key = _cache_key(platform, tier, champion, role)
+    try:
+        data: dict[str, Any] | None = _get_store().read(key)
+    except pymongo.errors.PyMongoError:
+        # Fail-soft, mirroring the old file cache's `except (OSError,
+        # json.JSONDecodeError): return None` -- a broken/unreachable Mongo
+        # must degrade to a cache miss, not blow up resolve_peer_baseline and
+        # skip the static-benchmark fallback levels a real miss would still
+        # reach. See this module's docstring.
+        data = None
+
+    if data is not None:
+        snapshot = _snapshot_from_data(data, platform, patch=patch)
+        if snapshot is not None:
+            return snapshot
+
+    return _read_file_cache(platform, tier, champion, role, patch=patch)
+
+
 def write_live_cache(
     platform: str,
     tier: str,
@@ -174,7 +249,13 @@ def write_live_cache(
     *,
     patch: str = "",
 ) -> None:
-    """Persist a live-sampled benchmark snapshot to the Mongo-backed cache."""
+    """Persist a live-sampled benchmark snapshot to both cache backends.
+
+    Writes to Mongo and to the on-disk JSON cache, each best-effort --
+    whichever backend is actually reachable on a given deployment ends up
+    with a working cache. See this module's docstring ("Mongo-primary,
+    file-fallback").
+    """
     key = _cache_key(platform, tier, champion, role)
     data = {
         "metrics": snapshot.metrics,
@@ -191,3 +272,5 @@ def write_live_cache(
         # Best-effort: mirrors the old file cache's `except OSError: pass` --
         # a failed cache write must never break a successful live sample.
         pass
+
+    _write_file_cache(platform, tier, champion, role, data)

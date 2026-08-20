@@ -214,12 +214,12 @@ import grpc
 import pymongo
 import requests
 from prometheus_client import Counter, Gauge, Histogram
-from pymongo import uri_parser as mongo_uri_parser
 
 from league_stats.analysis.peer.baseline import PeerBaseline, resolve_peer_baseline
 from league_stats.core.config import AppConfig, PLATFORM_TO_REGION, REGION_DEFAULT_PLATFORM, VALID_PLATFORMS
 from league_stats.core.models import RankedEntry
 from league_stats.infra.cache import HttpCache, MatchStore
+from league_stats.infra.mongo import db_name_from_uri as _db_name_from_uri
 from league_stats.infra.peer_sample_store import PeerSampleStore
 from league_stats.infra.riot_api import RiotApiClient, shared_rate_limiter
 from league_stats.utils import get_logger
@@ -337,18 +337,13 @@ def _encode_baseline(baseline: PeerBaseline | None) -> str:
     return json.dumps(asdict(baseline))
 
 
-def _db_name_from_uri(mongo_uri: str) -> str:
-    """Extract the database name from a Mongo connection URI.
-
-    `rsplit("/", 1)[-1]` (the original implementation) breaks on query params
-    (`?retryWrites=true`) or a bare host with no db path -- use pymongo's own
-    URI parser instead, which handles both correctly.
-    """
-    return mongo_uri_parser.parse_uri(mongo_uri).get("database") or "league_stats"
-
-
 def _build_default_peer_store() -> PeerSampleStore:
     mongo_uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017/league_stats")
+    # No short serverSelectionTimeoutMS here (unlike benchmark_cache.py's
+    # best-effort live cache): PeerSampleStore backs the peer-baseline sample
+    # pipeline itself, not an optional cache layer, so a slow/starting-up
+    # Mongo should be waited out (pymongo's ~30s default) rather than treated
+    # as an immediate fallback -- there is no fallback path for peer samples.
     client: pymongo.MongoClient = pymongo.MongoClient(mongo_uri)
     return PeerSampleStore(client, db_name=_db_name_from_uri(mongo_uri))
 
