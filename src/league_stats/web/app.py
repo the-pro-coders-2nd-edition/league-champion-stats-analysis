@@ -71,6 +71,7 @@ from league_stats.web.jobs import (
     decode_players,
     players_label,
 )
+from league_stats.web.welcome_back_cache import WelcomeBackCache, WelcomeBackSubscriber
 from league_stats.web.worker import AnalysisWorker
 
 SPA_DIST_DIR = Path(__file__).resolve().parent / "spa_dist"
@@ -702,6 +703,14 @@ def create_app(
         store,
         lambda region: _build_precheck_client(region, config.output_dir),
     )
+    # Always created (cheap, gRPC-free) so a later task can read from it
+    # unconditionally; only the subscriber below is gated on the env var.
+    welcome_back_cache = WelcomeBackCache()
+    welcome_back_subscriber = (
+        WelcomeBackSubscriber(welcome_back_cache, config.cron_watch_grpc_target)
+        if config.cron_watch_grpc_target
+        else None
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -713,8 +722,15 @@ def create_app(
             # watch_seen_json (see league_stats.cron_watch.service's docstring).
             if config.watch_mode == "in_process":
                 watcher.start()
+            # No-op unless CRON_WATCH_GRPC_TARGET is set (see WebConfig's field
+            # comment): welcome_back_subscriber is None by default, so nothing
+            # opens a gRPC channel and this whole subsystem stays inert.
+            if welcome_back_subscriber is not None:
+                welcome_back_subscriber.start()
         yield
         if start_worker:
+            if welcome_back_subscriber is not None:
+                await welcome_back_subscriber.stop()
             if config.watch_mode == "in_process":
                 await watcher.stop()
             worker.stop()
@@ -723,6 +739,7 @@ def create_app(
     app = FastAPI(title=APP_TITLE, lifespan=lifespan)
     app.state.job_store = store
     app.state.web_config = config
+    app.state.welcome_back_cache = welcome_back_cache
 
     # Report payloads are the largest thing this app serves by orders of magnitude,
     # and nothing compressed them: a request offering `gzip, br` got back tens of MB

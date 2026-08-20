@@ -471,6 +471,15 @@ class WebConfig(BaseModel):
     # warning when `peers_mode="grpc"` is set, it cannot refuse construction.
     peers_mode: Literal["in_process", "grpc"] = "in_process"
     peers_grpc_target: str = "localhost:50053"
+    # Opt-in subscription to CronWatch's WatchUpdates push stream (Phase 4 of the
+    # microservices migration). Unset (the default) means this whole subsystem
+    # is a no-op -- create_app never opens a gRPC channel and the welcome-back
+    # cache simply stays empty, matching every other opt-in feature in this
+    # migration. Unlike `runner_mode`/`watch_mode`/`peers_mode`, there is no
+    # separate mode literal here: the target's presence IS the toggle, since
+    # WatchUpdates has no in-process equivalent to fall back to (the monolith
+    # never computed these push notifications itself).
+    cron_watch_grpc_target: str | None = None
 
     @model_validator(mode="after")
     def _warn_on_peers_grpc_topology_precondition(self) -> "WebConfig":
@@ -514,7 +523,7 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
     Environment variables: ``ANALYZER_WEB_HOST``, ``ANALYZER_WEB_PORT``,
     ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``, ``ANALYZER_RUNNER_MODE``,
     ``RUNNER_GRPC_TARGET``, ``ANALYZER_WATCH_MODE``, ``ANALYZER_PEERS_MODE``,
-    ``PEERS_GRPC_TARGET``.
+    ``PEERS_GRPC_TARGET``, ``CRON_WATCH_GRPC_TARGET``.
     """
     _load_env_file()
     data: dict[str, Any] = {}
@@ -531,6 +540,7 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
         "watch_mode": os.environ.get("ANALYZER_WATCH_MODE"),
         "peers_mode": os.environ.get("ANALYZER_PEERS_MODE"),
         "peers_grpc_target": os.environ.get("PEERS_GRPC_TARGET"),
+        "cron_watch_grpc_target": os.environ.get("CRON_WATCH_GRPC_TARGET"),
     }
     data.update({k: v for k, v in env_map.items() if v})
     data.update({k: v for k, v in overrides.items() if v is not None})
