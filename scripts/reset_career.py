@@ -17,9 +17,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from league_stats.core.config import load_paths_config
-from league_stats.infra.career_store import CareerStore
-from league_stats.presentation.report import discover_reports
+from league_stats_common.core.config import load_paths_config
+from league_stats_common.infra.career_store import CareerStore
+from league_stats_runner.presentation.report import discover_reports
 
 
 def _parse_args() -> argparse.Namespace:

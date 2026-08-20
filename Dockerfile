@@ -25,9 +25,9 @@ COPY src/ ./src/
 COPY main.py ./
 COPY config.toml.example ./
 
-# vite.config.js sets build.outDir to ../src/league_stats/web/spa_dist (relative to
+# vite.config.js sets build.outDir to ../src/league_stats_api_ui/spa_dist (relative to
 # frontend/), so the builder stage already writes to that path under /app.
-COPY --from=spa-builder /app/src/league_stats/web/spa_dist/ ./src/league_stats/web/spa_dist/
+COPY --from=spa-builder /app/src/league_stats_api_ui/spa_dist/ ./src/league_stats_api_ui/spa_dist/
 
 RUN uv sync --no-dev --frozen
 

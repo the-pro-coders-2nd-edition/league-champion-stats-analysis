@@ -48,7 +48,7 @@ services:
     volumes:
       # Shared with `cron-watch`: both open their own `JobStore` connection
       # onto the same `data/app.sqlite` file (see
-      # `league_stats/cron_watch/service.py`'s "shared SQLite volume" design
+      # `league_stats_cron_watch/service.py`'s "shared SQLite volume" design
       # note). Without this mount each container would see its own, empty
       # `data/` directory and CRON-watch's enqueued jobs would never surface
       # through this service's job-status API.
@@ -82,7 +82,7 @@ services:
         # actually set, so every real deployment's `version` tag silently
         # stays "dev".
         GIT_COMMIT: ${GIT_COMMIT:-dev}
-    command: ["uv", "run", "python", "-m", "league_stats.runner"]
+    command: ["uv", "run", "python", "-m", "league_stats_runner"]
     environment:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - RUNNER_GRPC_PORT=50051
@@ -122,7 +122,7 @@ services:
         # actually set, so every real deployment's `version` tag silently
         # stays "dev".
         GIT_COMMIT: ${GIT_COMMIT:-dev}
-    command: ["uv", "run", "python", "-m", "league_stats.peers"]
+    command: ["uv", "run", "python", "-m", "league_stats_peers"]
     environment:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - RUNNER_GRPC_TARGET=runner:50051
@@ -152,7 +152,7 @@ services:
         # actually set, so every real deployment's `version` tag silently
         # stays "dev".
         GIT_COMMIT: ${GIT_COMMIT:-dev}
-    command: ["uv", "run", "python", "-m", "league_stats.cron_watch"]
+    command: ["uv", "run", "python", "-m", "league_stats_cron_watch"]
     environment:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - CRON_WATCH_GRPC_PORT=50052
