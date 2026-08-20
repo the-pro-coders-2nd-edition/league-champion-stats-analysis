@@ -50,6 +50,25 @@ services:
     depends_on:
       - mongo
 
+  peers:
+    build: .
+    command: ["uv", "run", "python", "-m", "league_stats.peers"]
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/league_stats
+      - RUNNER_GRPC_TARGET=runner:50051
+      - PEERS_GRPC_PORT=50053
+      - PEERS_METRICS_PORT=9102
+    env_file:
+      - .env
+    # No `ports:` here on purpose, same reasoning as `runner`/`cron-watch`:
+    # nothing outside the compose network dials PEERS directly today. Note
+    # `app`'s `peers_mode` still defaults to `in_process` (unchanged by this
+    # task) -- wiring `ANALYZER_PEERS_MODE=grpc` / `PEERS_GRPC_TARGET=peers:50053`
+    # into `app`/`runner` so they actually dial this service remains a
+    # follow-up for the controller, not decided here.
+    depends_on:
+      - mongo
+
   cron-watch:
     build: .
     command: ["uv", "run", "python", "-m", "league_stats.cron_watch"]

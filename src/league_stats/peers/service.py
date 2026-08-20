@@ -195,6 +195,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import asdict
@@ -204,7 +205,7 @@ from typing import Any, Callable, Iterator
 import grpc
 import pymongo
 import requests
-from prometheus_client import Counter, Gauge
+from prometheus_client import Counter, Gauge, Histogram
 from pymongo import uri_parser as mongo_uri_parser
 
 from league_stats.analysis.peer.baseline import PeerBaseline, resolve_peer_baseline
@@ -241,6 +242,24 @@ PEERS_DEDUPED_REQUESTS_TOTAL = Counter(
     "peers_deduped_requests_total",
     "RequestBaseline calls that attached to an already in-flight resolution "
     "for the same (champion, role, platform, tier) instead of starting a new one.",
+)
+# PEERS' first Prometheus metrics -- see peers/__main__.py's start_http_server call.
+# Recorded once per completed resolve_peer_baseline call, in _get_or_submit's `_run`
+# below, which is the single code path both RequestBaseline's fast (same-thread) wait
+# and its backgrounded live-sampling continuation share -- so both are covered by one
+# instrumentation point.
+PEERS_BASELINE_RESOLUTION_DURATION = Histogram(
+    "peers_baseline_resolution_duration_seconds",
+    "Time resolve_peer_baseline took to run one baseline resolution, from worker "
+    "thread start to completion (covers both fast local reads -- store hits and "
+    "static fallback, levels 0/1/3/4/5 -- and level 2's live Riot sampling).",
+)
+PEERS_BASELINE_RESOLUTIONS_TOTAL = Counter(
+    "peers_baseline_resolutions_total",
+    "Completed resolve_peer_baseline calls, labeled by whether the result came from "
+    "local data (cached: store hits or static benchmark fallback) or required a live "
+    "Riot sampling fetch (live_sample: fallback_level 2).",
+    ["source"],
 )
 
 
@@ -492,8 +511,9 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
             def _run() -> PeerBaseline | None:
                 started.set()
                 PEERS_INFLIGHT_BASELINES.inc()
+                resolution_start = time.perf_counter()
                 try:
-                    return resolve_peer_baseline(
+                    baseline = resolve_peer_baseline(
                         riot_client,
                         adapter,
                         ranked,
@@ -503,6 +523,10 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
                     )
                 finally:
                     PEERS_INFLIGHT_BASELINES.dec()
+                PEERS_BASELINE_RESOLUTION_DURATION.observe(time.perf_counter() - resolution_start)
+                source = "live_sample" if baseline is not None and baseline.fallback_level == 2 else "cached"
+                PEERS_BASELINE_RESOLUTIONS_TOTAL.labels(source=source).inc()
+                return baseline
 
             future = self._executor.submit(_run)
             record = _InFlightResolution(future=future, started=started)
