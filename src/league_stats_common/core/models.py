@@ -571,7 +571,7 @@ class MatchRecord(BaseModel):
         return row
 
     def _objective_macro_rates(self) -> dict[str, float | None]:
-        from league_stats.analysis.objective_macro import objective_aggregate_rates
+        from league_stats_runner.analysis.objective_macro import objective_aggregate_rates
 
         rates = objective_aggregate_rates(self.objectives)
         split = rates.get("objectives_split_push_rate")

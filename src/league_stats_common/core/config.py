@@ -548,7 +548,7 @@ class WebConfig(BaseModel):
         itself verify.
         """
         if self.peers_mode == "grpc":
-            from league_stats.utils import get_logger
+            from league_stats_common.utils import get_logger
 
             get_logger("web_config").warning(
                 "peers_mode=grpc is set. This ONLY works when this process is "
