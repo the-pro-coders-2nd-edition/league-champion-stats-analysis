@@ -6,7 +6,8 @@ def test_common_pb2_exposes_enums_and_ack():
 
     assert common_pb2.Region.Name(common_pb2.EUROPE) == "EUROPE"
     assert common_pb2.Region.Name(common_pb2.SEA) == "SEA"
-    assert common_pb2.Stage.Name(common_pb2.SUMMARY) == "SUMMARY"
+    assert common_pb2.Stage.Name(common_pb2.STAGE_A) == "STAGE_A"
+    assert common_pb2.Stage.Name(common_pb2.STAGE_B) == "STAGE_B"
     ack = common_pb2.Ack(ok=True, message="fine")
     assert ack.ok is True
 

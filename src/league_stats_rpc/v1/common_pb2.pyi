@@ -16,20 +16,16 @@ class Region(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
 class Stage(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     STAGE_UNSPECIFIED: _ClassVar[Stage]
-    SUMMARY: _ClassVar[Stage]
-    PERFORMANCE: _ClassVar[Stage]
-    DEEP_DIVE: _ClassVar[Stage]
-    CHAMPION: _ClassVar[Stage]
+    STAGE_A: _ClassVar[Stage]
+    STAGE_B: _ClassVar[Stage]
 REGION_UNSPECIFIED: Region
 EUROPE: Region
 AMERICAS: Region
 ASIA: Region
 SEA: Region
 STAGE_UNSPECIFIED: Stage
-SUMMARY: Stage
-PERFORMANCE: Stage
-DEEP_DIVE: Stage
-CHAMPION: Stage
+STAGE_A: Stage
+STAGE_B: Stage
 
 class Ack(_message.Message):
     __slots__ = ("ok", "message")

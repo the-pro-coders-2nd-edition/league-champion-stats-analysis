@@ -74,6 +74,11 @@ message StageResult {
   // failed. Lets a consumer distinguish "still in progress" from "done" or
   // "died mid-stream" without guessing from stage ordering alone.
   bool final = 6;
+  // Human-readable progress detail, mirrors JobStore.update_progress's
+  // `detail` argument (e.g. "Analyzing Kayle Top (3/12)").
+  string detail = 7;
+  int32 current = 8;
+  int32 total = 9;
 }
 
 message PeerBaselineReadyRequest {

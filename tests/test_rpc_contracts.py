@@ -48,10 +48,20 @@ def test_runner_enqueue_job_and_stream_progress():
 
         def StreamJobProgress(self, request, context):
             yield runner_pb2.StageResult(
-                job_id=request.job_id, stage=common_pb2.SUMMARY, payload_json="{}"
+                job_id=request.job_id,
+                stage=common_pb2.STAGE_A,
+                payload_json="{}",
+                detail="Analyzing Kayle Top (1/1)",
+                current=1,
+                total=1,
             )
             yield runner_pb2.StageResult(
-                job_id=request.job_id, stage=common_pb2.PERFORMANCE, payload_json="{}"
+                job_id=request.job_id,
+                stage=common_pb2.STAGE_B,
+                payload_json="{}",
+                detail="Comparing Kayle Top to players at your rank (1/1)",
+                current=1,
+                total=1,
             )
 
     server, port = _start_server(
@@ -71,7 +81,7 @@ def test_runner_enqueue_job_and_stream_progress():
                     runner_pb2.StreamJobProgressRequest(job_id=enqueue_response.job_id)
                 )
             ]
-        assert stages == [common_pb2.SUMMARY, common_pb2.PERFORMANCE]
+        assert stages == [common_pb2.STAGE_A, common_pb2.STAGE_B]
     finally:
         server.stop(None)
 
@@ -80,7 +90,7 @@ def test_runner_stream_job_progress_reports_failure_as_final():
     class FakeRunner(runner_pb2_grpc.RunnerServiceServicer):
         def StreamJobProgress(self, request, context):
             yield runner_pb2.StageResult(
-                job_id=request.job_id, stage=common_pb2.SUMMARY, payload_json="{}"
+                job_id=request.job_id, stage=common_pb2.STAGE_A, payload_json="{}"
             )
             yield runner_pb2.StageResult(
                 job_id=request.job_id,

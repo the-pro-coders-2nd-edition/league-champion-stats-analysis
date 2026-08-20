@@ -68,20 +68,26 @@ class StreamJobProgressRequest(_message.Message):
     def __init__(self, job_id: _Optional[str] = ...) -> None: ...
 
 class StageResult(_message.Message):
-    __slots__ = ("job_id", "stage", "payload_json", "completed_at_unix", "error", "final")
+    __slots__ = ("job_id", "stage", "payload_json", "completed_at_unix", "error", "final", "detail", "current", "total")
     JOB_ID_FIELD_NUMBER: _ClassVar[int]
     STAGE_FIELD_NUMBER: _ClassVar[int]
     PAYLOAD_JSON_FIELD_NUMBER: _ClassVar[int]
     COMPLETED_AT_UNIX_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
     FINAL_FIELD_NUMBER: _ClassVar[int]
+    DETAIL_FIELD_NUMBER: _ClassVar[int]
+    CURRENT_FIELD_NUMBER: _ClassVar[int]
+    TOTAL_FIELD_NUMBER: _ClassVar[int]
     job_id: str
     stage: _common_pb2.Stage
     payload_json: str
     completed_at_unix: int
     error: str
     final: bool
-    def __init__(self, job_id: _Optional[str] = ..., stage: _Optional[_Union[_common_pb2.Stage, str]] = ..., payload_json: _Optional[str] = ..., completed_at_unix: _Optional[int] = ..., error: _Optional[str] = ..., final: _Optional[bool] = ...) -> None: ...
+    detail: str
+    current: int
+    total: int
+    def __init__(self, job_id: _Optional[str] = ..., stage: _Optional[_Union[_common_pb2.Stage, str]] = ..., payload_json: _Optional[str] = ..., completed_at_unix: _Optional[int] = ..., error: _Optional[str] = ..., final: _Optional[bool] = ..., detail: _Optional[str] = ..., current: _Optional[int] = ..., total: _Optional[int] = ...) -> None: ...
 
 class PeerBaselineReadyRequest(_message.Message):
     __slots__ = ("request_id", "champion", "lane", "rank", "baseline_json", "error")

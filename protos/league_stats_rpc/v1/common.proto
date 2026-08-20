@@ -12,10 +12,10 @@ enum Region {
 
 enum Stage {
   STAGE_UNSPECIFIED = 0;
-  SUMMARY = 1;
-  PERFORMANCE = 2;
-  DEEP_DIVE = 3;
-  CHAMPION = 4;
+  // Base report without peer/rank comparison data (web/worker.py's stage A).
+  STAGE_A = 1;
+  // Rank-peer comparison, rendered once baselines land (stage B).
+  STAGE_B = 2;
 }
 
 message Ack {
