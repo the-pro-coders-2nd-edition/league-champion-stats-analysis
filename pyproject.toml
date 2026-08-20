@@ -25,6 +25,7 @@ dependencies = [
     "grpcio-tools>=1.83",
     "protobuf>=7.35.1",
     "pymongo>=4.9",
+    "prometheus-client>=0.21",
 ]
 
 [dependency-groups]
