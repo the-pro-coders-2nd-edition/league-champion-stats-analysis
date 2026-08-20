@@ -1,5 +1,5 @@
 services:
-  app:
+  api-ui:
     build: .
     ports:
       - "8000:8000"
@@ -10,9 +10,9 @@ services:
       - RUNNER_GRPC_TARGET=runner:50051
       - ANALYZER_WATCH_MODE=grpc
       # Pinned explicitly (opposite of ANALYZER_WATCH_MODE above, which is
-      # pinned to grpc here) -- `app` never hosts a RunnerServiceServicer, so
-      # PEERS' async callback (NotifyPeerBaselineReady) could never reach it
-      # if peers_mode=grpc were set here (see WebConfig's own validator/
+      # pinned to grpc here) -- `api-ui` never hosts a RunnerServiceServicer,
+      # so PEERS' async callback (NotifyPeerBaselineReady) could never reach
+      # it if peers_mode=grpc were set here (see WebConfig's own validator/
       # warning). The natural way to enable PEERS grpc mode elsewhere is to
       # add ANALYZER_PEERS_MODE=grpc to the shared .env file below -- without
       # this explicit pin, that would silently also flip it on here, stalling
@@ -54,10 +54,10 @@ services:
       - RUNNER_METRICS_PORT=9100
     env_file:
       - .env
-    # No `ports:` here on purpose: RUNNER is only ever dialed by `app` over the
-    # compose network (`RUNNER_GRPC_TARGET=runner:50051` above), never from
-    # outside it. Add a `ports:` mapping here if external debugging access is
-    # ever needed.
+    # No `ports:` here on purpose: RUNNER is only ever dialed by `api-ui` over
+    # the compose network (`RUNNER_GRPC_TARGET=runner:50051` above), never
+    # from outside it. Add a `ports:` mapping here if external debugging
+    # access is ever needed.
     depends_on:
       - mongo
 
@@ -73,10 +73,11 @@ services:
       - .env
     # No `ports:` here on purpose, same reasoning as `runner`/`cron-watch`:
     # nothing outside the compose network dials PEERS directly today. Note
-    # `app`'s `peers_mode` still defaults to `in_process` (unchanged by this
-    # task) -- wiring `ANALYZER_PEERS_MODE=grpc` / `PEERS_GRPC_TARGET=peers:50053`
-    # into `app`/`runner` so they actually dial this service remains a
-    # follow-up for the controller, not decided here.
+    # `api-ui`'s `peers_mode` still defaults to `in_process` (unchanged by
+    # this task) -- wiring `ANALYZER_PEERS_MODE=grpc` /
+    # `PEERS_GRPC_TARGET=peers:50053` into `api-ui`/`runner` so they actually
+    # dial this service remains a follow-up for the controller, not decided
+    # here.
     depends_on:
       - mongo
 
@@ -90,9 +91,10 @@ services:
     env_file:
       - .env
     volumes:
-      # Shared with `app` -- see the comment on `app`'s volume above. This is
-      # the whole mechanism Task 4's "option (b)" design depends on: CRON-watch
-      # enqueues jobs by writing directly into this file, not by calling RUNNER.
+      # Shared with `api-ui` -- see the comment on `api-ui`'s volume above.
+      # This is the whole mechanism Task 4's "option (b)" design depends on:
+      # CRON-watch enqueues jobs by writing directly into this file, not by
+      # calling RUNNER.
       - app-data:/app/data
     # No `ports:` here on purpose, same reasoning as `runner`: nothing outside
     # the compose network dials CRON-watch directly today.
