@@ -9,6 +9,17 @@ services:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - RUNNER_GRPC_TARGET=runner:50051
       - ANALYZER_WATCH_MODE=grpc
+      # Pinned explicitly (opposite of ANALYZER_WATCH_MODE above, which is
+      # pinned to grpc here) -- `app` never hosts a RunnerServiceServicer, so
+      # PEERS' async callback (NotifyPeerBaselineReady) could never reach it
+      # if peers_mode=grpc were set here (see WebConfig's own validator/
+      # warning). The natural way to enable PEERS grpc mode elsewhere is to
+      # add ANALYZER_PEERS_MODE=grpc to the shared .env file below -- without
+      # this explicit pin, that would silently also flip it on here, stalling
+      # every slow-path pool for the full baseline-wait timeout. See the
+      # `peers` service's own comment below for the topology this is meant
+      # to be enabled on instead.
+      - ANALYZER_PEERS_MODE=in_process
     volumes:
       # Shared with `cron-watch`: both open their own `JobStore` connection
       # onto the same `data/app.sqlite` file (see

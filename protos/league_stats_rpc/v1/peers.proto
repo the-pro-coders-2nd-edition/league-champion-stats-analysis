@@ -20,6 +20,11 @@ message RequestBaselineRequest {
   string platform = 4;
   // The requesting player's own PUUID, excluded from their own peer average.
   string exclude_puuid = 5;
+  // Gameplay patch to scope the baseline to (see `current_patch` in
+  // `analysis/peer/comparison.py`). Without this PEERS cannot filter
+  // `select_by_patch` (`analysis/peer/cache.py`) and blends every patch ever
+  // ingested into one baseline instead of scoping to the caller's patch.
+  string patch = 6;
 }
 
 message RequestBaselineResponse {

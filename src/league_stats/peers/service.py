@@ -143,7 +143,11 @@ interpolated into a URL host carrying PEERS' own Riot API key. Falls back to
 once at construction the same way), only when the request field is empty.
 
 `request.exclude_puuid` is passed straight through to
-`resolve_peer_baseline`'s `exclude_puuid` keyword.
+`resolve_peer_baseline`'s `exclude_puuid` keyword, and likewise
+`request.patch` to its `patch` keyword (added in the final whole-branch
+review, finding 1 -- previously dropped entirely, so PEERS always resolved
+with `patch=""`, which `select_by_patch` (`analysis/peer/cache.py`) treats as
+"no filter", blending every patch ever ingested into one baseline).
 
 For tests, `riot_client_factory: Callable[[str], Any] | None` overrides the
 production pool entirely with an injectable per-platform factory -- e.g.
@@ -168,15 +172,19 @@ running; (b) no dedup -- two identical in-flight `(champion, role, platform,
 tier)` requests each launched an independent, redundant live sample.
 
 Fixed by `_get_or_submit`: in-flight resolutions are tracked in
-`self._inflight`, keyed on `(champion, role, platform, tier)` (division is
-excluded from the key because `RankScope` -- see
+`self._inflight`, keyed on `(champion, role, platform, tier, patch)` (division
+is excluded from the key because `RankScope` -- see
 `analysis/peer/rank_scope.py` -- only ever matches on tier, never division,
 so two requests differing only by division would resolve identically; this
 does mean two callers with different `exclude_puuid` values deduped onto the
 same in-flight resolution share one result that only excludes the *first*
 caller's puuid -- a known, accepted simplification matching the review's
-specified dedup key). A second caller for the same key attaches its own
-`request_id`/callback to the *same* `Future` instead of submitting a new one.
+specified dedup key). `patch` was added to the key in the final whole-branch
+review (finding 1): without it, a stale in-flight resolution for a different
+patch could be joined by a later request for the current patch, silently
+handing that caller a wrong-patch baseline. A second caller for the same key
+attaches its own `request_id`/callback to the *same* `Future` instead of
+submitting a new one.
 
 For observability, each in-flight resolution tracks a `threading.Event` that
 is set only once a worker thread actually starts running it (not merely
@@ -440,7 +448,7 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
             max_workers=int(os.environ.get("PEERS_MAX_CONCURRENT_BASELINES", "4")),
             thread_name_prefix="peers-baseline",
         )
-        self._inflight: dict[tuple[str, str, str, str], _InFlightResolution] = {}
+        self._inflight: dict[tuple[str, str, str, str, str], _InFlightResolution] = {}
         # RLock, not Lock: _get_or_submit calls future.add_done_callback(_cleanup)
         # while still holding this lock. If the resolution is fast enough to
         # already be done by that point (store hits, static fallback -- both
@@ -491,15 +499,21 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
 
     def _get_or_submit(
         self,
-        key: tuple[str, str, str, str],
+        key: tuple[str, str, str, str, str],
         riot_client: Any,
         adapter: _PeerStoreAdapter,
         ranked: RankedEntry,
         champion: str,
         role: str,
         exclude_puuid: str | None,
+        patch: str,
     ) -> _InFlightResolution:
-        """Return the in-flight resolution for `key`, submitting a new one if needed."""
+        """Return the in-flight resolution for `key`, submitting a new one if needed.
+
+        `key` includes `patch` (see the field's tuple position) so a stale
+        in-flight request for a different patch is never joined -- see
+        finding 1 of the final whole-branch review.
+        """
         with self._inflight_lock:
             existing = self._inflight.get(key)
             if existing is not None and not existing.future.done():
@@ -512,6 +526,10 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
                 started.set()
                 PEERS_INFLIGHT_BASELINES.inc()
                 resolution_start = time.perf_counter()
+                # Both the success and failure paths must record the duration/counter
+                # metrics -- previously only the success path did, so failed
+                # resolutions were invisible in metrics (finding 5 of the final
+                # whole-branch review).
                 try:
                     baseline = resolve_peer_baseline(
                         riot_client,
@@ -520,7 +538,12 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
                         champion,
                         role,
                         exclude_puuid=exclude_puuid,
+                        patch=patch,
                     )
+                except Exception:
+                    PEERS_BASELINE_RESOLUTION_DURATION.observe(time.perf_counter() - resolution_start)
+                    PEERS_BASELINE_RESOLUTIONS_TOTAL.labels(source="error").inc()
+                    raise
                 finally:
                     PEERS_INFLIGHT_BASELINES.dec()
                 PEERS_BASELINE_RESOLUTION_DURATION.observe(time.perf_counter() - resolution_start)
@@ -574,9 +597,15 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         adapter = _PeerStoreAdapter(self._peer_store)
         client = self._riot_client_for(platform)
         request_id = str(uuid.uuid4())
+        patch = request.patch
 
-        dedup_key = (champion.lower(), role.upper(), platform, tier.upper())
-        record = self._get_or_submit(dedup_key, client, adapter, ranked, champion, role, exclude_puuid)
+        # patch is part of the dedup key: a stale in-flight request for a
+        # different patch must never be joined (finding 1 of the final
+        # whole-branch review) -- see `_get_or_submit`'s docstring.
+        dedup_key = (champion.lower(), role.upper(), platform, tier.upper(), patch)
+        record = self._get_or_submit(
+            dedup_key, client, adapter, ranked, champion, role, exclude_puuid, patch
+        )
 
         try:
             baseline = record.future.result(timeout=self._fast_path_timeout_s)

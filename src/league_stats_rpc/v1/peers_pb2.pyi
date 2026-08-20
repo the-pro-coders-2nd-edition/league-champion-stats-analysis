@@ -5,18 +5,20 @@ from typing import ClassVar as _ClassVar, Optional as _Optional
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class RequestBaselineRequest(_message.Message):
-    __slots__ = ("champion", "lane", "rank", "platform", "exclude_puuid")
+    __slots__ = ("champion", "lane", "rank", "platform", "exclude_puuid", "patch")
     CHAMPION_FIELD_NUMBER: _ClassVar[int]
     LANE_FIELD_NUMBER: _ClassVar[int]
     RANK_FIELD_NUMBER: _ClassVar[int]
     PLATFORM_FIELD_NUMBER: _ClassVar[int]
     EXCLUDE_PUUID_FIELD_NUMBER: _ClassVar[int]
+    PATCH_FIELD_NUMBER: _ClassVar[int]
     champion: str
     lane: str
     rank: str
     platform: str
     exclude_puuid: str
-    def __init__(self, champion: _Optional[str] = ..., lane: _Optional[str] = ..., rank: _Optional[str] = ..., platform: _Optional[str] = ..., exclude_puuid: _Optional[str] = ...) -> None: ...
+    patch: str
+    def __init__(self, champion: _Optional[str] = ..., lane: _Optional[str] = ..., rank: _Optional[str] = ..., platform: _Optional[str] = ..., exclude_puuid: _Optional[str] = ..., patch: _Optional[str] = ...) -> None: ...
 
 class RequestBaselineResponse(_message.Message):
     __slots__ = ("request_id", "cached", "baseline_json", "error")

@@ -46,6 +46,17 @@ class PeerSampleStore:
         """
         db = client[db_name]
         self._peer_games = db["peer_games"]
+        # Mirrors the real SQL indexes this store's SQLite counterpart has
+        # (`idx_peer_lookup`/`idx_peer_puuid`, `infra/cache.py`) -- without
+        # these, every `load_peer_games`/`count_peer_games` call does an
+        # unindexed `find`/`count_documents`, and `iter_unverified_puuids`
+        # an unindexed `distinct` scan, on the fastest-growing, never-pruned
+        # collection in the system (finding 3 of the final whole-branch
+        # review). `create_index` is idempotent (a no-op if the index
+        # already exists) and `mongomock` supports it, so this is safe to
+        # call on every construction, including in tests.
+        self._peer_games.create_index([("champion", 1), ("role", 1), ("platform", 1)])
+        self._peer_games.create_index("puuid")
 
     @staticmethod
     def _dedup_key(match_id: str, puuid: str, champion: str, role: str) -> str:

@@ -573,6 +573,163 @@ def test_request_baseline_dedups_identical_inflight_requests(
     assert peers_service.PEERS_DEDUPED_REQUESTS_TOTAL._value.get() >= 1
 
 
+def test_request_baseline_passes_patch_to_resolve_peer_baseline(
+    monkeypatch: pytest.MonkeyPatch, fake_runner
+):
+    """`request.patch` must actually reach `resolve_peer_baseline` -- regression
+    test for finding 1 of the final whole-branch review. Previously the proto
+    had no `patch` field at all, so PEERS always resolved with `patch=""`,
+    which `select_by_patch` (`analysis/peer/cache.py`) treats as "no filter"
+    and blends every patch ever ingested into one baseline."""
+    _, runner_target = fake_runner
+    seen_patches: list[str] = []
+
+    def _spy_resolve(client, store, ranked, champion, role, **kwargs):
+        seen_patches.append(kwargs.get("patch", "<missing>"))
+        return PeerBaseline(
+            metrics={"kda": 4.0},
+            games=60,
+            players=12,
+            source="live sample",
+            confidence="medium",
+            fallback_level=2,
+        )
+
+    monkeypatch.setattr(peers_service, "resolve_peer_baseline", _spy_resolve)
+
+    mongo_client = mongomock.MongoClient()
+    peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
+    servicer = PeersServicer(
+        peer_store=peer_store,
+        riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()),
+        runner_target=runner_target,
+        fast_path_timeout_s=3.0,
+    )
+    server, port = _start_peers_server(servicer)
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        stub = peers_pb2_grpc.PeersServiceStub(channel)
+        response = stub.RequestBaseline(
+            peers_pb2.RequestBaselineRequest(
+                champion="Ahri", lane="MIDDLE", rank="GOLD II", patch="14.3"
+            )
+        )
+    finally:
+        channel.close()
+        server.stop(grace=None)
+
+    assert response.cached is True
+    assert seen_patches == ["14.3"]
+
+
+def test_request_baseline_different_patches_do_not_share_dedup_slot(
+    monkeypatch: pytest.MonkeyPatch, fake_runner
+):
+    """Two in-flight requests for the same champion/role/platform/tier but
+    different patches must each run their own `resolve_peer_baseline` call --
+    a stale in-flight resolution for a different patch must never be joined
+    (finding 1 of the final whole-branch review)."""
+    fake_runner_servicer, runner_target = fake_runner
+    call_patches: list[str] = []
+    release = threading.Event()
+
+    def _slow_resolve(client, store, ranked, champion, role, **kwargs):
+        call_patches.append(kwargs.get("patch", "<missing>"))
+        release.wait(timeout=5.0)
+        return PeerBaseline(
+            metrics={"kda": 4.0},
+            games=60,
+            players=12,
+            source="live sample",
+            confidence="medium",
+            fallback_level=2,
+        )
+
+    monkeypatch.setattr(peers_service, "resolve_peer_baseline", _slow_resolve)
+
+    mongo_client = mongomock.MongoClient()
+    peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
+    servicer = PeersServicer(
+        peer_store=peer_store,
+        riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()),
+        runner_target=runner_target,
+        fast_path_timeout_s=0.05,
+    )
+    server, port = _start_peers_server(servicer)
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        stub = peers_pb2_grpc.PeersServiceStub(channel)
+        request_a = peers_pb2.RequestBaselineRequest(
+            champion="Ahri", lane="MIDDLE", rank="GOLD II", patch="14.3"
+        )
+        request_b = peers_pb2.RequestBaselineRequest(
+            champion="Ahri", lane="MIDDLE", rank="GOLD II", patch="14.4"
+        )
+
+        responses = [stub.RequestBaseline(request_a), stub.RequestBaseline(request_b)]
+        time.sleep(0.2)
+        release.set()
+
+        for response in responses:
+            assert response.cached is False
+
+        deadline = time.monotonic() + 5.0
+        while len(fake_runner_servicer.received) < 2 and time.monotonic() < deadline:
+            time.sleep(0.05)
+    finally:
+        channel.close()
+        server.stop(grace=None)
+
+    assert sorted(call_patches) == ["14.3", "14.4"], (
+        "expected two independent resolve_peer_baseline calls, one per patch"
+    )
+
+
+def test_get_or_submit_records_error_metric_on_failure(monkeypatch: pytest.MonkeyPatch, fake_runner):
+    """A failed `resolve_peer_baseline` call must still be observed in
+    `PEERS_BASELINE_RESOLUTION_DURATION`/`PEERS_BASELINE_RESOLUTIONS_TOTAL`
+    (labeled `source="error"`), not just the success path -- finding 5 of the
+    final whole-branch review."""
+    _, runner_target = fake_runner
+
+    def _boom(client, store, ranked, champion, role, **kwargs):
+        raise RuntimeError("riot api on fire")
+
+    monkeypatch.setattr(peers_service, "resolve_peer_baseline", _boom)
+
+    mongo_client = mongomock.MongoClient()
+    peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
+    servicer = PeersServicer(
+        peer_store=peer_store,
+        riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()),
+        runner_target=runner_target,
+        fast_path_timeout_s=3.0,
+    )
+
+    before_count = peers_service.PEERS_BASELINE_RESOLUTIONS_TOTAL.labels(source="error")._value.get()
+    before_observations = (
+        peers_service.PEERS_BASELINE_RESOLUTION_DURATION._sum.get()
+    )
+
+    record = servicer._get_or_submit(
+        ("ahri", "MIDDLE", "euw1", "GOLD", "14.3"),
+        _fake_riot_client(),
+        _PeerStoreAdapter(peer_store),
+        RankedEntry(tier="GOLD", rank="II", league_points=0, wins=0, losses=0),
+        "Ahri",
+        "MIDDLE",
+        None,
+        "14.3",
+    )
+    with pytest.raises(RuntimeError, match="riot api on fire"):
+        record.future.result(timeout=5.0)
+
+    after_count = peers_service.PEERS_BASELINE_RESOLUTIONS_TOTAL.labels(source="error")._value.get()
+    after_observations = peers_service.PEERS_BASELINE_RESOLUTION_DURATION._sum.get()
+    assert after_count == before_count + 1
+    assert after_observations > before_observations
+
+
 def test_notify_runner_swallows_non_grpc_exceptions(monkeypatch: pytest.MonkeyPatch, fake_runner):
     """Any exception inside `_notify_runner` (not just `grpc.RpcError`) must be
     caught and logged, not raised out of a done-callback -- otherwise RUNNER

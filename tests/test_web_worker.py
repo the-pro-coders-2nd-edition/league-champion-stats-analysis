@@ -963,7 +963,9 @@ def test_execute_job_peers_grpc_mode_calls_grpc_path_not_in_process(
     def in_process_boom(*args: Any, **kwargs: Any) -> Any:
         raise AssertionError("build_peer_for_pool must not run in peers_mode=grpc")
 
-    def grpc_peer_stub(services: Any, batch: Any, pool: Any, ranked: Any, web_config: Any) -> Any:
+    def grpc_peer_stub(
+        services: Any, batch: Any, pool: Any, ranked: Any, web_config: Any, **kwargs: Any
+    ) -> Any:
         grpc_peer_calls["n"] += 1
         return object()
 
@@ -985,11 +987,18 @@ def test_execute_job_peers_grpc_mode_calls_grpc_path_not_in_process(
 
 
 class _FakeRecord:
-    """Minimal stand-in for `MatchRecord`; only `to_row()` is used by the
-    grpc peer path (`matches_df = pd.DataFrame([r.to_row() for r in records])`)."""
+    """Minimal stand-in for `MatchRecord`; `to_row()` is used by the grpc peer
+    path (`matches_df = pd.DataFrame([r.to_row() for r in records])`), and
+    `game_creation_ms`/`patch` are used by `current_patch` (`analysis/peer/
+    comparison.py`), which `_build_peer_for_pool_via_grpc` calls to populate
+    `RequestBaselineRequest.patch` (finding 1 of the final whole-branch review)."""
 
-    def __init__(self, **row: Any) -> None:
+    def __init__(
+        self, *, game_creation_ms: int = 0, patch: str = "14.1", **row: Any
+    ) -> None:
         self._row = row
+        self.game_creation_ms = game_creation_ms
+        self.patch = patch
 
     def to_row(self) -> dict[str, Any]:
         return self._row
@@ -1175,6 +1184,63 @@ def test_build_peer_for_pool_via_grpc_times_out_if_peers_never_calls_back(
 
     assert result is None
     assert "req-timeout-1" not in worker._peer_baseline_waiters
+
+
+def test_build_peer_for_pool_via_grpc_notices_cancellation_within_the_poll_interval(
+    monkeypatch: pytest.MonkeyPatch, store: JobStore
+) -> None:
+    """A cancellation requested during the grpc-mode wait must be noticed
+    within `_PEERS_BASELINE_POLL_INTERVAL_S`, not the full
+    `_PEERS_BASELINE_WAIT_TIMEOUT_S` -- finding 2 of the final whole-branch
+    review. Previously the wait was one long blocking
+    `waiter.get(timeout=900)` call with no cancellation poll in between."""
+    import time as _time
+
+    from league_stats.core.models import RankedEntry
+    from league_stats.web.progress import JobCancelled
+    from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
+
+    class _NeverCallsBackServicer(peers_pb2_grpc.PeersServiceServicer):
+        def RequestBaseline(self, request, context):
+            return peers_pb2.RequestBaselineResponse(request_id="req-cancel-1", cached=False)
+
+    server, port = _start_peers_server(_NeverCallsBackServicer())
+    # Long overall budget, short poll interval -- if cancellation weren't
+    # polled for, this test would have to wait the full (long) timeout below
+    # instead of noticing the cancellation almost immediately.
+    monkeypatch.setattr(worker, "_PEERS_BASELINE_WAIT_TIMEOUT_S", 900.0)
+    monkeypatch.setattr(worker, "_PEERS_BASELINE_POLL_INTERVAL_S", 0.1)
+
+    job = _claimed_job(store)
+    job_id = int(job["id"])
+
+    def _cancel_shortly() -> None:
+        _time.sleep(0.15)
+        store.cancel(job_id)
+
+    import threading as _threading
+
+    _threading.Thread(target=_cancel_shortly, daemon=True).start()
+
+    try:
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        services = _fake_services_for_grpc_peer()
+        monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
+        batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
+        pool = BuildPool(champion="Ahri", role="MIDDLE", games=25)
+        ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+        started = _time.monotonic()
+        with pytest.raises(JobCancelled):
+            worker._build_peer_for_pool_via_grpc(
+                services, batch, pool, ranked, web_config, store=store, job_id=job_id
+            )
+        elapsed = _time.monotonic() - started
+    finally:
+        server.stop(grace=None)
+
+    assert elapsed < 5.0, "cancellation should be noticed within a couple poll intervals"
+    assert "req-cancel-1" not in worker._peer_baseline_waiters
 
 
 def test_build_peer_for_pool_via_grpc_returns_none_when_peers_unreachable(

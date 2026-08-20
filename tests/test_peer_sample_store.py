@@ -29,6 +29,19 @@ def _row(**overrides):
     return row
 
 
+def test_construction_creates_the_mirrored_sql_indexes(store):
+    """`peer_games` has no Mongo indexes prior to this fix (finding 3 of the
+    final whole-branch review), so every `load_peer_games`/`count_peer_games`
+    call did an unindexed `find`/`count_documents`, and `iter_unverified_puuids`
+    an unindexed `distinct` scan. This mirrors the real SQL indexes
+    (`idx_peer_lookup` on `(champion, role, platform)`, `idx_peer_puuid` on
+    `puuid`; see `infra/cache.py`)."""
+    info = store._peer_games.index_information()
+    key_sets = {tuple(spec["key"]) for spec in info.values()}
+    assert (("champion", 1), ("role", 1), ("platform", 1)) in key_sets
+    assert (("puuid", 1),) in key_sets
+
+
 def test_upsert_peer_game_inserts_new_row_and_returns_true(store):
     assert store.upsert_peer_game(_row()) is True
 

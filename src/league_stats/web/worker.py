@@ -18,7 +18,7 @@ from typing import Any
 
 import pandas as pd
 
-from league_stats.analysis.peer import finish_peer_comparison
+from league_stats.analysis.peer import current_patch, finish_peer_comparison
 from league_stats.analysis.peer.baseline import PeerBaseline
 from league_stats.core.champions import players_group_slug
 from league_stats.core.config import PLATFORM_TO_REGION, PlayerIdentity, WebConfig, load_config
@@ -90,6 +90,15 @@ _PEERS_REQUEST_TIMEOUT_S = 10.0
 # failure, same as any other `build_peer_for_pool` exception) rather than
 # hanging stage B forever.
 _PEERS_BASELINE_WAIT_TIMEOUT_S = 900.0
+
+# How often the grpc-mode wait below re-checks for cancellation instead of
+# blocking in one long `waiter.get(timeout=900)` call (finding 2 of the final
+# whole-branch review). A single long blocking wait meant a cancelled job
+# kept burning up to the full budget PER REMAINING POOL before it noticed the
+# cancellation, since `_ensure_not_cancelled` in `_run_stage_b` only runs
+# between pools. Short enough to notice a cancellation promptly, long enough
+# not to spam `JobStore` with polling overhead.
+_PEERS_BASELINE_POLL_INTERVAL_S = 5.0
 
 # Keyed by PeersService's `request_id` (RequestBaselineResponse.request_id):
 # registered by `_build_peer_for_pool_via_grpc` right after a `cached=False`
@@ -442,6 +451,9 @@ def _build_peer_for_pool_via_grpc(
     pool: BuildPool,
     ranked: RankedEntry | None,
     web_config: WebConfig,
+    *,
+    store: JobStore | None = None,
+    job_id: int | None = None,
 ) -> PeerComparisonResult | None:
     """`peers_mode="grpc"` counterpart to `build_peer_for_pool`
     (`league_stats.pipeline.orchestrator`): resolves the peer baseline by
@@ -465,6 +477,20 @@ def _build_peer_for_pool_via_grpc(
     caught by `_run_stage_b`'s caller the same way `build_peer_for_pool`
     raising or returning `None` already is, and stage B moves on to the next
     build.
+
+    Cancellation and progress (finding 2 of the final whole-branch review):
+    in-process, `services.progress` (a `JobProgressReporter`) is threaded into
+    `resolve_peer_baseline`, and its `update` call is what raises
+    `JobCancelled` to interrupt a long peer sample. The grpc path has no
+    equivalent hook into PEERS' own resolution -- it can only poll. So instead
+    of one long blocking `waiter.get(timeout=900)` call (which would not
+    notice a cancellation until the full budget elapsed), the wait below is
+    broken into `_PEERS_BASELINE_POLL_INTERVAL_S`-sized polls; between polls,
+    when `store`/`job_id` are given (as `_run_stage_b` does), it calls the
+    same `_ensure_not_cancelled` check `_run_stage_b` itself uses between
+    pools, and refreshes job progress so the UI doesn't look frozen for the
+    whole wait. `store`/`job_id` are optional (default `None`, checks skipped)
+    so direct unit tests of this function don't need a real `JobStore`.
     """
     import grpc
 
@@ -482,6 +508,7 @@ def _build_peer_for_pool_via_grpc(
         rank=f"{ranked.tier} {ranked.rank}".strip(),
         platform=services.config.routing_platform,
         exclude_puuid=batch.primary_puuid,
+        patch=current_patch(records),
     )
 
     channel = grpc.insecure_channel(web_config.peers_grpc_target)
@@ -509,9 +536,40 @@ def _build_peer_for_pool_via_grpc(
             baseline_json = response.baseline_json
         else:
             waiter = _register_peer_baseline_waiter(response.request_id)
-            try:
-                notification = waiter.get(timeout=_PEERS_BASELINE_WAIT_TIMEOUT_S)
-            except queue.Empty:
+            deadline = time.monotonic() + _PEERS_BASELINE_WAIT_TIMEOUT_S
+            notification: dict[str, str] | None = None
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                poll_timeout = min(_PEERS_BASELINE_POLL_INTERVAL_S, remaining)
+                try:
+                    notification = waiter.get(timeout=poll_timeout)
+                    break
+                except queue.Empty:
+                    if store is not None and job_id is not None:
+                        try:
+                            _ensure_not_cancelled(store, job_id)
+                        except JobCancelled:
+                            with _peer_baseline_waiters_lock:
+                                _peer_baseline_waiters.pop(response.request_id, None)
+                            log.info(
+                                "Job %d cancelled while waiting on PEERS for %s "
+                                "(request_id=%s)",
+                                job_id,
+                                pool.build_label,
+                                response.request_id,
+                            )
+                            raise
+                        store.update_progress(
+                            job_id,
+                            detail=(
+                                f"Comparing {pool.build_label} to players at your "
+                                "rank — waiting on PEERS…"
+                            ),
+                        )
+                    continue
+            if notification is None:
                 with _peer_baseline_waiters_lock:
                     _peer_baseline_waiters.pop(response.request_id, None)
                 log.warning(
@@ -602,7 +660,9 @@ def _run_stage_b(
             total=total,
         )
         if web_config.peers_mode == "grpc":
-            peer = _build_peer_for_pool_via_grpc(services, batch, pool, ranked, web_config)
+            peer = _build_peer_for_pool_via_grpc(
+                services, batch, pool, ranked, web_config, store=store, job_id=job_id
+            )
         else:
             peer = build_peer_for_pool(services, batch, pool, ranked)
         if peer is None:
