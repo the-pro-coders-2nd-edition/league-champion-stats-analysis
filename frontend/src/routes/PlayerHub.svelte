@@ -12,6 +12,7 @@
   import Button from '../components/Button.svelte';
   import Panel from '../components/Panel.svelte';
   import Chip from '../components/Chip.svelte';
+  import WelcomeBackToast from '../components/WelcomeBackToast.svelte';
 
   export let params = {};
 
@@ -41,6 +42,10 @@
   // The poller overwrites `watching` from the server on every tick, which would
   // snap the toggle back while a click is still in flight.
   let watchPending = false;
+  // Consume-on-read: the server only ever hands back a given payload once
+  // (see `WelcomeBackCache.get`), so this is kept here until the toast
+  // itself dismisses it, not re-derived from `status` on every poll.
+  let welcomeBack = null;
 
   function formatEta(seconds) {
     if (seconds == null) return '';
@@ -74,6 +79,7 @@
     try {
       const data = await fetchPlayerStatus(params.slug);
       status = data;
+      if (data.welcome_back) welcomeBack = data.welcome_back;
       if (!watchPending) watching = !!data.watch_enabled;
       const job = data.active_job;
       const active = !!(job && ACTIVE_STATES.includes(job.state));
@@ -235,6 +241,7 @@
 </script>
 
 <div class="shell">
+<WelcomeBackToast data={welcomeBack} onDismiss={() => { welcomeBack = null; }} />
 <a class="app-brand app-brand--page" href="/" use:link title="Home">
   <img src="/out/assets/brand/logo.png" alt="" class="app-logo" aria-hidden="true">
   <span class="app-brand-title">League Champion Analyser</span>

@@ -31,6 +31,7 @@
   import Graphs from '../sections/Graphs.svelte';
   import CareerMode from '../sections/CareerMode.svelte';
   import RecapModal from '../components/RecapModal.svelte';
+  import WelcomeBackToast from '../components/WelcomeBackToast.svelte';
   import ReportSkeleton from '../components/ReportSkeleton.svelte';
   import { bindPlotlyDetailsResize, resizePlotlySoon } from '../lib/plotlyResize.js';
 
@@ -50,6 +51,10 @@
   let jobActive = false;
   let careerPendingSlot = null;
   let dismissedRecapId = null;
+  // The most recent non-null `welcome_back` payload from a status poll -- server-side
+  // it's a consume-on-read cache (see `WelcomeBackCache.get`), so it is only ever
+  // handed to the client once; kept here until the toast itself dismisses it.
+  let welcomeBack = null;
 
   const RECAP_DISMISS_PREFIX = 'recap-dismissed:';
 
@@ -102,6 +107,7 @@
       const data = await fetchPlayerStatus(slug);
       playerBuilds = data.builds || [];
       peerFailed = !!data.peer_failed;
+      if (data.welcome_back) welcomeBack = data.welcome_back;
 
       // This status call is cheap (metadata only) and already carries a fresh
       // generated_at for every build, not just the one on screen -- use it to drop any
@@ -334,6 +340,7 @@
       .then((status) => {
         playerBuilds = status.builds || [];
         playerPageHref = `/players/${params.slug}`;
+        if (status.welcome_back) welcomeBack = status.welcome_back;
       })
       .catch(() => {
         playerBuilds = [];
@@ -556,6 +563,8 @@
   {/if}
 </nav>
 <main>
+
+<WelcomeBackToast data={welcomeBack} onDismiss={() => { welcomeBack = null; }} />
 
 {#if error}
   <p class="report-error">Failed to load this report.</p>
