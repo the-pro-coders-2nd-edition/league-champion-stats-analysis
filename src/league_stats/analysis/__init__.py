@@ -1,9 +1,3 @@
-"""Analysis package: one module per analytical concern.
+"""Transitional re-export shim -- real code now lives in `league_stats_runner.analysis`."""
 
-Modules follow a common pattern:
-
-* ``extract_*`` functions operate on the raw Match-V5 timeline (via
-  :class:`analysis.timeline.TimelineContext`) and are called by the parser.
-* aggregate/dataframe functions operate on parsed
-  :class:`models.MatchRecord` collections and are called by the pipeline.
-"""
+from league_stats_runner.analysis import *  # noqa: F401,F403

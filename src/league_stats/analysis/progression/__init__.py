@@ -1,17 +1,3 @@
-"""Form Tracker: recent-vs-baseline progression analysis."""
+"""Transitional re-export shim -- real code now lives in `league_stats_runner.analysis.progression`."""
 
-from league_stats.analysis.progression.diff import build_progression_comparison
-from league_stats.analysis.progression.slicing import (
-    slice_baseline,
-    slice_baseline_exclusive,
-    slice_baseline_inclusive,
-    slice_recent,
-)
-
-__all__ = [
-    "build_progression_comparison",
-    "slice_recent",
-    "slice_baseline",
-    "slice_baseline_exclusive",
-    "slice_baseline_inclusive",
-]
+from league_stats_runner.analysis.progression import *  # noqa: F401,F403

@@ -58,7 +58,7 @@ packages = [
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/league_stats_peers/data/benchmarks" = "league_stats_peers/data/benchmarks"
-"src/league_stats/assets/brand" = "league_stats/assets/brand"
+"src/league_stats_runner/assets/brand" = "league_stats_runner/assets/brand"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

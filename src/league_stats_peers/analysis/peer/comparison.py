@@ -10,7 +10,7 @@ from typing import Any, Final, Literal
 
 import pandas as pd
 
-from league_stats.analysis.improvement import is_meaningful_healing, is_meaningful_shielding
+from league_stats_runner.analysis.improvement import is_meaningful_healing, is_meaningful_shielding
 from league_stats_common.core.role_metrics import compare_metrics_for_profile, role_profile
 from league_stats_peers.analysis.peer.baseline import resolve_peer_baseline
 from league_stats_peers.analysis.peer.cache import collect_user_history_peers
