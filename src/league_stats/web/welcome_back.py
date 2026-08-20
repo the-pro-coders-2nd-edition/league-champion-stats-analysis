@@ -42,7 +42,10 @@ def compute_welcome_back_summary(match: dict[str, Any], puuid: str) -> dict[str,
     me = next(p for p in participants if p["puuid"] == puuid)
     allies = [p for p in participants if p["teamId"] == me["teamId"]]
 
-    minutes = max(1.0, int(info.get("gameDuration", 0)) / 60.0)
+    duration_s = int(info.get("gameDuration", 0))
+    if duration_s > 100_000:  # legacy matches report milliseconds, not seconds
+        duration_s //= 1000
+    minutes = max(1.0, duration_s / 60.0)
     kills = int(me.get("kills", 0))
     deaths = int(me.get("deaths", 0))
     assists = int(me.get("assists", 0))

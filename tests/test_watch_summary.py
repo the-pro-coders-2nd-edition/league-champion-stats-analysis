@@ -37,6 +37,20 @@ def test_a_loss_is_reported_as_such() -> None:
     assert summary["win"] is False
 
 
+def test_legacy_millisecond_game_duration_is_normalized_to_seconds() -> None:
+    """Legacy Match-V5 documents report `gameDuration` in milliseconds instead
+    of seconds (the same quirk `ingest/parser.py:283-285` and
+    `analysis/timeline.py:462-464` already normalize). Without normalizing
+    here too, CS/min would come out ~1000x too small instead of matching the
+    same 20-minute game's 9.4 CS/min from the seconds-based fixture above."""
+    match = make_player_match("EUW1_LEGACY", duration_s=1_200_000)
+
+    summary = compute_welcome_back_summary(match, MY_PUUID)
+
+    assert summary["cs"] == 188
+    assert summary["cs_per_min"] == 9.4
+
+
 def test_zero_deaths_does_not_divide_by_zero() -> None:
     match = make_player_match("EUW1_9012")
     match["info"]["participants"][0]["deaths"] = 0
