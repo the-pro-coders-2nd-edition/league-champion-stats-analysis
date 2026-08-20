@@ -80,27 +80,83 @@ JSON caching is skipped). This means live sampling can re-download the same
 match from Riot more than once across separate requests instead of hitting
 a local cache -- a real, known inefficiency, not a correctness bug.
 
-Platform routing (review round 1, fix 1)
------------------------------------------
+Platform routing (review round 1, fix 1; corrected in round 2)
+-----------------------------------------------------------------
 `RequestBaselineRequest` originally had no `platform`/`exclude_puuid` fields.
-Without a `platform` field, `_build_default_riot_client` fell back to
-`AppConfig.routing_platform`'s silent default (`euw1`) whenever
+Without a `platform` field, a hardcoded default riot-client builder fell back
+to `AppConfig.routing_platform`'s silent default (`euw1`) whenever
 `PEERS_PLATFORM` was unset -- a KR/NA request would silently get EUW peer
 rows (or an empty store) with no error. The proto now carries both fields
 (it had zero existing callers, so this was a free additive change).
-`RequestBaseline` uses `request.platform` when present, falling back to
-`PEERS_PLATFORM`, then to the shared `RiotApiClient`'s own configured
-platform, in that order. Since `RiotApiClient.platform` has no public setter
-(and `infra/riot_api.py` is out of this task's scope to modify), per-request
-platform routing is done via `_PlatformScopedRiotClient`, a thin wrapper that
-overrides `.platform`/`.platform_base` (the two attributes
-`fetch_league_entries_pages`/`fetch_solo_rank`/`collect_peer_games_from_store`'s
-platform filter actually read) and delegates everything else unchanged to the
-shared client -- multiple concurrent requests for different platforms can
-safely share one underlying `RiotApiClient` (and its rate limiter) this way.
+
+Round 1's first attempt at routing was a `_PlatformScopedRiotClient` wrapper
+overriding `.platform`/`.platform_base` and delegating everything else via
+`__getattr__`. **That does not work and was removed in round 2.** Python
+attribute reads *inside* a delegated method's own body (e.g.
+`fetch_league_entries_pages` internally reading `self.platform_base`) resolve
+against `self` as bound at method-lookup time -- i.e. the real
+`RiotApiClient` the method was defined on, not the wrapper -- because
+`__getattr__` only intercepts attribute lookups performed *from outside* the
+object, not `self.xxx` reads inside a method body already bound to the real
+object. So every real Riot HTTP call the wrapper "delegated" actually ran
+with the *shared* client's own platform, silently ignoring the override
+(confirmed empirically: `fetch_league_entries_pages` through the wrapper hit
+`euw1.api.riotgames.com` even when the wrapper's own `.platform_base` read
+`na1`). Worse, `client.platform` reads *from outside* a method (e.g.
+`collect_peer_games_from_store`'s `platform=client.platform`) DID see the
+override, so live-sampled peer rows fetched from the wrong (default)
+platform got persisted into the store mislabeled under the *requested*
+platform -- poisoning subsequent store-path (levels 0/1/3) lookups for that
+platform with wrong-region data. The wrapper's docstring justification (no
+public setter) was also simply wrong: `RiotApiClient.set_platform`
+(`infra/riot_api.py`) is a real, validated public setter -- but mutating a
+*shared* client via `set_platform` at request time would itself race under
+concurrent different-platform requests (the executor runs up to
+`max_workers` resolutions at once).
+
+**Real fix**: a genuinely separate, fully-configured, immutable
+`RiotApiClient` instance per platform, pooled and cached
+(`PeersServicer._riot_client_for`/`self._riot_clients`, keyed by platform
+string) rather than shared/wrapped/mutated. `_build_riot_client_for_platform`
+builds one: both `.platform`/`.platform_base` (league-v4/summoner-v4) AND the
+regional match-v5 base (`RiotApiClient.__init__`'s `_regional_base`, derived
+from `AppConfig.region`) must be correct for a given platform --
+`core.config.PLATFORM_TO_REGION` (already existed, previously unused here)
+gives the right region per platform, rather than relying solely on a single
+static `PEERS_REGION` env var that would route match-v5 calls to the wrong
+regional cluster for any platform outside that one region. Each pooled
+instance is built once and never mutated afterward (`set_platform` is never
+called post-construction), so concurrent requests for different platforms
+each get their own client and never race over shared state; `HttpCache`/
+`MatchStore`/API key are shared across the pool (cheap to share, expensive-ish
+to rebuild per platform -- disk-backed `diskcache`/`sqlite3` opens), while
+`RateLimiter` instances come from `riot_api.shared_rate_limiter`, matching
+this codebase's own existing process-wide-limiter convention.
+
+`request.platform` is validated against `core.config.VALID_PLATFORMS`
+(normalized to lowercase first) and rejected with `INVALID_ARGUMENT` when
+unrecognized -- closes both the case-mismatch bug where `"NA1"` vs `"na1"`
+would silently split store lookups into two different keys, and the
+injection-adjacent risk of an arbitrary caller-supplied string being
+interpolated into a URL host carrying PEERS' own Riot API key. Falls back to
+`PEERS_PLATFORM` (also normalized), then `self._default_platform` (resolved
+once at construction the same way), only when the request field is empty.
 
 `request.exclude_puuid` is passed straight through to
 `resolve_peer_baseline`'s `exclude_puuid` keyword.
+
+For tests, `riot_client_factory: Callable[[str], Any] | None` overrides the
+production pool entirely with an injectable per-platform factory -- e.g.
+`lambda platform: some_fake` (ignoring the platform argument, for tests that
+don't care about platform-specific behavior) or a factory that returns a
+distinct, correctly-configured fake per platform (for tests that need to
+prove platform wiring, e.g.
+`test_request_baseline_uses_request_platform_and_exclude_puuid`). This
+replaces round 1's single fixed `riot_client` override, which could not
+represent "different behavior per platform" at all -- exactly the gap that
+made the broken wrapper look like it worked in round 1's tests (which only
+asserted the wrapper's own attributes, never a real HTTP call -- the "proves
+acceptance, not use" gap round 2's review called out).
 
 Concurrency (review round 1, fix 2)
 ------------------------------------
@@ -143,19 +199,20 @@ import uuid
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 import grpc
 import pymongo
+import requests
 from prometheus_client import Counter, Gauge
 from pymongo import uri_parser as mongo_uri_parser
 
 from league_stats.analysis.peer.baseline import PeerBaseline, resolve_peer_baseline
-from league_stats.core.config import AppConfig
+from league_stats.core.config import AppConfig, PLATFORM_TO_REGION, REGION_DEFAULT_PLATFORM, VALID_PLATFORMS
 from league_stats.core.models import RankedEntry
 from league_stats.infra.cache import HttpCache, MatchStore
 from league_stats.infra.peer_sample_store import PeerSampleStore
-from league_stats.infra.riot_api import RiotApiClient
+from league_stats.infra.riot_api import RiotApiClient, shared_rate_limiter
 from league_stats.utils import get_logger
 from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc, runner_pb2, runner_pb2_grpc
 
@@ -230,33 +287,6 @@ class _PeerStoreAdapter:
         return None
 
 
-class _PlatformScopedRiotClient:
-    """Wraps a shared `RiotApiClient`, overriding `.platform`/`.platform_base`
-    for one request's routing.
-
-    `RiotApiClient.platform` has no public setter and its rate limiter/session
-    are meant to be shared across calls, so this wraps rather than mutates or
-    reconstructs the underlying client. Delegates every other attribute
-    (`fetch_league_entries_pages`, `fetch_match_ids`, `fetch_match`,
-    `fetch_solo_rank`, ...) straight through via `__getattr__`.
-    """
-
-    def __init__(self, base: RiotApiClient, platform: str) -> None:
-        self._base = base
-        self._platform = platform
-
-    @property
-    def platform(self) -> str:
-        return self._platform
-
-    @property
-    def platform_base(self) -> str:
-        return f"https://{self._platform}.api.riotgames.com"
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._base, name)
-
-
 def _parse_rank(raw: str) -> tuple[str, str]:
     """Split a rank string (``"GOLD II"``, ``"GOLD_II"``, or bare ``"CHALLENGER"``)
     into ``(tier, division)``. ``RequestBaselineRequest.rank`` (Phase 0's proto)
@@ -296,42 +326,47 @@ def _build_default_peer_store() -> PeerSampleStore:
     return PeerSampleStore(client, db_name=_db_name_from_uri(mongo_uri))
 
 
-def _build_default_riot_client() -> RiotApiClient:
-    """Build PEERS' own `RiotApiClient`, using `PEERS_RIOT_API_KEY` (its own key,
-    per the task brief -- kept distinct from the monolith/RUNNER's `RIOT_API_KEY`
-    so PEERS' live-sampling traffic is rate-limited and billed separately).
+def _resolve_default_platform() -> str:
+    """The platform used when a request carries no `platform` and `PEERS_PLATFORM`
+    is unset. Normalized lowercase, always a member of `VALID_PLATFORMS`."""
+    explicit = os.environ.get("PEERS_PLATFORM", "").strip().lower()
+    if explicit in VALID_PLATFORMS:
+        return explicit
+    region = os.environ.get("PEERS_REGION", "europe").strip().lower()
+    return REGION_DEFAULT_PLATFORM.get(region, "euw1")
+
+
+def _build_riot_client_for_platform(
+    platform: str,
+    *,
+    api_key: str,
+    http_cache: HttpCache,
+    match_store: MatchStore,
+    session: requests.Session | None = None,
+) -> RiotApiClient:
+    """Build a `RiotApiClient` fully and correctly scoped to one platform.
+
+    Both `.platform`/`.platform_base` (league-v4/summoner-v4 routing) AND the
+    regional match-v5 base (`RiotApiClient`'s `_regional_base`, derived from
+    `AppConfig.region`) must be correct for `platform` -- using
+    `PLATFORM_TO_REGION` here (rather than a single static `PEERS_REGION`) is
+    what makes match-v5 calls hit the right regional cluster for any
+    platform, not just whichever one region happens to be configured. The
+    returned client is never mutated after this call (`set_platform` is not
+    used post-construction) -- callers should build one instance per platform
+    and reuse it, never call this per request, and never share one instance
+    across code that might mutate it.
 
     The `MatchStore` passed here is required by `RiotApiClient.__init__`'s type
     hint, but none of the methods `resolve_peer_baseline`/`fetch_benchmark_from_api`
     call on a `RiotApiClient` (`fetch_league_entries_pages`, `fetch_match_ids`,
     `fetch_match`, `fetch_solo_rank`) ever touch `self._store` -- only
-    `download_matches` does, which is not part of this call graph. It is a real,
-    local, ephemeral SQLite cache (consistent with the rest of this codebase's
-    "`.cache` is ephemeral" convention), not the Mongo `PeerSampleStore`.
-
-    `PEERS_PLATFORM`/`PEERS_REGION` here are only the *default* platform/region
-    used when a `RequestBaseline` call carries no `platform` field -- per-request
-    routing overrides this via `_PlatformScopedRiotClient` (see module docstring).
+    `download_matches` does, which is not part of this call graph.
     """
-    api_key = os.environ.get("PEERS_RIOT_API_KEY", "")
-    if not api_key:
-        # AppConfig's own validator would raise here too, but its message names
-        # RIOT_API_KEY -- the wrong variable for PEERS. Raise with the right one.
-        raise RuntimeError(
-            "Missing Riot API key for PEERS. Set PEERS_RIOT_API_KEY in the "
-            "environment or a .env file (get one at https://developer.riotgames.com)."
-        )
-    config = AppConfig(
-        riot_id="peers",
-        tagline="peers",
-        api_key=api_key,
-        region=os.environ.get("PEERS_REGION", "europe"),
-        platform=os.environ.get("PEERS_PLATFORM"),
-    )
-    cache_dir = Path(os.environ.get("PEERS_CACHE_DIR", ".cache/peers"))
-    http_cache = HttpCache(cache_dir / "http")
-    unused_match_store = MatchStore(cache_dir / "matches.sqlite")
-    return RiotApiClient(config, http_cache, unused_match_store)
+    region = PLATFORM_TO_REGION.get(platform, "europe")
+    config = AppConfig(riot_id="peers", tagline="peers", api_key=api_key, region=region, platform=platform)
+    limiter = shared_rate_limiter(config.requests_per_second, config.requests_per_two_minutes)
+    return RiotApiClient(config, http_cache, match_store, session=session, limiter=limiter)
 
 
 class _InFlightResolution:
@@ -365,13 +400,21 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
     def __init__(
         self,
         peer_store: PeerSampleStore | None = None,
-        riot_client: RiotApiClient | None = None,
+        riot_client_factory: "Callable[[str], Any] | None" = None,
         runner_target: str | None = None,
         fast_path_timeout_s: float = FAST_PATH_TIMEOUT_S,
         executor: ThreadPoolExecutor | None = None,
+        default_platform: str | None = None,
     ) -> None:
         self._peer_store = peer_store if peer_store is not None else _build_default_peer_store()
-        self._riot_client = riot_client if riot_client is not None else _build_default_riot_client()
+        self._default_platform = (default_platform or _resolve_default_platform()).strip().lower()
+        self._riot_client_factory: "Callable[[str], Any]" = (
+            riot_client_factory or self._build_default_riot_client_factory()
+        )
+        # Pool of per-platform clients, built lazily and never mutated after
+        # creation -- see module docstring, "Platform routing".
+        self._riot_clients: dict[str, Any] = {}
+        self._riot_clients_lock = threading.Lock()
         self._runner_target = runner_target or os.environ.get("RUNNER_GRPC_TARGET", "localhost:50051")
         self._fast_path_timeout_s = fast_path_timeout_s
         self._executor = executor or ThreadPoolExecutor(
@@ -390,6 +433,42 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         # (reliably reproduced under pytest-xdist's parallel workers, rare but
         # possible in production under load too).
         self._inflight_lock = threading.RLock()
+
+    @staticmethod
+    def _build_default_riot_client_factory() -> "Callable[[str], RiotApiClient]":
+        """Build the production per-platform client factory.
+
+        Raises eagerly (before any request) when `PEERS_RIOT_API_KEY` is unset,
+        with a message naming the correct env var -- `AppConfig`'s own
+        validator would raise here too, but its message names `RIOT_API_KEY`,
+        the wrong variable for PEERS.
+        """
+        api_key = os.environ.get("PEERS_RIOT_API_KEY", "")
+        if not api_key:
+            raise RuntimeError(
+                "Missing Riot API key for PEERS. Set PEERS_RIOT_API_KEY in the "
+                "environment or a .env file (get one at https://developer.riotgames.com)."
+            )
+        cache_dir = Path(os.environ.get("PEERS_CACHE_DIR", ".cache/peers"))
+        http_cache = HttpCache(cache_dir / "http")
+        # Shared across the whole platform pool -- see _build_riot_client_for_platform.
+        match_store = MatchStore(cache_dir / "matches.sqlite")
+
+        def factory(platform: str) -> RiotApiClient:
+            return _build_riot_client_for_platform(
+                platform, api_key=api_key, http_cache=http_cache, match_store=match_store
+            )
+
+        return factory
+
+    def _riot_client_for(self, platform: str) -> Any:
+        """Return the (lazily built, cached) client for `platform`."""
+        with self._riot_clients_lock:
+            client = self._riot_clients.get(platform)
+            if client is None:
+                client = self._riot_client_factory(platform)
+                self._riot_clients[platform] = client
+            return client
 
     def _get_or_submit(
         self,
@@ -446,12 +525,22 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
             context.set_details("champion, lane and a parseable rank are required")
             return peers_pb2.RequestBaselineResponse()
 
-        # Request field wins when present; PEERS_PLATFORM is a last-resort
-        # default (e.g. for a caller that hasn't been updated yet), then the
-        # shared client's own configured platform. See module docstring,
-        # "Platform routing" -- silently defaulting to euw1 with no signal was
-        # the review round 1 finding this replaces.
-        platform = request.platform or os.environ.get("PEERS_PLATFORM") or self._riot_client.platform
+        # Request field wins when present, must be a real platform code --
+        # rejected outright otherwise (closes both the "NA1" vs "na1" store-key
+        # mismatch and the risk of an arbitrary string reaching a URL host that
+        # carries PEERS' own Riot API key). PEERS_PLATFORM is a last-resort
+        # default (e.g. for a caller that hasn't been updated yet), then
+        # `self._default_platform`, resolved once at construction the same way.
+        requested_platform = request.platform.strip().lower() if request.platform else ""
+        if requested_platform and requested_platform not in VALID_PLATFORMS:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details(
+                f"unknown platform {request.platform!r}; must be one of {sorted(VALID_PLATFORMS)}"
+            )
+            return peers_pb2.RequestBaselineResponse()
+
+        env_platform = os.environ.get("PEERS_PLATFORM", "").strip().lower()
+        platform = requested_platform or env_platform or self._default_platform
         exclude_puuid = request.exclude_puuid or None
 
         # RankedEntry.league_points/wins/losses are never read anywhere in
@@ -459,13 +548,11 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         # are) -- see analysis/peer/rank_scope.py.
         ranked = RankedEntry(tier=tier, rank=division, league_points=0, wins=0, losses=0)
         adapter = _PeerStoreAdapter(self._peer_store)
-        scoped_client = _PlatformScopedRiotClient(self._riot_client, platform)
+        client = self._riot_client_for(platform)
         request_id = str(uuid.uuid4())
 
-        dedup_key = (champion.lower(), role.upper(), platform.lower(), tier.upper())
-        record = self._get_or_submit(
-            dedup_key, scoped_client, adapter, ranked, champion, role, exclude_puuid
-        )
+        dedup_key = (champion.lower(), role.upper(), platform, tier.upper())
+        record = self._get_or_submit(dedup_key, client, adapter, ranked, champion, role, exclude_puuid)
 
         try:
             baseline = record.future.result(timeout=self._fast_path_timeout_s)

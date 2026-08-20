@@ -18,15 +18,17 @@ import pytest
 
 from league_stats.analysis.peer.baseline import PeerBaseline
 from league_stats.analysis.peer.ingest import ingest_match
+from league_stats.core.config import VALID_PLATFORMS
 from league_stats.core.models import RankedEntry
+from league_stats.infra.cache import HttpCache, MatchStore
 from league_stats.infra.peer_sample_store import PeerSampleStore
 from league_stats.peers import service as peers_service
 from league_stats.peers.service import (
     PeersServicer,
+    _build_riot_client_for_platform,
     _db_name_from_uri,
     _parse_rank,
     _PeerStoreAdapter,
-    _PlatformScopedRiotClient,
 )
 from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc, runner_pb2, runner_pb2_grpc
 from tests.fixtures import make_match
@@ -110,25 +112,97 @@ def test_db_name_from_uri(uri, expected):
     assert _db_name_from_uri(uri) == expected
 
 
-# --------------------------------------------------------------- _PlatformScopedRiotClient
+# --------------------------------------------------- _build_riot_client_for_platform
 
 
-def test_platform_scoped_riot_client_overrides_platform_and_platform_base():
-    base = _fake_riot_client()
-    scoped = _PlatformScopedRiotClient(base, "kr")
+class _FakeSession:
+    """Records every URL `RiotApiClient._get` actually requests, so a test can
+    assert on the real host contacted -- proving routing, not just that some
+    wrapper's own attributes reflect the request (see service.py's module
+    docstring, "Platform routing", on why the round 1 wrapper's tests missed
+    exactly this)."""
 
-    assert scoped.platform == "kr"
-    assert scoped.platform_base == "https://kr.api.riotgames.com"
-    assert base.platform == "euw1"  # the shared client is untouched
+    def __init__(self) -> None:
+        self.requested_urls: list[str] = []
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        self.requested_urls.append(url)
+
+        class _Response:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                # league-v4 non-apex entries expect a list; everything else
+                # (match-v5 documents) expects a dict -- either is a fine,
+                # minimal stand-in since only the requested URL is asserted on.
+                return [] if "league/v4" in url else {}
+
+        return _Response()
 
 
-def test_platform_scoped_riot_client_delegates_other_attributes():
-    base = _fake_riot_client()
-    base.fetch_solo_rank.return_value = "some-rank"
-    scoped = _PlatformScopedRiotClient(base, "kr")
+def _riot_client_test_deps(tmp_path):
+    http_cache = HttpCache(tmp_path / "http")
+    match_store = MatchStore(tmp_path / "matches.sqlite")
+    return http_cache, match_store
 
-    assert scoped.fetch_solo_rank("puuid-a") == "some-rank"
-    base.fetch_solo_rank.assert_called_once_with("puuid-a")
+
+def test_build_riot_client_for_platform_routes_league_v4_to_the_requested_platform(tmp_path):
+    http_cache, match_store = _riot_client_test_deps(tmp_path)
+    session = _FakeSession()
+    client = _build_riot_client_for_platform(
+        "na1", api_key="fake-key", http_cache=http_cache, match_store=match_store, session=session
+    )
+
+    client.fetch_league_entries_pages("GOLD", "II")
+
+    assert session.requested_urls, "expected at least one real HTTP call"
+    assert all("na1.api.riotgames.com" in url for url in session.requested_urls)
+    assert not any("euw1.api.riotgames.com" in url for url in session.requested_urls)
+
+
+def test_build_riot_client_for_platform_routes_match_v5_to_the_derived_region(tmp_path):
+    """The regional (match-v5) host must be derived from PLATFORM_TO_REGION for
+    the requested platform, not left at whatever region a single static env
+    var configured -- the exact bug the round 1 wrapper had (it never touched
+    `_regional_base` at all)."""
+    http_cache, match_store = _riot_client_test_deps(tmp_path)
+
+    na1_session = _FakeSession()
+    na1_client = _build_riot_client_for_platform(
+        "na1", api_key="fake-key", http_cache=http_cache, match_store=match_store, session=na1_session
+    )
+    na1_client.fetch_match("NA1_123")
+    assert any("americas.api.riotgames.com" in url for url in na1_session.requested_urls)
+
+    kr_session = _FakeSession()
+    kr_client = _build_riot_client_for_platform(
+        "kr", api_key="fake-key", http_cache=http_cache, match_store=match_store, session=kr_session
+    )
+    kr_client.fetch_match("KR_123")
+    assert any("asia.api.riotgames.com" in url for url in kr_session.requested_urls)
+
+    euw_session = _FakeSession()
+    euw_client = _build_riot_client_for_platform(
+        "euw1", api_key="fake-key", http_cache=http_cache, match_store=match_store, session=euw_session
+    )
+    euw_client.fetch_match("EUW1_123")
+    assert any("europe.api.riotgames.com" in url for url in euw_session.requested_urls)
+
+
+def test_build_riot_client_for_platform_never_mutated_after_construction(tmp_path):
+    """Each platform's client is a distinct, independently-configured instance --
+    building one for "na1" must not affect one already built for "euw1"."""
+    http_cache, match_store = _riot_client_test_deps(tmp_path)
+    euw_client = _build_riot_client_for_platform(
+        "euw1", api_key="fake-key", http_cache=http_cache, match_store=match_store
+    )
+    na_client = _build_riot_client_for_platform(
+        "na1", api_key="fake-key", http_cache=http_cache, match_store=match_store
+    )
+
+    assert euw_client.platform == "euw1"
+    assert na_client.platform == "na1"
 
 
 # --------------------------------------------------------------- gRPC service
@@ -171,10 +245,17 @@ def fake_runner():
     server.stop(grace=None)
 
 
-def _fake_riot_client() -> MagicMock:
+def _fake_riot_client(platform: str = "euw1") -> MagicMock:
     client = MagicMock()
-    client.configure_mock(platform="euw1")
+    client.configure_mock(platform=platform)
     return client
+
+
+def _fixed_riot_client_factory(client):
+    """A `riot_client_factory` that returns the same fake regardless of the
+    requested platform -- for tests where platform-specific behavior isn't
+    under test."""
+    return lambda platform: client
 
 
 def test_request_baseline_rejects_missing_fields(fake_runner):
@@ -182,7 +263,7 @@ def test_request_baseline_rejects_missing_fields(fake_runner):
     client = mongomock.MongoClient()
     peer_store = PeerSampleStore(client, db_name="league_stats_test")
     servicer = PeersServicer(
-        peer_store=peer_store, riot_client=_fake_riot_client(), runner_target=runner_target
+        peer_store=peer_store, riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()), runner_target=runner_target
     )
     server, port = _start_peers_server(servicer)
     channel = grpc.insecure_channel(f"127.0.0.1:{port}")
@@ -217,7 +298,7 @@ def test_request_baseline_resolves_synchronously_from_the_peer_store(
 
     servicer = PeersServicer(
         peer_store=peer_store,
-        riot_client=_fake_riot_client(),
+        riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()),
         runner_target=runner_target,
         fast_path_timeout_s=3.0,
     )
@@ -251,7 +332,7 @@ def test_request_baseline_falls_back_to_static_benchmark_synchronously(fake_runn
 
     servicer = PeersServicer(
         peer_store=peer_store,
-        riot_client=client,
+        riot_client_factory=_fixed_riot_client_factory(client),
         runner_target=runner_target,
         fast_path_timeout_s=3.0,
     )
@@ -296,7 +377,7 @@ def test_request_baseline_falls_back_to_background_thread_and_notifies_runner(
     peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
     servicer = PeersServicer(
         peer_store=peer_store,
-        riot_client=_fake_riot_client(),
+        riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()),
         runner_target=runner_target,
         fast_path_timeout_s=0.05,
     )
@@ -341,7 +422,7 @@ def test_request_baseline_background_failure_notifies_runner_with_error(
     peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
     servicer = PeersServicer(
         peer_store=peer_store,
-        riot_client=_fake_riot_client(),
+        riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()),
         runner_target=runner_target,
         fast_path_timeout_s=0.05,
     )
@@ -368,10 +449,13 @@ def test_request_baseline_uses_request_platform_and_exclude_puuid(
     monkeypatch: pytest.MonkeyPatch, fake_runner
 ):
     """`request.platform`/`request.exclude_puuid` must actually be used, not just
-    accepted -- regression test for review round 1's fix 1. The riot client's
-    own default platform is "euw1" (see `_fake_riot_client`); this request asks
-    for "na1" instead, and should resolve using na1-platform rows only, with
-    the given puuid excluded from the peer average."""
+    accepted -- regression test for review round 2's fix 1. The factory below
+    mirrors the production pool: a distinct, correctly-`.platform`-configured
+    fake per requested platform (never a single fixed client, which could not
+    represent per-platform behavior at all -- the gap that let round 1's
+    broken `_PlatformScopedRiotClient` look correct). This request asks for
+    "na1"; it should resolve using na1-platform rows only, with the given
+    puuid excluded from the peer average."""
     import league_stats.analysis.peer.baseline as peer_baseline
 
     monkeypatch.setattr(peer_baseline, "MIN_EXACT_GAMES", 2)
@@ -397,7 +481,8 @@ def test_request_baseline_uses_request_platform_and_exclude_puuid(
 
     servicer = PeersServicer(
         peer_store=peer_store,
-        riot_client=_fake_riot_client(),  # default platform "euw1"
+        # Distinct, correctly-configured fake per platform -- see docstring above.
+        riot_client_factory=lambda platform: _fake_riot_client(platform=platform),
         runner_target=runner_target,
         fast_path_timeout_s=3.0,
     )
@@ -456,7 +541,7 @@ def test_request_baseline_dedups_identical_inflight_requests(
     peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
     servicer = PeersServicer(
         peer_store=peer_store,
-        riot_client=_fake_riot_client(),
+        riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()),
         runner_target=runner_target,
         fast_path_timeout_s=0.05,
     )
@@ -497,7 +582,7 @@ def test_notify_runner_swallows_non_grpc_exceptions(monkeypatch: pytest.MonkeyPa
     peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
     servicer = PeersServicer(
         peer_store=peer_store,
-        riot_client=_fake_riot_client(),
+        riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()),
         runner_target=runner_target,
     )
 
@@ -511,12 +596,124 @@ def test_notify_runner_swallows_non_grpc_exceptions(monkeypatch: pytest.MonkeyPa
     )  # must not raise
 
 
-def test_build_default_riot_client_error_names_the_correct_env_var(
+def test_build_default_riot_client_factory_error_names_the_correct_env_var(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.delenv("PEERS_RIOT_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="PEERS_RIOT_API_KEY"):
-        peers_service._build_default_riot_client()
+        PeersServicer._build_default_riot_client_factory()
+
+
+def test_request_baseline_rejects_unknown_platform(fake_runner):
+    """An unrecognized platform string must be rejected outright -- both the
+    "NA1" vs "na1" store-key mismatch and the risk of an arbitrary string
+    reaching a URL host carrying PEERS' own Riot API key (review round 2,
+    fix 1's "also fix the minor")."""
+    _, runner_target = fake_runner
+    mongo_client = mongomock.MongoClient()
+    peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
+    servicer = PeersServicer(
+        peer_store=peer_store,
+        riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()),
+        runner_target=runner_target,
+    )
+    server, port = _start_peers_server(servicer)
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        stub = peers_pb2_grpc.PeersServiceStub(channel)
+        with pytest.raises(grpc.RpcError) as exc_info:
+            stub.RequestBaseline(
+                peers_pb2.RequestBaselineRequest(
+                    champion="Ahri", lane="MIDDLE", rank="GOLD II", platform="not-a-real-platform"
+                )
+            )
+        assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    finally:
+        channel.close()
+        server.stop(grace=None)
+
+
+def test_request_baseline_normalizes_platform_case(fake_runner):
+    """"NA1" and "na1" must resolve to the same platform, not silently split
+    store lookups into two different keys."""
+    _, runner_target = fake_runner
+    mongo_client = mongomock.MongoClient()
+    peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
+    seen_platforms: list[str] = []
+
+    def factory(platform):
+        seen_platforms.append(platform)
+        return _fake_riot_client(platform=platform)
+
+    servicer = PeersServicer(
+        peer_store=peer_store, riot_client_factory=factory, runner_target=runner_target
+    )
+    server, port = _start_peers_server(servicer)
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        stub = peers_pb2_grpc.PeersServiceStub(channel)
+        stub.RequestBaseline(
+            peers_pb2.RequestBaselineRequest(
+                champion="Ahri", lane="MIDDLE", rank="GOLD II", platform="NA1"
+            )
+        )
+    finally:
+        channel.close()
+        server.stop(grace=None)
+
+    assert seen_platforms == ["na1"]
+
+
+def test_request_baseline_accepts_every_valid_platform(fake_runner):
+    _, runner_target = fake_runner
+    mongo_client = mongomock.MongoClient()
+    peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
+    client = _fake_riot_client()
+    client.fetch_league_entries_pages.return_value = []
+    servicer = PeersServicer(
+        peer_store=peer_store,
+        riot_client_factory=_fixed_riot_client_factory(client),
+        runner_target=runner_target,
+        fast_path_timeout_s=3.0,
+    )
+    server, port = _start_peers_server(servicer)
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        stub = peers_pb2_grpc.PeersServiceStub(channel)
+        for platform in sorted(VALID_PLATFORMS):
+            response = stub.RequestBaseline(
+                peers_pb2.RequestBaselineRequest(
+                    champion="Ahri", lane="MIDDLE", rank="GOLD II", platform=platform
+                )
+            )
+            assert response.cached is True
+            assert "unknown platform" not in response.error
+    finally:
+        channel.close()
+        server.stop(grace=None)
+
+
+def test_riot_client_for_caches_one_client_per_platform(fake_runner):
+    _, runner_target = fake_runner
+    mongo_client = mongomock.MongoClient()
+    peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
+    build_count = {"n": 0}
+
+    def factory(platform):
+        build_count["n"] += 1
+        return _fake_riot_client(platform=platform)
+
+    servicer = PeersServicer(
+        peer_store=peer_store, riot_client_factory=factory, runner_target=runner_target
+    )
+
+    first = servicer._riot_client_for("na1")
+    second = servicer._riot_client_for("na1")
+    third = servicer._riot_client_for("kr")
+
+    assert first is second
+    assert first is not third
+    assert build_count["n"] == 2
 
 
 # ----------------------------------------- real level-2 ladder, no-op adapter
