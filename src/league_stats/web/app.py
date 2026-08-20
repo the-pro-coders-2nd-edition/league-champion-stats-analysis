@@ -19,6 +19,7 @@ from typing import Any, AsyncIterator
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 
@@ -87,6 +88,24 @@ MAX_GROUP_PLAYERS = 8
 # Responses at least this large are gzipped. Report payloads are megabytes; the
 # job-status polls the report page makes every 3s are a few hundred bytes.
 RESPONSE_COMPRESSION_MIN_BYTES = 4096
+
+# API-UI's own Prometheus metrics -- RUNNER/CronWatch/PEERS each got theirs in
+# earlier phases via a standalone `start_http_server` port (they are gRPC-only
+# processes with no other HTTP surface); API-UI already runs one uvicorn HTTP
+# server, so a `/metrics` route on it is the natural fit instead of a second,
+# redundant HTTP listener. Module-level like RUNNER's `RUNNER_JOB_DURATION`/
+# `RUNNER_JOBS_TOTAL`, so re-calling `create_app` (as tests do, once per test)
+# does not re-register the same metric names.
+HTTP_REQUEST_DURATION = Histogram(
+    "api_ui_http_request_duration_seconds",
+    "Time API-UI took to handle one HTTP request, labeled by method and route.",
+    ["method", "route"],
+)
+HTTP_REQUESTS_TOTAL = Counter(
+    "api_ui_http_requests_total",
+    "API-UI HTTP requests that completed, labeled by method, route and status code.",
+    ["method", "route", "status_code"],
+)
 
 
 class AnalysisRequest(BaseModel):
@@ -813,6 +832,38 @@ def create_app(
         response.headers["X-Trace-Id"] = trace_id
         return response
 
+    @app.middleware("http")
+    async def record_http_metrics(request: Request, call_next):  # type: ignore[no-untyped-def]
+        """Record HTTP_REQUEST_DURATION/HTTP_REQUESTS_TOTAL around every request.
+
+        Registered after `originate_trace_id`, making this the new outermost
+        middleware (Starlette: last registered = outermost). Deliberate: a
+        request-duration metric should reflect the full lifecycle a client
+        experiences, including trace_id origination overhead, not just the
+        inner handler chain -- there is no dependency in the other direction
+        (this middleware never reads trace_id), so ordering here is purely
+        about duration scope, not correctness.
+        """
+        start = time.perf_counter()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            route = request.scope.get("route")
+            # Route template (e.g. "/api/jobs/{job_id}"), not the raw interpolated
+            # path -- avoids unbounded label cardinality on job ids/slugs. Falls
+            # back to the raw path only when no route matched (e.g. a 404 before
+            # routing, though the catch-all SPA route means that rarely happens).
+            route_path = route.path if route is not None else request.url.path
+            HTTP_REQUEST_DURATION.labels(
+                method=request.method, route=route_path
+            ).observe(time.perf_counter() - start)
+            HTTP_REQUESTS_TOTAL.labels(
+                method=request.method, route=route_path, status_code=str(status_code)
+            ).inc()
+
     app.mount("/out", StaticFiles(directory=str(config.output_dir), html=True), name="out")
 
     # ------------------------------------------------------------------ pages
@@ -1355,6 +1406,10 @@ def create_app(
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/metrics", include_in_schema=False)
+    def metrics() -> Response:
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     @app.get("/riot.txt", response_class=PlainTextResponse)
     def riot_site_verification() -> PlainTextResponse:
