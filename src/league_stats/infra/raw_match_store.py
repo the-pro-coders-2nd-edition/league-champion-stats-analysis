@@ -7,18 +7,23 @@ Mirrors the subset of ``infra.cache.MatchStore``'s method surface (see
 ``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in tests) instead of
 SQLite.
 
-Ownership model differs deliberately from ``MatchStore``: ``MatchStore``
-tracks ownership as a many-to-many ``match_players`` table (a match can be
-associated with several puuids), and its ``has_match``/``count`` require a
-match *and* its timeline to both be present (a SQL JOIN). RawMatchStore
-instead gives each match a single, permanent owner -- whichever puuid's
-``save_match``/``claim_ownership`` call is the first to see a given
-``match_id`` wins, and later claims by a different puuid are rejected. This
-is the "first-writer-wins" lock RUNNER needs to stop concurrent workers from
-double-processing the same match; it does not need MatchStore's broader
-multi-owner index. ``has_match``/``count`` here reflect only whether the
-match document itself has been saved, independent of whether a timeline has
-been attached yet.
+Reproduces ``MatchStore``'s real semantics:
+
+- ``has_match``/``count`` require **both** the match document and its
+  timeline to be stored (``cache.py:184-197``, ``cache.py:450-459`` join
+  ``matches`` with ``timelines``) -- a match with no timeline yet still
+  needs work, so it does not count.
+- Ownership (``owners``) is a many-to-many association, not a single-owner
+  lock: several different puuids can each independently own the same
+  match_id (``cache.py``'s ``match_players`` table, used for teammates
+  tracked together who share a match). ``save_match`` always associates its
+  puuid with the match (``cache.py:220-223``, unconditional ``INSERT OR
+  IGNORE``). ``claim_ownership`` reports a match_id as claimed only when
+  that specific (match_id, puuid) association is newly created --
+  idempotent per pair, exactly like ``cache.py:284-289``'s
+  ``INSERT OR IGNORE`` + ``rowcount`` check -- and, like real
+  ``claim_ownership`` (``cache.py:282``), only considers match_ids that
+  already satisfy ``has_match`` (match + timeline both present).
 """
 
 from collections.abc import Iterator
@@ -43,31 +48,32 @@ class RawMatchStore:
         self._timelines = db["timelines"]
 
     def has_match(self, match_id: str) -> bool:
-        """Whether a match document has been saved.
+        """Whether both the match and its timeline have been saved.
 
         Args:
             match_id: Riot match id (e.g. ``EUW1_1234``).
 
         Returns:
-            ``True`` when a match document is stored, regardless of whether
-            its timeline has been saved yet.
+            ``True`` when the match never needs to be downloaded again,
+            i.e. both its match document and its timeline are stored.
         """
-        return self._matches.find_one({"_id": match_id}, {"_id": 1}) is not None
+        if self._matches.find_one({"_id": match_id}, {"_id": 1}) is None:
+            return False
+        return self._timelines.find_one({"_id": match_id}, {"_id": 1}) is not None
 
     def save_match(self, match_id: str, puuid: str, match: dict[str, Any]) -> None:
-        """Persist a raw match document, claiming ownership if unclaimed.
+        """Persist a raw match document and associate it with ``puuid``.
 
         Args:
             match_id: Riot match id.
-            puuid: PUUID of the player whose fetch triggered this save. Only
-                recorded as the match's owner if no owner is set yet.
+            puuid: PUUID of the tracked player triggering this save. Always
+                added to the match's owner set (a match can have several
+                owners, e.g. teammates tracked together).
             match: Raw match-v5 JSON document.
         """
-        existing = self._matches.find_one({"_id": match_id}, {"owner": 1})
-        owner = existing["owner"] if existing else puuid
         self._matches.update_one(
             {"_id": match_id},
-            {"$set": {"payload": match, "owner": owner}},
+            {"$set": {"payload": match}, "$addToSet": {"owners": puuid}},
             upsert=True,
         )
 
@@ -109,30 +115,31 @@ class RawMatchStore:
         return doc["payload"] if doc else None
 
     def claim_ownership(self, puuid: str, match_ids: list[str]) -> list[str]:
-        """Claim already-stored matches for a player, first-writer-wins.
+        """Index already-stored matches for a player without re-downloading.
 
-        A match with no owner yet is claimed by ``puuid``. A match already
-        owned by ``puuid`` is reported as claimed (it is already theirs). A
-        match owned by a different puuid is left alone and excluded from the
-        result, so concurrent workers cannot double-claim the same match.
+        When a match was fetched for another account (e.g. rank peers), the
+        payload may already exist while this player's ownership row is
+        missing. Several different puuids can independently own the same
+        match_id.
 
         Args:
             puuid: The player's PUUID.
             match_ids: Match ids to claim when present locally.
 
         Returns:
-            Match ids owned by ``puuid`` after this call.
+            Match ids for which a new (match_id, puuid) ownership
+            association was inserted. Re-claiming the same match_id with
+            the same puuid a second time returns it excluded, matching
+            ``MatchStore``'s ``INSERT OR IGNORE`` + rowcount idempotency.
         """
         claimed: list[str] = []
         for match_id in match_ids:
-            doc = self._matches.find_one({"_id": match_id}, {"owner": 1})
-            if doc is None:
+            if not self.has_match(match_id):
                 continue
-            owner = doc.get("owner")
-            if owner is None:
-                self._matches.update_one({"_id": match_id}, {"$set": {"owner": puuid}})
-                claimed.append(match_id)
-            elif owner == puuid:
+            result = self._matches.update_one(
+                {"_id": match_id}, {"$addToSet": {"owners": puuid}}
+            )
+            if result.modified_count:
                 claimed.append(match_id)
         return claimed
 
@@ -146,10 +153,11 @@ class RawMatchStore:
             yield doc["_id"]
 
     def count(self) -> int:
-        """Number of saved match documents.
+        """Number of fully stored matches (match + timeline).
 
         Returns:
-            The count of matches with a saved match document, regardless of
-            whether a timeline has been saved for them.
+            The count of matches with both documents present.
         """
-        return self._matches.count_documents({})
+        match_ids = {doc["_id"] for doc in self._matches.find({}, {"_id": 1})}
+        timeline_ids = {doc["_id"] for doc in self._timelines.find({}, {"_id": 1})}
+        return len(match_ids & timeline_ids)
