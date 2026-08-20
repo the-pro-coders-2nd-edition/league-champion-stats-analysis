@@ -106,10 +106,29 @@ ensure_caddy() {
 
 write_caddyfile() {
   mkdir -p "$(dirname "$CADDYFILE")"
+  # API-UI's /metrics (Phase 6, Task 3) reuses the app's own public HTTP
+  # server -- unlike RUNNER/CronWatch/PEERS, which each expose metrics only on
+  # a dedicated internal-only port never routed through Caddy -- so without a
+  # gate here it is the one metrics endpoint in this whole system that is
+  # publicly, unauthenticated internet-reachable (Phase 6 final review,
+  # Finding 3). `route /metrics { ... }` forces this block's own directives to
+  # run in the exact order written (Caddy's default directive sorting is not
+  # guaranteed to run `respond` before `reverse_proxy` otherwise), so a
+  # request for /metrics from outside `private_ranges` (RFC1918 + loopback +
+  # link-local -- Caddy's built-in named IP range) gets a 403 before ever
+  # reaching `reverse_proxy`; every other path, and /metrics itself from a
+  # private/loopback caller (e.g. Prometheus running on this same host, or an
+  # operator over a VPN/bastion in a private range), is unaffected.
+  local metrics_gate='	route /metrics {
+		@not_private not remote_ip private_ranges
+		respond @not_private 403
+		reverse_proxy '"${APP_HOST}:${APP_PORT}"'
+	}
+'
   if [[ "$HTTP_ONLY" -eq 1 ]]; then
     cat >"$CADDYFILE" <<EOF
 :80 {
-	reverse_proxy ${APP_HOST}:${APP_PORT}
+${metrics_gate}	reverse_proxy ${APP_HOST}:${APP_PORT}
 }
 EOF
   else
@@ -130,7 +149,7 @@ EOF
     # here; it's an out-of-band DNS change the operator makes once.
     cat >"$CADDYFILE" <<EOF
 ${sites} {
-	reverse_proxy ${APP_HOST}:${APP_PORT}
+${metrics_gate}	reverse_proxy ${APP_HOST}:${APP_PORT}
 }
 
 ${grafana_sites} {
