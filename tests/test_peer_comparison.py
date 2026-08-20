@@ -196,3 +196,129 @@ def test_comparisons_dataframe_from_result() -> None:
     frame = comparisons_dataframe(result)
     assert len(frame) == 1
     assert frame.iloc[0]["metric"] == "kda"
+
+
+# ------------------------------------------ build_peer_comparison / finish_peer_comparison
+#
+# Phase 3 Task 3 fix round 1 extracted `finish_peer_comparison` out of
+# `build_peer_comparison` (the post-baseline finalisation step) so RUNNER's
+# `peers_mode="grpc"` path (`league_stats.web.worker._build_peer_for_pool_via_grpc`)
+# could call the same function instead of duplicating its logic. There was no
+# direct test of `build_peer_comparison`'s own orchestration before this --
+# only indirect coverage via full pipeline/end-to-end tests -- so these close
+# that gap and prove the extraction didn't change `build_peer_comparison`'s
+# behavior.
+
+
+class _NoHistoryStore:
+    """Minimal `store` stand-in: `finish_peer_comparison` only needs
+    `iter_match_ids` (via `collect_user_history_peers`) for this test's
+    purposes -- an empty history is a normal, common case."""
+
+    def iter_match_ids(self, puuid: str):
+        return iter(())
+
+
+def _sample_baseline():
+    from league_stats.analysis.peer.baseline import PeerBaseline
+
+    return PeerBaseline(
+        metrics={"win": 0.55, "kda": 3.2, "dpm": 620.0, "deaths": 4.5, "cspm": 7.0},
+        games=80,
+        players=15,
+        source="peer store",
+        confidence="high",
+        fallback_level=0,
+    )
+
+
+def _sample_matches_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"win": 1, "kda": 4.0, "dpm": 700.0, "deaths": 3, "cspm": 7.5},
+            {"win": 0, "kda": 2.5, "dpm": 550.0, "deaths": 5, "cspm": 6.5},
+        ]
+    )
+
+
+def test_build_peer_comparison_matches_finish_peer_comparison_for_the_same_baseline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`build_peer_comparison` (resolves its own baseline via
+    `resolve_peer_baseline`) must produce the exact same result
+    `finish_peer_comparison` (given that same baseline directly) does --
+    proving the fix-round-1 extraction changed nothing about the in-process
+    path's behavior."""
+    import league_stats.analysis.peer.comparison as comparison_module
+    from league_stats.analysis.peer.comparison import build_peer_comparison, finish_peer_comparison
+
+    baseline = _sample_baseline()
+    monkeypatch.setattr(comparison_module, "resolve_peer_baseline", lambda *a, **k: baseline)
+    matches_df = _sample_matches_df()
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+    store = _NoHistoryStore()
+
+    via_build = build_peer_comparison(
+        client=object(),
+        store=store,
+        matches_df=matches_df,
+        records=[],
+        user_puuid=MY_PUUID,
+        ranked=ranked,
+        champion="Ahri",
+        role="MIDDLE",
+    )
+    via_finish = finish_peer_comparison(
+        baseline,
+        matches_df=matches_df,
+        records=[],
+        store=store,
+        user_puuid=MY_PUUID,
+        ranked=ranked,
+        champion="Ahri",
+        role="MIDDLE",
+    )
+
+    assert via_build is not None
+    assert via_build.model_dump() == via_finish.model_dump()
+    assert via_build.peer_games == 80
+    assert via_build.comparisons, "expected real comparisons to have been computed"
+
+
+def test_build_peer_comparison_returns_none_when_unranked() -> None:
+    """No rank resolved -> no baseline lookup is even attempted."""
+    from league_stats.analysis.peer.comparison import build_peer_comparison
+
+    result = build_peer_comparison(
+        client=object(),
+        store=_NoHistoryStore(),
+        matches_df=_sample_matches_df(),
+        records=[],
+        user_puuid=MY_PUUID,
+        ranked=None,
+        champion="Ahri",
+        role="MIDDLE",
+    )
+    assert result is None
+
+
+def test_build_peer_comparison_returns_none_when_no_baseline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`resolve_peer_baseline` returning `None` (e.g. every fallback level
+    exhausted) must be a soft `None`, not an exception."""
+    import league_stats.analysis.peer.comparison as comparison_module
+    from league_stats.analysis.peer.comparison import build_peer_comparison
+
+    monkeypatch.setattr(comparison_module, "resolve_peer_baseline", lambda *a, **k: None)
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+    result = build_peer_comparison(
+        client=object(),
+        store=_NoHistoryStore(),
+        matches_df=_sample_matches_df(),
+        records=[],
+        user_puuid=MY_PUUID,
+        ranked=ranked,
+        champion="Ahri",
+        role="MIDDLE",
+    )
+    assert result is None

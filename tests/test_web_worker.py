@@ -1204,6 +1204,105 @@ def test_build_peer_for_pool_via_grpc_returns_none_when_peers_unreachable(
     assert result is None
 
 
+def test_build_peer_for_pool_via_grpc_survives_notification_arriving_before_waiter_registers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test for fix round 1's Critical finding: the lost-wakeup race
+    between PEERS' async callback and RUNNER's waiter registration.
+
+    `concurrent.futures.Future.add_done_callback` (PEERS' own `_get_or_submit`/
+    `RequestBaseline`, `peers/service.py`) fires SYNCHRONOUSLY, on the calling
+    thread, if the future is already done when the callback is attached. That
+    means PEERS can call back into `RunnerServicer.NotifyPeerBaselineReady`
+    *before* its own `RequestBaseline` response (`cached=False` + `request_id`)
+    has even been returned to RUNNER -- i.e. before
+    `_build_peer_for_pool_via_grpc` has had any chance to call
+    `_register_peer_baseline_waiter` for that `request_id`. Without the
+    `_peer_baseline_orphans` buffer (`web/worker.py`), that notification would
+    be silently dropped and this function would block the full
+    `_PEERS_BASELINE_WAIT_TIMEOUT_S` for a baseline that had already arrived.
+
+    This test forces that exact ordering deterministically -- not by relying
+    on real scheduling/timeout timing (which would be flaky) -- via a fake
+    PeersServicer whose `RequestBaseline` calls the real
+    `RunnerServicer.NotifyPeerBaselineReady` itself, synchronously, BEFORE
+    returning its own `cached=False` response. Everything downstream of that
+    forced ordering is real: a real `RunnerServicer` instance behind a real
+    gRPC server, a real gRPC call into it, and the actual
+    `_build_peer_for_pool_via_grpc` function under test -- proving the orphan
+    buffer closes the real, end-to-end race, not just a mocked-out piece of it.
+    """
+    import json as _json
+    from concurrent import futures
+    from dataclasses import asdict
+
+    import grpc
+
+    from league_stats.analysis.peer.baseline import PeerBaseline
+    from league_stats.core.models import RankedEntry
+    from league_stats.runner.service import RunnerServicer
+    from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc, runner_pb2, runner_pb2_grpc
+
+    baseline = PeerBaseline(
+        metrics={"kda": 6.0},
+        games=100,
+        players=20,
+        source="live sample",
+        confidence="high",
+        fallback_level=2,
+    )
+    request_id = "req-race-1"
+
+    runner_servicer = RunnerServicer(web_config=WebConfig())
+    runner_server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
+    runner_pb2_grpc.add_RunnerServiceServicer_to_server(runner_servicer, runner_server)
+    runner_port = runner_server.add_insecure_port("127.0.0.1:0")
+    runner_server.start()
+
+    class _RaceyPeersServicer(peers_pb2_grpc.PeersServiceServicer):
+        """Delivers PEERS' async callback BEFORE its own `RequestBaseline`
+        response returns -- forcing the lost-wakeup ordering deterministically,
+        exactly as `Future.add_done_callback` firing synchronously can in
+        production (see this test's own docstring)."""
+
+        def RequestBaseline(self, request, context):
+            with grpc.insecure_channel(f"127.0.0.1:{runner_port}") as channel:
+                stub = runner_pb2_grpc.RunnerServiceStub(channel)
+                stub.NotifyPeerBaselineReady(
+                    runner_pb2.PeerBaselineReadyRequest(
+                        request_id=request_id,
+                        champion=request.champion,
+                        lane=request.lane,
+                        rank=request.rank,
+                        baseline_json=_json.dumps(asdict(baseline)),
+                        error="",
+                    )
+                )
+            return peers_pb2.RequestBaselineResponse(request_id=request_id, cached=False)
+
+    peers_server, peers_port = _start_peers_server(_RaceyPeersServicer())
+    try:
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{peers_port}")
+        services = _fake_services_for_grpc_peer()
+        monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
+        batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
+        pool = BuildPool(champion="Ahri", role="MIDDLE", games=25)
+        ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+        result = worker._build_peer_for_pool_via_grpc(services, batch, pool, ranked, web_config)
+    finally:
+        peers_server.stop(grace=None)
+        runner_server.stop(grace=None)
+
+    assert result is not None
+    assert result.peer_games == 100
+    assert result.fallback_level == 2
+    # The orphan must have been claimed by _register_peer_baseline_waiter, not
+    # left sitting in the buffer.
+    assert request_id not in worker._peer_baseline_orphans
+    assert request_id not in worker._peer_baseline_waiters
+
+
 def test_build_peer_for_pool_via_grpc_returns_none_on_peers_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1234,6 +1333,7 @@ def test_build_peer_for_pool_via_grpc_returns_none_on_peers_error(
 
     assert result is None
     assert "req-error-1" not in worker._peer_baseline_waiters
+    assert "req-error-1" not in worker._peer_baseline_orphans
 
 
 def test_build_peer_for_pool_via_grpc_returns_none_below_min_games(

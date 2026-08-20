@@ -449,11 +449,58 @@ class WebConfig(BaseModel):
     # (`league_stats.pipeline.orchestrator`), which runs `resolve_peer_baseline`
     # in this process exactly as before. Setting "grpc" makes stage B call
     # PEERS' `RequestBaseline` instead (see `league_stats.web.worker`'s
-    # `_build_peer_for_pool_via_grpc`); PEERS calls back into this process's
-    # `RunnerServicer.NotifyPeerBaselineReady` for baselines it cannot resolve
-    # fast enough to answer synchronously.
+    # `_build_peer_for_pool_via_grpc`).
+    #
+    # HARD PRECONDITION, unlike `runner_mode`/`watch_mode` above: this only
+    # works when THIS PROCESS is itself running as RUNNER (`runner/__main__.py`,
+    # i.e. hosting a `RunnerServiceServicer`), because PEERS' slow (live-
+    # sampling) path calls back into `RunnerService.NotifyPeerBaselineReady`
+    # (`runner/service.py`) in whichever process issued the original
+    # `RequestBaseline` call, and that callback is only ever routed to
+    # `web/worker.py`'s module-global, in-memory `_peer_baseline_waiters`
+    # registry -- there is no cross-process delivery mechanism. Setting
+    # `peers_mode="grpc"` on the monolith's own web app (which never hosts a
+    # `RunnerServiceServicer`) does not raise or fail fast: every peer
+    # comparison that falls through to PEERS' slow path silently blocks for
+    # the full `_PEERS_BASELINE_WAIT_TIMEOUT_S` (`web/worker.py`) waiting for a
+    # callback that can never arrive, then skips that build's peer comparison
+    # with only a warning log. This is intentionally not hard-validated here
+    # (unlike, say, rejecting an invalid `Literal` value) because "is this
+    # process RUNNER" is a deployment-topology fact this config object cannot
+    # observe on its own; `WebConfig`'s own validator below only logs a loud
+    # warning when `peers_mode="grpc"` is set, it cannot refuse construction.
     peers_mode: Literal["in_process", "grpc"] = "in_process"
     peers_grpc_target: str = "localhost:50053"
+
+    @model_validator(mode="after")
+    def _warn_on_peers_grpc_topology_precondition(self) -> "WebConfig":
+        """Loudly flag `peers_mode="grpc"`'s hard precondition at construction time.
+
+        See the field comment above for the full correctness argument. This
+        cannot distinguish the one correct topology (this process IS RUNNER,
+        hosting `RunnerServiceServicer`) from the broken one (this is the
+        monolith's own web app, running `execute_job` in-process, with no
+        `RunnerServiceServicer` anywhere in this process) -- both produce a
+        `WebConfig` with `peers_mode="grpc"` that looks identical from here.
+        So this warns unconditionally rather than staying silent, matching
+        the "warn loudly" alternative for a precondition this object cannot
+        itself verify.
+        """
+        if self.peers_mode == "grpc":
+            from league_stats.utils import get_logger
+
+            get_logger("web_config").warning(
+                "peers_mode=grpc is set. This ONLY works when this process is "
+                "itself running as RUNNER (runner/__main__.py) -- PEERS' async "
+                "callback (NotifyPeerBaselineReady) is only ever delivered to "
+                "the in-memory waiter registry of the process that issued the "
+                "matching RequestBaseline call. If this is the monolith's own "
+                "web app (not RUNNER), every peer comparison that falls through "
+                "to PEERS' slow path will silently stall for the full "
+                "baseline-wait timeout and then skip, with no callback ever "
+                "able to arrive."
+            )
+        return self
 
     @property
     def reports_dir(self) -> Path:

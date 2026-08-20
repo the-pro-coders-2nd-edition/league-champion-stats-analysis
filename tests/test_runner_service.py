@@ -275,10 +275,19 @@ def test_notify_peer_baseline_ready_delivers_to_a_registered_waiter() -> None:
 
 
 def test_notify_peer_baseline_ready_reports_ok_false_when_no_waiter() -> None:
-    """A callback for a `request_id` nobody is waiting on (already timed out,
-    or unknown) must not raise -- it's reported via `ok=False`, not an RPC
-    error, mirroring PEERS' own `_notify_runner`, which only logs a failed
-    delivery and never retries."""
+    """A callback for a `request_id` nobody is (yet) waiting on must not raise
+    -- it's reported via `ok=False`, not an RPC error, mirroring PEERS' own
+    `_notify_runner`, which only logs a failed delivery and never retries.
+
+    `ok=False` reports "not delivered to a live waiter" -- it does NOT mean
+    the notification was dropped: fix round 1 (the lost-wakeup race) made
+    `resolve_peer_baseline_notification` stash it in `_peer_baseline_orphans`
+    for a still-to-come `_register_peer_baseline_waiter` call to claim
+    instead. See `test_build_peer_for_pool_via_grpc_survives_notification_arriving_before_waiter_registers`
+    (`test_web_worker.py`) for the real end-to-end proof of that path.
+    """
+    from league_stats.web import worker as web_worker
+
     servicer = RunnerServicer(web_config=WebConfig())
 
     request = runner_pb2.PeerBaselineReadyRequest(
@@ -292,6 +301,9 @@ def test_notify_peer_baseline_ready_reports_ok_false_when_no_waiter() -> None:
     ack = servicer.NotifyPeerBaselineReady(request, context=None)
 
     assert ack.ok is False
+    assert "req-nobody-waiting" in web_worker._peer_baseline_orphans
+    stored_at, payload = web_worker._peer_baseline_orphans.pop("req-nobody-waiting")
+    assert payload == {"baseline_json": "", "error": "some failure"}
 
 
 def test_stream_job_progress_reconnect_after_terminal_returns_immediately(

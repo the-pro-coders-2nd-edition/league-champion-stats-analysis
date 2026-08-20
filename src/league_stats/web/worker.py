@@ -12,15 +12,17 @@ from __future__ import annotations
 import json
 import queue
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
+from league_stats.analysis.peer import finish_peer_comparison
 from league_stats.analysis.peer.baseline import PeerBaseline
 from league_stats.core.champions import players_group_slug
 from league_stats.core.config import PLATFORM_TO_REGION, PlayerIdentity, WebConfig, load_config
-from league_stats.core.models import MatchRecord, PeerComparisonResult, RankedEntry
+from league_stats.core.models import PeerComparisonResult, RankedEntry
 from league_stats.infra.cache import HttpCache, MatchStore
 from league_stats.infra.ddragon_assets import DDragonAssets
 from league_stats.infra.riot_api import RiotApiClient, RiotApiError, shared_rate_limiter
@@ -62,18 +64,32 @@ _PEERS_REQUEST_TIMEOUT_S = 10.0
 # How long a stage-B thread waits for PEERS' async `NotifyPeerBaselineReady`
 # callback (via `RunnerServicer`, replayed here through
 # `_peer_baseline_waiters`) after a `cached=False` response, before giving up
-# on this build's peer comparison and moving on to the next one.
+# on THIS ONE POOL's peer comparison and moving on to the next pool in stage
+# B's loop -- this is a per-pool budget, not a per-job one.
 #
 # There is no existing precedent in this codebase for this specific
 # wait-for-an-async-callback-inside-a-sync-stage shape, so this value is a
-# judgment call, not a derived constant: PEERS' own module docstring notes a
+# judgment call, not a derived constant. Sized against PEERS' own live-sampling
+# cost, not against RUNNER's job-level budget: PEERS' module docstring notes a
 # live sample can issue up to `MAX_MATCH_DOWNLOADS` (400) rate-limited Riot
-# HTTP calls, which can genuinely take several minutes; ten minutes gives that
-# room without blocking a single build's peer comparison for the entire
-# `_RUNNER_STREAM_TIMEOUT_S` (30 minute) job budget. A build whose baseline
-# never arrives in time skips its peer comparison (soft failure, same as any
-# other `build_peer_for_pool` exception) rather than hanging stage B forever.
-_PEERS_BASELINE_WAIT_TIMEOUT_S = 600.0
+# HTTP calls -- at PEERS' default `requests_per_two_minutes=95`, downloading
+# 400 matches alone takes roughly 400/95*120s =~ 505s, before league-v4 seed
+# lookups and per-puuid rank verification calls on top, and before accounting
+# for PEERS' own `_PeerStoreAdapter.save_match` being a documented no-op (no
+# cross-request raw-match cache on PEERS' side, so a request that falls
+# through to live sampling cannot benefit from a previous request's downloads).
+# 900s leaves real headroom above that ~505s+ floor. The actual outer
+# constraint this must stay under is RUNNER's own `StreamJobProgress` deadline
+# on the *caller* side (`_RUNNER_STREAM_TIMEOUT_S`, 1800s, in the
+# monolith-to-RUNNER gRPC client) -- since stage B can call this once per pool
+# in `batch.pools`, several pools each waiting close to this timeout could in
+# principle exceed that 1800s budget for a job with many builds; that
+# per-job/per-pool interaction is a known, not-yet-solved limit of this design
+# (see task-3-report.md), not something this constant alone can fix. A build
+# whose baseline never arrives in time skips its peer comparison (soft
+# failure, same as any other `build_peer_for_pool` exception) rather than
+# hanging stage B forever.
+_PEERS_BASELINE_WAIT_TIMEOUT_S = 900.0
 
 # Keyed by PeersService's `request_id` (RequestBaselineResponse.request_id):
 # registered by `_build_peer_for_pool_via_grpc` right after a `cached=False`
@@ -87,11 +103,66 @@ _PEERS_BASELINE_WAIT_TIMEOUT_S = 600.0
 _peer_baseline_waiters: dict[str, "queue.SimpleQueue[dict[str, str]]"] = {}
 _peer_baseline_waiters_lock = threading.Lock()
 
+# Lost-wakeup guard (fix round 1): `concurrent.futures.Future.add_done_callback`
+# (PEERS' own `_get_or_submit`/`RequestBaseline`, `peers/service.py`) fires
+# SYNCHRONOUSLY, on the calling thread, if the future is already done at the
+# moment the callback is attached. That callback is what eventually calls
+# `NotifyPeerBaselineReady` -- and PEERS attaches it (and can therefore fire
+# it) *before* `RequestBaseline`'s `cached=False` response has even been
+# returned to RUNNER, let alone before `_build_peer_for_pool_via_grpc` has
+# called `_register_peer_baseline_waiter` for that `request_id`. So a
+# notification can genuinely arrive here before any waiter exists for it --
+# not a rare edge case, but the single most likely timing for a resolution
+# that finishes "just barely too slow" for PEERS' own fast-path window.
+# Without this buffer, `resolve_peer_baseline_notification` would find no
+# waiter, report `ok=False`, and the already-arrived result would be silently
+# dropped -- `_build_peer_for_pool_via_grpc` would then block the full
+# `_PEERS_BASELINE_WAIT_TIMEOUT_S` for a baseline that had already landed.
+# Keyed the same way as `_peer_baseline_waiters`; values are
+# `(stored_at_monotonic, {"baseline_json":..., "error":...})`.
+_peer_baseline_orphans: dict[str, tuple[float, dict[str, str]]] = {}
+# The real race window above is normally milliseconds (the gap between PEERS
+# returning `cached=False` and this process calling
+# `_register_peer_baseline_waiter`), so this TTL only needs to survive
+# scheduling jitter, not model any real waiting period -- an orphan nobody
+# claims within it was never going to be claimed at all, since each
+# `RequestBaseline` call mints a fresh `request_id` (a given id is only ever
+# waited on once). This bounds the dict's size against a `request_id` that
+# NotifyPeerBaselineReady is called with directly (bypassing a real PEERS
+# instance, e.g. a stray/duplicate/malicious callback) and is never claimed.
+_PEER_BASELINE_ORPHAN_TTL_S = 120.0
+
+
+def _prune_expired_peer_baseline_orphans_locked() -> None:
+    """Drop orphaned notifications older than `_PEER_BASELINE_ORPHAN_TTL_S`.
+
+    Must be called while holding `_peer_baseline_waiters_lock`.
+    """
+    now = time.monotonic()
+    expired = [
+        request_id
+        for request_id, (stored_at, _payload) in _peer_baseline_orphans.items()
+        if now - stored_at > _PEER_BASELINE_ORPHAN_TTL_S
+    ]
+    for request_id in expired:
+        del _peer_baseline_orphans[request_id]
+
 
 def _register_peer_baseline_waiter(request_id: str) -> "queue.SimpleQueue[dict[str, str]]":
-    """Register a waiter for PEERS' async callback for `request_id`."""
+    """Register a waiter for PEERS' async callback for `request_id`.
+
+    Checks `_peer_baseline_orphans` first (see that dict's module comment for
+    the exact lost-wakeup race this closes): if the notification already
+    arrived before this call happened, the returned queue already has the
+    result in it instead of blocking on a queue nothing will ever put
+    anything into.
+    """
     events: "queue.SimpleQueue[dict[str, str]]" = queue.SimpleQueue()
     with _peer_baseline_waiters_lock:
+        orphan = _peer_baseline_orphans.pop(request_id, None)
+        if orphan is not None:
+            events.put(orphan[1])
+            return events
         _peer_baseline_waiters[request_id] = events
     return events
 
@@ -104,15 +175,30 @@ def resolve_peer_baseline_notification(
 
     Called by `RunnerServicer.NotifyPeerBaselineReady` (`runner/service.py`) --
     this is the real Phase 3 implementation of the coordination Phase 1's
-    version of that method left as a logging-only stub. Returns ``False`` (and
-    does nothing else) when no waiter is registered for `request_id` -- e.g.
-    the stage-B thread already gave up after `_PEERS_BASELINE_WAIT_TIMEOUT_S`
-    and moved on, or `request_id` never belonged to a request this process
-    made. There is nothing to reconnect to at that point; the caller only logs
-    this case.
+    version of that method left as a logging-only stub.
+
+    Returns ``False`` when no waiter is *currently* registered for
+    `request_id` -- this covers two different cases the caller can't tell
+    apart, and doesn't need to: (a) the stage-B thread already gave up after
+    `_PEERS_BASELINE_WAIT_TIMEOUT_S` and moved on, or `request_id` never
+    belonged to a request this process made -- nothing useful to do, the
+    notification is simply logged and dropped; (b) the genuine lost-wakeup
+    race documented on `_peer_baseline_orphans` above, where this notification
+    arrived before `_register_peer_baseline_waiter` ran for the same
+    `request_id` -- in that case the payload is NOT dropped, it's stashed in
+    `_peer_baseline_orphans` for `_register_peer_baseline_waiter` to pick up
+    immediately once it does run. Returning ``False`` here still accurately
+    reports "not delivered to a live waiter"; the value living on
+    unclaimed for a little while is what makes the race harmless either way.
     """
     with _peer_baseline_waiters_lock:
         events = _peer_baseline_waiters.pop(request_id, None)
+        if events is None:
+            _prune_expired_peer_baseline_orphans_locked()
+            _peer_baseline_orphans[request_id] = (
+                time.monotonic(),
+                {"baseline_json": baseline_json, "error": error},
+            )
     if events is None:
         return False
     events.put({"baseline_json": baseline_json, "error": error})
@@ -350,108 +436,6 @@ def _run_stage_a(
     return ranked, available_any, analysed
 
 
-def _peer_comparison_from_baseline(
-    baseline: PeerBaseline,
-    *,
-    matches_df: pd.DataFrame,
-    records: list[MatchRecord],
-    store: MatchStore,
-    user_puuid: str,
-    ranked: RankedEntry,
-    champion: str,
-    role: str,
-) -> PeerComparisonResult:
-    """Finish building a `PeerComparisonResult` from a baseline PEERS resolved.
-
-    Mirrors `build_peer_comparison`'s own post-baseline finalisation step
-    (`league_stats.analysis.peer.comparison`) exactly -- computing user
-    averages, metric-by-metric comparisons and strengths/weaknesses -- and
-    reuses that module's own helpers (including its private ones) rather than
-    re-deriving the same math, since the only thing that differs between
-    `peers_mode="in_process"` and `peers_mode="grpc"` is *where the baseline
-    itself came from* (`resolve_peer_baseline` running in this process vs.
-    PEERS' `RequestBaseline` over gRPC) -- everything downstream of having a
-    `PeerBaseline` in hand is identical.
-
-    Known drift risk, flagged rather than papered over: this duplicates
-    `build_peer_comparison`'s post-baseline logic (the code building
-    `final_peer`/`user_avgs`/`comparisons`/`strengths`/`weaknesses`) instead of
-    calling through one shared helper function, because
-    `analysis/peer/comparison.py` is outside this task's file-touch scope
-    (see `task-3-brief.md`'s file list). If that function's finalisation step
-    ever changes, this copy must be updated in lockstep, or the two
-    `peers_mode` branches will silently render different comparisons for the
-    same baseline.
-    """
-    from league_stats.analysis.peer.cache import collect_user_history_peers
-    from league_stats.analysis.peer.comparison import (
-        _comparison_summary_line,
-        _user_averages,
-        build_comparisons,
-        compare_metrics_for_role,
-    )
-    from league_stats.core.champions import build_label
-
-    label = build_label(champion, role)
-    avg_damage_share = None
-    if "damage_share" in matches_df.columns and matches_df["damage_share"].notna().any():
-        avg_damage_share = float(
-            pd.to_numeric(matches_df["damage_share"], errors="coerce").dropna().mean()
-        )
-    metric_defs = compare_metrics_for_role(role, avg_damage_share=avg_damage_share)
-    final_peer = {
-        key: float(baseline.metrics[key])
-        for key, _, _ in metric_defs
-        if key in baseline.metrics and baseline.metrics[key] is not None
-    }
-
-    history_df = collect_user_history_peers(store, user_puuid, champion, role)
-    history_games = len(history_df)
-    history_players = int(history_df["puuid"].nunique()) if history_games else 0
-    source = baseline.source
-    if history_games:
-        source += (
-            f" ({history_games} other {label} games in your match history from "
-            f"{history_players} players.)"
-        )
-
-    user_avgs = _user_averages(matches_df, role=role, avg_damage_share=avg_damage_share)
-    if records:
-        for key in ("cs10", "gd10", "deaths_pre14"):
-            if key in matches_df.columns and matches_df[key].notna().any():
-                user_avgs[key] = float(
-                    pd.to_numeric(matches_df[key], errors="coerce").dropna().mean()
-                )
-
-    comparisons = build_comparisons(
-        user_avgs,
-        final_peer,
-        role=role,
-        avg_damage_share=avg_damage_share,
-        peer_p50=baseline.metrics_p50,
-        peer_p75=baseline.metrics_p75,
-    )
-    strengths = [_comparison_summary_line(c) for c in comparisons if c.verdict == "above"][:4]
-    weaknesses = [_comparison_summary_line(c) for c in comparisons if c.verdict == "below"][:4]
-
-    return PeerComparisonResult(
-        rank_label=ranked.label,
-        tier=ranked.tier,
-        rank_badge=ranked.emblem_label,
-        champion=champion,
-        role=role,
-        build_label=label,
-        source=source,
-        peer_games=baseline.games,
-        peer_players=baseline.players,
-        confidence=baseline.confidence,
-        fallback_level=baseline.fallback_level,
-        comparisons=comparisons,
-        strengths=strengths,
-        weaknesses=weaknesses,
-    )
-
-
 def _build_peer_for_pool_via_grpc(
     services: Services,
     batch: BuildBatch,
@@ -561,7 +545,7 @@ def _build_peer_for_pool_via_grpc(
         )
         return None
 
-    return _peer_comparison_from_baseline(
+    return finish_peer_comparison(
         baseline,
         matches_df=matches_df,
         records=records,

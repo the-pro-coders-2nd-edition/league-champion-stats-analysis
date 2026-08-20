@@ -9,6 +9,7 @@ from league_stats.analysis.peer.comparison import (
     build_peer_comparison,
     current_patch,
     comparisons_dataframe,
+    finish_peer_comparison,
     peer_comparison_for_window,
     peer_recommendations,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "build_peer_comparison",
     "current_patch",
     "comparisons_dataframe",
+    "finish_peer_comparison",
     "ingest_match",
     "peer_comparison_for_window",
     "peer_recommendations",

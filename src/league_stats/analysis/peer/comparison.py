@@ -457,60 +457,42 @@ def current_patch(records: list[MatchRecord]) -> str:
     return str(newest.patch) if newest is not None else ""
 
 
-def build_peer_comparison(
-    client: RiotApiClient,
-    store: MatchStore,
+def finish_peer_comparison(
+    baseline: "PeerBaseline",
+    *,
     matches_df: pd.DataFrame,
     records: list[MatchRecord],
+    store: MatchStore,
     user_puuid: str,
-    ranked: RankedEntry | None,
-    *,
+    ranked: RankedEntry,
     champion: str,
     role: str,
-    progress: ProgressReporter = NULL_REPORTER,
-) -> PeerComparisonResult | None:
-    """Build the full rank-peer comparison for the report.
+) -> PeerComparisonResult:
+    """Finish building a `PeerComparisonResult` once a `PeerBaseline` is in hand.
+
+    Extracted from `build_peer_comparison` (Phase 3 Task 3 fix round 1) so
+    both the in-process path (`build_peer_comparison` below, which resolves
+    its own baseline via `resolve_peer_baseline`) and RUNNER's
+    `peers_mode="grpc"` path (`league_stats.web.worker._build_peer_for_pool_via_grpc`,
+    which resolves its baseline over gRPC from PEERS) share the exact same
+    post-baseline finalisation logic instead of one duplicating the other.
+    `build_peer_comparison`'s own behavior is unchanged by this extraction --
+    this is the same code, moved verbatim.
 
     Args:
-        client: Riot API client (for peer rank lookups).
-        store: Match store (for scanning peer games in history).
+        baseline: Resolved peer baseline (local or from PEERS).
         matches_df: Player's per-game table.
-        records: Parsed match records (for timeline-enriched metrics).
+        records: Parsed match records (for the cs10/gd10/deaths_pre14 overrides).
+        store: Match store (for scanning the player's own history for peers).
         user_puuid: Tracked player PUUID.
-        ranked: Player's solo queue rank, if known.
+        ranked: Player's solo queue rank.
         champion: Riot champion id being analysed.
         role: Normalised team position being analysed.
 
     Returns:
-        Comparison result, or ``None`` when rank cannot be determined.
+        The full comparison result.
     """
-    log = get_logger("peer_comparison")
     label = build_label(champion, role)
-    if ranked is None:
-        log.warning(
-            "Skipping peer comparison: could not resolve solo queue rank "
-            "(unranked, or league-v4 lookup failed — check --platform)"
-        )
-        return None
-
-    baseline = resolve_peer_baseline(
-        client,
-        store,
-        ranked,
-        champion,
-        role,
-        exclude_puuid=user_puuid,
-        patch=current_patch(records),
-        progress=progress,
-    )
-    if baseline is None:
-        log.warning(
-            "Skipping peer comparison: no baseline available for %s at %s",
-            label,
-            ranked.label,
-        )
-        return None
-
     avg_damage_share = None
     if "damage_share" in matches_df.columns and matches_df["damage_share"].notna().any():
         avg_damage_share = float(
@@ -571,6 +553,72 @@ def build_peer_comparison(
         comparisons=comparisons,
         strengths=strengths,
         weaknesses=weaknesses,
+    )
+
+
+def build_peer_comparison(
+    client: RiotApiClient,
+    store: MatchStore,
+    matches_df: pd.DataFrame,
+    records: list[MatchRecord],
+    user_puuid: str,
+    ranked: RankedEntry | None,
+    *,
+    champion: str,
+    role: str,
+    progress: ProgressReporter = NULL_REPORTER,
+) -> PeerComparisonResult | None:
+    """Build the full rank-peer comparison for the report.
+
+    Args:
+        client: Riot API client (for peer rank lookups).
+        store: Match store (for scanning peer games in history).
+        matches_df: Player's per-game table.
+        records: Parsed match records (for timeline-enriched metrics).
+        user_puuid: Tracked player PUUID.
+        ranked: Player's solo queue rank, if known.
+        champion: Riot champion id being analysed.
+        role: Normalised team position being analysed.
+
+    Returns:
+        Comparison result, or ``None`` when rank cannot be determined.
+    """
+    log = get_logger("peer_comparison")
+    label = build_label(champion, role)
+    if ranked is None:
+        log.warning(
+            "Skipping peer comparison: could not resolve solo queue rank "
+            "(unranked, or league-v4 lookup failed — check --platform)"
+        )
+        return None
+
+    baseline = resolve_peer_baseline(
+        client,
+        store,
+        ranked,
+        champion,
+        role,
+        exclude_puuid=user_puuid,
+        patch=current_patch(records),
+        progress=progress,
+    )
+    if baseline is None:
+        log.warning(
+            "Skipping peer comparison: no baseline available for %s at %s",
+            label,
+            ranked.label,
+        )
+        return None
+
+    return finish_peer_comparison(
+        baseline,
+        matches_df=matches_df,
+        records=records,
+        store=store,
+        user_puuid=user_puuid,
+        ranked=ranked,
+        champion=champion,
+        role=role,
     )
 
 
