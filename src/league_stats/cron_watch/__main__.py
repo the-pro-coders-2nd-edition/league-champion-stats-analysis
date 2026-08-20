@@ -39,17 +39,36 @@ from league_stats_rpc.v1 import cron_watch_pb2_grpc
 log = get_logger("cron_watch")
 
 
-def _build_client(region: str) -> RiotApiClient:
-    """Build a Riot client for `WatchPoller`'s detection calls.
+def _require_riot_api_key() -> str:
+    """Fail loudly if `CRON_WATCH_RIOT_API_KEY` is unset.
 
-    Uses `CRON_WATCH_RIOT_API_KEY` -- this service's own key, per the spec's
-    one-key-per-service-type design -- not the monolith's `RIOT_API_KEY`.
+    `_build_client` (below) is only invoked lazily inside
+    `WatchPoller._check_group`, via the `client_factory` callable, whose
+    broad `except Exception` (see `web/watch.py`) catches a missing-key
+    `RuntimeError` and just logs it as a per-tick warning through
+    `_note_failure`. That means a misconfigured deployment would start
+    successfully, report healthy, and silently never detect a single new
+    game -- forever. Calling this from `serve()` *before* `server.start()`
+    turns that into an immediate, visible failure instead.
     """
     api_key = os.environ.get("CRON_WATCH_RIOT_API_KEY")
     if not api_key:
         raise RuntimeError(
             "Missing Riot API key: set CRON_WATCH_RIOT_API_KEY in the environment."
         )
+    return api_key
+
+
+def _build_client(region: str) -> RiotApiClient:
+    """Build a Riot client for `WatchPoller`'s detection calls.
+
+    Uses `CRON_WATCH_RIOT_API_KEY` -- this service's own key, per the spec's
+    one-key-per-service-type design -- not the monolith's `RIOT_API_KEY`.
+    Validity is already checked fail-fast in `serve()` via
+    `_require_riot_api_key`; this call re-fetches it per region since
+    `load_config` needs it, not because it might be newly missing here.
+    """
+    api_key = _require_riot_api_key()
     config = load_config(
         riot_id="cron-watch",
         tagline="CRW",
@@ -68,6 +87,10 @@ def _build_client(region: str) -> RiotApiClient:
 
 
 async def serve() -> None:
+    # Fail fast, before `server.start()`, rather than silently degrading --
+    # see `_require_riot_api_key`'s docstring for why the lazy check inside
+    # `_build_client` alone is not loud enough.
+    _require_riot_api_key()
     port = os.environ.get("CRON_WATCH_GRPC_PORT", "50052")
     metrics_port = int(os.environ.get("CRON_WATCH_METRICS_PORT", "9101"))
     web_config = load_web_config()

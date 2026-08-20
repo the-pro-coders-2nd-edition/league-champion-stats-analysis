@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+import threading
 from pathlib import Path
 
 import pytest
@@ -291,3 +293,119 @@ def test_cancel_allows_new_enqueue(store: JobStore) -> None:
     )
     assert created
     assert second["id"] != first["id"]
+
+
+def _write_pre_migration_schema(db_path: Path) -> None:
+    """A database as it looked before `_migrate`'s columns existed, so
+    opening a `JobStore` against it exercises the real ALTER TABLE path.
+
+    Sets WAL mode up front: converting a database to WAL for the first time
+    needs a brief exclusive lock, which is a separate, pre-existing hazard
+    for two connections racing to open the SAME file for the very first
+    time -- unrelated to `_migrate`'s check-then-ALTER race this test
+    targets, and out of this fix's scope. Pre-establishing WAL here isolates
+    the test to the race this finding is actually about.
+    """
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.executescript(
+        """
+        CREATE TABLE jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            player_slug TEXT NOT NULL,
+            riot_id TEXT NOT NULL,
+            tagline TEXT NOT NULL,
+            region TEXT NOT NULL,
+            state TEXT NOT NULL DEFAULT 'queued',
+            stage_detail TEXT NOT NULL DEFAULT '',
+            stage_current INTEGER,
+            stage_total INTEGER,
+            error TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL,
+            started_at REAL,
+            finished_at REAL,
+            updated_at REAL NOT NULL
+        );
+        CREATE TABLE players (
+            slug TEXT PRIMARY KEY,
+            riot_id TEXT NOT NULL,
+            tagline TEXT NOT NULL,
+            region TEXT NOT NULL,
+            last_job_id INTEGER,
+            base_completed_at REAL,
+            peer_completed_at REAL,
+            peer_failed INTEGER NOT NULL DEFAULT 0
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_migrate_is_safe_when_two_processes_open_a_pre_migration_db_concurrently(
+    tmp_path: Path,
+) -> None:
+    """Regression test for the cross-process TOCTOU in `JobStore._migrate`:
+    two `JobStore` instances opening the SAME pre-migration database file at
+    the same time (modeling `app` and `cron-watch` racing on startup against
+    a shared `app.sqlite` volume, per `docker-compose.yml`) must not crash
+    with `sqlite3.OperationalError: duplicate column name`, now that
+    `_migrate` wraps its check-then-ALTER sequence in `BEGIN IMMEDIATE`.
+
+    Uses real OS threads (not just sequential opens) to exercise genuine
+    concurrent access to one sqlite file, which is what the fix's
+    write-lock-based serialization actually has to handle.
+    """
+    db_path = tmp_path / "app.sqlite"
+    _write_pre_migration_schema(db_path)
+
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+    stores: list[JobStore] = []
+    stores_lock = threading.Lock()
+
+    def _open() -> None:
+        barrier.wait(timeout=5)
+        try:
+            store = JobStore(db_path)
+        except BaseException as exc:  # noqa: BLE001 - captured for the assertion below
+            with stores_lock:
+                errors.append(exc)
+            return
+        with stores_lock:
+            stores.append(store)
+
+    threads = [threading.Thread(target=_open) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    try:
+        assert errors == [], f"concurrent migration raised: {errors!r}"
+        assert len(stores) == 2
+
+        # Both stores must see the fully migrated schema, not just "no crash".
+        job, created = stores[0].enqueue(
+            kind=jobs.JOB_KIND_ANALYZE,
+            riot_id="Test",
+            tagline="EUW",
+            region="euw1",
+            player_slug="p1",
+            filter_champion="Fiora",
+            filter_role="TOP",
+            min_games=5,
+        )
+        assert created
+        assert job["filter_champion"] == "Fiora"
+        assert job["min_games"] == 5
+
+        stores[1].upsert_player(slug="p2", riot_id="Test2", tagline="EUW", region="euw1")
+        assert stores[1].set_watch("p2", enabled=True, interval_s=120)
+        row = stores[1].get_player("p2")
+        assert row is not None
+        assert row["watch_enabled"] == 1
+    finally:
+        for store in stores:
+            store.close()

@@ -151,45 +151,69 @@ class JobStore:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(db_path), timeout=30.0, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
+        # `busy_timeout` must be set FIRST: it is what makes every later
+        # statement on this connection -- including the `journal_mode=WAL`
+        # pragma itself and `_migrate`'s `BEGIN IMMEDIATE` below -- retry
+        # instead of failing immediately with "database is locked" when two
+        # processes/threads open this same file at once.
         self._conn.execute("PRAGMA busy_timeout=30000")
+        self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
         self._migrate()
         self._lock = threading.Lock()
 
     def _migrate(self) -> None:
-        """Add columns introduced after the initial schema."""
-        for table in ("jobs", "players"):
-            columns = {
-                row[1] for row in self._conn.execute(f"PRAGMA table_info({table})")
+        """Add columns introduced after the initial schema.
+
+        Wrapped in `BEGIN IMMEDIATE` for the same reason as `enqueue`'s fix
+        (see its comment, and this module's cross-process notes in
+        `cron_watch/service.py`): `app` and `cron-watch` both open a
+        `JobStore` onto the same shared `app.sqlite` file with no startup
+        ordering guarantee between them. Without a lock taken *before* the
+        `PRAGMA table_info` checks, two processes could both see a column as
+        missing and both run `ALTER TABLE ... ADD COLUMN`, and the loser
+        crashes with `sqlite3.OperationalError: duplicate column name`.
+        `BEGIN IMMEDIATE` takes SQLite's write lock up front, so a second
+        process's own `BEGIN IMMEDIATE` blocks (up to `busy_timeout`) until
+        the first migration commits, and then sees the already-migrated
+        schema instead of racing it.
+        """
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            for table in ("jobs", "players"):
+                columns = {
+                    row[1] for row in self._conn.execute(f"PRAGMA table_info({table})")
+                }
+                if "players_json" not in columns:
+                    self._conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN players_json TEXT NOT NULL DEFAULT '[]'"
+                    )
+            player_columns = {
+                row[1] for row in self._conn.execute("PRAGMA table_info(players)")
             }
-            if "players_json" not in columns:
-                self._conn.execute(
-                    f"ALTER TABLE {table} ADD COLUMN players_json TEXT NOT NULL DEFAULT '[]'"
-                )
-        player_columns = {
-            row[1] for row in self._conn.execute("PRAGMA table_info(players)")
-        }
-        watch_columns = (
-            ("watch_enabled", "INTEGER NOT NULL DEFAULT 0"),
-            ("watch_interval_s", f"INTEGER NOT NULL DEFAULT {DEFAULT_WATCH_INTERVAL_S}"),
-            ("last_watch_at", "REAL"),
-            ("last_watch_error", "TEXT NOT NULL DEFAULT ''"),
-            ("watch_seen_json", "TEXT NOT NULL DEFAULT '{}'"),
-        )
-        for name, ddl in watch_columns:
-            if name not in player_columns:
-                self._conn.execute(f"ALTER TABLE players ADD COLUMN {name} {ddl}")
-        job_columns = {
-            row[1] for row in self._conn.execute("PRAGMA table_info(jobs)")
-        }
-        if "filter_champion" not in job_columns:
-            self._conn.execute("ALTER TABLE jobs ADD COLUMN filter_champion TEXT")
-        if "filter_role" not in job_columns:
-            self._conn.execute("ALTER TABLE jobs ADD COLUMN filter_role TEXT")
-        if "min_games" not in job_columns:
-            self._conn.execute("ALTER TABLE jobs ADD COLUMN min_games INTEGER")
-        self._conn.commit()
+            watch_columns = (
+                ("watch_enabled", "INTEGER NOT NULL DEFAULT 0"),
+                ("watch_interval_s", f"INTEGER NOT NULL DEFAULT {DEFAULT_WATCH_INTERVAL_S}"),
+                ("last_watch_at", "REAL"),
+                ("last_watch_error", "TEXT NOT NULL DEFAULT ''"),
+                ("watch_seen_json", "TEXT NOT NULL DEFAULT '{}'"),
+            )
+            for name, ddl in watch_columns:
+                if name not in player_columns:
+                    self._conn.execute(f"ALTER TABLE players ADD COLUMN {name} {ddl}")
+            job_columns = {
+                row[1] for row in self._conn.execute("PRAGMA table_info(jobs)")
+            }
+            if "filter_champion" not in job_columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN filter_champion TEXT")
+            if "filter_role" not in job_columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN filter_role TEXT")
+            if "min_games" not in job_columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN min_games INTEGER")
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
 
     # ------------------------------------------------------------------ jobs
 

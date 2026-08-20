@@ -202,6 +202,90 @@ def test_watch_updates_streams_a_notification_when_force_refresh_finds_a_new_gam
         server.stop()
 
 
+def test_require_riot_api_key_raises_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Extracted validation from `cron_watch/__main__.py`'s `serve()` must
+    fail loudly when `CRON_WATCH_RIOT_API_KEY` is unset."""
+    from league_stats.cron_watch.__main__ import _require_riot_api_key
+
+    monkeypatch.delenv("CRON_WATCH_RIOT_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="CRON_WATCH_RIOT_API_KEY"):
+        _require_riot_api_key()
+
+
+def test_serve_fails_fast_when_the_riot_api_key_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`serve()` must raise before ever calling `server.start()` when the key
+    is missing, instead of starting successfully and silently never detecting
+    a new game (the finding's exact failure mode)."""
+    from league_stats.cron_watch.__main__ import serve
+
+    monkeypatch.delenv("CRON_WATCH_RIOT_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="CRON_WATCH_RIOT_API_KEY"):
+        asyncio.run(serve())
+
+
+def test_check_group_for_the_same_slug_never_runs_concurrently(store: JobStore) -> None:
+    """Proves `CronWatchServicer._instrument_check_group`'s per-slug lock
+    actually serializes the two call sites the finding names: `ForceRefresh`
+    calling `WatchPoller._check_group` directly, and the background `_loop`'s
+    own `tick()` -> `_check_group` call, for the SAME slug at the same time.
+
+    Constructing a `FakeClient` that deterministically reproduces the exact
+    `watch_seen`-dropping outcome is impractical here: `_check_group` always
+    re-derives `watch_seen` from a *live* Riot read for every queue it checks
+    in a given call, so whichever call commits last still writes a
+    self-consistent result in most orderings. What the lock is actually for
+    -- and what genuinely matters for the finding's "last write wins" concern
+    -- is that the two calls' bodies (read row -> await Riot calls -> write
+    row) never *interleave*; this test proves that directly instead, per the
+    finding's own fallback: "a simpler test that directly demonstrates the
+    lock is acquired/released around both call sites".
+
+    `fetch_match_ids` is invoked through `await asyncio.to_thread(...)`, i.e.
+    on a real thread-pool thread, so a `threading.Lock` (not an `asyncio`
+    primitive) guards the shared concurrency counter honestly.
+    """
+    counter_lock = threading.Lock()
+    state = {"active": 0, "max_active": 0}
+
+    class BlockingClient:
+        def resolve_puuid(self, riot_id: str, tagline: str) -> str:
+            return "puuid-hugros"
+
+        def fetch_match_ids(
+            self, puuid: str, count: int, *, queue_id: int, use_cache: bool = True
+        ) -> list[str]:
+            with counter_lock:
+                state["active"] += 1
+                state["max_active"] = max(state["max_active"], state["active"])
+            time.sleep(0.05)
+            with counter_lock:
+                state["active"] -= 1
+            return []
+
+        def fetch_match(self, match_id: str) -> dict[str, Any]:
+            return {}
+
+    client = BlockingClient()
+    servicer = CronWatchServicer(store, lambda region: client)
+    store.upsert_player(slug="hugros", riot_id="Hugros", tagline="EUW", region="euw1")
+    store.set_watch("hugros", enabled=True)
+
+    async def _race() -> None:
+        row_a = servicer._watched_row("hugros")  # noqa: SLF001
+        row_b = servicer._watched_row("hugros")  # noqa: SLF001
+        assert row_a is not None and row_b is not None
+        await asyncio.gather(
+            servicer._poller._check_group(row_a, "hugros"),  # noqa: SLF001 -- ForceRefresh path
+            servicer._poller._check_group(row_b, "hugros"),  # noqa: SLF001 -- background tick path
+        )
+
+    asyncio.run(_race())
+
+    assert state["max_active"] == 1, "the two calls must not run inside _check_group at once"
+
+
 def test_a_cron_watch_enqueued_job_surfaces_through_the_monolith_job_api(
     tmp_path: Path,
 ) -> None:

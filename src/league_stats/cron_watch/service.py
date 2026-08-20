@@ -222,6 +222,11 @@ class CronWatchServicer(cron_watch_pb2_grpc.CronWatchServiceServicer):
         self._store = store
         self._poller = WatchPoller(store, client_factory, on_new_game=self._on_new_game)
         self._instrument_tick()
+        # Per-slug locks guarding `WatchPoller._check_group`: see
+        # `_instrument_check_group` below for why this is needed and how it's
+        # wired in.
+        self._check_group_locks: dict[str, asyncio.Lock] = {}
+        self._instrument_check_group()
         # `None` is the wildcard key: a `WatchUpdates` call with no puuid filter
         # subscribes to every account's updates.
         self._subscribers: dict[str | None, list["asyncio.Queue[cron_watch_pb2.WelcomeBackUpdate]"]] = {}
@@ -250,6 +255,56 @@ class CronWatchServicer(cron_watch_pb2_grpc.CronWatchServiceServicer):
                 CRON_WATCH_TICK_DURATION.observe(time.perf_counter() - start)
 
         self._poller.tick = _timed_tick
+
+    def _instrument_check_group(self) -> None:
+        """Serialize `WatchPoller._check_group` per slug across both call sites.
+
+        `ForceRefresh` (below) calls `self._poller._check_group(row, slug)`
+        directly, bypassing `tick()`'s due-interval gating on purpose ("force"
+        means check this account right now). But the background `_loop` may
+        already be inside `_check_group` for the SAME slug via its own
+        `tick()` -> `_check_group` call at the same time. Both snapshot
+        `row["watch_seen"]` before their `await asyncio.to_thread(...)` Riot
+        calls (which yield control) and both write the FULL dict back via
+        `record_watch_tick(slug, seen=seen)` afterward, so without
+        serialization the loser's newly-recorded `seen` entries are silently
+        dropped -- an intra-process version of the exact bug class `enqueue`'s
+        `BEGIN IMMEDIATE` fix closed cross-process, except this one is a pure
+        asyncio ordering issue, not a SQLite one, so an `asyncio.Lock` is the
+        right tool rather than another SQLite transaction.
+
+        Wired the same way `_instrument_tick` wires its own wrapper: replacing
+        the instance attribute shadows the class method for every caller,
+        including `WatchPoller.tick`'s own internal `self._check_group(...)`
+        call, so the background loop's path and `ForceRefresh`'s direct path
+        both funnel through this one lock per slug without either call site
+        needing to know about the other's lock. A single `asyncio.Lock` per
+        slug, acquired non-reentrantly around one `await`ing call, cannot
+        deadlock -- different slugs never contend, and the same slug's two
+        callers simply queue up.
+
+        Locking alone is not enough, though: both call sites fetch their
+        `row` argument (via `_watched_row`/`list_watched_players`) *before*
+        calling `_check_group`, i.e. before ever touching the lock. If caller
+        B fetched its `row` while caller A's turn was still in flight, B's
+        `row["watch_seen"]` is already stale by the time B finally acquires
+        the lock -- serializing *execution* would not stop B from computing
+        off of pre-A data and overwriting A's just-committed update with a
+        write that doesn't contain it. So this wrapper re-fetches the row
+        fresh from the store right after acquiring the lock (discarding the
+        possibly-stale one the caller passed in) before running the real
+        `_check_group`, guaranteeing the second caller in any race always
+        starts from the first caller's committed result.
+        """
+        original_check_group = self._poller._check_group  # noqa: SLF001
+
+        async def _locked_check_group(row: dict[str, Any], slug: str) -> bool:
+            lock = self._check_group_locks.setdefault(slug, asyncio.Lock())
+            async with lock:
+                fresh_row = self._watched_row(slug) or row
+                return await original_check_group(fresh_row, slug)
+
+        self._poller._check_group = _locked_check_group  # noqa: SLF001
 
     # ------------------------------------------------------------ lifecycle
     # For whoever wires up CronWatch's real entrypoint: these must be called

@@ -17,6 +17,13 @@ services:
       # `data/` directory and CRON-watch's enqueued jobs would never surface
       # through this service's job-status API.
       - app-data:/app/data
+      # Report artifacts (HTML/CSV/JSON) referenced by job rows in the now-
+      # persistent `app-data` volume above. Without this, recreating this
+      # container wipes `/app/output` while the DB still says jobs completed,
+      # so a "done" job's report link 404s. `/app/.cache` (match/HTTP caches)
+      # is deliberately left ephemeral: losing it only costs slower re-fetches
+      # on next start, not a broken link, so it's not worth a volume here.
+      - app-output:/app/output
     depends_on:
       - mongo
 
@@ -65,3 +72,4 @@ services:
 volumes:
   mongo-data:
   app-data:
+  app-output:
