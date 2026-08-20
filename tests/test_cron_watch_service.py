@@ -225,6 +225,47 @@ def test_serve_fails_fast_when_the_riot_api_key_is_missing(
         asyncio.run(serve())
 
 
+def test_serve_accepts_a_riot_api_key_supplied_only_via_dotenv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-2 regression test: `_require_riot_api_key()` must run AFTER
+    `load_web_config()` (the only thing in `serve()` that merges `.env` into
+    `os.environ`, via `core/config.py`'s `_load_env_file`), not before. A
+    prior version of this fix checked the key first and wrongly rejected a
+    validly configured local `python -m league_stats.cron_watch` run that
+    only sets `CRON_WATCH_RIOT_API_KEY` in `.env` (the documented
+    `.env.example` path), not the shell environment.
+
+    Drives the real `serve()` with the key present ONLY in a temp-dir `.env`
+    file and nothing in `os.environ`. Rather than letting `serve()` actually
+    bind a gRPC server / metrics HTTP server / run `wait_for_termination()`
+    forever (heavy, and one more thing that could hang a test), `JobStore` --
+    the very next thing `serve()` constructs after the key check -- is
+    monkeypatched to raise a distinctive sentinel exception. Reaching that
+    sentinel (rather than `_require_riot_api_key`'s `RuntimeError` about the
+    missing key) proves `serve()` got past both `load_web_config()` and the
+    key check in the right order.
+    """
+    import league_stats.cron_watch.__main__ as main_module
+
+    monkeypatch.delenv("CRON_WATCH_RIOT_API_KEY", raising=False)
+    (tmp_path / ".env").write_text(
+        "CRON_WATCH_RIOT_API_KEY=dotenv-only-key\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    sentinel = RuntimeError("stopped deliberately before starting the real server")
+
+    def _fake_job_store(path: Path) -> Any:
+        raise sentinel
+
+    monkeypatch.setattr(main_module, "JobStore", _fake_job_store)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        asyncio.run(main_module.serve())
+    assert exc_info.value is sentinel
+
+
 def test_check_group_for_the_same_slug_never_runs_concurrently(store: JobStore) -> None:
     """Proves `CronWatchServicer._instrument_check_group`'s per-slug lock
     actually serializes the two call sites the finding names: `ForceRefresh`

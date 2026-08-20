@@ -87,13 +87,19 @@ def _build_client(region: str) -> RiotApiClient:
 
 
 async def serve() -> None:
-    # Fail fast, before `server.start()`, rather than silently degrading --
-    # see `_require_riot_api_key`'s docstring for why the lazy check inside
-    # `_build_client` alone is not loud enough.
-    _require_riot_api_key()
     port = os.environ.get("CRON_WATCH_GRPC_PORT", "50052")
     metrics_port = int(os.environ.get("CRON_WATCH_METRICS_PORT", "9101"))
+    # `load_web_config()` is what merges `.env` into `os.environ` (via
+    # `core/config.py`'s `_load_env_file`), which is the documented way to
+    # supply `CRON_WATCH_RIOT_API_KEY` for a local `python -m
+    # league_stats.cron_watch` run (per `.env.example`). The fail-fast check
+    # below must run AFTER this, or it would reject a validly configured
+    # local run that only sets the key in `.env` rather than the shell
+    # environment -- while still running well before `JobStore` construction,
+    # `add_insecure_port`, and `server.start()`, so it's still "fail fast"
+    # relative to the service actually coming up.
     web_config = load_web_config()
+    _require_riot_api_key()
     # Shared file with the monolith's `app` service -- a docker-compose volume
     # mount, not a per-service path. See this module's docstring.
     store = JobStore(web_config.app_db_path)
