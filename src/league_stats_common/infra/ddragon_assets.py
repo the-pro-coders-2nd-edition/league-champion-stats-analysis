@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 from league_stats_common.core.champions import VALID_ROLES, champion_display_name, champion_icon_id
 from league_stats_common.core.config import AppConfig
-from league_stats.ingest.parser import PERK_NAMES
+from league_stats_runner.ingest.parser import PERK_NAMES
 from league_stats_common.infra.riot_api import DDRAGON_BASE
 from league_stats_common.utils import get_logger
 

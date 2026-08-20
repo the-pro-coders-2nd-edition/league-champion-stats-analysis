@@ -16,7 +16,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Sequence
 
-from league_stats.analysis.career.models import Comparator, Rung, StoredGoal
+from league_stats_runner.analysis.career.models import Comparator, Rung, StoredGoal
 from league_stats_common.utils import get_logger
 
 _KNOWN_COMPARATORS: frozenset[str] = frozenset({"at_least", "under", "at_most"})

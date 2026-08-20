@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Final, Literal
 
-from league_stats.analysis.combat import combat_output_metric, prefers_cc_over_dpm
+from league_stats_runner.analysis.combat import combat_output_metric, prefers_cc_over_dpm
 from league_stats_common.core.champions import normalize_role
 
 MetricDirection = Literal["higher", "lower"]

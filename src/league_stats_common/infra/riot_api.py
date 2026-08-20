@@ -474,7 +474,7 @@ class RiotApiClient:
             Match ids newly available to this player: freshly downloaded or
             newly ownership-linked from an existing cached payload.
         """
-        from league_stats.analysis.peer.ingest import ingest_match
+        from league_stats_peers.analysis.peer.ingest import ingest_match
 
         cached = [mid for mid in match_ids if self._store.has_match(mid)]
         pending = [mid for mid in match_ids if mid not in cached]
@@ -540,7 +540,7 @@ class RiotApiClient:
         Returns:
             Mapping of normalised keys to official Riot champion ids.
         """
-        from league_stats.core.champions import build_champion_catalog
+        from league_stats_common.core.champions import build_champion_catalog
 
         versions = self._get(
             f"{DDRAGON_BASE}/api/versions.json", ttl_s=STATIC_TTL_S, authenticated=False
@@ -562,6 +562,6 @@ class RiotApiClient:
         Returns:
             Official champion id used in match-v5 payloads.
         """
-        from league_stats.core.champions import resolve_champion_name
+        from league_stats_common.core.champions import resolve_champion_name
 
         return resolve_champion_name(user_input, self.fetch_champion_catalog())
