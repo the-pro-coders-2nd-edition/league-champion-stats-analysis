@@ -136,7 +136,37 @@ services:
     depends_on:
       - mongo
 
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    # No `ports:` here on purpose: Prometheus is only ever queried by
+    # `grafana` over the compose network -- nothing outside it needs direct
+    # access. Scrape targets (api-ui/runner/cron-watch/peers) are pull-based,
+    # so no `depends_on` is needed here either -- Prometheus retries scrapes
+    # on its own interval regardless of which service starts first.
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    # GF_SECURITY_ADMIN_USER/GF_SECURITY_ADMIN_PASSWORD come from the
+    # gitignored .env file below (see .env.example for placeholders) --
+    # deliberately not re-listed under `environment:` here, matching how
+    # every other secret (RIOT_API_KEY, etc.) in this file is only ever
+    # sourced via `env_file`, never inlined.
+    env_file:
+      - .env
+    volumes:
+      - ./deploy/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - grafana-data:/var/lib/grafana
+    # No `ports:` here on purpose: Task 5 (Caddy TLS routing) reverse-proxies
+    # to this service's internal port 3000 on a `grafana.<DOMAIN>` subdomain,
+    # matching how api-ui itself is exposed -- no raw port should ever be
+    # published for this service.
+    depends_on:
+      - prometheus
+
 volumes:
   mongo-data:
   app-data:
   app-output:
+  grafana-data:
