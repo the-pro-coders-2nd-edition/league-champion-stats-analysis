@@ -141,19 +141,20 @@ def _try_live_baseline(
     patch: str = "",
     progress: ProgressReporter = NULL_REPORTER,
 ) -> PeerBaseline | None:
-    """Return a peer baseline from the file cache or live snowball sampling.
+    """Return a peer baseline from the Mongo-backed live cache or live snowball sampling.
 
-    The file cache is checked first to make re-runs near-instant; it is only
-    reused on the same patch, in the same tier, and within its TTL. After a
-    successful live sample the result is written back so the next run on this
-    patch skips the API entirely.
+    The cache (``analysis/peer/benchmark_cache.py``, Mongo-backed since Phase 5)
+    is checked first to make re-runs near-instant; it is only reused on the
+    same patch, in the same tier, and within its TTL. After a successful live
+    sample the result is written back so the next run on this patch skips the
+    API entirely.
     """
     log = get_logger("peer_baseline")
 
     cached = read_live_cache(client.platform, ranked.tier, champion, role, patch=patch)
     if cached is not None:
         log.info(
-            "File cache hit for %s %s (platform=%s, tier=%s): %d games",
+            "Live cache hit for %s %s (platform=%s, tier=%s): %d games",
             champion,
             role,
             client.platform,
@@ -221,8 +222,8 @@ def resolve_peer_baseline(
     Levels:
     0 — Peer store, exact rank, ≥50 games (high confidence at ≥100)
     1 — Peer store, ±1 widened rank, ≥50 games
-    2 — File cache or live API snowball, ≥50 games (cache reused only on the
-        same patch and tier, and within its TTL)
+    2 — Mongo-backed live cache or live API snowball, ≥50 games (cache reused
+        only on the same patch and tier, and within its TTL)
     3 — Peer store, ±2 wider rank, ≥50 games (post-live-attempt)
     4 — Static champion JSON
     5 — Static role JSON

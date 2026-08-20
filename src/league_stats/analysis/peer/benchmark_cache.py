@@ -1,11 +1,12 @@
-"""Persistent file cache for live-sampled peer benchmarks.
+"""Mongo-backed cache for live-sampled peer benchmarks.
 
-Cache files live under ``data/benchmarks/live/`` keyed by
-``{platform}_{tier}_{champion_slug}.json``. A cached entry is reused only when
-all three of these hold:
+Cache entries are keyed by ``{platform}_{tier}_{champion_slug}`` (the same
+string the old on-disk cache used as its filename stem -- see "Migration
+history" below) inside ``PeerSampleStore``'s ``live_benchmark_cache``
+collection. A cached entry is reused only when all three of these hold:
 
 * the game patch it was sampled on matches the patch being analysed,
-* the tracked player is still in the same tier (encoded in the filename), and
+* the tracked player is still in the same tier (encoded in the key), and
 * it was fetched less than ``CACHE_TTL_S`` ago.
 
 Patch is the one that matters. Peer metrics move with gameplay patches, and a
@@ -15,29 +16,65 @@ patch-keying is either serving stale peers or paying that cost on a timer.
 Division and LP are deliberately *not* part of the key: ``build_exact_scope``
 accepts every division inside a tier and ``rank_matches`` never looks at LP, so
 moving from Gold IV to Gold I does not change who your peers are.
+
+Migration history (Phase 5, Task 3)
+------------------------------------
+This cache used to be a directory of JSON files under
+``data/benchmarks/live/`` (``{platform}_{tier}_{champion_slug}.json``). It is
+now backed by Mongo (``PeerSampleStore.read_benchmark_cache``/
+``write_benchmark_cache``) instead, with the exact same key shape and
+staleness semantics (patch + tier match, ``CACHE_TTL_S`` = 3 days) --
+``read_live_cache``/``write_live_cache`` keep their original signatures, so
+no caller (``analysis/peer/baseline.py``) needed to change. The old
+``data/benchmarks/live/`` directory and any JSON files already in it are left
+untouched on disk -- simply unused from now on.
 """
 
 from __future__ import annotations
 
-import json
+import os
 import time
-from pathlib import Path
 from typing import Any, Final
+
+import pymongo
+from pymongo import uri_parser as mongo_uri_parser
 
 from league_stats.analysis.peer.benchmark_fetcher import BenchmarkSnapshot, MIN_BENCHMARK_GAMES
 from league_stats.core.champions import champion_slug
+from league_stats.infra.peer_sample_store import PeerSampleStore
 
 CACHE_TTL_S: Final[float] = 3 * 24 * 3600  # 3 days
 
-_LIVE_CACHE_DIR: Final[Path] = (
-    Path(__file__).resolve().parents[2] / "data" / "benchmarks" / "live"
-)
+# Module-level singleton, built lazily against MONGO_URI on first use and
+# reused across calls -- mirrors `peers/service.py`'s `_build_default_peer_store`
+# (same env var, same fallback URI, same db-name-from-URI helper below).
+# Tests monkeypatch this attribute directly with a mongomock-backed store,
+# the same way the old file cache's tests monkeypatched `_LIVE_CACHE_DIR`.
+_store: PeerSampleStore | None = None
 
 
-def _cache_path(platform: str, tier: str, champion: str, role: str) -> Path:
+def _db_name_from_uri(mongo_uri: str) -> str:
+    """Extract the database name from a Mongo connection URI.
+
+    Mirrors `peers/service.py`'s `_db_name_from_uri` -- uses pymongo's own URI
+    parser rather than a naive `rsplit`, which breaks on query params or a
+    bare host with no db path.
+    """
+    return mongo_uri_parser.parse_uri(mongo_uri).get("database") or "league_stats"
+
+
+def _get_store() -> PeerSampleStore:
+    global _store
+    if _store is None:
+        mongo_uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017/league_stats")
+        client: pymongo.MongoClient = pymongo.MongoClient(mongo_uri)
+        _store = PeerSampleStore(client, db_name=_db_name_from_uri(mongo_uri))
+    return _store
+
+
+def _cache_key(platform: str, tier: str, champion: str, role: str) -> str:
     slug = champion_slug(champion, role)
-    key = f"{platform.lower()}_{tier.upper()}_{slug}"
-    return _LIVE_CACHE_DIR / f"{key}.json"
+    return f"{platform.lower()}_{tier.upper()}_{slug}"
 
 
 def _patch_is_stale(stored: str, wanted: str) -> bool:
@@ -62,13 +99,9 @@ def read_live_cache(
     patch: str = "",
 ) -> BenchmarkSnapshot | None:
     """Return a cached benchmark snapshot if it is still valid."""
-    path = _cache_path(platform, tier, champion, role)
-    if not path.is_file():
-        return None
-    try:
-        with path.open(encoding="utf-8") as fh:
-            data: dict[str, Any] = json.load(fh)
-    except (OSError, json.JSONDecodeError):
+    key = _cache_key(platform, tier, champion, role)
+    data: dict[str, Any] | None = _get_store().read_benchmark_cache(key)
+    if data is None:
         return None
 
     if _patch_is_stale(str(data.get("patch", "")), patch):
@@ -100,9 +133,8 @@ def write_live_cache(
     *,
     patch: str = "",
 ) -> None:
-    """Persist a live-sampled benchmark snapshot to the file cache."""
-    _LIVE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    path = _cache_path(platform, tier, champion, role)
+    """Persist a live-sampled benchmark snapshot to the Mongo-backed cache."""
+    key = _cache_key(platform, tier, champion, role)
     data = {
         "metrics": snapshot.metrics,
         "games": snapshot.games_sampled,
@@ -113,7 +145,8 @@ def write_live_cache(
         "patch": patch,
     }
     try:
-        with path.open("w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2)
-    except OSError:
+        _get_store().write_benchmark_cache(key, data)
+    except pymongo.errors.PyMongoError:
+        # Best-effort: mirrors the old file cache's `except OSError: pass` --
+        # a failed cache write must never break a successful live sample.
         pass

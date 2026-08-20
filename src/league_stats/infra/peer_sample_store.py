@@ -26,6 +26,18 @@ Reproduces ``MatchStore``'s real semantics:
   the ``WHERE puuid = ?`` clause, not the count of rows whose values
   actually changed, so calling it again with the same tier/rank still
   reports the same count instead of dropping to zero.
+
+Also hosts ``live_benchmark_cache`` (Phase 5, Task 3): a Mongo-backed
+replacement for ``analysis.peer.benchmark_cache``'s old on-disk JSON cache
+(``data/benchmarks/live/*.json``). ``read_benchmark_cache``/
+``write_benchmark_cache`` are a plain key -> document store -- the
+patch/tier/TTL staleness semantics stay in ``benchmark_cache.py``, which
+mirrors the real file cache's ``_patch_is_stale``/TTL logic exactly, just
+against this backing store instead of a JSON file. The key is the same
+string ``benchmark_cache._cache_path`` used to build the old
+``{platform}_{tier}_{champion_slug}.json`` filename, used here as the
+document's ``_id`` (already unique-indexed by Mongo, so no separate index
+is needed for point lookups on it).
 """
 
 from typing import Any
@@ -46,6 +58,7 @@ class PeerSampleStore:
         """
         db = client[db_name]
         self._peer_games = db["peer_games"]
+        self._live_benchmark_cache = db["live_benchmark_cache"]
         # Mirrors the real SQL indexes this store's SQLite counterpart has
         # (`idx_peer_lookup`/`idx_peer_puuid`, `infra/cache.py`) -- without
         # these, every `load_peer_games`/`count_peer_games` call does an
@@ -162,3 +175,20 @@ class PeerSampleStore:
             {"$set": {"tier": tier.upper(), "rank": rank.upper(), "rank_verified": True}},
         )
         return int(result.matched_count)
+
+    def read_benchmark_cache(self, key: str) -> dict[str, Any] | None:
+        """Return the raw cached live-benchmark document for `key`, or None if absent.
+
+        Staleness (patch/tier match, TTL) is not evaluated here -- this is a
+        plain lookup, matching the old file cache's split between reading the
+        JSON blob (``read_live_cache``'s ``path.open`` step) and deciding
+        whether it's still usable (``_patch_is_stale`` + TTL check).
+        """
+        doc = self._live_benchmark_cache.find_one({"_id": key})
+        if doc is None:
+            return None
+        return {k: v for k, v in doc.items() if k != "_id"}
+
+    def write_benchmark_cache(self, key: str, data: dict[str, Any]) -> None:
+        """Upsert the cached live-benchmark document for `key`."""
+        self._live_benchmark_cache.replace_one({"_id": key}, {"_id": key, **data}, upsert=True)

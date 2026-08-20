@@ -5,9 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, call
 
+import mongomock
 import pytest
 
+import league_stats.analysis.peer.benchmark_cache as benchmark_cache
 from league_stats.analysis.peer.benchmark_cache import read_live_cache, write_live_cache
+from league_stats.infra.peer_sample_store import PeerSampleStore
 from league_stats.analysis.peer.benchmark_fetcher import (
     BenchmarkSnapshot,
     fetch_benchmark_from_api,
@@ -137,7 +140,7 @@ def test_seed_rank_skips_fetch_solo_rank(tmp_path, monkeypatch, ranked_gold: Ran
 def test_write_and_read_live_cache(tmp_path, monkeypatch) -> None:
     """A written cache entry is read back correctly within the TTL."""
     monkeypatch.setattr(
-        "league_stats.analysis.peer.benchmark_cache._LIVE_CACHE_DIR", tmp_path / "cache"
+        benchmark_cache, "_store", PeerSampleStore(mongomock.MongoClient(), db_name="test_live_cache")
     )
     snapshot = BenchmarkSnapshot(
         metrics={"win": 0.52, "kda": 3.1, "dpm": 640.0, "cspm": 7.4,
@@ -163,7 +166,7 @@ def test_live_cache_expired_returns_none(tmp_path, monkeypatch) -> None:
     import time as _time
 
     monkeypatch.setattr(
-        "league_stats.analysis.peer.benchmark_cache._LIVE_CACHE_DIR", tmp_path / "cache"
+        benchmark_cache, "_store", PeerSampleStore(mongomock.MongoClient(), db_name="test_live_cache")
     )
     snapshot = BenchmarkSnapshot(
         metrics={"win": 0.5},
@@ -185,7 +188,7 @@ def test_live_cache_expired_returns_none(tmp_path, monkeypatch) -> None:
 def test_live_cache_hit_skips_live_api(tmp_path, monkeypatch, ranked_gold: RankedEntry) -> None:
     """When a fresh file cache entry exists, no live API sampling is performed."""
     monkeypatch.setattr(
-        "league_stats.analysis.peer.benchmark_cache._LIVE_CACHE_DIR", tmp_path / "cache"
+        benchmark_cache, "_store", PeerSampleStore(mongomock.MongoClient(), db_name="test_live_cache")
     )
 
     # Pre-populate the cache
