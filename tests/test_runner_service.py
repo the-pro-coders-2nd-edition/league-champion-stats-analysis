@@ -66,6 +66,7 @@ from league_stats.core.config import WebConfig
 from league_stats.core.champions import players_group_slug
 from league_stats.infra.cache import MatchStore
 from league_stats.infra.riot_api import RiotApiClient
+from league_stats.runner import service as runner_service
 from league_stats.runner.service import RunnerServicer
 from league_stats.web import jobs as job_states
 from league_stats_rpc.v1 import common_pb2, runner_pb2, runner_pb2_grpc
@@ -155,12 +156,112 @@ def test_enqueue_job_and_stream_progress_reports_a_real_analysis(
 
     assert results, "expected at least one StageResult message"
     assert results[-1].final is True
+    # `error == ""` is the actual proof of success -- a job that crashed
+    # during/after setup would still satisfy `final is True` and even have a
+    # non-final STAGE_A event (the initial `set_state(FETCHING, ...)`) before
+    # blowing up, so neither of those alone distinguishes success from failure.
+    assert results[-1].error == "", f"job failed: {results[-1].error!r}"
     stage_a_progress = [
         r for r in results if r.stage == common_pb2.STAGE_A and r.detail and not r.final
     ]
     assert stage_a_progress, "expected at least one non-final STAGE_A progress update"
-    # The job must have run for real: it reaches a terminal job_states state
-    # (done here, since peer comparison cleanly skips with no rank) rather
-    # than failing during setup.
-    final_detail_or_error = results[-1].detail or results[-1].error
-    assert final_detail_or_error
+    # The strongest proof the pipeline genuinely ran end to end: the real
+    # report artifact execute_job/run_analysis writes lands on disk.
+    report_path = (
+        tmp_path / "output" / "reports" / player_slug / "viktor_middle" / "report.json"
+    )
+    assert report_path.exists(), f"expected report artifact at {report_path}"
+
+
+def test_enqueue_job_rejects_unspecified_kind() -> None:
+    """JOB_KIND_UNSPECIFIED must be rejected, not silently defaulted to 'analyze'."""
+    servicer = RunnerServicer(web_config=WebConfig())
+    server, port = _start_runner_server(servicer)
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        stub = runner_pb2_grpc.RunnerServiceStub(channel)
+        with pytest.raises(grpc.RpcError) as exc_info:
+            stub.EnqueueJob(runner_pb2.EnqueueJobRequest(riot_id="Test", tagline="EUW"))
+        assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    finally:
+        channel.close()
+        server.stop(grace=None)
+
+
+def test_run_job_wraps_execute_job_so_a_crash_still_yields_a_final_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A crash outside execute_job's own try/finally must not hang StreamJobProgress.
+
+    Regression test for the unwrapped `threading.Thread(target=execute_job, ...)`
+    gap: without `_run_job`'s wrapper, a crash here would leave the queue
+    empty forever and `StreamJobProgress`'s blocking `events.get()` would
+    hang indefinitely.
+    """
+
+    def _boom(job, store, web_config):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(runner_service, "execute_job", _boom)
+    servicer = RunnerServicer(web_config=WebConfig())
+    server, port = _start_runner_server(servicer)
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        stub = runner_pb2_grpc.RunnerServiceStub(channel)
+        request = runner_pb2.EnqueueJobRequest(
+            riot_id="Test",
+            tagline="EUW",
+            region=common_pb2.EUROPE,
+            kind=runner_pb2.JOB_KIND_REGENERATE,
+            player_slug="test_euw",
+        )
+        response = stub.EnqueueJob(request)
+        results = list(
+            stub.StreamJobProgress(runner_pb2.StreamJobProgressRequest(job_id=response.job_id))
+        )
+    finally:
+        channel.close()
+        server.stop(grace=None)
+
+    assert results, "expected a terminal event even though execute_job crashed"
+    assert results[-1].final is True
+    assert "boom" in results[-1].error
+
+
+def test_stream_job_progress_reconnect_after_terminal_returns_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A second call for an already-drained job_id must not block on an empty queue."""
+
+    def _fake_execute_job(job, store, web_config):
+        store.set_state(job["id"], job_states.DONE, detail="ok")
+
+    monkeypatch.setattr(runner_service, "execute_job", _fake_execute_job)
+    servicer = RunnerServicer(web_config=WebConfig())
+    server, port = _start_runner_server(servicer)
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        stub = runner_pb2_grpc.RunnerServiceStub(channel)
+        request = runner_pb2.EnqueueJobRequest(
+            riot_id="Test",
+            tagline="EUW",
+            region=common_pb2.EUROPE,
+            kind=runner_pb2.JOB_KIND_REGENERATE,
+            player_slug="test_euw",
+        )
+        response = stub.EnqueueJob(request)
+
+        first = list(
+            stub.StreamJobProgress(runner_pb2.StreamJobProgressRequest(job_id=response.job_id))
+        )
+        assert first[-1].final is True
+
+        second = list(
+            stub.StreamJobProgress(runner_pb2.StreamJobProgressRequest(job_id=response.job_id))
+        )
+    finally:
+        channel.close()
+        server.stop(grace=None)
+
+    assert len(second) == 1
+    assert second[0].final is True

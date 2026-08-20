@@ -72,9 +72,12 @@ class RunnerJobAdapter:
             "current": None,
             "total": None,
             "final": False,
-            "completed_at_unix": int(time.time()),
         }
         event.update(fields)
+        # Only a terminal event is actually a "completed at" timestamp; stamping
+        # every in-progress event would misleadingly look like a completion time.
+        if event["final"]:
+            event["completed_at_unix"] = int(time.time())
         self._events.put(event)
 
     def is_cancelled(self, job_id: int) -> bool:
