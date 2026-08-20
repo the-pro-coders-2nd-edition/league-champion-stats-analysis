@@ -262,6 +262,47 @@ def test_an_api_failure_backs_off_and_is_surfaced(store: JobStore) -> None:
     assert client.match_id_calls == calls
 
 
+def test_on_new_game_hook_fires_with_slug_and_job_id(store: JobStore) -> None:
+    """The optional observer hook is called once a refresh is genuinely enqueued,
+    and not on the baseline tick where nothing looks new yet."""
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    clock = Clock()
+    calls: list[tuple[str, str]] = []
+    poller = WatchPoller(
+        store,
+        lambda region: client,
+        now=clock,
+        on_new_game=lambda slug, job_id: calls.append((slug, job_id)),
+    )
+
+    _tick(poller)  # baseline: must not fire the hook
+    assert calls == []
+
+    client.newest["puuid-hugros"] = {RANKED_SOLO_QUEUE_ID: ["EUW1_2"]}
+    clock.advance(120)
+    _tick(poller)
+
+    assert len(calls) == 1
+    fired_slug, fired_job_id = calls[0]
+    assert fired_slug == SLUG
+    assert fired_job_id == str(store.list_active_jobs()[0]["id"])
+
+
+def test_on_new_game_hook_defaults_to_none_and_does_not_raise(store: JobStore) -> None:
+    """Backward compatibility: omitting the hook must behave exactly as before."""
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    clock = Clock()
+    poller = _poller(store, client, clock)
+
+    _tick(poller)  # baseline
+    client.newest["puuid-hugros"] = {RANKED_SOLO_QUEUE_ID: ["EUW1_2"]}
+    clock.advance(120)
+
+    assert _tick(poller) == [SLUG]  # must not raise despite no hook configured
+
+
 def test_unwatched_groups_are_never_polled(store: JobStore) -> None:
     client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
     assert _tick(_poller(store, client, Clock())) == []

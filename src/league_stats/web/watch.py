@@ -87,11 +87,18 @@ class WatchPoller:
         *,
         now: Callable[[], float] = time.time,
         budget: _Budget | None = None,
+        on_new_game: Callable[[str, str], None] | None = None,
     ) -> None:
         self._store = store
         self._client_factory = client_factory
         self._now = now
         self._budget = budget or _Budget()
+        # Optional observer: called with (slug, job_id) whenever a refresh is
+        # newly enqueued. Nothing in this module uses it -- it exists so a
+        # consumer such as CronWatchServicer's WatchUpdates RPC can push a
+        # notification the moment a new game is detected, without WatchPoller
+        # itself knowing anything about gRPC.
+        self._on_new_game = on_new_game
         self._failures: dict[str, int] = {}
         self._puuids: dict[str, str] = {}
         self._log = get_logger("watch")
@@ -247,7 +254,7 @@ class WatchPoller:
     def _enqueue_refresh(self, row: dict[str, Any], slug: str) -> bool:
         players = list(row.get("players") or [])
         primary = players[0] if players else {}
-        _job, created = self._store.enqueue(
+        job, created = self._store.enqueue(
             kind=JOB_KIND_REFRESH,
             riot_id=str(primary.get("riot_id") or row.get("riot_id") or ""),
             tagline=str(primary.get("tagline") or row.get("tagline") or ""),
@@ -257,6 +264,8 @@ class WatchPoller:
         )
         if created:
             self._log.info("Watch found a new game for %s; queued a refresh", slug)
+            if self._on_new_game is not None:
+                self._on_new_game(slug, str(job.get("id", "")))
         return created
 
     def _note_failure(self, slug: str, message: str) -> None:
