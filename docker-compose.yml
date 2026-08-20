@@ -158,10 +158,13 @@ services:
     volumes:
       - ./deploy/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - grafana-data:/var/lib/grafana
-    # No `ports:` here on purpose: Task 5 (Caddy TLS routing) reverse-proxies
-    # to this service's internal port 3000 on a `grafana.<DOMAIN>` subdomain,
-    # matching how api-ui itself is exposed -- no raw port should ever be
-    # published for this service.
+    # Loopback-only publish (not `3000:3000` like api-ui's `8000:8000`):
+    # `deploy/run.sh` runs Caddy directly on the VPS host (not in this
+    # compose network), so it needs a host-reachable port to reverse-proxy
+    # `grafana.<DOMAIN>` to -- but grafana holds admin credentials, so unlike
+    # api-ui this must never be reachable from outside the host itself.
+    ports:
+      - "127.0.0.1:3000:3000"
     depends_on:
       - prometheus
 

@@ -15,6 +15,11 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 CADDYFILE="/etc/caddy/Caddyfile"
 APP_HOST="127.0.0.1"
 APP_PORT="8000"
+# Grafana (docker-compose service `grafana`) publishes only to host loopback
+# (`127.0.0.1:3000:3000` in docker-compose.yml) -- never a public port -- so
+# this host-based Caddy reaches it the same way it reaches the app itself.
+GRAFANA_HOST="127.0.0.1"
+GRAFANA_PORT="3000"
 DEFAULT_DOMAIN="league-champion-analyser.eu"
 HTTP_ONLY=0
 ACTION="install"
@@ -112,9 +117,24 @@ EOF
     if [[ "$DOMAIN" != www.* ]]; then
       sites="${DOMAIN}, www.${DOMAIN}"
     fi
+    local grafana_domain="grafana.${DOMAIN}"
+    local grafana_sites="$grafana_domain"
+    if [[ "$grafana_domain" != www.* ]]; then
+      grafana_sites="${grafana_domain}, www.${grafana_domain}"
+    fi
+    # NOTE (external, manual, one-time precondition): a DNS A record for
+    # grafana.${DOMAIN} (and its www. alias above) must already point at
+    # this server before Let's Encrypt can issue a cert for it -- Caddy's
+    # automatic TLS will fail/retry indefinitely for this site block until
+    # that DNS record exists. This is not something to fake or work around
+    # here; it's an out-of-band DNS change the operator makes once.
     cat >"$CADDYFILE" <<EOF
 ${sites} {
 	reverse_proxy ${APP_HOST}:${APP_PORT}
+}
+
+${grafana_sites} {
+	reverse_proxy ${GRAFANA_HOST}:${GRAFANA_PORT}
 }
 EOF
   fi
@@ -203,6 +223,8 @@ install_and_start() {
   else
     echo "App is up: https://${DOMAIN}/"
     echo "(DNS A records for ${DOMAIN} / www must point at this server for TLS to work.)"
+    echo "Grafana: https://grafana.${DOMAIN}/"
+    echo "(DNS A record for grafana.${DOMAIN} / www must also point at this server for its TLS cert.)"
   fi
   echo "Logs: journalctl -u ${SERVICE_NAME} -f"
 }
