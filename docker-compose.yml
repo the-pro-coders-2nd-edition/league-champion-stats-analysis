@@ -1,6 +1,16 @@
 services:
   api-ui:
-    build: .
+    build:
+      context: .
+      args:
+        # Passed through from the host's GIT_COMMIT env var (set by CI to
+        # `$(git rev-parse HEAD)` at build time; defaults to "dev" for a
+        # local/unset build -- see .env.example) -- Finding 2 of the Phase 6
+        # final whole-branch review: without this, GIT_COMMIT is read
+        # everywhere (`os.environ.get("GIT_COMMIT", "dev")`) but never
+        # actually set, so every real deployment's `version` tag silently
+        # stays "dev".
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
     ports:
       - "8000:8000"
     env_file:
@@ -61,7 +71,17 @@ services:
       - "27017:27017"
 
   runner:
-    build: .
+    build:
+      context: .
+      args:
+        # Passed through from the host's GIT_COMMIT env var (set by CI to
+        # `$(git rev-parse HEAD)` at build time; defaults to "dev" for a
+        # local/unset build -- see .env.example) -- Finding 2 of the Phase 6
+        # final whole-branch review: without this, GIT_COMMIT is read
+        # everywhere (`os.environ.get("GIT_COMMIT", "dev")`) but never
+        # actually set, so every real deployment's `version` tag silently
+        # stays "dev".
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
     command: ["uv", "run", "python", "-m", "league_stats.runner"]
     environment:
       - MONGO_URI=mongodb://mongo:27017/league_stats
@@ -91,7 +111,17 @@ services:
       - mongo
 
   peers:
-    build: .
+    build:
+      context: .
+      args:
+        # Passed through from the host's GIT_COMMIT env var (set by CI to
+        # `$(git rev-parse HEAD)` at build time; defaults to "dev" for a
+        # local/unset build -- see .env.example) -- Finding 2 of the Phase 6
+        # final whole-branch review: without this, GIT_COMMIT is read
+        # everywhere (`os.environ.get("GIT_COMMIT", "dev")`) but never
+        # actually set, so every real deployment's `version` tag silently
+        # stays "dev".
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
     command: ["uv", "run", "python", "-m", "league_stats.peers"]
     environment:
       - MONGO_URI=mongodb://mongo:27017/league_stats
@@ -111,7 +141,17 @@ services:
       - mongo
 
   cron-watch:
-    build: .
+    build:
+      context: .
+      args:
+        # Passed through from the host's GIT_COMMIT env var (set by CI to
+        # `$(git rev-parse HEAD)` at build time; defaults to "dev" for a
+        # local/unset build -- see .env.example) -- Finding 2 of the Phase 6
+        # final whole-branch review: without this, GIT_COMMIT is read
+        # everywhere (`os.environ.get("GIT_COMMIT", "dev")`) but never
+        # actually set, so every real deployment's `version` tag silently
+        # stays "dev".
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
     command: ["uv", "run", "python", "-m", "league_stats.cron_watch"]
     environment:
       - MONGO_URI=mongodb://mongo:27017/league_stats
