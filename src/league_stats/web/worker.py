@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from league_stats.core.champions import players_group_slug
-from league_stats.core.config import PlayerIdentity, WebConfig, load_config
+from league_stats.core.config import PLATFORM_TO_REGION, PlayerIdentity, WebConfig, load_config
 from league_stats.core.models import RankedEntry
 from league_stats.infra.cache import HttpCache, MatchStore
 from league_stats.infra.ddragon_assets import DDragonAssets
@@ -322,8 +322,164 @@ def _run_stage_b(
         )
 
 
+def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> None:
+    """Delegate one claimed job to RUNNER over gRPC, replaying its progress into `store`.
+
+    Opt-in counterpart to the in-process path above, used only when
+    `web_config.runner_mode == "grpc"`. Opens a plain (synchronous) `grpc.Channel`
+    to RUNNER at `web_config.runner_grpc_target`, calls `EnqueueJob`, then consumes
+    `StreamJobProgress` and replays each `StageResult` into the real `store` using
+    the same `set_state`/`update_progress`/`mark_player_*` calls the in-process path
+    would have made.
+
+    Fidelity limits (inherent to `runner.proto`, not fixable from this module):
+    `StageResult` carries only `stage` (STAGE_A/STAGE_B), `detail`/`current`/`total`,
+    `error` and `final` -- it has no field for the exact `job_states.*` value
+    `execute_job` would have set. So this reconstructs, rather than transmits,
+    today's behavior:
+
+    - FETCHING/ANALYZING/REPORT_READY all collapse into a single "stage A" bucket
+      of `update_progress` calls, since the wire format can't tell them apart.
+    - The transition into stage B (the first `StageResult` with `stage=STAGE_B`) is
+      treated as the REPORT_READY -> PEER_RUNNING moment, and is also when
+      `mark_player_base_complete` is called (RUNNER's `RunnerJobAdapter` never
+      forwards that call itself -- see `league_stats.runner.adapter` -- so it must
+      be inferred here, locally, from the stage transition).
+    - A terminal (`final=True`) message with `error` set is ambiguous on the wire
+      between "hard failure" (`job_states.FAILED`) and "soft peer failure"
+      (`job_states.DONE` with `error` set, `mark_player_peer_failed` called) --
+      both map to a terminal state with a non-empty `error` in
+      `RunnerJobAdapter.set_state`. This is disambiguated using whether stage B
+      was ever entered: a real peer-stage failure can only happen after stage A
+      has already succeeded (i.e. after `mark_player_base_complete`), so an error
+      seen before stage B started is treated as `FAILED`, and one seen after is
+      treated as a soft `DONE` peer failure.
+    - RUNNER cannot be cancelled in this phase (`RunnerJobAdapter.is_cancelled`
+      always returns `False`), so unlike the in-process path, cancellation is not
+      handled here.
+    """
+    import grpc
+
+    from league_stats_rpc.v1 import common_pb2, runner_pb2, runner_pb2_grpc
+
+    log = get_logger("worker")
+    job_id = int(job["id"])
+    slug = str(job["player_slug"])
+
+    region_key = str(job.get("region", "")).strip().lower()
+    region_key = PLATFORM_TO_REGION.get(region_key, region_key)
+    region_enum = {
+        "europe": common_pb2.EUROPE,
+        "americas": common_pb2.AMERICAS,
+        "asia": common_pb2.ASIA,
+        "sea": common_pb2.SEA,
+    }.get(region_key, common_pb2.REGION_UNSPECIFIED)
+
+    kind_enum = {
+        job_states.JOB_KIND_ANALYZE: runner_pb2.JOB_KIND_ANALYZE,
+        job_states.JOB_KIND_REFRESH: runner_pb2.JOB_KIND_REFRESH,
+        JOB_KIND_REGENERATE: runner_pb2.JOB_KIND_REGENERATE,
+    }.get(str(job.get("kind", "")), runner_pb2.JOB_KIND_UNSPECIFIED)
+
+    tracked = decode_players(
+        job.get("players_json"),
+        riot_id=str(job.get("riot_id", "")),
+        tagline=str(job.get("tagline", "")),
+    )
+    if not tracked and job.get("players"):
+        tracked = list(job["players"])
+    players = [
+        runner_pb2.JobPlayer(riot_id=str(entry["riot_id"]), tagline=str(entry["tagline"]))
+        for entry in tracked
+        if entry.get("riot_id") and entry.get("tagline")
+    ]
+
+    min_games_raw = job.get("min_games")
+    try:
+        min_games = int(min_games_raw) if min_games_raw else 0
+    except (TypeError, ValueError):
+        min_games = 0
+
+    request = runner_pb2.EnqueueJobRequest(
+        region=region_enum,
+        kind=kind_enum,
+        riot_id=str(job.get("riot_id", "")),
+        tagline=str(job.get("tagline", "")),
+        player_slug=slug,
+        players=players,
+        filter_champion=str(job.get("filter_champion") or ""),
+        filter_role=str(job.get("filter_role") or ""),
+        min_games=min_games,
+    )
+
+    channel = grpc.insecure_channel(web_config.runner_grpc_target)
+    try:
+        stub = runner_pb2_grpc.RunnerServiceStub(channel)
+        response = stub.EnqueueJob(request)
+        log.info("Job %d handed to RUNNER as %s", job_id, response.job_id)
+
+        seen_stage_b = False
+        for result in stub.StreamJobProgress(
+            runner_pb2.StreamJobProgressRequest(job_id=response.job_id)
+        ):
+            if result.stage == common_pb2.STAGE_B and not seen_stage_b:
+                seen_stage_b = True
+                store.mark_player_base_complete(slug)
+                store.set_state(
+                    job_id,
+                    job_states.REPORT_READY,
+                    detail="Report ready — comparing you to players at your rank…",
+                )
+                store.set_state(job_id, job_states.PEER_RUNNING, detail=result.detail)
+                if not result.final:
+                    continue
+            if result.final:
+                if result.error and not seen_stage_b:
+                    store.set_state(job_id, job_states.FAILED, error=result.error)
+                elif result.error:
+                    store.mark_player_peer_failed(slug)
+                    store.set_state(
+                        job_id,
+                        job_states.DONE,
+                        detail=result.detail or "Report complete",
+                        error=result.error,
+                    )
+                else:
+                    store.mark_player_peer_complete(slug)
+                    store.set_state(
+                        job_id, job_states.DONE, detail=result.detail or "Report complete"
+                    )
+                log.info(
+                    "Job %d (via RUNNER) finished: %s",
+                    job_id,
+                    "with error" if result.error else "clean",
+                )
+                return
+            store.update_progress(
+                job_id,
+                detail=result.detail,
+                current=result.current or None,
+                total=result.total or None,
+            )
+        # RunnerServicer guarantees a final=True message even when execute_job
+        # crashes outside its own try/finally (see RunnerServicer._run_job) --
+        # but if the stream still ends without one (e.g. a dropped connection),
+        # don't leave the job stuck mid-flight forever.
+        store.set_state(
+            job_id,
+            job_states.FAILED,
+            error="Lost connection to RUNNER before the job completed",
+        )
+    finally:
+        channel.close()
+
+
 def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> None:
     """Run one claimed job end to end, updating its state as stages complete."""
+    if web_config.runner_mode == "grpc":
+        _execute_job_via_runner(job, store, web_config)
+        return
+
     log = get_logger("worker")
     job_id = int(job["id"])
     slug = str(job["player_slug"])

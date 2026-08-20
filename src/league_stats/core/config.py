@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from league_stats.core.champions import (
     build_label,
@@ -428,6 +428,11 @@ class WebConfig(BaseModel):
     app_db_path: Path = Path("data") / "app.sqlite"
     output_dir: Path = Path("output")
     gemini_api_key: str | None = None
+    # Opt-in delegation of job execution to RUNNER over gRPC (Phase 1 of the
+    # microservices migration). Default "in_process" keeps today's behavior
+    # unchanged — the worker runs `execute_job` itself, exactly as before.
+    runner_mode: Literal["in_process", "grpc"] = "in_process"
+    runner_grpc_target: str = "localhost:50051"
 
     @property
     def reports_dir(self) -> Path:
@@ -439,7 +444,8 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
     """Build a :class:`WebConfig` from ``[web]`` table, environment and overrides.
 
     Environment variables: ``ANALYZER_WEB_HOST``, ``ANALYZER_WEB_PORT``,
-    ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``.
+    ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``, ``ANALYZER_RUNNER_MODE``,
+    ``RUNNER_GRPC_TARGET``.
     """
     _load_env_file()
     data: dict[str, Any] = {}
@@ -451,6 +457,8 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
         "port": os.environ.get("ANALYZER_WEB_PORT"),
         "worker_concurrency": os.environ.get("ANALYZER_WORKER_CONCURRENCY"),
         "gemini_api_key": os.environ.get("GEMINI_API_KEY"),
+        "runner_mode": os.environ.get("ANALYZER_RUNNER_MODE"),
+        "runner_grpc_target": os.environ.get("RUNNER_GRPC_TARGET"),
     }
     data.update({k: v for k, v in env_map.items() if v})
     data.update({k: v for k, v in overrides.items() if v is not None})

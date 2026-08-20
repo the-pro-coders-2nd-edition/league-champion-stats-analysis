@@ -551,4 +551,102 @@ def test_build_job_services_applies_min_games(
         assert services.config.min_games == 10
     finally:
         services.store.close()
-        services.http_cache.close()
+
+
+# --------------------------------------------------------- runner_mode (Task 6)
+
+
+def test_web_config_runner_mode_defaults_to_in_process() -> None:
+    assert WebConfig().runner_mode == "in_process"
+
+
+def test_web_config_runner_mode_can_be_set_to_grpc() -> None:
+    assert WebConfig(runner_mode="grpc").runner_mode == "grpc"
+
+
+def test_execute_job_in_process_mode_does_not_call_runner(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`runner_mode` defaults to "in_process" — execute_job must run exactly as
+    before, with no gRPC call attempted."""
+    assert web_config.runner_mode == "in_process"
+    job = _claimed_job(store)
+    _patch_pipeline(monkeypatch)
+    called = {"n": 0}
+    monkeypatch.setattr(
+        worker, "_execute_job_via_runner", lambda *a, **k: called.__setitem__("n", called["n"] + 1)
+    )
+
+    worker.execute_job(job, store, web_config)
+
+    assert called["n"] == 0
+    final = store.get(int(job["id"]))
+    assert final["state"] == jobs.DONE
+    assert final["error"] == ""
+
+
+def test_execute_job_grpc_mode_delegates_to_runner_and_replays_progress(
+    tmp_path: Path, store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When `runner_mode` is "grpc", execute_job delegates to a real (in-process)
+    RunnerServicer over gRPC, and replays its StageResult stream into the real
+    (local) JobStore -- ending in the same terminal state/registry updates the
+    in_process path produces for an equivalent run (see
+    test_execute_job_two_stage_happy_path).
+
+    Runs RUNNER's actual `execute_job` against offline fixture data (no real
+    Riot API / Mongo), reusing the exact pattern
+    tests/test_runner_service.py's `test_enqueue_job_and_stream_progress_reports_a_real_analysis`
+    already established for this: seed a local SQLite MatchStore at the path
+    `_build_job_services` hardcodes, monkeypatch RiotApiClient's network calls,
+    and use kind=REGENERATE so `execute_job` never calls `fetch_matches`.
+    """
+    from concurrent import futures
+
+    import grpc
+
+    from league_stats.infra.cache import MatchStore
+    from league_stats.infra.riot_api import RiotApiClient
+    from league_stats.runner.service import RunnerServicer
+    from league_stats_rpc.v1 import runner_pb2_grpc
+    from tests.fixtures import MY_PUUID, make_player_match, make_timeline
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(RiotApiClient, "resolve_puuid", lambda self, riot_id, tagline: MY_PUUID)
+    monkeypatch.setattr(RiotApiClient, "fetch_profile_icon_id", lambda self, puuid: None)
+    monkeypatch.setattr(RiotApiClient, "fetch_solo_rank", lambda self, puuid: None)
+
+    match_store = MatchStore(Path(".cache") / "matches.sqlite")
+    for index in range(6):
+        match_id = f"EUW1_v{index}"
+        match_store.save_match(
+            match_id, MY_PUUID, make_player_match(match_id, champion="Viktor", position="MIDDLE")
+        )
+        match_store.save_timeline(match_id, make_timeline())
+    match_store.close()
+
+    runner_web_config = WebConfig(output_dir=tmp_path / "runner_output")
+    servicer = RunnerServicer(web_config=runner_web_config)
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
+    runner_pb2_grpc.add_RunnerServiceServicer_to_server(servicer, server)
+    port = server.add_insecure_port("127.0.0.1:0")
+    server.start()
+    try:
+        grpc_web_config = web_config.model_copy(
+            update={"runner_mode": "grpc", "runner_grpc_target": f"127.0.0.1:{port}"}
+        )
+        job = _claimed_regenerate_job(store)
+        job["min_games"] = 5
+
+        worker.execute_job(job, store, grpc_web_config)
+    finally:
+        server.stop(grace=None)
+
+    final = store.get(int(job["id"]))
+    assert final["state"] == jobs.DONE
+    assert final["error"] == ""
+
+    player = store.get_player("test_euw")
+    assert player["base_completed_at"] is not None
+    assert player["peer_completed_at"] is not None
+    assert player["peer_failed"] == 0
