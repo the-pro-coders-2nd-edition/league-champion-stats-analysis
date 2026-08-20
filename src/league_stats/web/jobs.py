@@ -4,6 +4,13 @@ One :class:`JobStore` instance is shared between the FastAPI request threads
 and the background worker thread(s); a lock serialises access to the single
 connection. Jobs survive restarts: queued jobs are picked up again, while
 jobs that were mid-run are marked failed by :meth:`JobStore.recover_orphans`.
+
+**Architectural decision (Phase 5, Task 2, closed):** `JobStore` stays on SQLite
+permanently by design, not as a migration gap. Phase 2's Task 4 proved shared-
+SQLite with `BEGIN IMMEDIATE` guards works correctly across processes; RUNNER's
+gRPC job-id namespace has no natural mapping to the queue schema; and the UI's
+queue-position/ETA features query `JobStore`'s SQL directly with no clear benefit
+from Mongo migration.
 """
 
 from __future__ import annotations
