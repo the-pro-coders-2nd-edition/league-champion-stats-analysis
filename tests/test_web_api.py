@@ -356,7 +356,7 @@ def test_player_status_includes_welcome_back_field(client: TestClient) -> None:
             "deaths": 2,
             "assists": 10,
             "kda": 7.5,
-            "cs_min": 6.5,
+            "cs_per_min": 6.5,
             "damage_share": 0.35,
         },
         "detected_at_unix": 1692604800,
@@ -375,6 +375,16 @@ def test_player_status_includes_welcome_back_field(client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["welcome_back"] is None
+
+
+def test_player_status_is_never_cached(client: TestClient) -> None:
+    """The welcome-back field is consumed-on-read: a cached/coalesced response
+    would silently eat a single delivery for a second reader (a duplicate tab,
+    a prefetch, a caching proxy)."""
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    response = client.get("/api/players/test_euw")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_get_build_payload_returns_report_json(client: TestClient) -> None:

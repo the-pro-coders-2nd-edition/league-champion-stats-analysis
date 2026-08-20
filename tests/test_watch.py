@@ -414,6 +414,82 @@ def test_on_new_game_hook_defaults_to_none_and_does_not_raise(store: JobStore) -
     assert _tick(poller) == [SLUG]  # must not raise despite no hook configured
 
 
+# --------------------------------------- in-process welcome-back wiring (Finding 2/3)
+#
+# `create_app` (web/app.py) wires WatchPoller's on_new_game hook to
+# `_record_welcome_back`, which records straight into a WelcomeBackCache -- the
+# in-process counterpart to WelcomeBackSubscriber._handle, always active
+# regardless of CRON_WATCH_GRPC_TARGET. These tests exercise that same wiring
+# directly against a real WatchPoller/FakeClient, using this module's own
+# fixtures, rather than spinning up create_app.
+
+
+def test_in_process_hook_populates_the_welcome_back_cache(store: JobStore) -> None:
+    from league_stats.web.app import _record_welcome_back
+    from league_stats.web.welcome_back_cache import WelcomeBackCache
+
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    client.matches["EUW1_2"] = make_player_match("EUW1_2", puuid="puuid-hugros", duration_s=1200)
+    clock = Clock()
+    cache = WelcomeBackCache()
+    poller = WatchPoller(
+        store,
+        lambda region: client,
+        now=clock,
+        on_new_game=lambda slug, job_id, match_id, summary: _record_welcome_back(
+            cache, slug, job_id, match_id, summary
+        ),
+    )
+
+    _tick(poller)  # baseline
+    client.newest["puuid-hugros"] = {RANKED_SOLO_QUEUE_ID: ["EUW1_2"]}
+    clock.advance(120)
+    _tick(poller)
+
+    cached = cache.get(SLUG)
+    assert cached is not None
+    assert cached["new_match_id"] == "EUW1_2"
+    assert cached["match_summary"]["win"] is True
+    assert cached["match_summary"]["kills"] == 7
+    assert isinstance(cached["detected_at_unix"], int)
+    # Consumed on read, same as the gRPC-fed path.
+    assert cache.get(SLUG) is None
+
+
+def test_in_process_hook_does_not_record_an_empty_summary(store: JobStore) -> None:
+    """When the extra fetch_match call is skipped/fails, _check_group's summary
+    comes back as `{}` -- recording that would render a fabricated "Defeat
+    0/0/0" toast, so `_record_welcome_back` must drop it instead."""
+    from league_stats.web.app import _record_welcome_back
+    from league_stats.web.welcome_back_cache import WelcomeBackCache
+
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    clock = Clock()
+    # Budget for exactly the two per-queue detection calls on the second tick;
+    # none left for the summary's fetch_match call, so it comes back empty.
+    budget = _Budget(limit=2)
+    cache = WelcomeBackCache()
+    poller = WatchPoller(
+        store,
+        lambda region: client,
+        now=clock,
+        budget=budget,
+        on_new_game=lambda slug, job_id, match_id, summary: _record_welcome_back(
+            cache, slug, job_id, match_id, summary
+        ),
+    )
+
+    _tick(poller)  # baseline
+    client.newest["puuid-hugros"] = {RANKED_SOLO_QUEUE_ID: ["EUW1_2"]}
+    clock.advance(120)
+    refreshed = _tick(poller)
+
+    assert refreshed == [SLUG]
+    assert cache.get(SLUG) is None
+
+
 def test_unwatched_groups_are_never_polled(store: JobStore) -> None:
     client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
     assert _tick(_poller(store, client, Clock())) == []

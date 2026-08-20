@@ -10,7 +10,9 @@ is set, and stays a complete no-op otherwise.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -18,7 +20,7 @@ from fastapi.testclient import TestClient
 
 from league_stats.core.config import WebConfig
 from league_stats.web import app as web_app
-from league_stats.web.welcome_back_cache import WelcomeBackCache
+from league_stats.web.welcome_back_cache import WelcomeBackCache, WelcomeBackSubscriber
 
 
 # ------------------------------------------------------------------ the cache
@@ -58,6 +60,76 @@ def test_different_slugs_are_cached_independently() -> None:
     cache.record("other", {"new_match_id": "EUW1_2"})
     assert cache.get("hugros") == {"new_match_id": "EUW1_1"}
     assert cache.get("other") == {"new_match_id": "EUW1_2"}
+
+
+# --------------------------------------------------------------- _handle (Finding 6)
+
+
+def _update(
+    puuid: str = "hugros_euw",
+    match_summary_json: str = "",
+    new_match_id: str = "EUW1_9",
+    detected_at_unix: int = 1_700_000_000,
+) -> SimpleNamespace:
+    """Duck-typed stand-in for a `WelcomeBackUpdate` protobuf message."""
+    return SimpleNamespace(
+        puuid=puuid,
+        match_summary_json=match_summary_json,
+        new_match_id=new_match_id,
+        detected_at_unix=detected_at_unix,
+    )
+
+
+def test_handle_records_a_valid_summary_with_renamed_fields() -> None:
+    cache = WelcomeBackCache()
+    subscriber = WelcomeBackSubscriber(cache, "localhost:1")
+    summary = {"win": True, "kills": 7, "deaths": 2, "assists": 5, "cs_per_min": 9.4}
+
+    subscriber._handle(
+        _update(
+            puuid="hugros_euw",
+            match_summary_json=json.dumps(summary),
+            new_match_id="EUW1_42",
+            detected_at_unix=1_700_000_123,
+        )
+    )
+
+    assert cache.get("hugros_euw") == {
+        "new_match_id": "EUW1_42",
+        "match_summary": summary,
+        "detected_at_unix": 1_700_000_123,
+    }
+
+
+def test_handle_does_not_record_an_empty_summary() -> None:
+    """CronWatch's failure-degradation path ships `"{}"` rather than blocking the
+    update -- recording that verbatim would render a fabricated "Defeat 0/0/0"
+    toast, so it must be dropped here instead."""
+    cache = WelcomeBackCache()
+    subscriber = WelcomeBackSubscriber(cache, "localhost:1")
+
+    subscriber._handle(_update(match_summary_json="{}"))
+
+    assert cache.get("hugros_euw") is None
+
+
+def test_handle_does_not_record_when_match_summary_json_is_blank() -> None:
+    cache = WelcomeBackCache()
+    subscriber = WelcomeBackSubscriber(cache, "localhost:1")
+
+    subscriber._handle(_update(match_summary_json=""))
+
+    assert cache.get("hugros_euw") is None
+
+
+def test_handle_treats_malformed_json_as_empty_without_raising() -> None:
+    """A dropped/garbled message must not crash the subscriber loop."""
+    cache = WelcomeBackCache()
+    subscriber = WelcomeBackSubscriber(cache, "localhost:1")
+
+    subscriber._handle(_update(match_summary_json="{not valid json"))
+
+    assert cache.get("hugros_euw") is None
 
 
 # --------------------------------------------------- create_app / lifespan wiring

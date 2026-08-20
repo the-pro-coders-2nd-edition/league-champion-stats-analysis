@@ -12,7 +12,7 @@ therefore uses `grpc.aio.server()` / `await server.start()` /
 CRON-watch's design (`cron_watch/service.py`'s "Design note -- enqueue
 target") points its own `JobStore` at the exact same `app.sqlite` file the
 monolith uses, rather than calling RUNNER's `EnqueueJob`. In docker-compose
-this is a volume shared between the `app` and `cron-watch` services (see
+this is a volume shared between the `api-ui` and `cron-watch` services (see
 `docker-compose.yml`). Per that module's "Handoff note for Task 5": this
 entrypoint must NOT call `store.recover_orphans()` on startup the way
 `web/app.py`'s `lifespan` does -- against a shared database, that would mark
@@ -100,7 +100,7 @@ async def serve() -> None:
     # relative to the service actually coming up.
     web_config = load_web_config()
     _require_riot_api_key()
-    # Shared file with the monolith's `app` service -- a docker-compose volume
+    # Shared file with the monolith's `api-ui` service -- a docker-compose volume
     # mount, not a per-service path. See this module's docstring.
     store = JobStore(web_config.app_db_path)
     servicer = CronWatchServicer(store, _build_client)

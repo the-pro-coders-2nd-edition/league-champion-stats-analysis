@@ -37,10 +37,15 @@ from league_stats.utils import get_logger
 
 log = get_logger("welcome_back_cache")
 
-# Delay before reopening a `WatchUpdates` stream that ended or errored (CronWatch
-# restarting, a network blip). Mirrors `web/watch.py`'s WatchPoller._loop shape:
-# retry indefinitely rather than giving up, since this feature is best-effort.
+# Initial delay before reopening a `WatchUpdates` stream that ended or errored
+# (CronWatch restarting, a network blip). Mirrors `web/watch.py`'s
+# WatchPoller._loop shape: retry indefinitely rather than giving up, since this
+# feature is best-effort. Backs off exponentially up to RECONNECT_MAX_DELAY_S
+# (doubling each consecutive failure) and resets back to this value on a
+# successful (re)connection, so a CronWatch outage produces a handful of
+# warning lines rather than one every 5s (~17k/day) for as long as it's down.
 RECONNECT_DELAY_S = 5.0
+RECONNECT_MAX_DELAY_S = 60.0
 
 
 class WelcomeBackCache:
@@ -106,29 +111,47 @@ class WelcomeBackSubscriber:
 
         from league_stats_rpc.v1 import cron_watch_pb2, cron_watch_pb2_grpc
 
+        delay = RECONNECT_DELAY_S
         while not self._stop.is_set():
             try:
                 async with grpc.aio.insecure_channel(self._grpc_target) as channel:
                     stub = cron_watch_pb2_grpc.CronWatchServiceStub(channel)
                     stream = stub.WatchUpdates(cron_watch_pb2.WatchUpdatesRequest())
+                    log.info("Connected to CronWatch WatchUpdates stream at %s", self._grpc_target)
+                    delay = RECONNECT_DELAY_S
                     async for update in stream:
                         self._handle(update)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - a dropped stream must not kill the loop
-                log.warning("WatchUpdates stream failed, reconnecting: %s", exc)
+                log.warning(
+                    "WatchUpdates stream failed, reconnecting in %.0fs: %s", delay, exc
+                )
             if self._stop.is_set():
                 break
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=RECONNECT_DELAY_S)
+                await asyncio.wait_for(self._stop.wait(), timeout=delay)
             except asyncio.TimeoutError:
+                delay = min(RECONNECT_MAX_DELAY_S, delay * 2)
                 continue
 
     def _handle(self, update: Any) -> None:
+        """Decode one `WatchUpdate` and record it, unless the summary is empty.
+
+        CronWatch's documented failure-degradation path (see
+        `cron_watch/service.py`) ships `match_summary_json` as `"{}"` rather
+        than blocking the update -- recording that verbatim would let a
+        backend failure render as a fabricated "Defeat 0/0/0" toast on the
+        frontend, so a decoded summary missing the real `"win"` field is
+        dropped here rather than every downstream consumer having to guard
+        against it. Malformed/invalid JSON is treated the same way.
+        """
         try:
             summary = json.loads(update.match_summary_json) if update.match_summary_json else {}
         except (TypeError, ValueError):
             summary = {}
+        if "win" not in summary:
+            return
         self._cache.record(
             update.puuid,
             {

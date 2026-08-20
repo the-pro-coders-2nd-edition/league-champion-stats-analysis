@@ -472,13 +472,21 @@ class WebConfig(BaseModel):
     peers_mode: Literal["in_process", "grpc"] = "in_process"
     peers_grpc_target: str = "localhost:50053"
     # Opt-in subscription to CronWatch's WatchUpdates push stream (Phase 4 of the
-    # microservices migration). Unset (the default) means this whole subsystem
-    # is a no-op -- create_app never opens a gRPC channel and the welcome-back
-    # cache simply stays empty, matching every other opt-in feature in this
-    # migration. Unlike `runner_mode`/`watch_mode`/`peers_mode`, there is no
-    # separate mode literal here: the target's presence IS the toggle, since
-    # WatchUpdates has no in-process equivalent to fall back to (the monolith
-    # never computed these push notifications itself).
+    # microservices migration). This gates only the gRPC SUBSCRIBER, which is
+    # only useful when a separate CronWatch process is watching the same
+    # `app.sqlite` (i.e. `watch_mode="grpc"` deployments, such as docker-compose).
+    # The welcome-back feature itself is NOT gated on this var: `create_app`
+    # always wires `WatchPoller`'s own `on_new_game` hook (`web/watch.py`,
+    # already carrying the same `compute_welcome_back_summary` payload
+    # CronWatch computes) straight into the always-constructed
+    # `WelcomeBackCache`, so a plain in-process deployment (e.g. the VPS
+    # single-monolith `watch_mode="in_process"` topology) gets welcome-back
+    # notifications with no CronWatch process and no gRPC involved at all.
+    # Setting this var additionally starts `WelcomeBackSubscriber`, which feeds
+    # the same cache from a separate CronWatch deployment's push stream --
+    # useful when THAT process is the one detecting games (`watch_mode="grpc"`),
+    # since in that topology this process's own `WatchPoller` is not started
+    # and cannot fire `on_new_game` itself.
     cron_watch_grpc_target: str | None = None
 
     @model_validator(mode="after")

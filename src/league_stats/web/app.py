@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
@@ -686,6 +687,38 @@ def _report_groups(
     return busy + idle
 
 
+def _record_welcome_back(
+    cache: WelcomeBackCache,
+    slug: str,
+    job_id: str,  # noqa: ARG001 - part of WatchPoller's on_new_game signature, unused here
+    new_match_id: str,
+    summary: dict[str, Any],
+) -> None:
+    """Feed a freshly detected in-process game straight into the welcome-back cache.
+
+    This is `WatchPoller`'s (`web/watch.py`) in-process counterpart to
+    `WelcomeBackSubscriber._handle` (`web/welcome_back_cache.py`): both ultimately
+    record the same `compute_welcome_back_summary` payload into the same
+    `WelcomeBackCache`, so this path works on every deployment topology (including
+    the VPS single-monolith `watch_mode="in_process"` one, which never runs a
+    separate CronWatch process) regardless of whether `CRON_WATCH_GRPC_TARGET` is
+    set -- see `WebConfig.cron_watch_grpc_target`'s comment. An empty/degraded
+    summary (missing the real `"win"` field) is dropped rather than recorded, to
+    match `_handle`'s guard against CronWatch's documented failure-degradation
+    path (`cron_watch/service.py`) rendering a fabricated "Defeat 0/0/0" toast.
+    """
+    if "win" not in summary:
+        return
+    cache.record(
+        slug,
+        {
+            "new_match_id": new_match_id,
+            "match_summary": summary,
+            "detected_at_unix": int(time.time()),
+        },
+    )
+
+
 def create_app(
     web_config: WebConfig | None = None, *, start_worker: bool = True
 ) -> FastAPI:
@@ -699,13 +732,16 @@ def create_app(
 
     store = JobStore(config.app_db_path)
     worker = AnalysisWorker(store, config)
-    watcher = WatchPoller(
-        store,
-        lambda region: _build_precheck_client(region, config.output_dir),
-    )
     # Always created (cheap, gRPC-free) so a later task can read from it
     # unconditionally; only the subscriber below is gated on the env var.
     welcome_back_cache = WelcomeBackCache()
+    watcher = WatchPoller(
+        store,
+        lambda region: _build_precheck_client(region, config.output_dir),
+        on_new_game=lambda slug, job_id, new_match_id, summary: _record_welcome_back(
+            welcome_back_cache, slug, job_id, new_match_id, summary
+        ),
+    )
     welcome_back_subscriber = (
         WelcomeBackSubscriber(welcome_back_cache, config.cron_watch_grpc_target)
         if config.cron_watch_grpc_target
@@ -876,7 +912,15 @@ def create_app(
         return {"items": items}
 
     @app.get("/api/players/{slug}")
-    def player_status(slug: str) -> dict[str, Any]:
+    def player_status(slug: str, response: Response) -> dict[str, Any]:
+        """Player/job status, including the welcome-back payload if any.
+
+        The `welcome_back` field is consumed-on-read (`WelcomeBackCache.get`
+        pops it), so this response must never be cached or coalesced: a
+        second reader (a duplicate tab, a prefetch, a caching proxy) would
+        silently eat the one delivery a genuine poller was waiting for.
+        """
+        response.headers["Cache-Control"] = "no-store"
         player = store.get_player(slug)
         builds = _player_builds(config.output_dir, slug)
         if player is None and not builds:

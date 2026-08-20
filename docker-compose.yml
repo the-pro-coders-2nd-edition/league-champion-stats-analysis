@@ -20,6 +20,12 @@ services:
       # `peers` service's own comment below for the topology this is meant
       # to be enabled on instead.
       - ANALYZER_PEERS_MODE=in_process
+      # Without this, api-ui's WelcomeBackSubscriber is never constructed (it's
+      # gated on this var being set -- see WebConfig.cron_watch_grpc_target), so
+      # the welcome-back feature would have no live gRPC path in this
+      # deployment even though cron-watch is actually running here. Port must
+      # match cron-watch's CRON_WATCH_GRPC_PORT below.
+      - CRON_WATCH_GRPC_TARGET=cron-watch:50052
     volumes:
       # Shared with `cron-watch`: both open their own `JobStore` connection
       # onto the same `data/app.sqlite` file (see

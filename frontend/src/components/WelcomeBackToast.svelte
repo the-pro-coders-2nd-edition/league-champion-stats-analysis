@@ -83,9 +83,15 @@
 <style>
   .welcome-back-toast {
     position: fixed;
+    /* Deliberately clears the chatbot toggle (`chatbot.css`'s `.chatbot-toggle`:
+       fixed, bottom:24px, right:24px, 56px bubble) instead of sitting on top of
+       it. 96px = the bubble's 56px plus its own 24px inset, rounded up with a
+       little breathing room, so the toast never overlaps the button. z-index is
+       70, deliberately above both `.chatbot-toggle` (50) and `.chatbot-panel`
+       (60) rather than left tied to either by coincidence. */
     right: var(--space-4);
-    bottom: var(--space-4);
-    z-index: 60;
+    bottom: 96px;
+    z-index: 70;
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
