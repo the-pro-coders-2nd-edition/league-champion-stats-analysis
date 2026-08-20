@@ -109,12 +109,15 @@ class WelcomeBackSubscriber:
         """
         import grpc
 
+        from league_stats.infra.trace_context import AsyncTraceClientInterceptor
         from league_stats_rpc.v1 import cron_watch_pb2, cron_watch_pb2_grpc
 
         delay = RECONNECT_DELAY_S
         while not self._stop.is_set():
             try:
-                async with grpc.aio.insecure_channel(self._grpc_target) as channel:
+                async with grpc.aio.insecure_channel(
+                    self._grpc_target, interceptors=[AsyncTraceClientInterceptor()]
+                ) as channel:
                     stub = cron_watch_pb2_grpc.CronWatchServiceStub(channel)
                     stream = stub.WatchUpdates(cron_watch_pb2.WatchUpdatesRequest())
                     log.info("Connected to CronWatch WatchUpdates stream at %s", self._grpc_target)

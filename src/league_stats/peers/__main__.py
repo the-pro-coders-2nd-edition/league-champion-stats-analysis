@@ -14,6 +14,7 @@ import grpc
 from prometheus_client import start_http_server
 
 from league_stats_rpc.v1 import peers_pb2_grpc
+from league_stats.infra.trace_context import TraceServerInterceptor
 from league_stats.peers.service import PeersServicer
 from league_stats.utils import get_logger, setup_logging
 
@@ -24,7 +25,10 @@ def serve() -> None:
     setup_logging(service="peers", version=os.environ.get("GIT_COMMIT", "dev"))
     port = os.environ.get("PEERS_GRPC_PORT", "50053")
     metrics_port = int(os.environ.get("PEERS_METRICS_PORT", "9102"))
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=10),
+        interceptors=[TraceServerInterceptor()],
+    )
     peers_pb2_grpc.add_PeersServiceServicer_to_server(PeersServicer(), server)
     server.add_insecure_port(f"0.0.0.0:{port}")
     server.start()

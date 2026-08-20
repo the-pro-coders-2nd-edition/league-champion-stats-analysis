@@ -222,6 +222,7 @@ from league_stats.infra.cache import HttpCache, MatchStore
 from league_stats.infra.mongo import db_name_from_uri as _db_name_from_uri
 from league_stats.infra.peer_sample_store import PeerSampleStore
 from league_stats.infra.riot_api import RiotApiClient, shared_rate_limiter
+from league_stats.infra.trace_context import TraceClientInterceptor
 from league_stats.utils import get_logger
 from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc, runner_pb2, runner_pb2_grpc
 
@@ -672,7 +673,9 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         error: str,
     ) -> None:
         try:
-            with grpc.insecure_channel(self._runner_target) as channel:
+            with grpc.intercept_channel(
+                grpc.insecure_channel(self._runner_target), TraceClientInterceptor()
+            ) as channel:
                 stub = runner_pb2_grpc.RunnerServiceStub(channel)
                 stub.NotifyPeerBaselineReady(
                     runner_pb2.PeerBaselineReadyRequest(

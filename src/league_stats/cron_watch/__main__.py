@@ -32,6 +32,7 @@ from league_stats.core.config import load_config, load_web_config
 from league_stats.cron_watch.service import CronWatchServicer
 from league_stats.infra.cache import HttpCache, MatchStore
 from league_stats.infra.riot_api import RiotApiClient, shared_rate_limiter
+from league_stats.infra.trace_context import AsyncTraceServerInterceptor
 from league_stats.utils import get_logger, setup_logging
 from league_stats.web.jobs import JobStore
 from league_stats_rpc.v1 import cron_watch_pb2_grpc
@@ -106,7 +107,7 @@ async def serve() -> None:
     store = JobStore(web_config.app_db_path)
     servicer = CronWatchServicer(store, _build_client)
 
-    server = grpc.aio.server()
+    server = grpc.aio.server(interceptors=[AsyncTraceServerInterceptor()])
     cron_watch_pb2_grpc.add_CronWatchServiceServicer_to_server(servicer, server)
     server.add_insecure_port(f"0.0.0.0:{port}")
 

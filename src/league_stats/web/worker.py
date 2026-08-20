@@ -539,6 +539,7 @@ def _build_peer_for_pool_via_grpc(
     """
     import grpc
 
+    from league_stats.infra.trace_context import TraceClientInterceptor
     from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
 
     log = get_logger("worker")
@@ -556,7 +557,9 @@ def _build_peer_for_pool_via_grpc(
         patch=current_patch(records),
     )
 
-    channel = grpc.insecure_channel(web_config.peers_grpc_target)
+    channel = grpc.intercept_channel(
+        grpc.insecure_channel(web_config.peers_grpc_target), TraceClientInterceptor()
+    )
     try:
         stub = peers_pb2_grpc.PeersServiceStub(channel)
         try:
@@ -887,6 +890,7 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
     """
     import grpc
 
+    from league_stats.infra.trace_context import TraceClientInterceptor
     from league_stats_rpc.v1 import common_pb2, runner_pb2, runner_pb2_grpc
 
     log = get_logger("worker")
@@ -935,7 +939,9 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
         min_games=min_games,
     )
 
-    channel = grpc.insecure_channel(web_config.runner_grpc_target)
+    channel = grpc.intercept_channel(
+        grpc.insecure_channel(web_config.runner_grpc_target), TraceClientInterceptor()
+    )
     try:
         stub = runner_pb2_grpc.RunnerServiceStub(channel)
         try:

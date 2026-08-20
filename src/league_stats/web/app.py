@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -54,7 +55,7 @@ from league_stats.presentation.brand_assets import (
 )
 from league_stats.presentation.report import discover_player_builds, is_group_player_label
 from league_stats.presentation.report_json import rewrite_web_asset_hrefs
-from league_stats.utils import setup_logging
+from league_stats.utils import set_trace_id, setup_logging
 from league_stats.analysis.career.models import BLOCK_SLOTS
 from league_stats.infra.career_store import CareerStore, build_key as career_build_key
 from league_stats.web.watch import WatchPoller, watch_public_fields
@@ -794,6 +795,22 @@ def create_app(
         path = request.url.path
         if path.startswith("/out/") and path.endswith(".css"):
             response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
+
+    @app.middleware("http")
+    async def originate_trace_id(request: Request, call_next):  # type: ignore[no-untyped-def]
+        """Mint a trace_id for every incoming request that doesn't already carry one.
+
+        Registered last so Starlette makes it the outermost middleware (it runs
+        before every other middleware/handler) -- a user-initiated action gets a
+        trace_id from the very start of API-UI's own request handling, the same
+        "mint if absent" rule the gRPC server interceptor (`trace_context.py`)
+        uses for calls with no upstream trace_id.
+        """
+        trace_id = request.headers.get("x-trace-id") or uuid.uuid4().hex
+        set_trace_id(trace_id)
+        response = await call_next(request)
+        response.headers["X-Trace-Id"] = trace_id
         return response
 
     app.mount("/out", StaticFiles(directory=str(config.output_dir), html=True), name="out")
