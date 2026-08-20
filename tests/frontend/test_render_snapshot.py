@@ -130,7 +130,7 @@ from league_stats.web.app import create_app  # noqa: E402
 FRONTEND_TESTS_DIR = Path(__file__).resolve().parent
 FIXTURES_DIR = FRONTEND_TESTS_DIR / "fixtures"
 SNAPSHOTS_DIR = FRONTEND_TESTS_DIR / "snapshots"
-SPA_DIST_DIR = Path(__file__).resolve().parent.parent.parent / "src/league_stats/web/spa_dist"
+SPA_DIST_DIR = Path(__file__).resolve().parent.parent.parent / "src/league_stats_api_ui/spa_dist"
 
 REPORT_SLUG = "test_euw"
 BUILD_SLUG = "viktor_middle"
