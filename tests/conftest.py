@@ -7,7 +7,7 @@ import pytest
 
 from league_stats.analysis.peer import benchmark_cache as _benchmark_cache
 from league_stats.infra.ddragon_assets import DDragonAssets
-from league_stats.infra.peer_sample_store import PeerSampleStore
+from league_stats.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
 
 
 @pytest.fixture(autouse=True)
@@ -37,5 +37,5 @@ def _peer_live_cache_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         _benchmark_cache,
         "_store",
-        PeerSampleStore(mongomock.MongoClient(), db_name="test_default_live_cache"),
+        LiveBenchmarkCacheStore(mongomock.MongoClient(), db_name="test_default_live_cache"),
     )
