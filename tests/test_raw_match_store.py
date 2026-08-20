@@ -88,3 +88,43 @@ def test_count_reflects_fully_stored_matches(store):
 
     store.save_timeline("EUW1_1", {"info": {}})
     assert store.count() == 1
+
+
+def test_iter_match_ids_returns_matches_owned_by_that_puuid(store):
+    store.save_match("EUW1_1", "puuid-a", {"info": {}})
+    store.save_match("EUW1_2", "puuid-a", {"info": {}})
+    store.save_match("EUW1_3", "puuid-b", {"info": {}})
+
+    assert set(store.iter_match_ids("puuid-a")) == {"EUW1_1", "EUW1_2"}
+    assert set(store.iter_match_ids("puuid-b")) == {"EUW1_3"}
+
+
+def test_iter_match_ids_does_not_require_a_timeline(store):
+    """Mirrors `MatchStore.iter_match_ids`: ownership (`match_players`) is
+    written unconditionally by `save_match`, independent of whether a
+    timeline has been saved yet."""
+    store.save_match("EUW1_1", "puuid-a", {"info": {}})
+    assert list(store.iter_match_ids("puuid-a")) == ["EUW1_1"]
+
+
+def test_iter_match_ids_returns_nothing_for_unknown_puuid(store):
+    store.save_match("EUW1_1", "puuid-a", {"info": {}})
+    assert list(store.iter_match_ids("puuid-nobody")) == []
+
+
+def test_iter_match_ids_sees_ownership_claimed_via_claim_ownership(store):
+    store.save_match("EUW1_1", "puuid-a", {"info": {}})
+    store.save_timeline("EUW1_1", {"info": {}})
+    store.claim_ownership("puuid-b", ["EUW1_1"])
+
+    assert list(store.iter_match_ids("puuid-b")) == ["EUW1_1"]
+
+
+def test_close_is_a_noop_and_does_not_raise(store):
+    """`RawMatchStore` never owns its `pymongo.MongoClient` (received
+    externally in `__init__`), so `close()` must not close the shared
+    client -- calling it must simply not raise, and the store must remain
+    usable afterwards."""
+    store.close()
+    store.save_match("EUW1_1", "puuid-a", {"info": {}})
+    assert store.load_match("EUW1_1") == {"info": {}}

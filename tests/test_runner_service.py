@@ -173,6 +173,106 @@ def test_enqueue_job_and_stream_progress_reports_a_real_analysis(
     assert report_path.exists(), f"expected report artifact at {report_path}"
 
 
+def test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end proof that `runner_storage_mode="mongo"` (only valid with
+    `peers_mode="grpc"`) genuinely runs a job through `RawMatchStore`/Mongo,
+    with zero `MatchStore`/SQLite file ever touched.
+
+    Mirrors `test_enqueue_job_and_stream_progress_reports_a_real_analysis`
+    (the sqlite baseline above) almost exactly -- same fixture data, same
+    REGENERATE kind, same `fetch_solo_rank -> None` (an ordinary unranked
+    player, which makes stage B's peer resolution -- in-process OR
+    `peers_mode="grpc"`'s `_build_peer_for_pool_via_grpc` alike -- return
+    `None` immediately per `if ... or ranked is None: return None`, with no
+    PEERS server needed for this test). The only real difference: match data
+    is seeded into a `mongomock`-backed `RawMatchStore` instead of a real
+    on-disk SQLite `MatchStore`, and `_build_mongo_client` is monkeypatched
+    so `_build_job_services` picks up that same mongomock client instead of
+    dialing a real Mongo.
+    """
+    import mongomock
+
+    from league_stats.infra.raw_match_store import RawMatchStore
+    from league_stats.web import worker as web_worker
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(RiotApiClient, "resolve_puuid", lambda self, riot_id, tagline: MY_PUUID)
+    monkeypatch.setattr(RiotApiClient, "fetch_profile_icon_id", lambda self, puuid: None)
+    monkeypatch.setattr(RiotApiClient, "fetch_solo_rank", lambda self, puuid: None)
+
+    mongo_client = mongomock.MongoClient()
+    monkeypatch.setattr(web_worker, "_build_mongo_client", lambda uri: mongo_client)
+
+    # Seed the RawMatchStore directly -- in this mode no SQLite MatchStore is
+    # ever constructed, so there's no ".cache/matches.sqlite" to seed instead.
+    # db_name matches WebConfig.runner_mongo_uri's default database
+    # ("league_stats"), the same one `_build_job_services` will resolve via
+    # `_db_name_from_uri`.
+    raw_store = RawMatchStore(mongo_client, db_name="league_stats")
+    for index in range(6):
+        match_id = f"EUW1_v{index}"
+        raw_store.save_match(
+            match_id, MY_PUUID, make_player_match(match_id, champion="Viktor", position="MIDDLE")
+        )
+        raw_store.save_timeline(match_id, make_timeline())
+
+    web_config = WebConfig(
+        output_dir=tmp_path / "output",
+        peers_mode="grpc",
+        runner_storage_mode="mongo",
+    )
+    servicer = RunnerServicer(web_config=web_config)
+    server, port = _start_runner_server(servicer)
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        stub = runner_pb2_grpc.RunnerServiceStub(channel)
+        player_slug = players_group_slug([("Test", "EUW")])
+        request = runner_pb2.EnqueueJobRequest(
+            riot_id="Test",
+            tagline="EUW",
+            region=common_pb2.EUROPE,
+            kind=runner_pb2.JOB_KIND_REGENERATE,
+            player_slug=player_slug,
+            min_games=5,
+        )
+        response = stub.EnqueueJob(request)
+        assert response.job_id
+
+        results = list(
+            stub.StreamJobProgress(runner_pb2.StreamJobProgressRequest(job_id=response.job_id))
+        )
+    finally:
+        channel.close()
+        server.stop(grace=None)
+
+    assert results, "expected at least one StageResult message"
+    assert results[-1].final is True
+    assert results[-1].error == "", f"job failed: {results[-1].error!r}"
+    stage_a_progress = [
+        r for r in results if r.stage == common_pb2.STAGE_A and r.detail and not r.final
+    ]
+    assert stage_a_progress, "expected at least one non-final STAGE_A progress update"
+    report_path = (
+        tmp_path / "output" / "reports" / player_slug / "viktor_middle" / "report.json"
+    )
+    assert report_path.exists(), f"expected report artifact at {report_path}"
+
+    # The decisive proof: no SQLite MatchStore file was ever created for this
+    # job -- everything ran against the mongomock-backed RawMatchStore.
+    assert not (tmp_path / ".cache" / "matches.sqlite").exists()
+
+
+def test_web_config_rejects_runner_storage_mode_mongo_without_peers_grpc() -> None:
+    """`runner_storage_mode="mongo"` must fail loudly, at construction time,
+    when paired with `peers_mode="in_process"` -- that combination would
+    crash the moment stage B's in-process peer path called a peer-game
+    method `RawMatchStore` doesn't implement."""
+    with pytest.raises(ValueError, match="requires peers_mode='grpc'"):
+        WebConfig(runner_storage_mode="mongo", peers_mode="in_process")
+
+
 def test_runner_servicer_never_delegates_even_with_grpc_mode_in_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

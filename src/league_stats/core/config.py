@@ -488,6 +488,45 @@ class WebConfig(BaseModel):
     # since in that topology this process's own `WatchPoller` is not started
     # and cannot fire `on_new_game` itself.
     cron_watch_grpc_target: str | None = None
+    # Opt-in swap of RUNNER's local SQLite match cache for the Mongo-backed
+    # `RawMatchStore` (Phase 5 of the microservices migration). Default
+    # "sqlite" keeps today's behavior unchanged -- `web/worker.py`'s
+    # `_build_job_services` constructs `MatchStore(config.db_path)` exactly
+    # as before. Setting "mongo" makes it construct `RawMatchStore` against
+    # `runner_mongo_uri` instead.
+    #
+    # HARD PRECONDITION, validated below (unlike `peers_mode="grpc"`'s own
+    # topology precondition above, which this object cannot verify and only
+    # warns about): only valid together with `peers_mode="grpc"`.
+    # `RawMatchStore` does not implement any of `MatchStore`'s peer-game
+    # methods (`iter_unverified_puuids`, `iter_unverified_puuids_for_build`,
+    # `set_puuid_rank`, `upsert_peer_game`, `load_peer_games`,
+    # `count_peer_games`) -- the in-process peer path (`build_peer_for_pool`,
+    # `peers_mode="in_process"`) calls all of them, so pairing
+    # `runner_storage_mode="mongo"` with `peers_mode="in_process"` would
+    # crash the moment stage B reaches its first build's peer comparison.
+    runner_storage_mode: Literal["sqlite", "mongo"] = "sqlite"
+    runner_mongo_uri: str = "mongodb://localhost:27017/league_stats"
+
+    @model_validator(mode="after")
+    def _validate_runner_storage_mode(self) -> "WebConfig":
+        """Fail loudly on `runner_storage_mode="mongo"` without `peers_mode="grpc"`.
+
+        See the field comment above for the full argument. Unlike
+        `peers_mode="grpc"`'s own topology precondition (unverifiable from
+        this object alone, so it only warns), this combination is fully
+        knowable from these two field values, so it raises instead.
+        """
+        if self.runner_storage_mode == "mongo" and self.peers_mode != "grpc":
+            raise ValueError(
+                "runner_storage_mode='mongo' requires peers_mode='grpc'. "
+                "RawMatchStore does not implement MatchStore's peer-game "
+                "methods (iter_unverified_puuids, iter_unverified_puuids_for_build, "
+                "set_puuid_rank, upsert_peer_game, load_peer_games, "
+                "count_peer_games), which the in-process peer path "
+                "(peers_mode='in_process') calls."
+            )
+        return self
 
     @model_validator(mode="after")
     def _warn_on_peers_grpc_topology_precondition(self) -> "WebConfig":
@@ -531,7 +570,8 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
     Environment variables: ``ANALYZER_WEB_HOST``, ``ANALYZER_WEB_PORT``,
     ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``, ``ANALYZER_RUNNER_MODE``,
     ``RUNNER_GRPC_TARGET``, ``ANALYZER_WATCH_MODE``, ``ANALYZER_PEERS_MODE``,
-    ``PEERS_GRPC_TARGET``, ``CRON_WATCH_GRPC_TARGET``.
+    ``PEERS_GRPC_TARGET``, ``CRON_WATCH_GRPC_TARGET``,
+    ``ANALYZER_RUNNER_STORAGE_MODE``, ``RUNNER_MONGO_URI``.
     """
     _load_env_file()
     data: dict[str, Any] = {}
@@ -549,6 +589,8 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
         "peers_mode": os.environ.get("ANALYZER_PEERS_MODE"),
         "peers_grpc_target": os.environ.get("PEERS_GRPC_TARGET"),
         "cron_watch_grpc_target": os.environ.get("CRON_WATCH_GRPC_TARGET"),
+        "runner_storage_mode": os.environ.get("ANALYZER_RUNNER_STORAGE_MODE"),
+        "runner_mongo_uri": os.environ.get("RUNNER_MONGO_URI"),
     }
     data.update({k: v for k, v in env_map.items() if v})
     data.update({k: v for k, v in overrides.items() if v is not None})

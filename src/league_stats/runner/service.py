@@ -1,28 +1,34 @@
 """RUNNER's gRPC service: wraps `execute_job` verbatim.
 
-Design note -- the RawMatchStore substitution the task brief called for is
-NOT wired up here, and could not be without editing `worker.py` (out of
-scope for this task). Details:
+Design note -- history of the RawMatchStore substitution, since this file's
+own docstring got this wrong twice before landing on the real answer:
 
-`execute_job` (`league_stats.web.worker`) does not take a `Services` object,
-and does not accept an injectable match-store factory. Internally it always
-calls the *private*, module-level `_build_job_services(job, web_config,
-reporter, job_store=store)`, which itself always constructs
-`MatchStore(config.db_path)` (a local SQLite cache) -- that construction is
-hardcoded, not parameterised, and not overridable from outside the module
-short of monkeypatching `league_stats.web.worker._build_job_services` at
-runtime (fragile, and inappropriate for production code; not done here).
+Phase 1's Task 3 first read this as unwireable because `execute_job` (`league_
+stats.web.worker`) doesn't take a `Services` object or an injectable
+match-store factory -- it always calls the *private*, module-level
+`_build_job_services(job, web_config, reporter, job_store=store)`, which back
+then unconditionally constructed `MatchStore(config.db_path)`. That was a
+real, correctly-identified blocker at the time, but not the only one.
 
-So in this phase, a job run through RUNNER uses the exact same on-disk
-SQLite match cache the monolith's worker loop would (under
-`web_config.output_dir`'s configured `AppConfig.cache_dir`), NOT
-`RawMatchStore`/Mongo. This is consistent with "reuse, don't rewrite" for
-this task -- `execute_job` runs completely unmodified -- but it means the
-Mongo-backed raw match store Task 3 built is not yet reachable from RUNNER.
-Wiring it up needs a follow-up task that gives `worker.py` an injectable
-match-store seam (e.g. a `Services` factory parameter on `execute_job`
-itself), which is out of this task's scope since it requires editing
-`worker.py`.
+Phase 5's Task 1 investigation then found a second, independent blocker even
+assuming that seam existed: `RawMatchStore` (Task 3's Mongo-backed store) did
+not implement `iter_match_ids`, which stage A's `discover_build_pools`/
+`load_all_records` (`_run_stage_a`'s call tree, via `prepare_builds`) calls
+*unconditionally*, on every job kind, regardless of `peers_mode` -- so even
+with an injection seam, swapping in `RawMatchStore` would have crashed on the
+very first build-discovery step of any job. It was also missing `close()`,
+called unconditionally in `execute_job`'s `finally` block.
+
+Task 1's follow-up closed both gaps: `RawMatchStore` (`infra/raw_match_store.py`)
+now implements `iter_match_ids`/`close()`, and `_build_job_services`
+(`web/worker.py`) now takes `WebConfig.runner_storage_mode` (`core/config.py`,
+default `"sqlite"`, matching today's behavior) to decide between `MatchStore`
+and `RawMatchStore`. Setting `runner_storage_mode="mongo"` requires
+`peers_mode="grpc"` -- enforced by `WebConfig`'s own validator, since
+`RawMatchStore` still does not implement any of `MatchStore`'s peer-game
+methods (`iter_unverified_puuids`, `iter_unverified_puuids_for_build`,
+`set_puuid_rank`, `upsert_peer_game`, `load_peer_games`, `count_peer_games`),
+which only the in-process peer path (`peers_mode="in_process"`) calls.
 
 Similarly, `RunnerServiceServicer` (generated from `runner.proto`) is a
 **synchronous** servicer base class (`grpc.server(...)`, not

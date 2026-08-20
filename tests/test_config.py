@@ -135,6 +135,50 @@ def test_load_web_config_reads_watch_mode_from_env(
     assert config.watch_mode == "grpc"
 
 
+def test_web_config_runner_storage_mode_defaults_to_sqlite() -> None:
+    """runner_storage_mode defaults off — RUNNER uses the local SQLite MatchStore
+    unless opted into RawMatchStore/Mongo."""
+    assert WebConfig().runner_storage_mode == "sqlite"
+
+
+def test_web_config_runner_mongo_uri_defaults_to_localhost() -> None:
+    assert WebConfig().runner_mongo_uri == "mongodb://localhost:27017/league_stats"
+
+
+def test_web_config_runner_storage_mode_mongo_requires_peers_grpc() -> None:
+    """RawMatchStore doesn't implement MatchStore's peer-game methods, which the
+    in-process peer path calls -- this combination must fail loudly at
+    construction time, not crash mid-job."""
+    with pytest.raises(ValueError, match="requires peers_mode='grpc'"):
+        WebConfig(runner_storage_mode="mongo", peers_mode="in_process")
+
+
+def test_web_config_runner_storage_mode_mongo_allowed_with_peers_grpc() -> None:
+    config = WebConfig(runner_storage_mode="mongo", peers_mode="grpc")
+    assert config.runner_storage_mode == "mongo"
+
+
+def test_load_web_config_reads_runner_storage_mode_from_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ANALYZER_RUNNER_STORAGE_MODE", "mongo")
+    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
+    monkeypatch.chdir(tmp_path)
+
+    config = load_web_config()
+    assert config.runner_storage_mode == "mongo"
+
+
+def test_load_web_config_reads_runner_mongo_uri_from_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUNNER_MONGO_URI", "mongodb://mongo.internal:27017/league_stats")
+    monkeypatch.chdir(tmp_path)
+
+    config = load_web_config()
+    assert config.runner_mongo_uri == "mongodb://mongo.internal:27017/league_stats"
+
+
 def test_load_web_config_reads_runner_grpc_target_from_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

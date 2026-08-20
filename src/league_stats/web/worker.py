@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import pymongo
+from pymongo import uri_parser as mongo_uri_parser
 
 from league_stats.analysis.peer import current_patch, finish_peer_comparison
 from league_stats.analysis.peer.baseline import PeerBaseline
@@ -25,6 +27,7 @@ from league_stats.core.config import PLATFORM_TO_REGION, PlayerIdentity, WebConf
 from league_stats.core.models import PeerComparisonResult, RankedEntry
 from league_stats.infra.cache import HttpCache, MatchStore
 from league_stats.infra.ddragon_assets import DDragonAssets
+from league_stats.infra.raw_match_store import RawMatchStore
 from league_stats.infra.riot_api import RiotApiClient, RiotApiError, shared_rate_limiter
 from league_stats.ingest.parser import BuildPool
 from league_stats.pipeline.fetch import fetch_matches, group_records, resolve_player_contexts
@@ -291,6 +294,44 @@ def _tracked_players_for_job(
     ]
 
 
+# Process-wide Mongo clients keyed by URI, mirroring `shared_rate_limiter`
+# above: reused across jobs so `runner_storage_mode="mongo"` doesn't open a
+# fresh connection pool per job. `RawMatchStore.close()` is deliberately a
+# no-op for the same reason -- nothing here ever closes this client either.
+_SHARED_MONGO_CLIENTS: dict[str, pymongo.MongoClient] = {}
+_SHARED_MONGO_CLIENTS_LOCK = threading.Lock()
+
+
+def _build_mongo_client(mongo_uri: str) -> pymongo.MongoClient:
+    """Return the process-wide Mongo client for this URI, creating it once.
+
+    A separate seam (rather than calling `pymongo.MongoClient` directly from
+    `_build_job_services`) so tests can monkeypatch this one function to
+    return a `mongomock.MongoClient` instead of dialing a real Mongo --
+    matching the pattern this module already uses for stubbing gRPC calls
+    (e.g. `_build_peer_for_pool_via_grpc`).
+    """
+    with _SHARED_MONGO_CLIENTS_LOCK:
+        client = _SHARED_MONGO_CLIENTS.get(mongo_uri)
+        if client is None:
+            client = pymongo.MongoClient(mongo_uri)
+            _SHARED_MONGO_CLIENTS[mongo_uri] = client
+        return client
+
+
+def _db_name_from_uri(mongo_uri: str) -> str:
+    """Extract the database name from a Mongo connection URI.
+
+    Duplicated from `peers/service.py`'s helper of the same name (no shared
+    Mongo-utility module exists yet in this codebase; every service that
+    talks to Mongo defines its own client/db-name wiring, e.g. `peers/
+    service.py`'s `_build_default_peer_store`) -- uses pymongo's own URI
+    parser rather than a naive `rsplit`, which breaks on query params or a
+    bare host with no db path.
+    """
+    return mongo_uri_parser.parse_uri(mongo_uri).get("database") or "league_stats"
+
+
 def _build_job_services(
     job: dict[str, Any],
     web_config: WebConfig,
@@ -342,7 +383,17 @@ def _build_job_services(
     config.status_endpoint = f"/api/players/{config.reports_group_slug}"
     config.ensure_directories()
     http_cache = HttpCache(config.http_cache_dir)
-    store = MatchStore(config.db_path)
+    store: MatchStore | RawMatchStore
+    if web_config.runner_storage_mode == "mongo":
+        # Valid only with `peers_mode="grpc"` -- enforced by `WebConfig`'s own
+        # `_validate_runner_storage_mode` at construction time, so this branch
+        # never needs to re-check it (see `core/config.py`).
+        mongo_client = _build_mongo_client(web_config.runner_mongo_uri)
+        store = RawMatchStore(
+            mongo_client, db_name=_db_name_from_uri(web_config.runner_mongo_uri)
+        )
+    else:
+        store = MatchStore(config.db_path)
     client = RiotApiClient(
         config,
         http_cache,

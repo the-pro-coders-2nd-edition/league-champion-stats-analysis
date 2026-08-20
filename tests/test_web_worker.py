@@ -554,6 +554,93 @@ def test_build_job_services_applies_min_games(
         services.http_cache.close()
 
 
+# ------------------------------------ runner_storage_mode (Phase 5 Task 1)
+
+
+def test_build_job_services_defaults_to_sqlite_match_store(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """runner_storage_mode defaults to "sqlite" -- _build_job_services must keep
+    constructing a real MatchStore, provably unchanged from before this task."""
+    from league_stats.infra.cache import MatchStore
+
+    monkeypatch.setenv("RIOT_API_KEY", "RGAPI-test")
+    assert web_config.runner_storage_mode == "sqlite"
+    job = {
+        "id": 1,
+        "player_slug": "test_euw",
+        "riot_id": "Test",
+        "tagline": "EUW",
+        "region": "euw1",
+        "players_json": '[{"riot_id":"Test","tagline":"EUW"}]',
+        "filter_champion": None,
+        "filter_role": None,
+    }
+    reporter = SimpleNamespace(update=lambda *a, **k: None)
+
+    services = worker._build_job_services(job, web_config, reporter, job_store=store)
+    try:
+        assert isinstance(services.store, MatchStore)
+    finally:
+        services.store.close()
+        services.http_cache.close()
+
+
+def test_build_job_services_uses_raw_match_store_in_mongo_mode(
+    store: JobStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """runner_storage_mode="mongo" (only valid with peers_mode="grpc") must
+    construct a RawMatchStore instead, via the process-wide client seam
+    `_build_mongo_client` -- monkeypatched here to a mongomock client instead
+    of dialing a real Mongo."""
+    import mongomock
+
+    from league_stats.infra.raw_match_store import RawMatchStore
+
+    monkeypatch.setenv("RIOT_API_KEY", "RGAPI-test")
+    monkeypatch.chdir(tmp_path)
+    mongo_client = mongomock.MongoClient()
+    monkeypatch.setattr(worker, "_build_mongo_client", lambda uri: mongo_client)
+
+    mongo_web_config = WebConfig(
+        app_db_path=tmp_path / "app.sqlite",
+        output_dir=tmp_path / "output",
+        peers_mode="grpc",
+        runner_storage_mode="mongo",
+    )
+    job = {
+        "id": 1,
+        "player_slug": "test_euw",
+        "riot_id": "Test",
+        "tagline": "EUW",
+        "region": "euw1",
+        "players_json": '[{"riot_id":"Test","tagline":"EUW"}]',
+        "filter_champion": None,
+        "filter_role": None,
+    }
+    reporter = SimpleNamespace(update=lambda *a, **k: None)
+
+    services = worker._build_job_services(job, mongo_web_config, reporter, job_store=store)
+    try:
+        assert isinstance(services.store, RawMatchStore)
+        # close() must be a genuine no-op that leaves the shared client usable.
+        services.store.close()
+        services.store.save_match("EUW1_1", "puuid-a", {"info": {}})
+        assert services.store.load_match("EUW1_1") == {"info": {}}
+    finally:
+        services.store.close()
+        services.http_cache.close()
+    assert not (tmp_path / ".cache" / "matches.sqlite").exists()
+
+
+def test_build_mongo_client_reuses_the_same_client_for_the_same_uri() -> None:
+    """Mirrors `shared_rate_limiter`'s process-wide sharing pattern -- a second
+    call with the same URI must not open a second connection pool."""
+    first = worker._build_mongo_client("mongodb://localhost:27017/league_stats_shared_test")
+    second = worker._build_mongo_client("mongodb://localhost:27017/league_stats_shared_test")
+    assert first is second
+
+
 # --------------------------------------------------------- runner_mode (Task 6)
 
 
