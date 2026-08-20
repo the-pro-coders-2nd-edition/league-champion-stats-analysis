@@ -551,6 +551,7 @@ def test_build_job_services_applies_min_games(
         assert services.config.min_games == 10
     finally:
         services.store.close()
+        services.http_cache.close()
 
 
 # --------------------------------------------------------- runner_mode (Task 6)
@@ -650,3 +651,114 @@ def test_execute_job_grpc_mode_delegates_to_runner_and_replays_progress(
     assert player["base_completed_at"] is not None
     assert player["peer_completed_at"] is not None
     assert player["peer_failed"] == 0
+
+
+def _run_scripted_grpc_job(
+    store: JobStore, web_config: WebConfig, results: list[Any]
+) -> dict[str, Any]:
+    """Run `worker.execute_job` in grpc mode against a scripted `StreamJobProgress`
+    reply, to exercise `_execute_job_via_runner`'s replay logic in isolation from
+    a real pipeline run (used for the FAILED/soft-DONE inference branches, which
+    only depend on the shape of the StageResult stream, not on real analysis).
+    """
+    from concurrent import futures
+
+    import grpc
+
+    from league_stats_rpc.v1 import runner_pb2, runner_pb2_grpc
+
+    class _ScriptedRunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
+        def EnqueueJob(self, request, context):
+            return runner_pb2.EnqueueJobResponse(job_id="scripted-1")
+
+        def StreamJobProgress(self, request, context):
+            yield from results
+
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
+    runner_pb2_grpc.add_RunnerServiceServicer_to_server(_ScriptedRunnerServicer(), server)
+    port = server.add_insecure_port("127.0.0.1:0")
+    server.start()
+    try:
+        job = _claimed_job(store)
+        grpc_web_config = web_config.model_copy(
+            update={"runner_mode": "grpc", "runner_grpc_target": f"127.0.0.1:{port}"}
+        )
+        worker.execute_job(job, store, grpc_web_config)
+    finally:
+        server.stop(grace=None)
+    return job
+
+
+def test_execute_job_grpc_mode_stage_a_failure_marks_failed(
+    store: JobStore, web_config: WebConfig
+) -> None:
+    """A terminal error seen before RUNNER ever enters stage B is a hard failure
+    (mirrors test_execute_job_fetch_failure_marks_failed's in-process assertions)."""
+    from league_stats_rpc.v1 import common_pb2, runner_pb2
+
+    results = [
+        runner_pb2.StageResult(
+            job_id="scripted-1",
+            stage=common_pb2.STAGE_A,
+            detail="Looking up match history…",
+            current=0,
+            total=0,
+        ),
+        runner_pb2.StageResult(
+            job_id="scripted-1",
+            stage=common_pb2.STAGE_A,
+            error="network down",
+            final=True,
+        ),
+    ]
+
+    job = _run_scripted_grpc_job(store, web_config, results)
+
+    final = store.get(int(job["id"]))
+    assert final["state"] == jobs.FAILED
+    assert "network down" in final["error"]
+    assert store.get_player("test_euw")["base_completed_at"] is None
+
+
+def test_execute_job_grpc_mode_soft_peer_failure_marks_done(
+    store: JobStore, web_config: WebConfig
+) -> None:
+    """A terminal error seen after RUNNER has entered stage B is the same "soft"
+    peer failure the in-process path produces (mirrors
+    test_execute_job_peer_failure_is_soft's assertions): job still finishes
+    DONE, error is set, and mark_player_peer_failed is reflected in the
+    registry."""
+    from league_stats_rpc.v1 import common_pb2, runner_pb2
+
+    results = [
+        runner_pb2.StageResult(
+            job_id="scripted-1",
+            stage=common_pb2.STAGE_A,
+            detail="Analyzing Viktor Middle (1/1)",
+            current=1,
+            total=1,
+        ),
+        runner_pb2.StageResult(
+            job_id="scripted-1",
+            stage=common_pb2.STAGE_B,
+            detail="Comparing you to players at your rank…",
+        ),
+        runner_pb2.StageResult(
+            job_id="scripted-1",
+            stage=common_pb2.STAGE_B,
+            detail="Report complete",
+            error="Rank comparison failed: riot exploded",
+            final=True,
+        ),
+    ]
+
+    job = _run_scripted_grpc_job(store, web_config, results)
+
+    final = store.get(int(job["id"]))
+    assert final["state"] == jobs.DONE
+    assert "Rank comparison failed" in final["error"]
+
+    player = store.get_player("test_euw")
+    assert player["base_completed_at"] is not None
+    assert player["peer_completed_at"] is None
+    assert player["peer_failed"] == 1

@@ -357,6 +357,71 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
     - RUNNER cannot be cancelled in this phase (`RunnerJobAdapter.is_cancelled`
       always returns `False`), so unlike the in-process path, cancellation is not
       handled here.
+    - The job's specific platform routing value (e.g. "kr", "oc1", "tr1") is not
+      transmitted -- `EnqueueJobRequest.region` is `runner.proto`'s 4-value
+      `Region` enum (europe/americas/asia/sea region groups only), so a job's
+      platform collapses to its region group on the way out and is reconstructed
+      as that region group's *default* platform (`AppConfig.default_platform`)
+      on RUNNER's side, not the job's original platform. For the 4 platforms
+      that already are a region's default this round-trips exactly; for the
+      other 13 platforms (e.g. "tr1"/"ru"/"me1" -> "euw1", "oc1" -> "na1",
+      "jp1"/"vn2"/"tw2"/"sg2"/"ph2"/"th2" -> "kr") match resolution still
+      targets the right regional routing host (match-v5/account-v1 only need
+      the region group) but rank-v4/league-v4 calls -- which need the specific
+      platform -- would resolve against the wrong platform's ranked ladder.
+      Fixing this needs a platform-level field on `EnqueueJobRequest`, which
+      `runner.proto` does not have; out of this task's scope.
+    - The fine-grained stage-A progression is not transmitted either:
+      `job_states.FETCHING`, `ANALYZING` and `REPORT_READY` are three distinct
+      states in the in-process path, but `runner.proto`'s `Stage` enum only
+      distinguishes `STAGE_A` from `STAGE_B` -- there is no wire signal for
+      "now analyzing" vs. "now fetching" within stage A, so `ANALYZING` never
+      appears as a distinct replayed state here; both collapse into
+      `update_progress` calls under the inferred `FETCHING`/(nothing) bucket
+      described above. Fixing this needs a richer stage/state field on
+      `StageResult`, which `runner.proto` does not have; out of this task's
+      scope.
+    - `store.upsert_player`'s fully-resolved registry write (puuid,
+      `profile_icon_id`, solo-rank fields -- see `execute_job`'s call to it
+      right after `contexts` resolve) cannot be replayed here in full: that
+      data is resolved by RUNNER's own `_build_job_services`/`fetch_matches`/
+      `resolve_player_contexts` call, deep inside the `execute_job` run RUNNER
+      performs on its own process, and `StageResult` never carries it back
+      (`payload_json` is documented as always empty in phase 1 -- see
+      `RunnerServicer._to_stage_result`). What this function does instead: it
+      resolves the job's roster *locally*, via the same `_tracked_players_for_job`
+      recovery `execute_job` itself relies on (registry -> job's own
+      `players`/`players_json` -> on-disk report metadata, using this
+      monolith's own real `store` and `web_config.output_dir` -- not RUNNER's,
+      which live in a separate container with no shared volume for `output/`
+      in this repo's `docker-compose.yml`), and sends that already-resolved
+      roster to RUNNER as `EnqueueJobRequest.players`. This fixes the
+      roster-recovery problem RUNNER's own `RunnerJobAdapter.get_player`/disk
+      fallback cannot solve (see below) without any `runner.proto` change,
+      since `players` was already part of the wire contract. It also uses that
+      same locally-resolved roster for a best-effort local
+      `store.upsert_player` call once stage A is inferred complete, keeping
+      riot_id/tagline/region current -- but it cannot populate puuid,
+      `profile_icon_id` or solo-rank fields, since those never cross the wire.
+      Carrying that data back needs new fields on `StageResult` (or a
+      dedicated response), which is out of this task's scope.
+    - Why the roster-recovery fallback matters at all: `_tracked_players_for_job`
+      (used by RUNNER's own unmodified `execute_job` run, via `RunnerJobAdapter`)
+      falls back to `job_store.get_player(slug)` and then to on-disk report
+      metadata when a job's own `players_json` doesn't already resolve to its
+      `player_slug` (e.g. a group job with a stale/partial roster). On RUNNER,
+      `RunnerJobAdapter.get_player` is a hardcoded no-op returning `None`
+      (RUNNER keeps no player registry in this phase -- see
+      `league_stats.runner.adapter`), and RUNNER's own `output_dir` is a
+      separate filesystem from the monolith's in `docker-compose.yml` (no
+      shared volume is declared for either service's `output/`/`data/`
+      directories -- only `mongo-data` is shared), so neither fallback could
+      ever succeed inside RUNNER even before this fix. Resolving the roster on
+      the monolith side up front (where the real registry and real
+      `output_dir` are) and sending the resolved list over the wire sidesteps
+      that gap entirely for the roster itself; it does not, and cannot, give
+      RUNNER access to the monolith's on-disk report metadata for anything
+      else RUNNER's own `execute_job` run might independently need it for.
     """
     import grpc
 
@@ -381,13 +446,9 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
         JOB_KIND_REGENERATE: runner_pb2.JOB_KIND_REGENERATE,
     }.get(str(job.get("kind", "")), runner_pb2.JOB_KIND_UNSPECIFIED)
 
-    tracked = decode_players(
-        job.get("players_json"),
-        riot_id=str(job.get("riot_id", "")),
-        tagline=str(job.get("tagline", "")),
-    )
-    if not tracked and job.get("players"):
-        tracked = list(job["players"])
+    # Resolve the roster locally (real registry + real output_dir) rather than
+    # trusting the job's own players_json verbatim -- see the docstring above.
+    tracked = _tracked_players_for_job(job, store, output_dir=web_config.output_dir)
     players = [
         runner_pb2.JobPlayer(riot_id=str(entry["riot_id"]), tagline=str(entry["tagline"]))
         for entry in tracked
@@ -424,6 +485,17 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
         ):
             if result.stage == common_pb2.STAGE_B and not seen_stage_b:
                 seen_stage_b = True
+                # Best-effort registry refresh: keeps riot_id/tagline/region current
+                # using the roster this function already resolved locally, but cannot
+                # carry puuid/profile_icon_id/solo-rank -- those are only known inside
+                # RUNNER's own execute_job run and never cross the wire (see docstring).
+                store.upsert_player(
+                    slug=slug,
+                    riot_id=str(job.get("riot_id", "")),
+                    tagline=str(job.get("tagline", "")),
+                    region=str(job.get("region", "")),
+                    players=tracked or None,
+                )
                 store.mark_player_base_complete(slug)
                 store.set_state(
                     job_id,
