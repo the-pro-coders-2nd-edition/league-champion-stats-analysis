@@ -1,21 +1,19 @@
-"""Transitional re-export shim -- real code now lives in `league_stats_peers.analysis.peer`.
+"""Rank-peer comparison facade.
 
-Rank-peer comparison facade. Import from this module rather than individual
-peer submodules.
+Import from this module rather than individual peer submodules.
 """
 
-from league_stats_peers.analysis.peer import (
-    backfill_all_matches,
+from league_stats_peers.analysis.peer.baseline import resolve_peer_baseline
+from league_stats_peers.analysis.peer.comparison import (
     build_comparisons,
     build_peer_comparison,
     current_patch,
     comparisons_dataframe,
     finish_peer_comparison,
-    ingest_match,
     peer_comparison_for_window,
     peer_recommendations,
-    resolve_peer_baseline,
 )
+from league_stats_peers.analysis.peer.ingest import backfill_all_matches, ingest_match
 
 __all__ = [
     "backfill_all_matches",
