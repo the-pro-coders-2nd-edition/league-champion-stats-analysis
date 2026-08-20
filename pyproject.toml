@@ -46,7 +46,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/league_stats", "src/league_stats_rpc"]
+packages = [
+    "src/league_stats",
+    "src/league_stats_rpc",
+    "src/league_stats_common",
+    "src/league_stats_api_ui",
+    "src/league_stats_cron_watch",
+    "src/league_stats_runner",
+    "src/league_stats_peers",
+]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/league_stats/data/benchmarks" = "league_stats/data/benchmarks"
