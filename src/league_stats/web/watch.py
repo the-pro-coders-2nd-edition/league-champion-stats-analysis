@@ -18,6 +18,7 @@ from typing import Any, Callable, Protocol
 
 from league_stats.core.config import RANKED_QUEUE_IDS
 from league_stats.web.jobs import JOB_KIND_REFRESH, JobStore
+from league_stats.web.welcome_back import compute_welcome_back_summary
 from league_stats.utils import get_logger
 
 # Detection must not crowd out the analysis jobs it triggers: both share one
@@ -46,6 +47,10 @@ class MatchIdSource(Protocol):
 
     def resolve_puuid(self, riot_id: str, tagline: str) -> str:
         """PUUID for a Riot ID."""
+        ...
+
+    def fetch_match(self, match_id: str) -> dict[str, Any]:
+        """Full Match-V5 document for one match id."""
         ...
 
 
@@ -87,20 +92,23 @@ class WatchPoller:
         *,
         now: Callable[[], float] = time.time,
         budget: _Budget | None = None,
-        on_new_game: Callable[[str, str, str], None] | None = None,
+        on_new_game: Callable[[str, str, str, dict[str, Any]], None] | None = None,
     ) -> None:
         self._store = store
         self._client_factory = client_factory
         self._now = now
         self._budget = budget or _Budget()
-        # Optional observer: called with (slug, job_id, new_match_id) whenever a
-        # refresh is newly enqueued. `new_match_id` is whichever queue's newest
-        # match id was detected as changed in this tick (see `_check_group`'s
-        # tiebreak comment when more than one queue changes at once). Nothing in
-        # this module uses it -- it exists so a consumer such as
-        # CronWatchServicer's WatchUpdates RPC can push a notification the
-        # moment a new game is detected, without WatchPoller itself knowing
-        # anything about gRPC.
+        # Optional observer: called with (slug, job_id, new_match_id, summary)
+        # whenever a refresh is newly enqueued. `new_match_id` is whichever
+        # queue's newest match id was detected as changed in this tick (see
+        # `_check_group`'s tiebreak comment when more than one queue changes at
+        # once). `summary` is the lightweight welcome-back payload (win/loss,
+        # K/D/A, CS/min, damage share) computed from that match alone -- an
+        # empty dict if the extra `fetch_match` call was skipped (budget
+        # exhausted) or failed. Nothing in this module uses either value --
+        # they exist so a consumer such as CronWatchServicer's WatchUpdates RPC
+        # can push a notification the moment a new game is detected, without
+        # WatchPoller itself knowing anything about gRPC.
         self._on_new_game = on_new_game
         self._failures: dict[str, int] = {}
         self._puuids: dict[str, str] = {}
@@ -203,6 +211,11 @@ class WatchPoller:
         # prefer one over the other (both were merely "not seen before this
         # tick"), so "last one detected" is as good a tiebreak as any.
         new_match_id = ""
+        # The puuid whose queue produced `new_match_id`, tracked alongside it so
+        # the welcome-back summary is computed for the right participant --
+        # `puuid` alone would be stale if a later player in `players` was
+        # processed after the change was recorded.
+        new_match_puuid = ""
         for player in players:
             label = f"{player.get('riot_id', '')}#{player.get('tagline', '')}"
             try:
@@ -233,6 +246,7 @@ class WatchPoller:
                     queues_seen[key] = newest[0]
                     found_new = True
                     new_match_id = newest[0]
+                    new_match_puuid = puuid
 
         self._failures.pop(slug, None)
         first_look = row.get("last_watch_at") is None
@@ -246,7 +260,32 @@ class WatchPoller:
             self._log.info("Watch baseline recorded for %s", slug)
             return False
 
-        return self._enqueue_refresh(row, slug, new_match_id)
+        summary = await self._fetch_summary(client, new_match_id, new_match_puuid, slug)
+        return self._enqueue_refresh(row, slug, new_match_id, summary)
+
+    async def _fetch_summary(
+        self, client: MatchIdSource, match_id: str, puuid: str, slug: str
+    ) -> dict[str, Any]:
+        """Fetch the new match and compute its welcome-back summary.
+
+        This is an extra Riot call on top of the per-queue detection calls
+        above, so it is budgeted against the same `_Budget` -- exhaustion here
+        must not block the refresh from being enqueued, it just means the
+        summary ships empty this time. Any fetch/parse failure is likewise
+        swallowed to the same effect: the summary is a nice-to-have overlay on
+        top of detection, not a gate on it.
+        """
+        if not match_id or not puuid:
+            return {}
+        if not self._budget.take(self._now()):
+            self._log.debug("Watch budget spent; skipping welcome-back summary for %s", slug)
+            return {}
+        try:
+            match = await asyncio.to_thread(client.fetch_match, match_id)
+            return compute_welcome_back_summary(match, puuid)
+        except Exception as exc:  # noqa: BLE001 - a summary failure must not block the refresh
+            self._log.warning("Welcome-back summary failed for %s: %s", slug, exc)
+            return {}
 
     async def _puuid_for(
         self, client: MatchIdSource, label: str, player: dict[str, Any]
@@ -263,7 +302,13 @@ class WatchPoller:
         self._puuids[label] = puuid
         return puuid
 
-    def _enqueue_refresh(self, row: dict[str, Any], slug: str, new_match_id: str = "") -> bool:
+    def _enqueue_refresh(
+        self,
+        row: dict[str, Any],
+        slug: str,
+        new_match_id: str = "",
+        summary: dict[str, Any] | None = None,
+    ) -> bool:
         players = list(row.get("players") or [])
         primary = players[0] if players else {}
         job, created = self._store.enqueue(
@@ -277,7 +322,7 @@ class WatchPoller:
         if created:
             self._log.info("Watch found a new game for %s; queued a refresh", slug)
             if self._on_new_game is not None:
-                self._on_new_game(slug, str(job.get("id", "")), new_match_id)
+                self._on_new_game(slug, str(job.get("id", "")), new_match_id, summary or {})
         return created
 
     def _note_failure(self, slug: str, message: str) -> None:

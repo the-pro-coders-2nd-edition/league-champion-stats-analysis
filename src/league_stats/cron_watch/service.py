@@ -77,8 +77,9 @@ EUROPE maps to "euw1", never "eune1"/"tr1"/"ru"), not a fix.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
-from typing import AsyncIterator, Callable
+from typing import Any, AsyncIterator, Callable
 
 import grpc
 
@@ -150,19 +151,22 @@ class CronWatchServicer(cron_watch_pb2_grpc.CronWatchServiceServicer):
                 return row
         return None
 
-    def _on_new_game(self, slug: str, job_id: str, new_match_id: str) -> None:
+    def _on_new_game(
+        self, slug: str, job_id: str, new_match_id: str, summary: dict[str, Any]
+    ) -> None:
         """`WatchPoller`'s new-game observer hook: fan out to `WatchUpdates` subscribers.
 
         `new_match_id` is the real match id `WatchPoller._check_group` detected
-        (threaded through its `on_new_game` hook). `match_summary_json` is left
-        empty on purpose -- computing a lightweight per-match summary from that
-        id is Task 3's job, not this one; wiring it in here would be inventing
-        scope this task was not asked to cover.
+        (threaded through its `on_new_game` hook). `summary` is the lightweight
+        welcome-back payload (win/loss, K/D/A, CS/min, damage share) `WatchPoller`
+        already computed from that match alone -- an empty dict if the extra
+        `fetch_match` call was budget-skipped or failed, in which case
+        `match_summary_json` ships as `"{}"` rather than blocking the update.
         """
         update = cron_watch_pb2.WelcomeBackUpdate(
             puuid=slug,
             new_match_id=new_match_id,
-            match_summary_json="",
+            match_summary_json=json.dumps(summary),
             detected_at_unix=int(time.time()),
         )
         for key in (slug, None):

@@ -13,6 +13,7 @@ from league_stats.core.config import RANKED_FLEX_QUEUE_ID, RANKED_SOLO_QUEUE_ID,
 from league_stats.web.app import create_app
 from league_stats.web.jobs import JOB_KIND_REFRESH, JobStore
 from league_stats.web.watch import _Budget, WatchPoller, _backoff_for
+from tests.fixtures import make_player_match
 
 SLUG = "hugros_euw"
 
@@ -21,13 +22,23 @@ class FakeClient:
     """Minimal stand-in for the Riot client the poller needs.
 
     ``newest`` maps ``puuid -> {queue_id: [match_ids]}`` so tests can control
-    the solo and flex queues independently.
+    the solo and flex queues independently. ``matches`` maps ``match_id ->
+    raw match-v5 document`` so tests can control what ``fetch_match`` returns
+    for the welcome-back summary; unregistered ids fall back to a generic
+    synthetic match (see ``tests/fixtures.py``) rather than raising, since
+    most tests here don't care about summary content.
     """
 
-    def __init__(self, newest: dict[str, dict[int, list[str]]] | None = None) -> None:
+    def __init__(
+        self,
+        newest: dict[str, dict[int, list[str]]] | None = None,
+        matches: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
         self.newest = newest or {}
+        self.matches = matches or {}
         self.match_id_calls = 0
         self.use_cache_calls: list[bool] = []
+        self.fetch_match_calls: list[str] = []
         self.fail = False
 
     def resolve_puuid(self, riot_id: str, tagline: str) -> str:
@@ -41,6 +52,10 @@ class FakeClient:
         if self.fail:
             raise RuntimeError("riot is down")
         return self.newest.get(puuid, {}).get(queue_id, [])[:count]
+
+    def fetch_match(self, match_id: str) -> dict[str, Any]:
+        self.fetch_match_calls.append(match_id)
+        return self.matches.get(match_id) or make_player_match(match_id)
 
 
 @pytest.fixture()
@@ -269,12 +284,14 @@ def test_on_new_game_hook_fires_with_slug_job_id_and_match_id(store: JobStore) -
     store.set_watch(SLUG, enabled=True, interval_s=60)
     client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
     clock = Clock()
-    calls: list[tuple[str, str, str]] = []
+    calls: list[tuple[str, str, str, dict]] = []
     poller = WatchPoller(
         store,
         lambda region: client,
         now=clock,
-        on_new_game=lambda slug, job_id, match_id: calls.append((slug, job_id, match_id)),
+        on_new_game=lambda slug, job_id, match_id, summary: calls.append(
+            (slug, job_id, match_id, summary)
+        ),
     )
 
     _tick(poller)  # baseline: must not fire the hook
@@ -285,10 +302,73 @@ def test_on_new_game_hook_fires_with_slug_job_id_and_match_id(store: JobStore) -
     _tick(poller)
 
     assert len(calls) == 1
-    fired_slug, fired_job_id, fired_match_id = calls[0]
+    fired_slug, fired_job_id, fired_match_id, _fired_summary = calls[0]
     assert fired_slug == SLUG
     assert fired_job_id == str(store.list_active_jobs()[0]["id"])
     assert fired_match_id == "EUW1_2"
+
+
+def test_on_new_game_hook_carries_the_computed_welcome_back_summary(store: JobStore) -> None:
+    """The hook's summary is computed from the newly-detected match alone,
+    for the puuid whose queue actually changed."""
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    client.matches["EUW1_2"] = make_player_match(
+        "EUW1_2", puuid="puuid-hugros", duration_s=1200
+    )
+    clock = Clock()
+    calls: list[tuple[str, str, str, dict]] = []
+    poller = WatchPoller(
+        store,
+        lambda region: client,
+        now=clock,
+        on_new_game=lambda slug, job_id, match_id, summary: calls.append(
+            (slug, job_id, match_id, summary)
+        ),
+    )
+
+    _tick(poller)  # baseline
+    client.newest["puuid-hugros"] = {RANKED_SOLO_QUEUE_ID: ["EUW1_2"]}
+    clock.advance(120)
+    _tick(poller)
+
+    assert len(calls) == 1
+    summary = calls[0][3]
+    assert summary["win"] is True
+    assert summary["kills"] == 7
+    assert summary["deaths"] == 2
+    assert summary["assists"] == 5
+    assert summary["cs_per_min"] == 9.4
+    assert client.fetch_match_calls == ["EUW1_2"]
+
+
+def test_budget_exhaustion_skips_the_summary_but_still_enqueues(store: JobStore) -> None:
+    """The extra `fetch_match` call is budgeted; running out must not block
+    the refresh itself, only the summary that rides along with it."""
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    clock = Clock()
+    # Budget for exactly the two per-queue detection calls made on the second
+    # tick (solo + flex); none left over for the summary's fetch_match call.
+    budget = _Budget(limit=2)
+    calls: list[dict] = []
+    poller = WatchPoller(
+        store,
+        lambda region: client,
+        now=clock,
+        budget=budget,
+        on_new_game=lambda slug, job_id, match_id, summary: calls.append(summary),
+    )
+
+    _tick(poller)  # baseline; consumes its own budget, window not yet advanced
+    client.newest["puuid-hugros"] = {RANKED_SOLO_QUEUE_ID: ["EUW1_2"]}
+    clock.advance(120)  # frees the window for exactly the 2 detection calls
+    refreshed = _tick(poller)
+
+    assert refreshed == [SLUG]
+    assert len(calls) == 1
+    assert calls[0] == {}
+    assert client.fetch_match_calls == []
 
 
 def test_on_new_game_hook_reports_the_flex_match_id_when_flex_is_what_changed(
@@ -301,12 +381,14 @@ def test_on_new_game_hook_reports_the_flex_match_id_when_flex_is_what_changed(
         {"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"], RANKED_FLEX_QUEUE_ID: ["EUW1_F1"]}}
     )
     clock = Clock()
-    calls: list[tuple[str, str, str]] = []
+    calls: list[tuple[str, str, str, dict]] = []
     poller = WatchPoller(
         store,
         lambda region: client,
         now=clock,
-        on_new_game=lambda slug, job_id, match_id: calls.append((slug, job_id, match_id)),
+        on_new_game=lambda slug, job_id, match_id, summary: calls.append(
+            (slug, job_id, match_id, summary)
+        ),
     )
 
     _tick(poller)  # baseline
