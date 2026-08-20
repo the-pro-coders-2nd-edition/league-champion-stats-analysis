@@ -8,6 +8,7 @@ services:
     environment:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - RUNNER_GRPC_TARGET=runner:50051
+      - ANALYZER_WATCH_MODE=grpc
     volumes:
       # Shared with `cron-watch`: both open their own `JobStore` connection
       # onto the same `data/app.sqlite` file (see
