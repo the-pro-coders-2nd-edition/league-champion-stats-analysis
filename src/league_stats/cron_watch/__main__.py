@@ -36,7 +36,6 @@ from league_stats.utils import get_logger, setup_logging
 from league_stats.web.jobs import JobStore
 from league_stats_rpc.v1 import cron_watch_pb2_grpc
 
-setup_logging(service="cron-watch", version=os.environ.get("GIT_COMMIT", "dev"))
 log = get_logger("cron_watch")
 
 
@@ -88,6 +87,7 @@ def _build_client(region: str) -> RiotApiClient:
 
 
 async def serve() -> None:
+    setup_logging(service="cron-watch", version=os.environ.get("GIT_COMMIT", "dev"))
     port = os.environ.get("CRON_WATCH_GRPC_PORT", "50052")
     metrics_port = int(os.environ.get("CRON_WATCH_METRICS_PORT", "9101"))
     # `load_web_config()` is what merges `.env` into `os.environ` (via

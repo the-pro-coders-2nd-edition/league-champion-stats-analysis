@@ -10,11 +10,11 @@ from league_stats_rpc.v1 import runner_pb2_grpc
 from league_stats.runner.service import RunnerServicer
 from league_stats.utils import get_logger, setup_logging
 
-setup_logging(service="runner", version=os.environ.get("GIT_COMMIT", "dev"))
 log = get_logger("runner")
 
 
 def serve() -> None:
+    setup_logging(service="runner", version=os.environ.get("GIT_COMMIT", "dev"))
     port = os.environ.get("RUNNER_GRPC_PORT", "50051")
     metrics_port = int(os.environ.get("RUNNER_METRICS_PORT", "9100"))
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))

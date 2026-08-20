@@ -17,11 +17,11 @@ from league_stats_rpc.v1 import peers_pb2_grpc
 from league_stats.peers.service import PeersServicer
 from league_stats.utils import get_logger, setup_logging
 
-setup_logging(service="peers", version=os.environ.get("GIT_COMMIT", "dev"))
 log = get_logger("peers")
 
 
 def serve() -> None:
+    setup_logging(service="peers", version=os.environ.get("GIT_COMMIT", "dev"))
     port = os.environ.get("PEERS_GRPC_PORT", "50053")
     metrics_port = int(os.environ.get("PEERS_METRICS_PORT", "9102"))
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
