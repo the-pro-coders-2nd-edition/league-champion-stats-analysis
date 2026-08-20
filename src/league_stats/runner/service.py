@@ -43,6 +43,7 @@ import time
 from typing import Any
 
 import grpc
+from prometheus_client import Counter, Histogram
 
 from league_stats.core.config import load_web_config
 from league_stats.runner.adapter import RunnerJobAdapter
@@ -53,6 +54,19 @@ from league_stats.web.worker import execute_job
 from league_stats_rpc.v1 import common_pb2, runner_pb2, runner_pb2_grpc
 
 log = get_logger("runner_service")
+
+# First of RUNNER's Prometheus metrics -- the pattern (`start_http_server` +
+# `Histogram` + `Counter`) other services will replicate as they get their own
+# observability step; this is deliberately scoped to RUNNER only for now.
+RUNNER_JOB_DURATION = Histogram(
+    "runner_job_duration_seconds",
+    "Time execute_job took to run one job on RUNNER, from thread start to terminal event.",
+)
+RUNNER_JOBS_TOTAL = Counter(
+    "runner_jobs_total",
+    "RUNNER jobs that reached a terminal state, labeled by status.",
+    ["status"],
+)
 
 # REGION_UNSPECIFIED silently defaults to "europe" -- low risk, since a wrong
 # region only routes match lookups to the wrong regional host (a visible,
@@ -135,7 +149,18 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
     """Implements RunnerService by running `execute_job` on a worker thread per job."""
 
     def __init__(self, web_config: Any | None = None) -> None:
-        self._web_config = web_config if web_config is not None else load_web_config()
+        resolved = web_config if web_config is not None else load_web_config()
+        # RUNNER must never delegate to another RUNNER. Under the documented
+        # docker-compose deployment, `runner`'s `env_file: .env` is the same file
+        # `app` reads -- if ANALYZER_RUNNER_MODE=grpc is set there (the only
+        # documented way to enable the opt-in feature), a `web_config` built from
+        # the environment (the `load_web_config()` fallback above) would carry
+        # `runner_mode="grpc"` too, making RUNNER's own internal `execute_job`
+        # call dial `runner_grpc_target` -- from inside RUNNER's own process,
+        # that's itself, causing unbounded recursive job fan-out. Force
+        # in_process unconditionally, regardless of what the environment or an
+        # explicitly-passed `web_config` says.
+        self._web_config = resolved.model_copy(update={"runner_mode": "in_process"})
         self._queues: dict[str, "queue.SimpleQueue[dict[str, Any]]"] = {}
         # Last terminal event per job_id, kept after its live queue is
         # dropped so a late/reconnecting StreamJobProgress call gets the
@@ -199,7 +224,15 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
         queue, and a `StreamJobProgress` consumer's blocking `events.get()`
         would hang forever, pinning a `ThreadPoolExecutor` worker with no
         deadline. `except BaseException` closes that gap unconditionally.
+
+        Also records `RUNNER_JOB_DURATION`/`RUNNER_JOBS_TOTAL`. "success" here
+        means `execute_job` returned without raising out to this method -- it
+        does not inspect whether the terminal event it queued carries a soft
+        peer-stage `error` (that distinction lives in `job_states`/`store`,
+        which RUNNER doesn't have); a soft peer failure still counts as a
+        RUNNER-level success.
         """
+        start = time.perf_counter()
         try:
             execute_job(job, adapter, self._web_config)
         except BaseException as exc:  # noqa: BLE001 -- must guarantee a terminal event below
@@ -218,6 +251,11 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
                     "completed_at_unix": int(time.time()),
                 }
             )
+            RUNNER_JOB_DURATION.observe(time.perf_counter() - start)
+            RUNNER_JOBS_TOTAL.labels(status="failed").inc()
+            return
+        RUNNER_JOB_DURATION.observe(time.perf_counter() - start)
+        RUNNER_JOBS_TOTAL.labels(status="success").inc()
 
     def StreamJobProgress(self, request, context):
         """Yield StageResult messages for one job until a final=True message lands.
@@ -245,12 +283,18 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
             return
         while True:
             event = events.get()
-            yield _to_stage_result(event)
             if event.get("final"):
+                # Cache and drop the queue BEFORE yielding: if the client
+                # disconnects, the `yield` below raises `GeneratorExit`, which
+                # would otherwise skip this bookkeeping and leave the queue
+                # drained with no cached terminal event -- stranding a later
+                # reconnecting call on a `.get()` that never returns.
                 with self._lock:
                     self._terminal[job_id] = event
                     self._queues.pop(job_id, None)
+                yield _to_stage_result(event)
                 return
+            yield _to_stage_result(event)
 
     def NotifyPeerBaselineReady(self, request, context):
         """Minimal stub: real PEERS wiring is Phase 3's job, not this one."""

@@ -173,6 +173,24 @@ def test_enqueue_job_and_stream_progress_reports_a_real_analysis(
     assert report_path.exists(), f"expected report artifact at {report_path}"
 
 
+def test_runner_servicer_never_delegates_even_with_grpc_mode_in_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RUNNER must never dial another RUNNER.
+
+    Under the documented docker-compose deployment, `runner`'s `env_file: .env`
+    is the same file `app` reads -- if `ANALYZER_RUNNER_MODE=grpc` is set there
+    (the only documented way to enable the opt-in feature), RUNNER's own
+    `load_web_config()` fallback would otherwise pick it up too, making its
+    internal `execute_job` call delegate back to RUNNER itself (unbounded
+    recursive job fan-out). `RunnerServicer` must force `runner_mode` to
+    "in_process" regardless of what the environment says.
+    """
+    monkeypatch.setenv("ANALYZER_RUNNER_MODE", "grpc")
+    servicer = RunnerServicer()
+    assert servicer._web_config.runner_mode == "in_process"
+
+
 def test_enqueue_job_rejects_unspecified_kind() -> None:
     """JOB_KIND_UNSPECIFIED must be rejected, not silently defaulted to 'analyze'."""
     servicer = RunnerServicer(web_config=WebConfig())

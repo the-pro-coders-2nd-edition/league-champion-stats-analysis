@@ -41,6 +41,11 @@ from league_stats.utils import get_logger
 
 CHAT_ENDPOINT = "/api/chat"
 
+# Deadlines for the grpc runner_mode RPCs (see `_execute_job_via_runner`), so a
+# RUNNER that's reachable but hung doesn't block the worker thread forever.
+_RUNNER_ENQUEUE_TIMEOUT_S = 30.0
+_RUNNER_STREAM_TIMEOUT_S = 1800.0
+
 
 def _slug_for_players(players: list[dict[str, Any]]) -> str:
     """Filesystem group slug for a player list."""
@@ -397,16 +402,20 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
       transmitted -- `EnqueueJobRequest.region` is `runner.proto`'s 4-value
       `Region` enum (europe/americas/asia/sea region groups only), so a job's
       platform collapses to its region group on the way out and is reconstructed
-      as that region group's *default* platform (`AppConfig.default_platform`)
-      on RUNNER's side, not the job's original platform. For the 4 platforms
-      that already are a region's default this round-trips exactly; for the
-      other 13 platforms (e.g. "tr1"/"ru"/"me1" -> "euw1", "oc1" -> "na1",
-      "jp1"/"vn2"/"tw2"/"sg2"/"ph2"/"th2" -> "kr") match resolution still
-      targets the right regional routing host (match-v5/account-v1 only need
-      the region group) but rank-v4/league-v4 calls -- which need the specific
-      platform -- would resolve against the wrong platform's ranked ladder.
-      Fixing this needs a platform-level field on `EnqueueJobRequest`, which
-      `runner.proto` does not have; out of this task's scope.
+      as that region group's *default* platform (`REGION_DEFAULT_PLATFORM`) on
+      RUNNER's side, not the job's original platform. Concretely: 13 of the 17
+      platforms in `PLATFORM_TO_REGION` collapse to their region's default
+      platform this way; only the 4 platforms that already *are* their region's
+      default (`euw1`, `na1`, `kr`, `oc1`) round-trip exactly. For the other 13,
+      match resolution still targets the right regional routing host
+      (match-v5/account-v1 only need the region group) but rank-v4/league-v4
+      calls -- which need the specific platform -- would resolve against the
+      wrong platform's ranked ladder. Fixing this needs a platform-level field
+      on `EnqueueJobRequest`, which `runner.proto` does not have; out of this
+      task's scope. (See `REGION_DEFAULT_PLATFORM` and `PLATFORM_TO_REGION` in
+      `league_stats.core.config` for the authoritative tables -- deliberately
+      not enumerated per-platform here, to avoid this list drifting out of sync
+      with those tables again.)
     - The fine-grained stage-A progression is not transmitted either:
       `job_states.FETCHING`, `ANALYZING` and `REPORT_READY` are three distinct
       states in the in-process path, but `runner.proto`'s `Stage` enum only
@@ -429,6 +438,16 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
       field on `runner.proto`'s `StageResult` -- no proto change was needed),
       and this function parses it back out below and uses it as the
       resolved-player data for its own local `store.upsert_player` call.
+    - Timing divergence from the in-process path: the local `store.upsert_player`
+      call above only fires on the first STAGE_B `StageResult` (i.e. once
+      `seen_stage_b` flips), whereas the in-process `execute_job` calls
+      `store.upsert_player` during stage A, right after `fetch_matches`/
+      `resolve_player_contexts` and before analysis even starts. A grpc-mode
+      job that fails during stage A therefore never writes the registry row
+      that the in-process path would already have written by that point. This
+      is a real behavioral difference, not yet fixed -- fixing it needs
+      `runner.proto`/`RunnerJobAdapter` to surface the resolved roster before
+      stage A completes, which is out of this task's scope.
     - This function also resolves the job's roster *locally* before ever
       contacting RUNNER, via the same `_tracked_players_for_job` recovery
       `execute_job` itself relies on (registry -> job's own
@@ -523,80 +542,110 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
     channel = grpc.insecure_channel(web_config.runner_grpc_target)
     try:
         stub = runner_pb2_grpc.RunnerServiceStub(channel)
-        response = stub.EnqueueJob(request)
+        try:
+            response = stub.EnqueueJob(request, timeout=_RUNNER_ENQUEUE_TIMEOUT_S)
+        except grpc.RpcError as exc:
+            # RUNNER down, connection refused/reset, or the deadline above hit
+            # (a reachable-but-hung RUNNER). Without this, the exception would
+            # propagate out of execute_job into AnalysisWorker._loop, which has
+            # no try/except of its own -- killing the worker thread permanently
+            # and leaving this job stuck in a non-terminal state forever.
+            log.exception("Job %d: EnqueueJob to RUNNER failed", job_id)
+            store.set_state(
+                job_id, job_states.FAILED, error=f"Could not reach RUNNER: {exc}"
+            )
+            return
         log.info("Job %d handed to RUNNER as %s", job_id, response.job_id)
 
         seen_stage_b = False
         resolved_players: list[dict[str, Any]] | None = None
-        for result in stub.StreamJobProgress(
-            runner_pb2.StreamJobProgressRequest(job_id=response.job_id)
-        ):
-            if result.payload_json:
-                # RunnerJobAdapter.upsert_player's resolved roster (see docstring) --
-                # never final/error, so it's safe to just capture and move on.
-                try:
-                    parsed = json.loads(result.payload_json)
-                except (TypeError, ValueError):
-                    parsed = None
-                if isinstance(parsed, list):
-                    resolved_players = [entry for entry in parsed if isinstance(entry, dict)]
-                continue
-            if result.stage == common_pb2.STAGE_B and not seen_stage_b:
-                seen_stage_b = True
-                # Registry refresh: prefer RUNNER's freshly-resolved roster (from
-                # payload_json above) over the locally-resolved fallback, then fill
-                # any still-missing profile_icon_id/solo-rank fields from what the
-                # registry already had -- never erase existing data (see docstring).
-                existing = store.get_player(slug)
-                existing_players = (existing or {}).get("players") or []
-                merged_players = _merge_player_enrichment(
-                    resolved_players if resolved_players is not None else tracked,
-                    existing_players,
-                )
-                store.upsert_player(
-                    slug=slug,
-                    riot_id=str(job.get("riot_id", "")),
-                    tagline=str(job.get("tagline", "")),
-                    region=str(job.get("region", "")),
-                    players=merged_players or None,
-                )
-                store.mark_player_base_complete(slug)
-                store.set_state(
-                    job_id,
-                    job_states.REPORT_READY,
-                    detail="Report ready — comparing you to players at your rank…",
-                )
-                store.set_state(job_id, job_states.PEER_RUNNING, detail=result.detail)
-                if not result.final:
+        try:
+            for result in stub.StreamJobProgress(
+                runner_pb2.StreamJobProgressRequest(job_id=response.job_id),
+                timeout=_RUNNER_STREAM_TIMEOUT_S,
+            ):
+                if result.payload_json:
+                    # RunnerJobAdapter.upsert_player's resolved roster (see docstring) --
+                    # never final/error, so it's safe to just capture and move on.
+                    try:
+                        parsed = json.loads(result.payload_json)
+                    except (TypeError, ValueError):
+                        parsed = None
+                    if isinstance(parsed, list):
+                        resolved_players = [
+                            entry for entry in parsed if isinstance(entry, dict)
+                        ]
                     continue
-            if result.final:
-                if result.error and not seen_stage_b:
-                    store.set_state(job_id, job_states.FAILED, error=result.error)
-                elif result.error:
-                    store.mark_player_peer_failed(slug)
+                if result.stage == common_pb2.STAGE_B and not seen_stage_b:
+                    seen_stage_b = True
+                    # Registry refresh: prefer RUNNER's freshly-resolved roster (from
+                    # payload_json above) over the locally-resolved fallback, then fill
+                    # any still-missing profile_icon_id/solo-rank fields from what the
+                    # registry already had -- never erase existing data (see docstring).
+                    existing = store.get_player(slug)
+                    existing_players = (existing or {}).get("players") or []
+                    merged_players = _merge_player_enrichment(
+                        resolved_players if resolved_players is not None else tracked,
+                        existing_players,
+                    )
+                    store.upsert_player(
+                        slug=slug,
+                        riot_id=str(job.get("riot_id", "")),
+                        tagline=str(job.get("tagline", "")),
+                        region=str(job.get("region", "")),
+                        players=merged_players or None,
+                    )
+                    store.mark_player_base_complete(slug)
                     store.set_state(
                         job_id,
-                        job_states.DONE,
-                        detail=result.detail or "Report complete",
-                        error=result.error,
+                        job_states.REPORT_READY,
+                        detail="Report ready — comparing you to players at your rank…",
                     )
-                else:
-                    store.mark_player_peer_complete(slug)
-                    store.set_state(
-                        job_id, job_states.DONE, detail=result.detail or "Report complete"
+                    store.set_state(job_id, job_states.PEER_RUNNING, detail=result.detail)
+                    if not result.final:
+                        continue
+                if result.final:
+                    if result.error and not seen_stage_b:
+                        store.set_state(job_id, job_states.FAILED, error=result.error)
+                    elif result.error:
+                        store.mark_player_peer_failed(slug)
+                        store.set_state(
+                            job_id,
+                            job_states.DONE,
+                            detail=result.detail or "Report complete",
+                            error=result.error,
+                        )
+                    else:
+                        store.mark_player_peer_complete(slug)
+                        store.set_state(
+                            job_id, job_states.DONE, detail=result.detail or "Report complete"
+                        )
+                    log.info(
+                        "Job %d (via RUNNER) finished: %s",
+                        job_id,
+                        "with error" if result.error else "clean",
                     )
-                log.info(
-                    "Job %d (via RUNNER) finished: %s",
+                    return
+                store.update_progress(
                     job_id,
-                    "with error" if result.error else "clean",
+                    detail=result.detail,
+                    current=result.current or None,
+                    total=result.total or None,
                 )
-                return
-            store.update_progress(
-                job_id,
-                detail=result.detail,
-                current=result.current or None,
-                total=result.total or None,
+        except grpc.RpcError as exc:
+            # RUNNER went unreachable mid-stream (crashed, connection reset,
+            # UNAVAILABLE) or the deadline above hit (a reachable-but-hung
+            # RUNNER). Without this, the exception would propagate out of
+            # execute_job into AnalysisWorker._loop, which has no try/except of
+            # its own -- killing the worker thread permanently and, with
+            # worker_concurrency=1, silently stopping the whole queue from
+            # draining, while this job stays stuck in a non-terminal state
+            # forever.
+            log.exception("Job %d: lost connection to RUNNER mid-stream", job_id)
+            store.set_state(
+                job_id, job_states.FAILED, error=f"Lost connection to RUNNER: {exc}"
             )
+            return
         # RunnerServicer guarantees a final=True message even when execute_job
         # crashes outside its own try/finally (see RunnerServicer._run_job) --
         # but if the stream still ends without one (e.g. a dropped connection),

@@ -689,6 +689,39 @@ def _run_scripted_grpc_job(
     return job
 
 
+def test_execute_job_grpc_mode_unreachable_runner_marks_failed_not_hangs(
+    store: JobStore, web_config: WebConfig
+) -> None:
+    """RUNNER unreachable (nothing listening on the target port) must not hang
+    the worker thread or raise out of `execute_job` -- the job must reach a
+    terminal FAILED state instead. Regression test for the gap where only a
+    bare `finally: channel.close()` guarded the RPC calls, so a `grpc.RpcError`
+    (RUNNER down, UNAVAILABLE, connection reset mid-stream) would propagate out
+    of `execute_job` into `AnalysisWorker._loop`, which has no try/except of
+    its own -- permanently killing the worker thread.
+    """
+    import socket
+
+    # Grab a genuinely free port and never listen on it.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        free_port = probe.getsockname()[1]
+
+    job = _claimed_job(store)
+    grpc_web_config = web_config.model_copy(
+        update={
+            "runner_mode": "grpc",
+            "runner_grpc_target": f"127.0.0.1:{free_port}",
+        }
+    )
+
+    worker.execute_job(job, store, grpc_web_config)
+
+    final = store.get(int(job["id"]))
+    assert final["state"] == jobs.FAILED
+    assert final["error"]
+
+
 def test_execute_job_grpc_mode_stage_a_failure_marks_failed(
     store: JobStore, web_config: WebConfig
 ) -> None:

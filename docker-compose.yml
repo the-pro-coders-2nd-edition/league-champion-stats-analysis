@@ -7,6 +7,7 @@ services:
       - .env
     environment:
       - MONGO_URI=mongodb://mongo:27017/league_stats
+      - RUNNER_GRPC_TARGET=runner:50051
     depends_on:
       - mongo
 
@@ -25,6 +26,10 @@ services:
       - RUNNER_GRPC_PORT=50051
     env_file:
       - .env
+    # No `ports:` here on purpose: RUNNER is only ever dialed by `app` over the
+    # compose network (`RUNNER_GRPC_TARGET=runner:50051` above), never from
+    # outside it. Add a `ports:` mapping here if external debugging access is
+    # ever needed.
     depends_on:
       - mongo
 
