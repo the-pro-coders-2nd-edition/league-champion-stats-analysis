@@ -65,6 +65,44 @@ against production Riot credentials needs to close that gap first (most
 likely: extending `RegisterAccountRequest` with riot_id/tagline, since a
 puuid does not resolve back to one through any API this codebase calls).
 
+Design note -- enqueue target: shared SQLite volume, not RUNNER's `EnqueueJob`.
+
+Once CRON-watch runs as its own process, it can no longer call the
+monolith's in-process `JobStore.enqueue(...)` the way `WatchPoller` did
+when it lived inside `web/app.py`. Two options were on the table (see the
+Phase 2 plan's Global Constraints): (a) call RUNNER's `EnqueueJob` RPC
+(`league_stats.runner.service.RunnerServicer.EnqueueJob`), matching the
+original design's CRON -> RUNNER arrow, or (b) have CRON-watch and the
+monolith open separate `JobStore` connections onto the same `app.sqlite`
+file (a docker-compose mounted volume in production; Task 5's concern),
+with CRON-watch still calling `JobStore.enqueue` directly, unchanged.
+
+(b) was chosen. `web/app.py`'s job-status surface (`_job_public`, and the
+`/api/players/{slug}`, `/api/jobs/{job_id}`, `/api/groups`, `/api/activity`
+routes that serve it) is read directly off `JobStore` rows and is tightly
+coupled to that schema specifically: `queue_position()` and
+`average_duration_s()` are live SQL queries over the `jobs` table, and
+`active_job_for_player`/`list_active_jobs` likewise. There is no queue-
+position/ETA/busy-state concept anywhere else in this codebase to fall
+back on. RUNNER's `EnqueueJob` (`runner/service.py`) does not help here:
+it assigns its own in-memory job id from an `itertools.count` local to one
+`RunnerServicer` instance and never writes a row into `JobStore` at all --
+routing CRON-watch's refreshes through it would make every watch-triggered
+job invisible to the landing page's busy dots, the player page's active-job
+banner, and job cancellation, unless something else also wrote a matching
+row into `JobStore` (which nothing does, and which would just be option
+(b) again with extra plumbing). `JobStore` is also already set up for
+safe concurrent multi-connection access to one file (`PRAGMA
+journal_mode=WAL`, `PRAGMA busy_timeout=30000`, `check_same_thread=False`;
+see `web/jobs.py`), so (b) needs no changes there. This class's
+constructor therefore keeps taking a `JobStore` instance (pointed at the
+shared file by whoever wires up CRON-watch's real entrypoint -- Task 5),
+exactly as Task 2 already built it; see
+`tests/test_cron_watch_service.py::test_a_cron_watch_enqueued_job_surfaces_through_the_monolith_job_api`
+for an end-to-end proof using two independent `JobStore` connections onto
+one file, one driven through this servicer and the other through a real
+`web.app.create_app()` instance.
+
 Similarly, `RegisterAccountRequest.region` is `league_stats_rpc.v1.Region`,
 which is continent-grained (EUROPE/AMERICAS/ASIA/SEA), while `JobStore` rows
 store a platform routing value (e.g. "euw1") -- the same granularity gap

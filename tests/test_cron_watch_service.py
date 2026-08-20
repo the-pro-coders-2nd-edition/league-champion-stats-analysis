@@ -19,9 +19,11 @@ from typing import Any
 
 import grpc
 import pytest
+from fastapi.testclient import TestClient
 
-from league_stats.core.config import RANKED_SOLO_QUEUE_ID
+from league_stats.core.config import RANKED_SOLO_QUEUE_ID, WebConfig
 from league_stats.cron_watch.service import CronWatchServicer
+from league_stats.web.app import create_app
 from league_stats.web.jobs import JOB_KIND_REFRESH, JobStore
 from league_stats_rpc.v1 import common_pb2, cron_watch_pb2, cron_watch_pb2_grpc
 from tests.test_watch import FakeClient
@@ -198,3 +200,66 @@ def test_watch_updates_streams_a_notification_when_force_refresh_finds_a_new_gam
         assert update.detected_at_unix > 0
     finally:
         server.stop()
+
+
+def test_a_cron_watch_enqueued_job_surfaces_through_the_monolith_job_api(
+    tmp_path: Path,
+) -> None:
+    """Task 4's decision, proven end to end: CRON-watch and the monolith open
+    *separate* `JobStore` connections onto the *same* `app.sqlite` file (a
+    stand-in for the docker-compose mounted volume Task 5 will wire up), and a
+    job `CronWatchServicer` enqueues on its connection is immediately visible,
+    with a real queue position and ETA, through the monolith's own
+    `/api/players/{slug}` and `/api/jobs/{id}` endpoints -- exactly the
+    surface `_job_public` in `web/app.py` serves to the frontend today. This
+    is what option (a), routing through RUNNER's `EnqueueJob` instead, would
+    NOT give for free: RUNNER assigns its own in-memory job ids
+    (`itertools.count` local to one `RunnerServicer` instance) and never
+    writes a row into `JobStore` at all.
+    """
+    db_path = tmp_path / "app.sqlite"
+
+    # The monolith side: a real FastAPI app, worker disabled (no network),
+    # backed by its own JobStore connection onto db_path.
+    web_config = WebConfig(output_dir=tmp_path / "out", app_db_path=db_path)
+    app = create_app(web_config, start_worker=False)
+
+    # The CRON-watch side: a second, independent JobStore connection onto the
+    # SAME file -- modeling two separate processes sharing a mounted volume,
+    # not two handles inside one process.
+    cron_store = JobStore(db_path)
+    try:
+        client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+        servicer = CronWatchServicer(cron_store, lambda region: client)
+        server = _start(servicer)
+        try:
+            with grpc.insecure_channel(f"127.0.0.1:{server.port}") as channel:
+                stub = cron_watch_pb2_grpc.CronWatchServiceStub(channel)
+                stub.RegisterAccount(
+                    cron_watch_pb2.RegisterAccountRequest(
+                        puuid="hugros", region=common_pb2.EUROPE
+                    )
+                )
+                stub.ForceRefresh(cron_watch_pb2.ForceRefreshRequest(puuid="hugros"))  # baseline
+
+                client.newest["puuid-hugros"] = {RANKED_SOLO_QUEUE_ID: ["EUW1_2"]}
+                response = stub.ForceRefresh(cron_watch_pb2.ForceRefreshRequest(puuid="hugros"))
+                assert response.ok is True
+        finally:
+            server.stop()
+
+        with TestClient(app) as web_client:
+            player_status = web_client.get("/api/players/hugros")
+            assert player_status.status_code == 200
+            active_job = player_status.json()["active_job"]
+            assert active_job is not None
+            assert active_job["kind"] == JOB_KIND_REFRESH
+            assert active_job["player_slug"] == "hugros"
+            assert active_job["queue_position"] == 0
+            assert active_job["eta_s"] is not None
+
+            job_status = web_client.get(f"/api/jobs/{active_job['id']}")
+            assert job_status.status_code == 200
+            assert job_status.json()["job"]["id"] == active_job["id"]
+    finally:
+        cron_store.close()
