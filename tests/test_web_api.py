@@ -318,6 +318,25 @@ def test_verify_players_exist_passes(
     )
 
 
+def test_build_mongo_client_reuses_the_same_client_for_the_same_uri() -> None:
+    """Regression test for Phase 8's whole-branch review finding: `app.py`'s
+    `_build_mongo_client` previously opened a brand new, never-closed
+    `pymongo.MongoClient` on every call -- an unbounded connection-pool leak
+    reached on every `POST /api/analyses`, every in-process watch-poll tick,
+    and every hit of the per-champion refresh route. Mirrors
+    `test_web_worker.py::test_build_mongo_client_reuses_the_same_client_for_the_same_uri`
+    and `career_store.py`/`derived.py`/`jobs.py`'s own caching tests."""
+    first = web_app._build_mongo_client("mongodb://localhost:27017/league_stats_shared_test")
+    second = web_app._build_mongo_client("mongodb://localhost:27017/league_stats_shared_test")
+    assert first is second
+
+
+def test_build_mongo_client_returns_a_different_client_for_a_different_uri() -> None:
+    first = web_app._build_mongo_client("mongodb://localhost:27017/league_stats_client_a")
+    second = web_app._build_mongo_client("mongodb://localhost:27017/league_stats_client_b")
+    assert first is not second
+
+
 def test_job_status_includes_queue_position(client: TestClient) -> None:
     job_id = client.post(
         "/api/analyses", json={"riot_id": "Test#EUW", "region": "euw1"}

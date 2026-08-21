@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -221,15 +222,32 @@ def _resolve_players(body: AnalysisRequest) -> list[dict[str, str]]:
     return entries
 
 
+# Process-wide Mongo clients keyed by URI, mirroring `career_store.py`/
+# `derived.py`/`jobs.py`/`worker.py`'s own `_SHARED_MONGO_CLIENTS`: this
+# module's `_build_mongo_client` is reached on real per-request HTTP paths
+# (`_verify_players_exist` on every `POST /api/analyses`, every in-process
+# watch-poll tick, the per-champion refresh route) and previously opened a
+# brand new, never-closed `pymongo.MongoClient` (with its own connection
+# pool) on every single call -- an unbounded resource leak over this
+# long-running process's lifetime. Caching by URI here fixes that.
+_SHARED_MONGO_CLIENTS: dict[str, pymongo.MongoClient] = {}
+_SHARED_MONGO_CLIENTS_LOCK = threading.Lock()
+
+
 def _build_mongo_client(mongo_uri: str) -> pymongo.MongoClient:
-    """Build the Mongo client backing this module's `RawMatchStore` sites.
+    """Return the process-wide Mongo client for this URI, creating it once.
 
     A separate seam (rather than calling `pymongo.MongoClient` directly) so
     tests can monkeypatch this one function to return a `mongomock.MongoClient`
     instead of dialing a real Mongo -- matching the pattern
     `league_stats_runner/worker.py`'s own `_build_mongo_client` already uses.
     """
-    return pymongo.MongoClient(mongo_uri)
+    with _SHARED_MONGO_CLIENTS_LOCK:
+        client = _SHARED_MONGO_CLIENTS.get(mongo_uri)
+        if client is None:
+            client = pymongo.MongoClient(mongo_uri)
+            _SHARED_MONGO_CLIENTS[mongo_uri] = client
+        return client
 
 
 def _build_precheck_client(
