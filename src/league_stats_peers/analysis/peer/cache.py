@@ -10,7 +10,6 @@ import pandas as pd
 from league_stats_peers.analysis.peer.ingest import ingest_match
 from league_stats_peers.analysis.peer.metrics import BENCHMARK_METRIC_KEYS
 from league_stats_peers.analysis.peer.rank_scope import RankScope, rank_matches
-from league_stats_common.core.models import RankedEntry
 from league_stats_common.infra.riot_api import RiotApiClient
 from league_stats_common.utils import get_logger
 

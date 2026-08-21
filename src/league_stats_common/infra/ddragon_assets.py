@@ -18,9 +18,6 @@ from league_stats_runner.ingest.parser import PERK_NAMES
 from league_stats_common.infra.riot_api import DDRAGON_BASE
 from league_stats_common.utils import get_logger
 
-# Keystones live in the 8000+ perk id range (stat shards are 5000+).
-KEYSTONE_ID_MIN: int = 8000
-KEYSTONE_ID_MAX: int = 10_000
 ABILITY_SLOTS: tuple[str, ...] = ("Q", "W", "E", "R")
 
 # Stat shard icons are not listed in runesReforged.json.
@@ -194,11 +191,6 @@ class DDragonAssets:
     def version(self) -> str | None:
         """Data Dragon patch version used for the cached icons."""
         return self._version
-
-    @property
-    def assets_root(self) -> Path:
-        """Root directory containing cached Data Dragon / Community Dragon icons."""
-        return self._assets_root
 
     def _roles_cached(self) -> bool:
         return self._roles_dir.is_dir() and all(
@@ -517,10 +509,6 @@ class DDragonAssets:
             return None
         return _relative_href(from_dir, path)
 
-    def role_chart_source(self, role: str) -> str | None:
-        """Base64 data URI for embedding a lane icon in Plotly charts."""
-        return path_to_data_uri(self.role_icon_path(role))
-
     def ui_icon_href(self, filename: str, *, from_dir: Path) -> str | None:
         """Relative URL from an HTML directory to a cached UI icon."""
         path = self._ui_dir / filename
@@ -761,14 +749,6 @@ class DDragonAssets:
                     if icon_path:
                         icons[rune_id] = str(icon_path)
         return icons
-
-    def _fetch_keystone_icons(self, version: str) -> dict[int, str]:
-        """Backward-compatible alias that returns only keystone icons."""
-        return {
-            perk_id: icon
-            for perk_id, icon in self._fetch_rune_icons(version).items()
-            if KEYSTONE_ID_MIN <= perk_id < KEYSTONE_ID_MAX
-        }
 
     def _fetch_rune_tree_icons(self, version: str) -> dict[str, str]:
         response = self._session.get(
