@@ -363,6 +363,7 @@ def _build_job_services(
         tagline=job["tagline"],
         region=job["region"],
         output_dir=web_config.output_dir,
+        assets_dir=web_config.assets_dir,
         chat_endpoint=CHAT_ENDPOINT if web_config.gemini_api_key else None,
         players=players,
         filter_champion=filter_champion,

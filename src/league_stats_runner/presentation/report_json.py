@@ -69,8 +69,21 @@ def _is_json_safe(value: Any) -> bool:
 
 
 def _rewrite_asset_href(href: str) -> str:
-    """Map on-disk relative ``../assets/...`` paths to ``/out/assets/...`` URLs."""
-    if href.startswith("/out/"):
+    """Map on-disk relative ``../assets/...`` paths to web URLs.
+
+    The DDragon icon cache (``AppConfig.assets_dir``/``WebConfig.assets_dir``)
+    lives in its own volume, separate from ``output_dir``'s report artifacts
+    (see those fields' comments), so it is served from its own ``/ddragon``
+    static mount rather than nested under ``/out``. The ``assets/`` marker
+    segment itself is dropped since the mount's root already points at the
+    assets directory.
+
+    Brand assets (``brand_assets.py``) are the one exception: they are small,
+    bundled-with-the-package files copied into ``output_dir/assets/brand/``
+    on every render, unrelated to the Data-Dragon download cache this move is
+    about, so they stay under ``/out`` where they have always lived.
+    """
+    if href.startswith("/ddragon/") or href.startswith("/out/"):
         return href
     marker = "assets/"
     index = href.find(marker)
@@ -79,7 +92,10 @@ def _rewrite_asset_href(href: str) -> str:
     prefix = href[:index]
     if prefix and not all(part == ".." for part in prefix.split("/") if part):
         return href
-    return "/out/" + href[index:]
+    rest = href[index + len(marker):]
+    if rest.startswith("brand/"):
+        return "/out/" + href[index:]
+    return "/ddragon/" + rest
 
 
 def rewrite_web_asset_hrefs(value: Any) -> Any:
