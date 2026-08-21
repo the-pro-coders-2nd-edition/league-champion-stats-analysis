@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "time": {
     "from": "now-6h",
@@ -46,7 +46,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Baseline resolutions by source",
+      "title": "Cached-path resolution duration (p50/p95/p99)",
+      "description": "Levels 0/1/3/4/5 only -- all local reads, expected sub-second scale.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -56,6 +57,106 @@
         "w": 9,
         "x": 6,
         "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.50, sum(rate(peers_baseline_resolution_duration_seconds_bucket{source=\"cached\"}[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(peers_baseline_resolution_duration_seconds_bucket{source=\"cached\"}[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum(rate(peers_baseline_resolution_duration_seconds_bucket{source=\"cached\"}[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Live-sampling resolution duration (p50/p95/p99)",
+      "description": "Level 2 only -- a separate panel because its scale (seconds-minutes) would flatten the cached-path panel's line to invisible on a shared axis.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 9,
+        "x": 15,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.50, sum(rate(peers_baseline_resolution_duration_seconds_bucket{source=\"live_sample\"}[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(peers_baseline_resolution_duration_seconds_bucket{source=\"live_sample\"}[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum(rate(peers_baseline_resolution_duration_seconds_bucket{source=\"live_sample\"}[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Resolutions by fallback_level",
+      "description": "Surfaces peer-store coverage thinning before it becomes user-visible.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -69,8 +170,81 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(peers_baseline_resolutions_total[5m])) by (source)",
-          "legendFormat": "{{source}}",
+          "expr": "sum(rate(peers_baseline_resolutions_by_level_total[5m])) by (fallback_level)",
+          "legendFormat": "level {{fallback_level}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Executor: running vs queued baselines",
+      "description": "peers_inflight_baselines (running) + peers_queued_baselines (submitted but not yet running) together, since their relationship is the point -- distinguishes \"all workers busy, N queued\" from \"workers idle, something else is wrong.\"",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "peers_inflight_baselines",
+          "legendFormat": "running",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "peers_queued_baselines",
+          "legendFormat": "queued",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Fast-path timeout rate (%)",
+      "description": "Rate answers \"how bad\" -- pairs with the raw breakdown panel below, which answers \"why.\"",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(peers_fast_path_timeouts_total[5m])) / sum(rate(peers_fast_path_attempts_total[5m]))",
+          "legendFormat": "timeout rate",
           "refId": "A"
         }
       ]
@@ -84,9 +258,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 9,
-        "x": 15,
-        "y": 0
+        "w": 8,
+        "x": 8,
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -115,9 +289,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 8
+        "w": 8,
+        "x": 16,
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -139,7 +313,39 @@
     },
     {
       "type": "timeseries",
-      "title": "Baseline resolution duration (p50/p95/p99)",
+      "title": "Live sample: Riot API calls by endpoint",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(peers_riot_api_calls_total[30m])) by (endpoint)",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Live sample: match downloads per sample (p50/p95/p99)",
+      "description": "Longer (30m) rate window since live samples are infrequent, low-volume events.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -148,7 +354,88 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 8
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.50, sum(rate(peers_live_sample_match_downloads_bucket[30m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(peers_live_sample_match_downloads_bucket[30m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum(rate(peers_live_sample_match_downloads_bucket[30m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Resolutions by source",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(peers_baseline_resolutions_total[5m])) by (source)",
+          "legendFormat": "{{source}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Riot API -- request duration by endpoint (p95)",
+      "description": "Cross-cutting Riot API client metrics, filtered to job=\"peers\".",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
       },
       "fieldConfig": {
         "defaults": {
@@ -162,27 +449,9 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.50, sum(rate(peers_baseline_resolution_duration_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p50",
+          "expr": "histogram_quantile(0.95, sum(rate(riot_api_request_duration_seconds_bucket{job=\"peers\"}[5m])) by (le, endpoint))",
+          "legendFormat": "{{endpoint}}",
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "histogram_quantile(0.95, sum(rate(peers_baseline_resolution_duration_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p95",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "histogram_quantile(0.99, sum(rate(peers_baseline_resolution_duration_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p99",
-          "refId": "C"
         }
       ]
     },
@@ -197,7 +466,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 40
       },
       "fieldConfig": {
         "defaults": {
@@ -237,7 +506,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 48
       },
       "options": {
         "showTime": true,

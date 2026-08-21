@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "time": {
     "from": "now-6h",
@@ -15,15 +15,15 @@
   },
   "panels": [
     {
-      "type": "timeseries",
-      "title": "HTTP request rate by route",
+      "type": "stat",
+      "title": "Requests/sec",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
+        "h": 4,
+        "w": 6,
         "x": 0,
         "y": 0
       },
@@ -39,8 +39,256 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(api_ui_http_requests_total[5m])) by (route, method)",
-          "legendFormat": "{{method}} {{route}}",
+          "expr": "sum(rate(api_ui_http_requests_total[5m]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Error rate (5xx)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(api_ui_http_requests_total{status_code=~\"5..\"}[5m])) / sum(rate(api_ui_http_requests_total[5m]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "In-flight requests",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(api_ui_http_requests_in_flight)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "p95 latency (all routes)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(api_ui_http_request_duration_seconds_bucket[5m])) by (le))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Latency by route (5m)",
+      "description": "One row per route: req/s, avg, p50, p95, p99, err%. Default-sorted by p95 descending -- replaces the old route-less duration panel and is the direct fix for \"no per-route average.\" A table, not a timeseries, because 19 routes x 3 percentiles would be 57 overlapping lines.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Value #A" },
+            "properties": [
+              { "id": "displayName", "value": "req/s" },
+              { "id": "unit", "value": "reqps" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Value #B" },
+            "properties": [
+              { "id": "displayName", "value": "avg" },
+              { "id": "unit", "value": "s" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Value #C" },
+            "properties": [
+              { "id": "displayName", "value": "p50" },
+              { "id": "unit", "value": "s" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Value #D" },
+            "properties": [
+              { "id": "displayName", "value": "p95" },
+              { "id": "unit", "value": "s" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Value #E" },
+            "properties": [
+              { "id": "displayName", "value": "p99" },
+              { "id": "unit", "value": "s" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Value #F" },
+            "properties": [
+              { "id": "displayName", "value": "err%" },
+              { "id": "unit", "value": "percentunit" }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "sortBy": [
+          { "displayName": "p95", "desc": true }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        }
+      ],
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(api_ui_http_requests_total[5m])) by (route)",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(api_ui_http_request_duration_seconds_sum[5m])) by (route) / sum(rate(api_ui_http_request_duration_seconds_count[5m])) by (route)",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, sum(rate(api_ui_http_request_duration_seconds_bucket[5m])) by (le, route))",
+          "format": "table",
+          "instant": true,
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(api_ui_http_request_duration_seconds_bucket[5m])) by (le, route))",
+          "format": "table",
+          "instant": true,
+          "refId": "D"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, sum(rate(api_ui_http_request_duration_seconds_bucket[5m])) by (le, route))",
+          "format": "table",
+          "instant": true,
+          "refId": "E"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(api_ui_http_requests_total{status_code=~\"5..\"}[5m])) by (route) / sum(rate(api_ui_http_requests_total[5m])) by (route)",
+          "format": "table",
+          "instant": true,
+          "refId": "F"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "p95 latency -- top 5 slowest routes",
+      "description": "topk(5, ...) caps the legend at 5 lines -- the one place a trend-over-time view is worth it, instead of 19 overlapping route lines.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "topk(5, histogram_quantile(0.95, sum(rate(api_ui_http_request_duration_seconds_bucket[5m])) by (le, route)))",
+          "legendFormat": "{{route}}",
           "refId": "A"
         }
       ]
@@ -56,7 +304,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 14
       },
       "fieldConfig": {
         "defaults": {
@@ -78,7 +326,8 @@
     },
     {
       "type": "timeseries",
-      "title": "HTTP request duration (p50/p95/p99)",
+      "title": "Outbound dependency latency (p95)",
+      "description": "Answers \"is runner/peers/Gemini/Riot slow\" -- ~5 fixed series (target x operation).",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -87,7 +336,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 22
       },
       "fieldConfig": {
         "defaults": {
@@ -101,27 +350,103 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.50, sum(rate(api_ui_http_request_duration_seconds_bucket[5m])) by (le, route))",
-          "legendFormat": "p50 {{route}}",
+          "expr": "histogram_quantile(0.95, sum(rate(api_ui_outbound_call_duration_seconds_bucket[5m])) by (le, target, operation))",
+          "legendFormat": "{{target}} {{operation}}",
           "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbound dependency error rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
         },
+        "overrides": []
+      },
+      "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum(rate(api_ui_http_request_duration_seconds_bucket[5m])) by (le, route))",
-          "legendFormat": "p95 {{route}}",
-          "refId": "B"
+          "expr": "sum(rate(api_ui_outbound_call_duration_seconds_count{outcome!=\"ok\"}[5m])) by (target, operation, outcome)",
+          "legendFormat": "{{target}} {{operation}} ({{outcome}})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Riot API -- request duration by endpoint (p95)",
+      "description": "Cross-cutting Riot API client metrics, filtered to job=\"api-ui\".",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
         },
+        "overrides": []
+      },
+      "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.99, sum(rate(api_ui_http_request_duration_seconds_bucket[5m])) by (le, route))",
-          "legendFormat": "p99 {{route}}",
-          "refId": "C"
+          "expr": "histogram_quantile(0.95, sum(rate(riot_api_request_duration_seconds_bucket{job=\"api-ui\"}[5m])) by (le, endpoint))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Riot API -- requests by outcome",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(riot_api_requests_total{job=\"api-ui\"}[5m])) by (outcome)",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
         }
       ]
     },
@@ -134,9 +459,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
+        "w": 24,
+        "x": 0,
+        "y": 38
       },
       "fieldConfig": {
         "defaults": {
@@ -176,7 +501,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 46
       },
       "options": {
         "showTime": true,

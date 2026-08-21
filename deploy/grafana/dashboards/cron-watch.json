@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "time": {
     "from": "now-6h",
@@ -15,8 +15,138 @@
   },
   "panels": [
     {
+      "type": "stat",
+      "title": "Watched accounts",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "cron_watch_watched_accounts",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Watched groups",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "cron_watch_watched_groups",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "New-game hit ratio",
+      "description": "detections / accounts checked",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(cron_watch_new_games_detected_total[1h])) / sum(rate(cron_watch_accounts_checked_total[1h]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Time since last tick",
+      "description": "time() - cron_watch_last_tick_timestamp_seconds, threshold-colored -- directly closes the stalled-loop blind spot: WatchPoller._loop swallows all exceptions from tick() and keeps looping, so a genuinely dead polling task looks identical to \"nothing due yet\" on every other panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 60 },
+              { "color": "red", "value": 180 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "time() - cron_watch_last_tick_timestamp_seconds",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "type": "timeseries",
-      "title": "New games detected",
+      "title": "New games detected vs accounts checked",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -25,7 +155,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -42,6 +172,15 @@
           "expr": "sum(rate(cron_watch_new_games_detected_total[5m]))",
           "legendFormat": "new games/sec",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(cron_watch_accounts_checked_total[5m]))",
+          "legendFormat": "accounts checked/sec",
+          "refId": "B"
         }
       ]
     },
@@ -56,7 +195,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -96,7 +235,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Process CPU / memory",
+      "title": "Tick duration per account checked",
+      "description": "Normalizes for the confirmed sequential-processing model (WatchPoller.tick() checks every due group sequentially) -- separates \"more accounts\" from \"Riot got slower per call.\"",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -105,7 +245,100 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(cron_watch_tick_duration_seconds_sum[5m])) / sum(rate(cron_watch_accounts_checked_total[5m]))",
+          "legendFormat": "seconds/account",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Check failures by stage",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(cron_watch_check_failures_total[5m])) by (stage)",
+          "legendFormat": "{{stage}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Rate-limit budget exhaustion",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(cron_watch_budget_exhausted_total[5m]))",
+          "legendFormat": "exhausted/sec",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Process CPU / memory",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 21
       },
       "fieldConfig": {
         "defaults": {
@@ -145,7 +378,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 29
       },
       "options": {
         "showTime": true,
