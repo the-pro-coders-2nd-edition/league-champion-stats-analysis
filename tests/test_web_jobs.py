@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-import sqlite3
 import threading
-from pathlib import Path
+import time
+from concurrent.futures import ThreadPoolExecutor
 
+import mongomock
 import pytest
 
 import league_stats_common.infra.jobs as jobs
-from league_stats_common.infra.jobs import JobStore
+from league_stats_common.infra.jobs import DEFAULT_WATCH_INTERVAL_S, JobStore
 
 
 @pytest.fixture()
-def store(tmp_path: Path) -> JobStore:
-    js = JobStore(tmp_path / "app.sqlite")
+def store() -> JobStore:
+    js = JobStore(mongomock.MongoClient())
     yield js
     js.close()
 
@@ -103,6 +104,55 @@ def test_enqueue_dedups_active_jobs(store: JobStore) -> None:
     assert third["id"] != first["id"]
 
 
+def test_enqueue_is_atomic_under_concurrent_writers() -> None:
+    """Regression test for the exact race Phase 2's `BEGIN IMMEDIATE` fix
+    closed (a real, historical production bug: 6 duplicate jobs queued for
+    one player). Two threads racing `enqueue` for the SAME `player_slug`
+    against the SAME `mongomock.MongoClient()` must yield exactly one
+    `created=True` -- the Mongo port's partial-unique-index design (see
+    `jobs.py`'s module docstring) must close this race, not just look like
+    it does.
+
+    Uses a `threading.Barrier` so both threads call `enqueue` as close to
+    simultaneously as possible, and runs several rounds to make a flaky
+    (non-atomic) implementation likely to be caught rather than getting
+    lucky once.
+    """
+    client = mongomock.MongoClient()
+    js = JobStore(client)
+    try:
+        for round_index in range(20):
+            slug = f"race_{round_index}"
+            barrier = threading.Barrier(8)
+            results: list[bool] = []
+            results_lock = threading.Lock()
+
+            def _enqueue_once() -> None:
+                barrier.wait(timeout=5)
+                _, created = js.enqueue(
+                    kind=jobs.JOB_KIND_ANALYZE,
+                    riot_id="Test",
+                    tagline="EUW",
+                    region="euw1",
+                    player_slug=slug,
+                )
+                with results_lock:
+                    results.append(created)
+
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                futures = [pool.submit(_enqueue_once) for _ in range(8)]
+                for future in futures:
+                    future.result(timeout=10)
+
+            assert results.count(True) == 1, (
+                f"round {round_index}: expected exactly one created=True, "
+                f"got {results.count(True)} of {len(results)}"
+            )
+            assert js.active_job_for_player(slug) is not None
+    finally:
+        js.close()
+
+
 def test_claim_next_is_fifo_and_moves_to_fetching(store: JobStore) -> None:
     first = _enqueue(store, "one_euw")
     _enqueue(store, "two_euw")
@@ -116,6 +166,56 @@ def test_claim_next_is_fifo_and_moves_to_fetching(store: JobStore) -> None:
     assert second_claim is not None
     assert second_claim["player_slug"] == "two_euw"
     assert store.claim_next() is None
+
+
+def test_claim_next_is_atomic_under_concurrent_claimers() -> None:
+    """`find_one_and_update` replaces the SQL retry loop entirely (see
+    `jobs.py`'s module docstring) -- prove no job is claimed twice and no
+    queued job is lost when several threads race `claim_next()` against
+    more queued jobs than claimers.
+    """
+    client = mongomock.MongoClient()
+    js = JobStore(client)
+    try:
+        job_count = 25
+        claimer_count = 8
+        for index in range(job_count):
+            js.enqueue(
+                kind=jobs.JOB_KIND_ANALYZE,
+                riot_id="Test",
+                tagline="EUW",
+                region="euw1",
+                player_slug=f"p{index}",
+            )
+
+        claimed_ids: list[int] = []
+        claimed_lock = threading.Lock()
+        barrier = threading.Barrier(claimer_count)
+
+        def _claim_until_empty() -> None:
+            barrier.wait(timeout=5)
+            while True:
+                job = js.claim_next()
+                if job is None:
+                    return
+                with claimed_lock:
+                    claimed_ids.append(int(job["id"]))
+
+        with ThreadPoolExecutor(max_workers=claimer_count) as pool:
+            futures = [pool.submit(_claim_until_empty) for _ in range(claimer_count)]
+            for future in futures:
+                future.result(timeout=10)
+
+        from collections import Counter
+
+        dupes = {k: v for k, v in Counter(claimed_ids).items() if v > 1}
+        assert not dupes, f"jobs claimed more than once: {dupes} (all claims: {sorted(claimed_ids)})"
+        assert len(claimed_ids) == job_count, (
+            f"every queued job must be claimed exactly once, got {len(claimed_ids)} "
+            f"claims for {job_count} jobs: {sorted(claimed_ids)}"
+        )
+    finally:
+        js.close()
 
 
 def test_state_transitions_and_progress(store: JobStore) -> None:
@@ -146,6 +246,26 @@ def test_queue_position_counts_running_and_queued_ahead(store: JobStore) -> None
     assert store.queue_position(int(third["id"])) == 2
 
 
+def test_list_active_jobs_dedups_by_player_newest_first(store: JobStore) -> None:
+    """Each player's newest active job wins; result is ordered newest first."""
+    first_a = _enqueue(store, "a_euw")
+    _enqueue(store, "b_euw")
+    store.set_state(int(first_a["id"]), jobs.DONE)
+    second_a = _enqueue(store, "a_euw")
+    third_b_slug_job = _enqueue(store, "c_euw")
+
+    active = store.list_active_jobs()
+    slugs = [job["player_slug"] for job in active]
+    assert slugs.count("a_euw") == 1
+    ids_by_slug = {job["player_slug"]: job["id"] for job in active}
+    assert ids_by_slug["a_euw"] == second_a["id"]
+    # Newest first.
+    assert active[0]["id"] == third_b_slug_job["id"]
+    assert [job["id"] for job in active] == sorted(
+        (job["id"] for job in active), reverse=True
+    )
+
+
 def test_recover_orphans_fails_running_keeps_queued(store: JobStore) -> None:
     running = _enqueue(store, "a_euw")
     store.claim_next()
@@ -155,6 +275,30 @@ def test_recover_orphans_fails_running_keeps_queued(store: JobStore) -> None:
     assert recovered == 1
     assert store.get(int(running["id"]))["state"] == jobs.FAILED
     assert store.get(int(queued["id"]))["state"] == jobs.QUEUED
+
+
+def test_recover_orphans_releases_the_active_slot_for_a_new_enqueue(store: JobStore) -> None:
+    """`recover_orphans` moves a running job to `failed` via a batch
+    `update_many`, not the per-job `set_state` path -- prove this batch path
+    still frees the player's slot for a new active job, the same way
+    `set_state`'s terminal transition does. This is the scenario the old
+    flag-based design (rejected during this task, see `jobs.py`'s module
+    docstring) would have silently broken had the flag not been released on
+    every terminal-transition code path, including this batch one.
+    """
+    running = _enqueue(store, "a_euw")
+    store.claim_next()
+    store.recover_orphans()
+    assert store.get(int(running["id"]))["state"] == jobs.FAILED
+
+    _, created = store.enqueue(
+        kind=jobs.JOB_KIND_ANALYZE,
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        player_slug="a_euw",
+    )
+    assert created
 
 
 def test_player_registry_marks(store: JobStore) -> None:
@@ -295,117 +439,87 @@ def test_cancel_allows_new_enqueue(store: JobStore) -> None:
     assert second["id"] != first["id"]
 
 
-def _write_pre_migration_schema(db_path: Path) -> None:
-    """A database as it looked before `_migrate`'s columns existed, so
-    opening a `JobStore` against it exercises the real ALTER TABLE path.
+# --------------------------------------------------------------------------
+# Defensive defaults: there is no `ALTER TABLE`-style migration for Mongo.
+# Every read path must default a document's missing field the same way the
+# old SQL `DEFAULT`/nullable columns did (Phase 8, Task 4, plan Step 3).
+# Each test below constructs a raw mongomock document missing the field(s)
+# under test and asserts the read path still returns the documented default.
+# --------------------------------------------------------------------------
 
-    Sets WAL mode up front: converting a database to WAL for the first time
-    needs a brief exclusive lock, which is a separate, pre-existing hazard
-    for two connections racing to open the SAME file for the very first
-    time -- unrelated to `_migrate`'s check-then-ALTER race this test
-    targets, and out of this fix's scope. Pre-establishing WAL here isolates
-    the test to the race this finding is actually about.
-    """
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.executescript(
-        """
-        CREATE TABLE jobs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            kind TEXT NOT NULL,
-            player_slug TEXT NOT NULL,
-            riot_id TEXT NOT NULL,
-            tagline TEXT NOT NULL,
-            region TEXT NOT NULL,
-            state TEXT NOT NULL DEFAULT 'queued',
-            stage_detail TEXT NOT NULL DEFAULT '',
-            stage_current INTEGER,
-            stage_total INTEGER,
-            error TEXT NOT NULL DEFAULT '',
-            created_at REAL NOT NULL,
-            started_at REAL,
-            finished_at REAL,
-            updated_at REAL NOT NULL
-        );
-        CREATE TABLE players (
-            slug TEXT PRIMARY KEY,
-            riot_id TEXT NOT NULL,
-            tagline TEXT NOT NULL,
-            region TEXT NOT NULL,
-            last_job_id INTEGER,
-            base_completed_at REAL,
-            peer_completed_at REAL,
-            peer_failed INTEGER NOT NULL DEFAULT 0
-        );
-        """
+
+def test_get_defaults_missing_job_fields(store: JobStore) -> None:
+    now = time.time()
+    store._jobs.insert_one(
+        {
+            "_id": 1,
+            "kind": jobs.JOB_KIND_ANALYZE,
+            "player_slug": "legacy_euw",
+            "riot_id": "Legacy",
+            "tagline": "EUW",
+            "region": "euw1",
+            "players_json": "[]",
+            "state": jobs.QUEUED,
+            "created_at": now,
+            "updated_at": now,
+            # filter_champion, filter_role, min_games, stage_detail,
+            # stage_current, stage_total, error, trace_id, started_at,
+            # finished_at all deliberately absent.
+        }
     )
-    conn.commit()
-    conn.close()
+    loaded = store.get(1)
+    assert loaded is not None
+    assert loaded["filter_champion"] is None
+    assert loaded["filter_role"] is None
+    assert loaded["min_games"] is None
+    assert loaded["stage_detail"] == ""
+    assert loaded["stage_current"] is None
+    assert loaded["stage_total"] is None
+    assert loaded["error"] == ""
+    assert loaded["trace_id"] == ""
+    assert loaded["started_at"] is None
+    assert loaded["finished_at"] is None
+    assert loaded["players"] == [{"riot_id": "Legacy", "tagline": "EUW"}]
 
 
-def test_migrate_is_safe_when_two_processes_open_a_pre_migration_db_concurrently(
-    tmp_path: Path,
-) -> None:
-    """Regression test for the cross-process TOCTOU in `JobStore._migrate`:
-    two `JobStore` instances opening the SAME pre-migration database file at
-    the same time (modeling `app` and `cron-watch` racing on startup against
-    a shared `app.sqlite` volume, per `docker-compose.yml`) must not crash
-    with `sqlite3.OperationalError: duplicate column name`, now that
-    `_migrate` wraps its check-then-ALTER sequence in `BEGIN IMMEDIATE`.
+def test_get_player_defaults_missing_player_fields(store: JobStore) -> None:
+    store._players.insert_one(
+        {
+            "_id": "legacy_euw",
+            "riot_id": "Legacy",
+            "tagline": "EUW",
+            "region": "euw1",
+            # players_json, last_job_id, base_completed_at,
+            # peer_completed_at, peer_failed, watch_enabled,
+            # watch_interval_s, last_watch_at, last_watch_error,
+            # watch_seen_json all deliberately absent.
+        }
+    )
+    player = store.get_player("legacy_euw")
+    assert player is not None
+    assert player["slug"] == "legacy_euw"
+    assert player["last_job_id"] is None
+    assert player["base_completed_at"] is None
+    assert player["peer_completed_at"] is None
+    assert player["peer_failed"] == 0
+    assert player["watch_enabled"] == 0
+    assert player["watch_interval_s"] == DEFAULT_WATCH_INTERVAL_S
+    assert player["last_watch_at"] is None
+    assert player["last_watch_error"] == ""
+    assert player["players"] == [{"riot_id": "Legacy", "tagline": "EUW"}]
 
-    Uses real OS threads (not just sequential opens) to exercise genuine
-    concurrent access to one sqlite file, which is what the fix's
-    write-lock-based serialization actually has to handle.
-    """
-    db_path = tmp_path / "app.sqlite"
-    _write_pre_migration_schema(db_path)
 
-    barrier = threading.Barrier(2)
-    errors: list[BaseException] = []
-    stores: list[JobStore] = []
-    stores_lock = threading.Lock()
-
-    def _open() -> None:
-        barrier.wait(timeout=5)
-        try:
-            store = JobStore(db_path)
-        except BaseException as exc:  # noqa: BLE001 - captured for the assertion below
-            with stores_lock:
-                errors.append(exc)
-            return
-        with stores_lock:
-            stores.append(store)
-
-    threads = [threading.Thread(target=_open) for _ in range(2)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join(timeout=10)
-
-    try:
-        assert errors == [], f"concurrent migration raised: {errors!r}"
-        assert len(stores) == 2
-
-        # Both stores must see the fully migrated schema, not just "no crash".
-        job, created = stores[0].enqueue(
-            kind=jobs.JOB_KIND_ANALYZE,
-            riot_id="Test",
-            tagline="EUW",
-            region="euw1",
-            player_slug="p1",
-            filter_champion="Fiora",
-            filter_role="TOP",
-            min_games=5,
-        )
-        assert created
-        assert job["filter_champion"] == "Fiora"
-        assert job["min_games"] == 5
-
-        stores[1].upsert_player(slug="p2", riot_id="Test2", tagline="EUW", region="euw1")
-        assert stores[1].set_watch("p2", enabled=True, interval_s=120)
-        row = stores[1].get_player("p2")
-        assert row is not None
-        assert row["watch_enabled"] == 1
-    finally:
-        for store in stores:
-            store.close()
+def test_list_watched_players_defaults_missing_watch_seen(store: JobStore) -> None:
+    store._players.insert_one(
+        {
+            "_id": "legacy_euw",
+            "riot_id": "Legacy",
+            "tagline": "EUW",
+            "region": "euw1",
+            "watch_enabled": 1,
+            # watch_seen_json deliberately absent.
+        }
+    )
+    watched = store.list_watched_players()
+    assert len(watched) == 1
+    assert watched[0]["watch_seen"] == {}

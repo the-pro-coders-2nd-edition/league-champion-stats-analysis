@@ -18,13 +18,14 @@ from pathlib import Path
 from typing import Any
 
 import grpc
+import mongomock
 import pytest
 from fastapi.testclient import TestClient
 
 from league_stats_common.core.config import RANKED_SOLO_QUEUE_ID, WebConfig
 from league_stats_cron_watch.service import CronWatchServicer
 from league_stats_api_ui.app import create_app
-from league_stats_common.infra.jobs import JOB_KIND_REFRESH, JobStore
+from league_stats_common.infra.jobs import JOB_KIND_REFRESH, JobStore, open_jobs_store
 from league_stats_rpc.v1 import common_pb2, cron_watch_pb2, cron_watch_pb2_grpc
 from tests.test_watch import FakeClient
 
@@ -74,7 +75,7 @@ class _AioServerThread:
 
 @pytest.fixture()
 def store(tmp_path: Path):
-    handle = JobStore(tmp_path / "app.sqlite")
+    handle = JobStore(mongomock.MongoClient())
     yield handle
     handle.close()
 
@@ -243,12 +244,13 @@ def test_serve_accepts_a_riot_api_key_supplied_only_via_dotenv(
     Drives the real `serve()` with the key present ONLY in a temp-dir `.env`
     file and nothing in `os.environ`. Rather than letting `serve()` actually
     bind a gRPC server / metrics HTTP server / run `wait_for_termination()`
-    forever (heavy, and one more thing that could hang a test), `JobStore` --
-    the very next thing `serve()` constructs after the key check -- is
-    monkeypatched to raise a distinctive sentinel exception. Reaching that
-    sentinel (rather than `_require_riot_api_key`'s `RuntimeError` about the
-    missing key) proves `serve()` got past both `load_web_config()` and the
-    key check in the right order.
+    forever (heavy, and one more thing that could hang a test), `open_jobs_store`
+    (Phase 8, Task 4 -- previously `JobStore` constructed directly) -- the
+    very next thing `serve()` calls after the key check -- is monkeypatched
+    to raise a distinctive sentinel exception. Reaching that sentinel (rather
+    than `_require_riot_api_key`'s `RuntimeError` about the missing key)
+    proves `serve()` got past both `load_web_config()` and the key check in
+    the right order.
     """
     import league_stats_cron_watch.__main__ as main_module
 
@@ -262,10 +264,10 @@ def test_serve_accepts_a_riot_api_key_supplied_only_via_dotenv(
 
     sentinel = RuntimeError("stopped deliberately before starting the real server")
 
-    def _fake_job_store(path: Path) -> Any:
+    def _fake_open_jobs_store() -> Any:
         raise sentinel
 
-    monkeypatch.setattr(main_module, "JobStore", _fake_job_store)
+    monkeypatch.setattr(main_module, "open_jobs_store", _fake_open_jobs_store)
 
     with pytest.raises(RuntimeError) as exc_info:
         asyncio.run(main_module.serve())
@@ -337,9 +339,10 @@ def test_a_cron_watch_enqueued_job_surfaces_through_the_monolith_job_api(
     tmp_path: Path,
 ) -> None:
     """Task 4's decision, proven end to end: CRON-watch and the monolith open
-    *separate* `JobStore` connections onto the *same* `app.sqlite` file (a
-    stand-in for the docker-compose mounted volume Task 5 will wire up), and a
-    job `CronWatchServicer` enqueues on its connection is immediately visible,
+    *separate* `JobStore` connections onto the *same* Mongo database (Phase 8,
+    Task 4 -- previously the same `app.sqlite` file via a docker-compose
+    mounted volume, now the same `RUNNER_MONGO_URI`/`MONGO_URI`), and a job
+    `CronWatchServicer` enqueues on its connection is immediately visible,
     with a real queue position and ETA, through the monolith's own
     `/api/players/{slug}` and `/api/jobs/{id}` endpoints -- exactly the
     surface `_job_public` in `web/app.py` serves to the frontend today. This
@@ -347,18 +350,21 @@ def test_a_cron_watch_enqueued_job_surfaces_through_the_monolith_job_api(
     NOT give for free: RUNNER assigns its own in-memory job ids
     (`itertools.count` local to one `RunnerServicer` instance) and never
     writes a row into `JobStore` at all.
-    """
-    db_path = tmp_path / "app.sqlite"
 
+    Both sides call `open_jobs_store()` (not a fresh `JobStore(...)`), so
+    this test's "two processes" share the same conftest-patched mongomock
+    client, the same way `test_watch.py::test_career_banner_ack_route`
+    shares one via `open_career_store()` for Task 3's equivalent store.
+    """
     # The monolith side: a real FastAPI app, worker disabled (no network),
-    # backed by its own JobStore connection onto db_path.
-    web_config = WebConfig(output_dir=tmp_path / "out", app_db_path=db_path, runner_storage_mode="sqlite")
+    # backed by its own JobStore connection onto the shared Mongo database.
+    web_config = WebConfig(output_dir=tmp_path / "out", runner_storage_mode="sqlite")
     app = create_app(web_config, start_worker=False)
 
     # The CRON-watch side: a second, independent JobStore connection onto the
-    # SAME file -- modeling two separate processes sharing a mounted volume,
-    # not two handles inside one process.
-    cron_store = JobStore(db_path)
+    # SAME database -- modeling two separate processes sharing Mongo, not two
+    # handles inside one process.
+    cron_store = open_jobs_store()
     try:
         client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
         servicer = CronWatchServicer(cron_store, lambda region: client)

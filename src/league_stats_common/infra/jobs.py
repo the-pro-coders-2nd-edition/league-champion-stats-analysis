@@ -1,28 +1,91 @@
-"""SQLite-backed job queue and player registry for the web app.
+"""MongoDB-backed job queue and player registry for the web app.
 
 One :class:`JobStore` instance is shared between the FastAPI request threads
-and the background worker thread(s); a lock serialises access to the single
-connection. Jobs survive restarts: queued jobs are picked up again, while
-jobs that were mid-run are marked failed by :meth:`JobStore.recover_orphans`.
+and the background worker thread(s), and across the ``api-ui``/``cron-watch``
+processes (both point at the same Mongo database). Jobs survive restarts:
+queued jobs are picked up again, while jobs that were mid-run are marked
+failed by :meth:`JobStore.recover_orphans`.
 
-**Migration note:** a Phase 5 decision once called this store's SQLite
-backing permanent; that decision was reopened, and the current direction
-is to eventually move this store to Mongo too, closing the last SQLite
-dependency in the app. See
-``~/.claude/docs/league-champion-stats-analysis/superpowers/specs/2026-08-20-full-sqlite-removal-path.md``
-for the reasoning and the scoped plan (sized similarly to the CRON-watch
-extraction phase — not a quick follow-up). Until that phase is greenlit
-and done, this store stays exactly as implemented below.
+Backed by ``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in tests)
+instead of SQLite, following the same pattern as ``CareerStore``/
+``DerivedStore``. Reproduces the 2 SQL tables' semantics as 2 collections
+plus one id-allocation collection:
+
+- ``jobs``: one document per job. ``_id`` is an ``int``, allocated from the
+  ``counters`` collection (see below) rather than a Mongo ``ObjectId`` --
+  ``job_id`` is a public HTTP/SPA contract (``GET /api/jobs/{job_id}``,
+  ``POST /api/jobs/{job_id}/cancel`` type it as ``int``), and keeping it a
+  real, total-ordered integer keeps ``queue_position``'s ``id < ?`` and
+  ``average_duration_s``'s ``ORDER BY id DESC`` meaningful the same way
+  SQLite's ``AUTOINCREMENT`` did. Every other SQL column becomes a document
+  field 1:1. Every read path restores an ``"id"`` key from ``_id`` so the
+  returned dict shape matches the old ``dict(sqlite3.Row)`` exactly.
+- ``players``: one document per group/player, ``_id = slug``. Every read
+  path restores a ``"slug"`` key from ``_id``.
+- ``counters``: a single ``{_id: "jobs", value: <last-issued-id>}`` document,
+  incremented via ``find_one_and_update(..., {"$inc": {"value": 1}},
+  upsert=True, return_document=ReturnDocument.AFTER)`` -- the direct
+  Mongo-native equivalent of SQLite's ``AUTOINCREMENT``.
+
+**``enqueue``'s atomicity (replaces the old ``BEGIN IMMEDIATE`` transaction):**
+the real invariant is "at most one active job per ``player_slug``, enforced
+atomically across OS processes" -- this exact race was the subject of a real
+historical production bug (Phase 2's ``BEGIN IMMEDIATE`` fix, closing a
+6-duplicate-jobs race). Rather than a redundant "claim" flag (which every
+terminal-state transition -- ``set_state``, ``cancel``, ``recover_orphans``
+-- would then have to remember to release, a real stale-lock risk class),
+this store declares the invariant directly to MongoDB as a **partial unique
+index**:
+
+    self._jobs.create_index(
+        "player_slug", unique=True,
+        partialFilterExpression={"state": {"$in": list(ACTIVE_STATES)}},
+    )
+
+``enqueue`` allocates a new id and ``insert_one``s the job document directly.
+If another active job already exists for that ``player_slug``, the index
+rejects the insert with ``pymongo.errors.DuplicateKeyError`` -- atomically,
+at the database layer, verified directly against this repo's pinned
+``mongomock`` 4.3.0. No release bookkeeping is needed anywhere: the instant
+a job's ``state`` is updated out of ``ACTIVE_STATES``, the partial index
+stops covering that document and the slug is immediately free for a new
+active job -- also verified directly. See
+``tests/test_web_jobs.py::test_enqueue_is_atomic_under_concurrent_writers``
+for the concurrent-writers proof this design was built to satisfy.
+
+**``claim_next``** is a single atomic ``find_one_and_update`` (``sort``
+picks the oldest queued job, filter+update happen as one op) -- unlike the
+SQL version's ``SELECT`` + conditional ``UPDATE`` + retry loop, this cannot
+lose the race the retry loop guarded against, so no retry loop is needed.
+See ``tests/test_web_jobs.py::test_claim_next_is_atomic_under_concurrent_claimers``.
+
+**No migration step**: Mongo has no ``ALTER TABLE``. Every read path
+defaults missing fields the same way the SQL ``DEFAULT``/nullable columns
+did (see each ``_doc_to_job``/``_doc_to_player`` call site) instead of
+running a schema migration on open.
+
+This repo's pinned ``pymongo`` 4.17.0 + ``mongomock`` 4.3.0 combination is
+incompatible with ``bulk_write(UpdateOne(...))`` (``TypeError: ...
+add_update() got an unexpected keyword argument 'sort'``, reproduced
+directly, see Tasks 2/3's equivalent notes). ``recover_orphans`` uses a
+single ``update_many`` with one uniform filter/update (not a per-document
+``bulk_write``), which does not hit this incompatibility.
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
+import os
 import threading
 import time
-from pathlib import Path
 from typing import Any
+
+import pymongo
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
+
+from league_stats_common.infra.mongo import db_name_from_uri
+from league_stats_common.utils import get_logger
 
 # Job lifecycle states.
 QUEUED = "queued"
@@ -48,52 +111,9 @@ DEFAULT_WATCH_INTERVAL_S = 60
 # Used for ETA display until enough completed jobs exist to average.
 DEFAULT_JOB_DURATION_S = 20 * 60
 
-_SCHEMA = f"""
-CREATE TABLE IF NOT EXISTS jobs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind TEXT NOT NULL,
-    player_slug TEXT NOT NULL,
-    riot_id TEXT NOT NULL,
-    tagline TEXT NOT NULL,
-    region TEXT NOT NULL,
-    players_json TEXT NOT NULL DEFAULT '[]',
-    filter_champion TEXT,
-    filter_role TEXT,
-    min_games INTEGER,
-    state TEXT NOT NULL DEFAULT 'queued',
-    stage_detail TEXT NOT NULL DEFAULT '',
-    stage_current INTEGER,
-    stage_total INTEGER,
-    error TEXT NOT NULL DEFAULT '',
-    trace_id TEXT NOT NULL DEFAULT '',
-    created_at REAL NOT NULL,
-    started_at REAL,
-    finished_at REAL,
-    updated_at REAL NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_jobs_state ON jobs (state);
-CREATE INDEX IF NOT EXISTS idx_jobs_player ON jobs (player_slug);
-CREATE TABLE IF NOT EXISTS players (
-    slug TEXT PRIMARY KEY,
-    riot_id TEXT NOT NULL,
-    tagline TEXT NOT NULL,
-    region TEXT NOT NULL,
-    players_json TEXT NOT NULL DEFAULT '[]',
-    last_job_id INTEGER,
-    base_completed_at REAL,
-    peer_completed_at REAL,
-    peer_failed INTEGER NOT NULL DEFAULT 0,
-    watch_enabled INTEGER NOT NULL DEFAULT 0,
-    watch_interval_s INTEGER NOT NULL DEFAULT {DEFAULT_WATCH_INTERVAL_S},
-    last_watch_at REAL,
-    last_watch_error TEXT NOT NULL DEFAULT '',
-    watch_seen_json TEXT NOT NULL DEFAULT '{{}}'
-);
-"""
-
 
 def encode_players(players: list[dict[str, Any]]) -> str:
-    """Serialize tracked players for SQLite storage."""
+    """Serialize tracked players for storage."""
     from league_stats_common.core.models import solo_rank_fields
 
     payload: list[dict[str, Any]] = []
@@ -155,79 +175,111 @@ def players_label(players: list[dict[str, Any]]) -> str:
 
 
 class JobStore:
-    """Thread-safe SQLite store for analysis jobs and known players."""
+    """MongoDB store for analysis jobs and known players."""
 
-    def __init__(self, db_path: Path) -> None:
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(db_path), timeout=30.0, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        # `busy_timeout` must be set FIRST: it is what makes every later
-        # statement on this connection -- including the `journal_mode=WAL`
-        # pragma itself and `_migrate`'s `BEGIN IMMEDIATE` below -- retry
-        # instead of failing immediately with "database is locked" when two
-        # processes/threads open this same file at once.
-        self._conn.execute("PRAGMA busy_timeout=30000")
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.executescript(_SCHEMA)
-        self._migrate()
+    def __init__(self, client: pymongo.MongoClient, db_name: str = "league_stats") -> None:
+        """Open the store against an existing Mongo client.
+
+        Args:
+            client: A ``pymongo.MongoClient``-compatible client (real or
+                ``mongomock.MongoClient`` in tests).
+            db_name: Name of the database to use within the client.
+        """
+        db = client[db_name]
+        self._jobs = db["jobs"]
+        self._players = db["players"]
+        self._counters = db["counters"]
+        # Mirrors the SQL indexes (`idx_jobs_state`, `idx_jobs_player`).
+        self._jobs.create_index("state")
+        # The at-most-one-active-job-per-player invariant, enforced by Mongo
+        # itself -- see the module docstring's "enqueue's atomicity" section.
+        self._jobs.create_index(
+            "player_slug",
+            unique=True,
+            partialFilterExpression={"state": {"$in": list(ACTIVE_STATES)}},
+        )
+        self._log = get_logger("jobs")
+        # Real MongoDB's `find_one_and_update`/unique-index inserts are
+        # atomic server-side regardless of how many OS processes call them
+        # concurrently -- that is the actual cross-process correctness
+        # mechanism this store relies on (see the module docstring). This
+        # lock is a separate, additional layer: it only serialises calls
+        # *within one process*. It is required because `mongomock` (the test
+        # double used everywhere in this suite) has no internal locking in
+        # its `_find_and_modify` implementation -- verified directly by
+        # reading `mongomock/collection.py` -- so two genuine OS threads
+        # calling `claim_next`/`enqueue` against the SAME `mongomock` client
+        # can interleave and both "win" a claim/insert that real MongoDB
+        # would have serialised. Reproduced directly: without this lock,
+        # `tests/test_web_jobs.py::test_claim_next_is_atomic_under_concurrent_claimers`
+        # flakes (~1 run in 7) with a job claimed twice. A real `pymongo`
+        # client against real MongoDB does not need this lock for
+        # correctness, but it costs nothing there either (Mongo's own
+        # operations are already atomic; this just adds one more process
+        # spends waiting for its own turn).
         self._lock = threading.Lock()
 
-    def _migrate(self) -> None:
-        """Add columns introduced after the initial schema.
+    def close(self) -> None:
+        """No-op: this store never owns its ``pymongo.MongoClient``.
 
-        Wrapped in `BEGIN IMMEDIATE` for the same reason as `enqueue`'s fix
-        (see its comment, and this module's cross-process notes in
-        `cron_watch/service.py`): `app` and `cron-watch` both open a
-        `JobStore` onto the same shared `app.sqlite` file with no startup
-        ordering guarantee between them. Without a lock taken *before* the
-        `PRAGMA table_info` checks, two processes could both see a column as
-        missing and both run `ALTER TABLE ... ADD COLUMN`, and the loser
-        crashes with `sqlite3.OperationalError: duplicate column name`.
-        `BEGIN IMMEDIATE` takes SQLite's write lock up front, so a second
-        process's own `BEGIN IMMEDIATE` blocks (up to `busy_timeout`) until
-        the first migration commits, and then sees the already-migrated
-        schema instead of racing it.
+        The client is handed in from outside (see ``open_jobs_store`` below),
+        mirroring ``CareerStore``/``DerivedStore``'s reasoning -- closing a
+        shared client here would break every other user of it.
         """
-        self._conn.execute("BEGIN IMMEDIATE")
-        try:
-            for table in ("jobs", "players"):
-                columns = {
-                    row[1] for row in self._conn.execute(f"PRAGMA table_info({table})")
-                }
-                if "players_json" not in columns:
-                    self._conn.execute(
-                        f"ALTER TABLE {table} ADD COLUMN players_json TEXT NOT NULL DEFAULT '[]'"
-                    )
-            player_columns = {
-                row[1] for row in self._conn.execute("PRAGMA table_info(players)")
-            }
-            watch_columns = (
-                ("watch_enabled", "INTEGER NOT NULL DEFAULT 0"),
-                ("watch_interval_s", f"INTEGER NOT NULL DEFAULT {DEFAULT_WATCH_INTERVAL_S}"),
-                ("last_watch_at", "REAL"),
-                ("last_watch_error", "TEXT NOT NULL DEFAULT ''"),
-                ("watch_seen_json", "TEXT NOT NULL DEFAULT '{}'"),
-            )
-            for name, ddl in watch_columns:
-                if name not in player_columns:
-                    self._conn.execute(f"ALTER TABLE players ADD COLUMN {name} {ddl}")
-            job_columns = {
-                row[1] for row in self._conn.execute("PRAGMA table_info(jobs)")
-            }
-            if "filter_champion" not in job_columns:
-                self._conn.execute("ALTER TABLE jobs ADD COLUMN filter_champion TEXT")
-            if "filter_role" not in job_columns:
-                self._conn.execute("ALTER TABLE jobs ADD COLUMN filter_role TEXT")
-            if "min_games" not in job_columns:
-                self._conn.execute("ALTER TABLE jobs ADD COLUMN min_games INTEGER")
-            if "trace_id" not in job_columns:
-                self._conn.execute(
-                    "ALTER TABLE jobs ADD COLUMN trace_id TEXT NOT NULL DEFAULT ''"
-                )
-            self._conn.commit()
-        except Exception:
-            self._conn.rollback()
-            raise
+        return None
+
+    # ------------------------------------------------------------- decoding
+
+    @staticmethod
+    def _doc_to_job(doc: dict[str, Any]) -> dict[str, Any]:
+        data = dict(doc)
+        data["id"] = data.pop("_id")
+        data.setdefault("filter_champion", None)
+        data.setdefault("filter_role", None)
+        data.setdefault("min_games", None)
+        data.setdefault("stage_detail", "")
+        data.setdefault("stage_current", None)
+        data.setdefault("stage_total", None)
+        data.setdefault("error", "")
+        data.setdefault("trace_id", "")
+        data.setdefault("started_at", None)
+        data.setdefault("finished_at", None)
+        data["players"] = decode_players(
+            data.get("players_json"),
+            riot_id=str(data.get("riot_id", "")),
+            tagline=str(data.get("tagline", "")),
+        )
+        return data
+
+    @staticmethod
+    def _doc_to_player(doc: dict[str, Any]) -> dict[str, Any]:
+        data = dict(doc)
+        data["slug"] = data.pop("_id")
+        data.setdefault("players_json", "[]")
+        data.setdefault("last_job_id", None)
+        data.setdefault("base_completed_at", None)
+        data.setdefault("peer_completed_at", None)
+        data.setdefault("peer_failed", 0)
+        data.setdefault("watch_enabled", 0)
+        data.setdefault("watch_interval_s", DEFAULT_WATCH_INTERVAL_S)
+        data.setdefault("last_watch_at", None)
+        data.setdefault("last_watch_error", "")
+        data.setdefault("watch_seen_json", "{}")
+        data["players"] = decode_players(
+            data.get("players_json"),
+            riot_id=str(data.get("riot_id", "")),
+            tagline=str(data.get("tagline", "")),
+        )
+        return data
+
+    def _next_job_id(self) -> int:
+        doc = self._counters.find_one_and_update(
+            {"_id": "jobs"},
+            {"$inc": {"value": 1}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return int(doc["value"])
 
     # ------------------------------------------------------------------ jobs
 
@@ -264,95 +316,72 @@ class JobStore:
         role = (filter_role or "").strip() or None
         games_threshold = int(min_games) if min_games is not None else None
         trace = trace_id or ""
+
         with self._lock:
-            # `BEGIN IMMEDIATE` (not the module's default deferred BEGIN, which
-            # only takes a lock at the first *write*) makes the
-            # check-then-insert below atomic across separate OS processes
-            # sharing this file, not just across threads in this one process.
-            # Without it, two processes (e.g. the monolith and CRON-watch)
-            # could both run `_active_job_for` and see "nothing active" before
-            # either INSERTs, defeating this dedup entirely -- WAL mode and
-            # `busy_timeout` alone only prevent SQLITE_BUSY errors, they do
-            # not make this sequence atomic. See
-            # `cron_watch/service.py`'s module docstring for the fuller
-            # writeup of this gap and why this class's own `threading.Lock`
-            # (process-local) does not cover it.
-            self._conn.execute("BEGIN IMMEDIATE")
-            try:
-                existing = self._active_job_for(player_slug)
-                if existing is not None:
-                    self._conn.rollback()
-                    return existing, False
+            while True:
+                new_id = self._next_job_id()
                 now = time.time()
-                cursor = self._conn.execute(
-                    """
-                    INSERT INTO jobs (kind, player_slug, riot_id, tagline, region,
-                                      players_json, filter_champion, filter_role,
-                                      min_games, trace_id, state, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        kind,
-                        player_slug,
-                        riot_id,
-                        tagline,
-                        region,
-                        encode_players(tracked),
-                        champion,
-                        role,
-                        games_threshold,
-                        trace,
-                        QUEUED,
-                        now,
-                        now,
-                    ),
+                doc = {
+                    "_id": new_id,
+                    "kind": kind,
+                    "player_slug": player_slug,
+                    "riot_id": riot_id,
+                    "tagline": tagline,
+                    "region": region,
+                    "players_json": encode_players(tracked),
+                    "filter_champion": champion,
+                    "filter_role": role,
+                    "min_games": games_threshold,
+                    "state": QUEUED,
+                    "stage_detail": "",
+                    "stage_current": None,
+                    "stage_total": None,
+                    "error": "",
+                    "trace_id": trace,
+                    "created_at": now,
+                    "started_at": None,
+                    "finished_at": None,
+                    "updated_at": now,
+                }
+                try:
+                    self._jobs.insert_one(doc)
+                except DuplicateKeyError:
+                    existing = self._active_job_for(player_slug)
+                    if existing is not None:
+                        return existing, False
+                    # The blocking job finished between our failed insert and
+                    # this read -- the slug is free again, retry with a fresh id.
+                    continue
+                self._players.update_one(
+                    {"_id": player_slug}, {"$set": {"last_job_id": new_id}}
                 )
-                self._conn.execute(
-                    "UPDATE players SET last_job_id = ? WHERE slug = ?",
-                    (cursor.lastrowid, player_slug),
-                )
-                self._conn.commit()
-                return self._get(int(cursor.lastrowid)), True
-            except Exception:
-                self._conn.rollback()
-                raise
+                return self._doc_to_job(doc), True
 
     def get(self, job_id: int) -> dict[str, Any] | None:
         """Load one job by id."""
         with self._lock:
-            try:
-                return self._get(job_id)
-            except LookupError:
+            doc = self._jobs.find_one({"_id": job_id})
+            if doc is None:
                 return None
+            return self._doc_to_job(doc)
 
     def _get(self, job_id: int) -> dict[str, Any]:
-        row = self._conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-        if row is None:
+        doc = self._jobs.find_one({"_id": job_id})
+        if doc is None:
             raise LookupError(f"job {job_id} not found")
-        data = dict(row)
-        data["players"] = decode_players(
-            data.get("players_json"),
-            riot_id=str(data.get("riot_id", "")),
-            tagline=str(data.get("tagline", "")),
-        )
-        return data
+        return self._doc_to_job(doc)
 
     def _active_job_for(self, player_slug: str) -> dict[str, Any] | None:
-        placeholders = ",".join("?" for _ in ACTIVE_STATES)
-        row = self._conn.execute(
-            f"SELECT * FROM jobs WHERE player_slug = ? AND state IN ({placeholders}) "
-            "ORDER BY id DESC LIMIT 1",
-            (player_slug, *ACTIVE_STATES),
-        ).fetchone()
-        if row is None:
-            return None
-        data = dict(row)
-        data["players"] = decode_players(
-            data.get("players_json"),
-            riot_id=str(data.get("riot_id", "")),
-            tagline=str(data.get("tagline", "")),
+        """Caller must hold ``self._lock`` -- see ``enqueue``/``active_job_for_player``."""
+        cursor = (
+            self._jobs.find({"player_slug": player_slug, "state": {"$in": list(ACTIVE_STATES)}})
+            .sort("_id", -1)
+            .limit(1)
         )
-        return data
+        doc = next(iter(cursor), None)
+        if doc is None:
+            return None
+        return self._doc_to_job(doc)
 
     def active_job_for_player(self, player_slug: str) -> dict[str, Any] | None:
         """Return the queued or running job for a player, if any."""
@@ -362,46 +391,30 @@ class JobStore:
     def list_active_jobs(self) -> list[dict[str, Any]]:
         """Return every queued or running job (newest active job per player)."""
         with self._lock:
-            placeholders = ",".join("?" for _ in ACTIVE_STATES)
-            rows = self._conn.execute(
-                f"SELECT * FROM jobs WHERE state IN ({placeholders}) ORDER BY id DESC",
-                ACTIVE_STATES,
-            ).fetchall()
+            cursor = self._jobs.find({"state": {"$in": list(ACTIVE_STATES)}}).sort("_id", -1)
             seen: set[str] = set()
             jobs: list[dict[str, Any]] = []
-            for row in rows:
-                slug = str(row["player_slug"])
+            for doc in cursor:
+                slug = str(doc["player_slug"])
                 if slug in seen:
                     continue
                 seen.add(slug)
-                data = dict(row)
-                data["players"] = decode_players(
-                    data.get("players_json"),
-                    riot_id=str(data.get("riot_id", "")),
-                    tagline=str(data.get("tagline", "")),
-                )
-                jobs.append(data)
+                jobs.append(self._doc_to_job(doc))
             return jobs
 
     def claim_next(self) -> dict[str, Any] | None:
         """Atomically claim the oldest queued job, moving it to ``fetching``."""
         with self._lock:
-            # Retry: a job may be cancelled between SELECT and the conditional UPDATE.
-            while True:
-                row = self._conn.execute(
-                    "SELECT id FROM jobs WHERE state = ? ORDER BY id LIMIT 1", (QUEUED,)
-                ).fetchone()
-                if row is None:
-                    return None
-                now = time.time()
-                cursor = self._conn.execute(
-                    "UPDATE jobs SET state = ?, started_at = ?, updated_at = ? "
-                    "WHERE id = ? AND state = ?",
-                    (FETCHING, now, now, row["id"], QUEUED),
-                )
-                self._conn.commit()
-                if cursor.rowcount:
-                    return self._get(int(row["id"]))
+            now = time.time()
+            doc = self._jobs.find_one_and_update(
+                {"state": QUEUED},
+                {"$set": {"state": FETCHING, "started_at": now, "updated_at": now}},
+                sort=[("_id", 1)],
+                return_document=ReturnDocument.AFTER,
+            )
+            if doc is None:
+                return None
+            return self._doc_to_job(doc)
 
     def set_state(
         self,
@@ -418,30 +431,22 @@ class JobStore:
             ``cancelled`` (so the worker cannot overwrite a user cancel).
         """
         with self._lock:
-            row = self._conn.execute(
-                "SELECT state FROM jobs WHERE id = ?", (job_id,)
-            ).fetchone()
-            if row is None:
+            doc = self._jobs.find_one({"_id": job_id}, {"state": 1})
+            if doc is None:
                 return False
-            if row["state"] == CANCELLED and state != CANCELLED:
+            if doc["state"] == CANCELLED and state != CANCELLED:
                 return False
             now = time.time()
-            sets = ["state = ?", "updated_at = ?"]
-            params: list[Any] = [state, now]
+            sets: dict[str, Any] = {"state": state, "updated_at": now}
             if detail is not None:
-                sets.append("stage_detail = ?")
-                params.append(detail)
-                sets.append("stage_current = NULL")
-                sets.append("stage_total = NULL")
+                sets["stage_detail"] = detail
+                sets["stage_current"] = None
+                sets["stage_total"] = None
             if error is not None:
-                sets.append("error = ?")
-                params.append(error)
+                sets["error"] = error
             if state in TERMINAL_STATES:
-                sets.append("finished_at = ?")
-                params.append(now)
-            params.append(job_id)
-            self._conn.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id = ?", params)
-            self._conn.commit()
+                sets["finished_at"] = now
+            self._jobs.update_one({"_id": job_id}, {"$set": sets})
             return True
 
     def update_progress(
@@ -454,25 +459,23 @@ class JobStore:
     ) -> None:
         """Update progress fields without changing the job state."""
         with self._lock:
-            row = self._conn.execute(
-                "SELECT state FROM jobs WHERE id = ?", (job_id,)
-            ).fetchone()
-            if row is None or row["state"] == CANCELLED:
-                return
-            self._conn.execute(
-                "UPDATE jobs SET stage_detail = ?, stage_current = ?, stage_total = ?, "
-                "updated_at = ? WHERE id = ?",
-                (detail, current, total, time.time(), job_id),
+            self._jobs.update_one(
+                {"_id": job_id, "state": {"$ne": CANCELLED}},
+                {
+                    "$set": {
+                        "stage_detail": detail,
+                        "stage_current": current,
+                        "stage_total": total,
+                        "updated_at": time.time(),
+                    }
+                },
             )
-            self._conn.commit()
 
     def is_cancelled(self, job_id: int) -> bool:
         """Return whether the job has been cancelled."""
         with self._lock:
-            row = self._conn.execute(
-                "SELECT state FROM jobs WHERE id = ?", (job_id,)
-            ).fetchone()
-            return row is not None and row["state"] == CANCELLED
+            doc = self._jobs.find_one({"_id": job_id}, {"state": 1})
+            return doc is not None and doc["state"] == CANCELLED
 
     def cancel(self, job_id: int) -> dict[str, Any] | None:
         """Cancel a queued or running job without deleting on-disk reports.
@@ -482,69 +485,75 @@ class JobStore:
             in a terminal state.
         """
         with self._lock:
-            try:
-                job = self._get(job_id)
-            except LookupError:
-                return None
-            if job["state"] not in ACTIVE_STATES:
-                return None
             now = time.time()
-            self._conn.execute(
-                "UPDATE jobs SET state = ?, stage_detail = ?, error = ?, "
-                "finished_at = ?, updated_at = ? WHERE id = ?",
-                (CANCELLED, "Cancelled by user", "", now, now, job_id),
+            doc = self._jobs.find_one_and_update(
+                {"_id": job_id, "state": {"$in": list(ACTIVE_STATES)}},
+                {
+                    "$set": {
+                        "state": CANCELLED,
+                        "stage_detail": "Cancelled by user",
+                        "error": "",
+                        "finished_at": now,
+                        "updated_at": now,
+                    }
+                },
+                return_document=ReturnDocument.AFTER,
             )
-            self._conn.commit()
-            return self._get(job_id)
+            if doc is None:
+                return None
+            return self._doc_to_job(doc)
 
     def queue_position(self, job_id: int) -> int | None:
         """0-based number of queued jobs ahead; ``None`` unless still queued."""
         with self._lock:
-            row = self._conn.execute(
-                "SELECT state FROM jobs WHERE id = ?", (job_id,)
-            ).fetchone()
-            if row is None or row["state"] != QUEUED:
+            doc = self._jobs.find_one({"_id": job_id}, {"state": 1})
+            if doc is None or doc["state"] != QUEUED:
                 return None
-            ahead = self._conn.execute(
-                "SELECT COUNT(*) FROM jobs WHERE state = ? AND id < ?", (QUEUED, job_id)
-            ).fetchone()[0]
-            running = self._conn.execute(
-                f"SELECT COUNT(*) FROM jobs WHERE state IN "
-                f"({','.join('?' for _ in RUNNING_STATES)})",
-                RUNNING_STATES,
-            ).fetchone()[0]
+            ahead = self._jobs.count_documents({"state": QUEUED, "_id": {"$lt": job_id}})
+            running = self._jobs.count_documents({"state": {"$in": list(RUNNING_STATES)}})
             return int(ahead) + int(running)
 
     def average_duration_s(self) -> float:
         """Rolling average duration of recently completed jobs."""
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT finished_at - started_at AS d FROM jobs "
-                "WHERE state = ? AND started_at IS NOT NULL AND finished_at IS NOT NULL "
-                "ORDER BY id DESC LIMIT 5",
-                (DONE,),
-            ).fetchall()
-        durations = [float(row["d"]) for row in rows if row["d"] and row["d"] > 0]
+            cursor = (
+                self._jobs.find(
+                    {"state": DONE, "started_at": {"$ne": None}, "finished_at": {"$ne": None}}
+                )
+                .sort("_id", -1)
+                .limit(5)
+            )
+            durations = [
+                float(doc["finished_at"]) - float(doc["started_at"])
+                for doc in cursor
+            ]
+        durations = [d for d in durations if d > 0]
         if not durations:
             return float(DEFAULT_JOB_DURATION_S)
         return sum(durations) / len(durations)
 
     def recover_orphans(self) -> int:
-        """Fail jobs left mid-run by a previous process (queued jobs survive)."""
+        """Fail jobs left mid-run by a previous process (queued jobs survive).
+
+        A single ``update_many`` with one uniform filter/update -- not a
+        per-document ``bulk_write`` -- so it does not hit this repo's pinned
+        pymongo/mongomock ``bulk_write`` incompatibility (see module
+        docstring), and stays a single atomic multi-document write.
+        """
         with self._lock:
-            cursor = self._conn.execute(
-                f"UPDATE jobs SET state = ?, error = ?, finished_at = ?, updated_at = ? "
-                f"WHERE state IN ({','.join('?' for _ in RUNNING_STATES)})",
-                (
-                    FAILED,
-                    "Server restarted while this job was running. Submit it again.",
-                    time.time(),
-                    time.time(),
-                    *RUNNING_STATES,
-                ),
+            now = time.time()
+            result = self._jobs.update_many(
+                {"state": {"$in": list(RUNNING_STATES)}},
+                {
+                    "$set": {
+                        "state": FAILED,
+                        "error": "Server restarted while this job was running. Submit it again.",
+                        "finished_at": now,
+                        "updated_at": now,
+                    }
+                },
             )
-            self._conn.commit()
-            return int(cursor.rowcount)
+            return int(result.modified_count)
 
     # --------------------------------------------------------------- players
 
@@ -560,75 +569,51 @@ class JobStore:
         """Register (or update the identity of) a player or group."""
         tracked = players or [{"riot_id": riot_id, "tagline": tagline}]
         with self._lock:
-            self._conn.execute(
-                """
-                INSERT INTO players (slug, riot_id, tagline, region, players_json)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT (slug) DO UPDATE SET
-                    riot_id = excluded.riot_id,
-                    tagline = excluded.tagline,
-                    region = excluded.region,
-                    players_json = excluded.players_json
-                """,
-                (slug, riot_id, tagline, region, encode_players(tracked)),
+            self._players.update_one(
+                {"_id": slug},
+                {
+                    "$set": {
+                        "riot_id": riot_id,
+                        "tagline": tagline,
+                        "region": region,
+                        "players_json": encode_players(tracked),
+                    }
+                },
+                upsert=True,
             )
-            self._conn.commit()
 
     def get_player(self, slug: str) -> dict[str, Any] | None:
         """Load one player/group row with a decoded ``players`` list."""
         with self._lock:
-            row = self._conn.execute(
-                "SELECT * FROM players WHERE slug = ?", (slug,)
-            ).fetchone()
-            if row is None:
+            doc = self._players.find_one({"_id": slug})
+            if doc is None:
                 return None
-            data = dict(row)
-            data["players"] = decode_players(
-                data.get("players_json"),
-                riot_id=str(data.get("riot_id", "")),
-                tagline=str(data.get("tagline", "")),
-            )
-            return data
+            return self._doc_to_player(doc)
 
     def set_watch(
         self, slug: str, *, enabled: bool, interval_s: int | None = None
     ) -> bool:
         """Turn watching on or off for a group. Returns ``False`` if unknown."""
         with self._lock:
-            row = self._conn.execute(
-                "SELECT slug FROM players WHERE slug = ?", (slug,)
-            ).fetchone()
-            if row is None:
+            doc = self._players.find_one({"_id": slug}, {"_id": 1})
+            if doc is None:
                 return False
-            if interval_s is None:
-                self._conn.execute(
-                    "UPDATE players SET watch_enabled = ?, last_watch_error = '' "
-                    "WHERE slug = ?",
-                    (1 if enabled else 0, slug),
-                )
-            else:
-                self._conn.execute(
-                    "UPDATE players SET watch_enabled = ?, watch_interval_s = ?, "
-                    "last_watch_error = '' WHERE slug = ?",
-                    (1 if enabled else 0, max(60, int(interval_s)), slug),
-                )
-            self._conn.commit()
+            sets: dict[str, Any] = {
+                "watch_enabled": 1 if enabled else 0,
+                "last_watch_error": "",
+            }
+            if interval_s is not None:
+                sets["watch_interval_s"] = max(60, int(interval_s))
+            self._players.update_one({"_id": slug}, {"$set": sets})
             return True
 
     def list_watched_players(self) -> list[dict[str, Any]]:
         """Every group with watching enabled, identities decoded."""
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM players WHERE watch_enabled = 1 ORDER BY slug"
-            ).fetchall()
+            cursor = list(self._players.find({"watch_enabled": 1}).sort("_id", 1))
         watched: list[dict[str, Any]] = []
-        for row in rows:
-            data = dict(row)
-            data["players"] = decode_players(
-                data.get("players_json"),
-                riot_id=str(data.get("riot_id", "")),
-                tagline=str(data.get("tagline", "")),
-            )
+        for doc in cursor:
+            data = self._doc_to_player(doc)
             try:
                 data["watch_seen"] = json.loads(data.get("watch_seen_json") or "{}")
             except json.JSONDecodeError:
@@ -651,57 +636,80 @@ class JobStore:
         cannot disagree.
         """
         stamp = time.time() if at is None else float(at)
+        sets: dict[str, Any] = {"last_watch_at": stamp, "last_watch_error": error}
+        if seen is not None:
+            sets["watch_seen_json"] = json.dumps(seen)
         with self._lock:
-            if seen is None:
-                self._conn.execute(
-                    "UPDATE players SET last_watch_at = ?, last_watch_error = ? "
-                    "WHERE slug = ?",
-                    (stamp, error, slug),
-                )
-            else:
-                self._conn.execute(
-                    "UPDATE players SET last_watch_at = ?, last_watch_error = ?, "
-                    "watch_seen_json = ? WHERE slug = ?",
-                    (stamp, error, json.dumps(seen), slug),
-                )
-            self._conn.commit()
+            self._players.update_one({"_id": slug}, {"$set": sets})
 
     def mark_player_base_complete(self, slug: str) -> None:
         """Record that the base (pre-peer) report finished for a player."""
         with self._lock:
-            self._conn.execute(
-                "UPDATE players SET base_completed_at = ?, peer_failed = 0 WHERE slug = ?",
-                (time.time(), slug),
+            self._players.update_one(
+                {"_id": slug}, {"$set": {"base_completed_at": time.time(), "peer_failed": 0}}
             )
-            self._conn.commit()
 
     def mark_player_peer_complete(self, slug: str) -> None:
         """Record that peer analysis finished for a player."""
         with self._lock:
-            self._conn.execute(
-                "UPDATE players SET peer_completed_at = ?, peer_failed = 0 WHERE slug = ?",
-                (time.time(), slug),
+            self._players.update_one(
+                {"_id": slug}, {"$set": {"peer_completed_at": time.time(), "peer_failed": 0}}
             )
-            self._conn.commit()
 
     def mark_player_peer_failed(self, slug: str) -> None:
         """Record that peer analysis failed (base report remains available)."""
         with self._lock:
-            self._conn.execute(
-                "UPDATE players SET peer_failed = 1 WHERE slug = ?", (slug,)
-            )
-            self._conn.commit()
+            self._players.update_one({"_id": slug}, {"$set": {"peer_failed": 1}})
 
     def recent_players(self, limit: int = 50) -> list[dict[str, Any]]:
         """Players ordered by most recent activity."""
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM players ORDER BY COALESCE(base_completed_at, 0) DESC "
-                "LIMIT ?",
-                (limit,),
-            ).fetchall()
-            return [dict(row) for row in rows]
+            cursor = list(self._players.find({}).sort("base_completed_at", -1).limit(limit))
+            return [self._doc_to_player(doc) for doc in cursor]
 
-    def close(self) -> None:
-        """Close the underlying connection."""
-        self._conn.close()
+
+# Process-wide Mongo clients keyed by URI, mirroring `career_store.py`'s own
+# `_SHARED_MONGO_CLIENTS`: neither `api_ui/app.py` nor `cron_watch/__main__.py`
+# carries a Mongo client for `JobStore` today -- both only ever resolved an
+# `app_db_path: Path` off `WebConfig`. Threading a Mongo client through either
+# call path would ripple this task well outside its file list, the same
+# situation Tasks 2/3 hit with `DerivedStore`/`CareerStore`'s real callers.
+_SHARED_MONGO_CLIENTS: dict[str, pymongo.MongoClient] = {}
+_SHARED_MONGO_CLIENTS_LOCK = threading.Lock()
+
+
+def _resolve_mongo_uri() -> str:
+    return (
+        os.environ.get("RUNNER_MONGO_URI")
+        or os.environ.get("MONGO_URI")
+        or "mongodb://localhost:27017/league_stats"
+    )
+
+
+def _build_mongo_client(mongo_uri: str) -> pymongo.MongoClient:
+    """Return the process-wide Mongo client for this URI, creating it once.
+
+    A separate seam (rather than calling `pymongo.MongoClient` directly from
+    `open_jobs_store`) so tests can monkeypatch this one function to return a
+    `mongomock.MongoClient` instead of dialing a real Mongo -- matching
+    `career_store.py`/`derived.py`'s own `_build_mongo_client`.
+    """
+    with _SHARED_MONGO_CLIENTS_LOCK:
+        client = _SHARED_MONGO_CLIENTS.get(mongo_uri)
+        if client is None:
+            client = pymongo.MongoClient(mongo_uri)
+            _SHARED_MONGO_CLIENTS[mongo_uri] = client
+        return client
+
+
+def open_jobs_store() -> JobStore:
+    """Open the Job store against the process-wide Mongo client.
+
+    The single production entry point for `api_ui/app.py` and
+    `cron_watch/__main__.py` -- see the module comment above
+    `_SHARED_MONGO_CLIENTS` for why this resolves its own client rather than
+    receiving one from a caller.
+    """
+    uri = _resolve_mongo_uri()
+    client = _build_mongo_client(uri)
+    return JobStore(client, db_name=db_name_from_uri(uri))

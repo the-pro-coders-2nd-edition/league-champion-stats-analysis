@@ -80,6 +80,7 @@ from league_stats_common.infra.jobs import (
     JOB_KIND_REFRESH,
     JobStore,
     decode_players,
+    open_jobs_store,
     players_label,
 )
 from league_stats_api_ui.welcome_back_cache import WelcomeBackCache, WelcomeBackSubscriber
@@ -782,7 +783,7 @@ def create_app(
     ensure_brand_assets(config.output_dir)
     refresh_saved_report_branding(config.output_dir)
 
-    store = JobStore(config.app_db_path)
+    store = open_jobs_store()
     worker = AnalysisWorker(store, config)
     # Always created (cheap, gRPC-free) so a later task can read from it
     # unconditionally; only the subscriber below is gated on the env var.

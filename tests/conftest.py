@@ -7,6 +7,7 @@ import pytest
 
 from league_stats_peers.analysis.peer import benchmark_cache as _benchmark_cache
 from league_stats_common.infra import career_store as _career_store
+from league_stats_common.infra import jobs as _jobs
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
 from league_stats_runner.infra import derived as _derived
@@ -91,3 +92,24 @@ def _career_store_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     client = mongomock.MongoClient()
     monkeypatch.setattr(_career_store, "_build_mongo_client", lambda uri: client)
+
+
+@pytest.fixture(autouse=True)
+def _jobs_store_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default every test's job/player store (Phase 8, Task 4) to an
+    in-memory mongomock store instead of a real Mongo connection.
+
+    `jobs.open_jobs_store` lazily builds a real `pymongo.MongoClient` against
+    `RUNNER_MONGO_URI`/`MONGO_URI` (falling back to `localhost:27017`) on
+    first use via `_build_mongo_client`, the same seam `derived.py`/
+    `career_store.py` use. Without this fixture, `create_app` (via
+    `api_ui/app.py`'s `open_jobs_store()` call) would try a real network
+    connection and hang. One fresh client per test (function-scoped fixture)
+    mirrors the old per-test `tmp_path` SQLite file isolation -- tests
+    needing two "processes" to observe the same store (e.g.
+    `test_cron_watch_service.py`'s cross-boundary test) call
+    `jobs.open_jobs_store()` from both sides so they share this fixture's
+    client, same as `_career_store_uses_mongomock` above.
+    """
+    client = mongomock.MongoClient()
+    monkeypatch.setattr(_jobs, "_build_mongo_client", lambda uri: client)

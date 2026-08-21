@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import mongomock
 import pytest
 
 from league_stats_common.core.config import WebConfig
@@ -39,7 +40,7 @@ def _fake_context(
 
 @pytest.fixture()
 def store(tmp_path: Path) -> JobStore:
-    js = JobStore(tmp_path / "app.sqlite")
+    js = JobStore(mongomock.MongoClient())
     js.upsert_player(slug="test_euw", riot_id="Test", tagline="EUW", region="euw1")
     yield js
     js.close()

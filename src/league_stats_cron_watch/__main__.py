@@ -10,10 +10,10 @@ therefore uses `grpc.aio.server()` / `await server.start()` /
 `CronWatchServicer`'s RPC methods are `async def`.
 
 CRON-watch's design (`cron_watch/service.py`'s "Design note -- enqueue
-target") points its own `JobStore` at the exact same `app.sqlite` file the
-monolith uses, rather than calling RUNNER's `EnqueueJob`. In docker-compose
-this is a volume shared between the `api-ui` and `cron-watch` services (see
-`docker-compose.yml`). Per that module's "Handoff note for Task 5": this
+target") points its own `JobStore` at the exact same Mongo database the
+monolith uses (Phase 8, Task 4 -- previously a shared `app.sqlite` file,
+now `RUNNER_MONGO_URI`/`MONGO_URI`), rather than calling RUNNER's
+`EnqueueJob`. Per that module's "Handoff note for Task 5": this
 entrypoint must NOT call `store.recover_orphans()` on startup the way
 `web/app.py`'s `lifespan` does -- against a shared database, that would mark
 the monolith's genuinely in-flight jobs as failed. Only the monolith calls
@@ -31,7 +31,7 @@ from prometheus_client import start_http_server
 
 from league_stats_common.core.config import WebConfig, load_config, load_web_config
 from league_stats_common.infra.cache import HttpCache
-from league_stats_common.infra.jobs import JobStore
+from league_stats_common.infra.jobs import JobStore, open_jobs_store
 from league_stats_common.infra.mongo import db_name_from_uri
 from league_stats_common.infra.riot_api import RiotApiClient, shared_rate_limiter
 from league_stats_common.infra.trace_context import AsyncTraceServerInterceptor
@@ -125,9 +125,10 @@ async def serve() -> None:
     # relative to the service actually coming up.
     web_config = load_web_config()
     _require_riot_api_key()
-    # Shared file with the monolith's `api-ui` service -- a docker-compose volume
-    # mount, not a per-service path. See this module's docstring.
-    store = JobStore(web_config.app_db_path)
+    # Shared Mongo database with the monolith's `api-ui` service (Phase 8,
+    # Task 4 -- both resolve the same `RUNNER_MONGO_URI`/`MONGO_URI`, no
+    # longer a docker-compose volume mount). See this module's docstring.
+    store = open_jobs_store()
     servicer = CronWatchServicer(
         store, lambda region: _build_client(region, web_config)
     )

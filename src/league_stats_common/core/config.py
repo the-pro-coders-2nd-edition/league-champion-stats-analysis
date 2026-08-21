@@ -425,6 +425,11 @@ class WebConfig(BaseModel):
     # jobs share one rate limit, so parallelism only helps with a production key.
     worker_concurrency: int = Field(default=1, ge=1, le=8)
     worker_poll_interval_s: float = Field(default=1.0, gt=0)
+    # Dead as of Phase 8, Task 4: `JobStore` moved to Mongo
+    # (`open_jobs_store()`, resolving `runner_mongo_uri`/`MONGO_URI`) and no
+    # longer reads this field. Left in place (same as `career_db_path`/
+    # `derived_db_path` after Tasks 2/3) since ~15 test files still pass it
+    # harmlessly; Task 5 sweeps up dead config fields like this one together.
     app_db_path: Path = Path("data") / "app.sqlite"
     output_dir: Path = Path("output")
     gemini_api_key: str | None = None

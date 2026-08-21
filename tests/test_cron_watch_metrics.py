@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import mongomock
 import pytest
 from prometheus_client import CollectorRegistry, Counter, Histogram
 from prometheus_client.parser import text_string_to_metric_families
@@ -43,7 +44,7 @@ def _generate_latest_default_registry() -> str:
 
 @pytest.fixture()
 def store(tmp_path: Path):
-    handle = JobStore(tmp_path / "app.sqlite")
+    handle = JobStore(mongomock.MongoClient())
     handle.upsert_player(
         slug=SLUG,
         riot_id="Hugros",

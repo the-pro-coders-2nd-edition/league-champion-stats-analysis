@@ -6,6 +6,7 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+import mongomock
 import pytest
 from fastapi.testclient import TestClient
 
@@ -60,7 +61,7 @@ class FakeClient:
 
 @pytest.fixture()
 def store(tmp_path: Path):
-    handle = JobStore(tmp_path / "app.sqlite")
+    handle = JobStore(mongomock.MongoClient())
     handle.upsert_player(
         slug=SLUG,
         riot_id="Hugros",
