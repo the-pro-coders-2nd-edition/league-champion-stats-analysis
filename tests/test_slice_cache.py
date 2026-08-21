@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import mongomock
 import pytest
 
 from league_stats_common.core.models import RankedEntry
-from league_stats_runner.infra.derived import KIND_SLICE, DerivedStore
+from league_stats_runner.infra import derived as derived_module
+from league_stats_runner.infra.derived import KIND_SLICE
 from league_stats_runner.pipeline import bundles as bundles_module
 from league_stats_runner.pipeline.orchestrator import build_report_views
 from tests.test_reports import _config, _make_records, _peer
@@ -115,12 +117,15 @@ def test_peer_data_is_restored_from_cache(tmp_path: Path) -> None:
     assert warm_peers["flex"]["all"] is None
 
 
-def test_slices_are_actually_written_to_the_store(tmp_path: Path) -> None:
+def test_slices_are_actually_written_to_the_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = mongomock.MongoClient()
+    monkeypatch.setattr(derived_module, "_build_mongo_client", lambda uri: client)
+    db_name = derived_module.db_name_from_uri(derived_module._resolve_mongo_uri())
+
     (_, _, _), config, _ = _views(tmp_path)
 
-    with DerivedStore(config.derived_db_path) as derived:
-        count = derived._conn.execute(
-            "SELECT COUNT(*) FROM derived WHERE kind = ?", (KIND_SLICE,)
-        ).fetchone()[0]
+    count = client[db_name]["derived"].count_documents({"kind": KIND_SLICE})
 
     assert count == 9

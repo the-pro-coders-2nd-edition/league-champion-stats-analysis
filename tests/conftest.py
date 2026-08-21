@@ -8,6 +8,7 @@ import pytest
 from league_stats_peers.analysis.peer import benchmark_cache as _benchmark_cache
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
+from league_stats_runner.infra import derived as _derived
 
 
 @pytest.fixture(autouse=True)
@@ -45,3 +46,24 @@ def _peer_live_cache_uses_mongomock(tmp_path, monkeypatch: pytest.MonkeyPatch) -
         LiveBenchmarkCacheStore(mongomock.MongoClient(), db_name="test_default_live_cache"),
     )
     monkeypatch.setattr(_benchmark_cache, "_LIVE_CACHE_DIR", tmp_path / "live_cache")
+
+
+@pytest.fixture(autouse=True)
+def _derived_store_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default every test's RUNNER derived-artifact cache (Phase 8, Task 2) to
+    an in-memory mongomock store instead of a real Mongo connection.
+
+    `derived.open_derived_store` lazily builds a real `pymongo.MongoClient`
+    against `RUNNER_MONGO_URI`/`MONGO_URI` (falling back to
+    `localhost:27017`) on first use via `_build_mongo_client`. Without this
+    fixture, any test that exercises `load_all_records`/`build_report_views`/
+    `build_game_review_views` would try a real network connection and hang
+    until pymongo's server-selection timeout, since no real Mongo instance
+    runs in this test environment. One fresh client per test (function-scoped
+    fixture) mirrors the old per-test `tmp_path` SQLite file isolation --
+    tests that need to inspect the store's raw documents install their own
+    dedicated mongomock client and override this fixture's monkeypatch (it
+    simply runs after this one).
+    """
+    client = mongomock.MongoClient()
+    monkeypatch.setattr(_derived, "_build_mongo_client", lambda uri: client)

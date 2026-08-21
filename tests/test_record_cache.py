@@ -12,7 +12,8 @@ import pytest
 from league_stats_common.core.config import AppConfig
 from league_stats_common.core.models import MatchRecord
 from league_stats_common.core.progress import ProgressReporter
-from league_stats_runner.infra.derived import KIND_RECORD, DerivedStore
+from league_stats_runner.infra import derived as derived_module
+from league_stats_runner.infra.derived import KIND_RECORD
 from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.ingest import parser as parser_module
 from league_stats_runner.pipeline.fetch import load_all_records
@@ -192,16 +193,22 @@ def test_account_label_is_not_baked_into_the_cache(tmp_path: Path, make_services
     assert "Smurf#EUW" not in {record.account for record in warm}
 
 
-def test_a_corrupt_cached_record_is_recovered(tmp_path: Path, make_services) -> None:
+def test_a_corrupt_cached_record_is_recovered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_services
+) -> None:
+    # Override the autouse `_derived_store_uses_mongomock` fixture with an
+    # explicit client held here, so both `load_all_records` calls below share
+    # it and this test can reach into the collection directly in between.
+    client = mongomock.MongoClient()
+    monkeypatch.setattr(derived_module, "_build_mongo_client", lambda uri: client)
+    db_name = derived_module.db_name_from_uri(derived_module._resolve_mongo_uri())
+
     services = make_services(tmp_path)
     load_all_records(services, PUUID)
 
-    with DerivedStore(services.config.derived_db_path) as derived:
-        derived._conn.execute(
-            "UPDATE derived SET payload = '{\"nonsense\": true}' WHERE kind = ?",
-            (KIND_RECORD,),
-        )
-        derived._conn.commit()
+    client[db_name]["derived"].update_many(
+        {"kind": KIND_RECORD}, {"$set": {"payload": {"nonsense": True}}}
+    )
 
     recovered = load_all_records(services, PUUID)
     assert len(recovered) == 6

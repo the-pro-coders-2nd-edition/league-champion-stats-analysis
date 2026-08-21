@@ -12,7 +12,7 @@ from tqdm import tqdm
 from league_stats_common.core.config import PlayerIdentity
 from league_stats_common.core.models import MatchRecord
 from league_stats_common.core.progress import STAGE_FETCHING, STAGE_PARSING
-from league_stats_runner.infra.derived import KIND_RECORD, DerivedStore
+from league_stats_runner.infra.derived import KIND_RECORD, open_derived_store
 from league_stats_runner.ingest.parser import BaseMatchFilter, ItemCatalog, MatchParser
 from league_stats_runner.pipeline.services import PlayerContext, Services
 from league_stats_common.utils import get_logger
@@ -128,7 +128,7 @@ def load_all_records(
     records: list[MatchRecord] = []
     hits = 0
 
-    with DerivedStore(services.config.derived_db_path) as derived:
+    with open_derived_store() as derived:
         for puuid in puuid_list:
             match_ids = list(services.store.iter_match_ids(puuid))
             total = len(match_ids)

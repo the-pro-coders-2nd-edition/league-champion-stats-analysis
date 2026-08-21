@@ -87,7 +87,7 @@ from league_stats_runner.presentation.report import (
     utc_now_iso,
     write_report_meta,
 )
-from league_stats_runner.infra.derived import KIND_SLICE, DerivedStore, slice_fingerprint
+from league_stats_runner.infra.derived import KIND_SLICE, open_derived_store, slice_fingerprint
 from league_stats_runner.presentation.report_json import context_to_json
 from league_stats_common.utils import get_logger
 
@@ -386,7 +386,7 @@ def build_report_views(
     # every slice below rather than rebuilt per slice, and only the all-ranked
     # views actually render it.
     career_ladder = build_all_ranked_ladder(config, records, peer_comparison)
-    with DerivedStore(config.derived_db_path) as derived:
+    with open_derived_store() as derived:
         for queue_key in QUEUE_FILTER_OPTIONS:
             queue_records = filter_records_by_queue(records, queue_key)
             queue_total = len(queue_records)

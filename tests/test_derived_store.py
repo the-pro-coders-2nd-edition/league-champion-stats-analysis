@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+import mongomock
 import pytest
 
-from league_stats_common.core.config import AppConfig
 from league_stats_runner.infra.derived import (
     KIND_GAME_REVIEW,
     KIND_RECORD,
@@ -18,16 +16,9 @@ from league_stats_runner.infra.derived import (
 
 
 @pytest.fixture()
-def store(tmp_path: Path):
-    with DerivedStore(tmp_path / "derived.sqlite") as handle:
+def store():
+    with DerivedStore(mongomock.MongoClient(), db_name="test_derived") as handle:
         yield handle
-
-
-def test_config_exposes_the_derived_path(tmp_path: Path) -> None:
-    config = AppConfig(
-        riot_id="A", tagline="EUW", api_key="RGAPI-test", cache_dir=tmp_path / "c"
-    )
-    assert config.derived_db_path == tmp_path / "c" / "derived.sqlite"
 
 
 def test_round_trip(store: DerivedStore) -> None:
@@ -74,6 +65,20 @@ def test_put_overwrites(store: DerivedStore) -> None:
     assert store.get(KIND_RECORD, "a") == {"v": 2}
 
 
+def test_put_overwrite_does_not_touch_created_at(store: DerivedStore) -> None:
+    """Mirrors the SQL `ON CONFLICT ... DO UPDATE` clause, which never lists
+    `created_at` -- only a Mongo port with `$setOnInsert` (not a naive
+    `replace_one`) preserves this."""
+    store.put(KIND_RECORD, "a", {"v": 1})
+    doc_id = DerivedStore._doc_id(KIND_RECORD, "a", code_version(KIND_RECORD))
+    first_created_at = store._derived.find_one({"_id": doc_id})["created_at"]
+
+    store.put(KIND_RECORD, "a", {"v": 2})
+    second_created_at = store._derived.find_one({"_id": doc_id})["created_at"]
+
+    assert second_created_at == first_created_at
+
+
 def test_a_different_code_version_is_a_miss(
     store: DerivedStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -102,8 +107,31 @@ def test_purge_stale_versions(store: DerivedStore, monkeypatch: pytest.MonkeyPat
     assert store.get(KIND_RECORD, "a") is None
 
 
-def test_eviction_drops_least_recently_hit_first(tmp_path: Path) -> None:
-    with DerivedStore(tmp_path / "d.sqlite", max_bytes=200) as store:
+def test_delete_spans_every_code_version(store: DerivedStore) -> None:
+    """Mirrors the SQL `DELETE FROM derived WHERE kind = ? AND key = ?` --
+    no `code_version` filter, so it drops the row under every version, not
+    just the currently active one."""
+    store._derived.insert_one(
+        {
+            "_id": DerivedStore._doc_id(KIND_RECORD, "a", "old-version"),
+            "kind": KIND_RECORD,
+            "key": "a",
+            "code_version": "old-version",
+            "payload": {"v": "stale"},
+            "bytes": 1,
+            "created_at": 0.0,
+            "hit_at": 0.0,
+        }
+    )
+    store.put(KIND_RECORD, "a", {"v": "current"})
+
+    store.delete(KIND_RECORD, "a")
+
+    assert store._derived.count_documents({"kind": KIND_RECORD, "key": "a"}) == 0
+
+
+def test_eviction_drops_least_recently_hit_first() -> None:
+    with DerivedStore(mongomock.MongoClient(), db_name="test_derived", max_bytes=200) as store:
         store.put(KIND_RECORD, "old", {"pad": "x" * 100})
         store.put(KIND_RECORD, "new", {"pad": "y" * 100})
         store.get(KIND_RECORD, "new")  # newer hit_at
@@ -118,15 +146,6 @@ def test_eviction_drops_least_recently_hit_first(tmp_path: Path) -> None:
 def test_eviction_is_a_noop_under_budget(store: DerivedStore) -> None:
     store.put(KIND_RECORD, "a", {"v": 1})
     assert store.evict_to_budget() == 0
-
-
-def test_corrupt_payload_is_dropped_not_raised(store: DerivedStore) -> None:
-    store.put(KIND_RECORD, "a", {"v": 1})
-    store._conn.execute("UPDATE derived SET payload = 'not json' WHERE key = 'a'")
-    store._conn.commit()
-
-    assert store.get(KIND_RECORD, "a") is None
-    assert store.get(KIND_RECORD, "a") is None
 
 
 def test_slice_fingerprint_ignores_order_but_not_membership() -> None:

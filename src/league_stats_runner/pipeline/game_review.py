@@ -19,7 +19,7 @@ from league_stats_common.core.models import (
     MatchRecord,
 )
 from league_stats_common.infra.ddragon_assets import ABILITY_SLOTS, DDragonAssets
-from league_stats_runner.infra.derived import KIND_GAME_REVIEW, DerivedStore, slice_fingerprint
+from league_stats_runner.infra.derived import KIND_GAME_REVIEW, open_derived_store, slice_fingerprint
 from league_stats_runner.pipeline.frames import AnalysisFrames
 from league_stats_common.utils import get_logger
 
@@ -222,7 +222,7 @@ def build_game_review_views(
             )
         ),
     )
-    with DerivedStore(config.derived_db_path) as derived:
+    with open_derived_store() as derived:
         cached = derived.get(KIND_GAME_REVIEW, fingerprint)
         if cached is not None:
             try:
