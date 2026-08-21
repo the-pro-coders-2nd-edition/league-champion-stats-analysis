@@ -21,6 +21,7 @@ def _config(tmp_path: Path, *, champion: str = "Viktor", role: str = "MIDDLE") -
         champion=champion,
         role=role,
         output_dir=tmp_path / "output",
+        assets_dir=tmp_path / "assets",
         cache_dir=tmp_path / "cache",
         template_dir=Path(__file__).resolve().parent.parent / "src/league_stats/presentation/templates",
     )

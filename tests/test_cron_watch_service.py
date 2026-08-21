@@ -368,7 +368,7 @@ def test_a_cron_watch_enqueued_job_surfaces_through_the_monolith_job_api(
     """
     # The monolith side: a real FastAPI app, worker disabled (no network),
     # backed by its own JobStore connection onto the shared Mongo database.
-    web_config = WebConfig(output_dir=tmp_path / "out")
+    web_config = WebConfig(output_dir=tmp_path / "out", assets_dir=tmp_path / "assets")
     app = create_app(web_config, start_worker=False)
 
     # The CRON-watch side: a second, independent JobStore connection onto the

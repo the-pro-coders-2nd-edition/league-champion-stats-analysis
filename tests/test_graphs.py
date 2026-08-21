@@ -21,6 +21,7 @@ def _config(tmp_path: Path) -> AppConfig:
         riot_id="player",
         tagline="euw",
         output_dir=tmp_path / "output",
+        assets_dir=tmp_path / "assets",
     )
 
 

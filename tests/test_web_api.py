@@ -46,6 +46,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
     config = WebConfig(
         output_dir=tmp_path / "output",
+        assets_dir=tmp_path / "assets",
         gemini_api_key="fake-key",
     )
     application = web_app.create_app(config, start_worker=False)
@@ -76,7 +77,7 @@ def test_landing_page_lists_reports(client: TestClient) -> None:
 
 
 def test_landing_page_shows_profile_icons(client: TestClient) -> None:
-    icon_dir = client.web_config.output_dir / "assets" / "profile_icons"
+    icon_dir = client.web_config.assets_dir / "profile_icons"
     icon_dir.mkdir(parents=True, exist_ok=True)
     (icon_dir / "456.png").write_bytes(b"png")
     (icon_dir / "789.png").write_bytes(b"png")
@@ -97,7 +98,7 @@ def test_landing_page_shows_profile_icons(client: TestClient) -> None:
     labels = {member["label"] for member in group["players"]}
     assert labels == {"Alice#EUW", "Bob#EUW"}
     icons = {member["profile_icon"] for member in group["players"]}
-    assert icons == {"/out/assets/profile_icons/456.png", "/out/assets/profile_icons/789.png"}
+    assert icons == {"/ddragon/profile_icons/456.png", "/ddragon/profile_icons/789.png"}
     assert group["is_group"] is True
 
 
@@ -464,7 +465,7 @@ def test_get_build_payload_returns_report_json(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "champion": "Viktor",
-        "champion_icon": "/out/assets/champions/Viktor.png",
+        "champion_icon": "/ddragon/champions/Viktor.png",
     }
 
 
@@ -848,7 +849,7 @@ def test_start_worker_controls_analysis_worker_startup(
             stopped.append(True)
 
     monkeypatch.setattr(web_app, "AnalysisWorker", RecordingWorker)
-    config = WebConfig(output_dir=tmp_path / "output")
+    config = WebConfig(output_dir=tmp_path / "output", assets_dir=tmp_path / "assets")
 
     application = web_app.create_app(config, start_worker=True)
     with TestClient(application):

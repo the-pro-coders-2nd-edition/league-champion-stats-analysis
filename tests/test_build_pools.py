@@ -52,6 +52,7 @@ def _config(tmp_path: Path) -> AppConfig:
         min_games=20,
         cache_dir=tmp_path / "cache",
         output_dir=tmp_path / "output",
+        assets_dir=tmp_path / "assets",
         template_dir=Path(__file__).resolve().parent.parent / "src/league_stats/presentation/templates",
     )
 

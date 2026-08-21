@@ -518,7 +518,9 @@ def test_lookup_account_icon_is_case_insensitive() -> None:
 
 
 def test_pipeline_enriches_account_icon_with_case_mismatch(tmp_path: Path) -> None:
-    config = _make_config(output_dir=tmp_path / "output", cache_dir=tmp_path / ".cache")
+    config = _make_config(
+        output_dir=tmp_path / "output", cache_dir=tmp_path / ".cache", assets_dir=tmp_path / "assets"
+    )
     records = [
         record.model_copy(update={"account": "test#euw"})
         for record in _make_records(1)
@@ -592,7 +594,9 @@ def test_chatbot_export_omits_full_timeline() -> None:
 
 
 def test_pipeline_enriches_game_review_icons(tmp_path: Path) -> None:
-    config = _make_config(output_dir=tmp_path / "output", cache_dir=tmp_path / ".cache")
+    config = _make_config(
+        output_dir=tmp_path / "output", cache_dir=tmp_path / ".cache", assets_dir=tmp_path / "assets"
+    )
     records = _make_records(3)
     frames = build_analysis_frames(records)
     assets = DDragonAssets(config)

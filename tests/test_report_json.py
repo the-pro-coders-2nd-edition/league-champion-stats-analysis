@@ -123,16 +123,29 @@ def test_rewrite_web_asset_hrefs_maps_relative_paths() -> None:
     payload = {
         "champion_icon": "../../../assets/champions/Viktor.png",
         "nested": [{"icon_href": "../../assets/ui/tower.png"}],
-        "already_web": "/out/assets/champions/Ahri.png",
+        "already_web": "/ddragon/champions/Ahri.png",
+        "already_out": "/out/assets/champions/Ahri.png",
         "plain": "no rewrite",
     }
 
     result = rewrite_web_asset_hrefs(payload)
 
-    assert result["champion_icon"] == "/out/assets/champions/Viktor.png"
-    assert result["nested"][0]["icon_href"] == "/out/assets/ui/tower.png"
-    assert result["already_web"] == "/out/assets/champions/Ahri.png"
+    assert result["champion_icon"] == "/ddragon/champions/Viktor.png"
+    assert result["nested"][0]["icon_href"] == "/ddragon/ui/tower.png"
+    assert result["already_web"] == "/ddragon/champions/Ahri.png"
+    assert result["already_out"] == "/out/assets/champions/Ahri.png"
     assert result["plain"] == "no rewrite"
+
+
+def test_rewrite_web_asset_hrefs_keeps_brand_assets_under_out() -> None:
+    """Brand assets (logo/favicon) are bundled-with-the-package files copied
+    into `output_dir/assets/brand/`, unrelated to the Data-Dragon download
+    cache -- they must keep resolving under `/out`, not move to `/ddragon`."""
+    payload = {"logo_href": "../../../assets/brand/logo.png"}
+
+    result = rewrite_web_asset_hrefs(payload)
+
+    assert result["logo_href"] == "/out/assets/brand/logo.png"
 
 
 def test_context_to_json_converts_pandas_timestamp() -> None:
