@@ -6,6 +6,8 @@
   import AppNav from '../components/AppNav.svelte';
   import AnalyzeForm from '../components/AnalyzeForm.svelte';
   import PlayerCard from '../components/PlayerCard.svelte';
+  import PlayerCardSkeleton from '../components/PlayerCardSkeleton.svelte';
+  import LibraryHeaderSkeleton from '../components/LibraryHeaderSkeleton.svelte';
   import SegmentedControl from '../components/SegmentedControl.svelte';
 
   const STATE_TITLES = {
@@ -130,15 +132,23 @@
   });
   $: hasNoMatch = groupsLoaded && groups.length > 0 && filteredGroups.length === 0;
   $: hasLibrary = groupsLoaded && groups.length > 0;
+  $: showLibrarySkeleton = !groupsLoaded;
 </script>
 
 <div class="layout">
-<AppNav libraryItems={groups} listLabel="Reports" />
+<AppNav libraryItems={groups} listLabel="Reports" loading={showLibrarySkeleton} />
 <main class="library-main">
 
-<AnalyzeForm bind:this={analyzeForm} compact={hasLibrary} on:submit={handleSubmit} />
+<AnalyzeForm bind:this={analyzeForm} compact={hasLibrary || showLibrarySkeleton} on:submit={handleSubmit} />
 
-{#if hasLibrary}
+{#if showLibrarySkeleton}
+  <LibraryHeaderSkeleton />
+  <section class="player-cards" aria-label="Loading reports" aria-busy="true">
+    {#each Array(6) as _}
+      <PlayerCardSkeleton />
+    {/each}
+  </section>
+{:else if hasLibrary}
   <div class="section-header" id="reports-heading">
     <h2 class="section-label">Your reports</h2>
     <SegmentedControl

@@ -62,13 +62,15 @@ nav.report-nav {
 }
 nav h1 { font-size: 18px; padding: 0 20px 16px; color: var(--color-text); }
 .nav-header {
+  position: relative;
   display: flex; align-items: center; min-height: 48px; padding: 0 16px 14px;
 }
 .nav-header .app-brand { flex: 1; min-width: 0; padding: 0; }
 .nav-edge-toggle {
-  position: absolute; top: 30px; right: -13px; z-index: 4;
+  position: absolute; top: 0; bottom: 14px; right: -13px; z-index: 4;
+  height: 26px; margin-block: auto;
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; padding: 0; margin: 0;
+  width: 26px; padding: 0; margin-inline: 0;
   border-radius: 999px; border: 1px solid var(--color-divider);
   background: var(--color-surface); color: var(--color-neutral-400);
   box-shadow: var(--shadow-sm); cursor: pointer;
@@ -766,7 +768,7 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
   nav.report-nav { width: 100%; height: auto; position: static; display: flex; flex-wrap: wrap; align-items: center; transition: none; overflow: visible; }
   nav h1 { width: 100%; }
   .nav-header { width: 100%; align-items: center; padding: 0 16px 14px; }
-  .nav-edge-toggle { top: 22px; right: 12px; }
+  .nav-edge-toggle { top: 0; bottom: 14px; margin-block: auto; right: 12px; }
   .nav-builds { flex: none; width: 100%; }
   .nav-builds .build-grid { max-height: 180px; }
   .nav-back { width: 100%; }

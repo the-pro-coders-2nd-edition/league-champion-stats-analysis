@@ -13,6 +13,9 @@
   import AppNav from '../components/AppNav.svelte';
   import BuildCard from '../components/BuildCard.svelte';
   import AccountsPanel from '../components/AccountsPanel.svelte';
+  import PlayerHeaderSkeleton from '../components/PlayerHeaderSkeleton.svelte';
+  import ChampionsSectionSkeleton from '../components/ChampionsSectionSkeleton.svelte';
+  import PlayerControlsSkeleton from '../components/PlayerControlsSkeleton.svelte';
   import JobProgress from '../components/JobProgress.svelte';
   import WatchToggle from '../components/WatchToggle.svelte';
   import SegmentedControl from '../components/SegmentedControl.svelte';
@@ -177,7 +180,10 @@
   $: playerLabel = status ? status.player_label : params.slug;
   $: members = status ? status.players || [] : [];
   $: showJobCard = !!(job && (active || job.state === 'failed' || job.state === 'cancelled' || job.error));
+  $: showPageSkeleton = !status;
   $: showSkeleton = active && job && job.state !== 'queued' && job.state !== 'failed' && builds.length === 0;
+  $: showBuildsSkeleton = showPageSkeleton || showSkeleton;
+  $: navLoading = showBuildsSkeleton && builds.length === 0;
   $: showBuilds = builds.length > 0 && !showSkeleton;
   $: showRetry = !!(job && (job.state === 'failed' || job.state === 'cancelled'));
   $: showActions = !!(status && status.has_report);
@@ -237,11 +243,14 @@
   playerSlug={params.slug}
   backHref="/"
   backLabel="← Reports"
+  loading={navLoading}
 />
 <main class="library-main">
 
 <header class="page-header player-workspace-header">
-  {#if members.length}
+  {#if showPageSkeleton}
+    <PlayerHeaderSkeleton />
+  {:else if members.length}
     <AccountsPanel {members} title={playerLabel} variant="hero" />
   {:else}
     <h1 class="page-title" id="player-title">{playerLabel}</h1>
@@ -266,17 +275,8 @@
   </Panel>
 {/if}
 
-{#if showSkeleton}
-  <div id="builds-section">
-    <div class="section-header">
-      <h2 class="section-label">Champions</h2>
-    </div>
-    <div class="build-grid build-grid--page" id="builds-grid">
-      <div class="build-card build-card--page build-card--skeleton" aria-hidden="true"></div>
-      <div class="build-card build-card--page build-card--skeleton" aria-hidden="true"></div>
-      <div class="build-card build-card--page build-card--skeleton" aria-hidden="true"></div>
-    </div>
-  </div>
+{#if showBuildsSkeleton}
+  <ChampionsSectionSkeleton showSort={showPageSkeleton} count={showPageSkeleton ? 6 : 3} />
 {:else if showBuilds}
   <div id="builds-section">
     <div class="section-header">
@@ -303,6 +303,9 @@
   </div>
 {/if}
 
+{#if showPageSkeleton}
+  <PlayerControlsSkeleton />
+{:else}
 <section class="player-workspace-controls" aria-label="Player actions">
   <div class="player-header-meta">
     <Chip tone={statusChip.tone} label={statusChip.label} caps={true} density="compact" />
@@ -357,6 +360,7 @@
     {/if}
   {/if}
 </section>
+{/if}
 
 </main>
 </div>

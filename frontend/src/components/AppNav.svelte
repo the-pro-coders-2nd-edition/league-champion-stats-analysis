@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { link } from 'svelte-spa-router';
   import BuildCard from './BuildCard.svelte';
+  import BuildCardSkeleton from './BuildCardSkeleton.svelte';
   import Chip from './Chip.svelte';
 
   export let builds = [];
@@ -12,6 +13,8 @@
   export let activeBuildSlug = '';
   export let activeSlug = '';
   export let listLabel = 'Champions';
+  export let loading = false;
+  export let skeletonCount = 6;
 
   const NAV_COLLAPSE_KEY = 'report-nav-collapsed';
 
@@ -42,8 +45,9 @@
   }
 
   $: foldTitle = navCollapsed
-    ? (libraryItems.length ? 'Expand reports menu' : 'Expand champions menu')
-    : (libraryItems.length ? 'Collapse reports menu' : 'Collapse champions menu');
+    ? (libraryItems.length || loading ? 'Expand reports menu' : 'Expand champions menu')
+    : (libraryItems.length || loading ? 'Collapse reports menu' : 'Collapse champions menu');
+  $: showNavSkeleton = loading && !builds.length && !libraryItems.length;
 </script>
 
 <nav class="report-nav{navCollapsed ? ' is-collapsed' : ''}" id="report-nav" aria-label="App navigation">
@@ -52,6 +56,23 @@
       <img src="/out/assets/brand/logo.png" alt="" class="app-logo" aria-hidden="true">
       <span class="app-brand-title">League Champion Analyser</span>
     </a>
+    <button
+      type="button"
+      class="nav-edge-toggle"
+      id="nav-fold-btn"
+      aria-expanded={!navCollapsed}
+      aria-controls="nav-builds-panel"
+      title={foldTitle}
+      on:click={toggleNav}
+    >
+      <iconify-icon
+        class="nav-edge-toggle-icon"
+        icon={navCollapsed ? 'mdi:chevron-right' : 'mdi:chevron-left'}
+        width="16"
+        height="16"
+        aria-hidden="true"
+      ></iconify-icon>
+    </button>
   </div>
   {#if backHref}
     <div class="nav-back">
@@ -103,22 +124,14 @@
         {/each}
       </div>
     </div>
+  {:else if showNavSkeleton}
+    <div class="nav-builds" id="nav-builds-panel" aria-busy="true">
+      <div class="nav-builds-label">{listLabel}</div>
+      <div class="build-grid">
+        {#each Array(skeletonCount) as _}
+          <BuildCardSkeleton density="nav" />
+        {/each}
+      </div>
+    </div>
   {/if}
-  <button
-    type="button"
-    class="nav-edge-toggle"
-    id="nav-fold-btn"
-    aria-expanded={!navCollapsed}
-    aria-controls="nav-builds-panel"
-    title={foldTitle}
-    on:click={toggleNav}
-  >
-    <iconify-icon
-      class="nav-edge-toggle-icon"
-      icon={navCollapsed ? 'mdi:chevron-right' : 'mdi:chevron-left'}
-      width="16"
-      height="16"
-      aria-hidden="true"
-    ></iconify-icon>
-  </button>
 </nav>

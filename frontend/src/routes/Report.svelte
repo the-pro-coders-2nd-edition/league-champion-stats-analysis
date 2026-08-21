@@ -254,6 +254,7 @@
   // fast rebuild doesn't flash empty -- this flag alone gates the skeleton instead.
   let switchingBuild = false;
   let playerBuilds = [];
+  let playerBuildsLoading = true;
   let playerPageHref = null;
   let stickyHeaderEl = null;
 
@@ -329,6 +330,7 @@
   let loadedStatusSlug = '';
   $: if (params.slug !== loadedStatusSlug) {
     loadedStatusSlug = params.slug;
+    playerBuildsLoading = true;
     fetchPlayerStatus(params.slug)
       .then((status) => {
         playerBuilds = status.builds || [];
@@ -336,6 +338,9 @@
       })
       .catch(() => {
         playerBuilds = [];
+      })
+      .finally(() => {
+        playerBuildsLoading = false;
       });
   }
 
@@ -499,6 +504,7 @@
   activeBuildSlug={params.buildSlug}
   backHref={playerPageHref || '/'}
   backLabel={playerPageHref ? '← All champions' : '← Reports'}
+  loading={playerBuildsLoading && playerBuilds.length === 0}
 />
 <main>
 

@@ -313,11 +313,22 @@ input::placeholder { color: var(--color-neutral-400); }
 .build-card--page .meta { font-size: 12px; color: var(--color-neutral-400); margin-top: 6px; }
 .build-card-stats { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 8px; }
 .build-card-badge-slot { display: inline-block; margin-top: 8px; }
-.build-card--skeleton {
-  pointer-events: none; min-height: 88px;
-  background: linear-gradient(90deg, var(--color-surface) 0%, var(--color-surface-2) 50%, var(--color-surface) 100%);
-  background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite;
-  border-style: dashed;
+.build-card--skeleton,
+.player-card--skeleton {
+  pointer-events: none;
+  cursor: default;
+}
+.build-card--skeleton:hover,
+.player-card--skeleton:hover {
+  transform: none;
+  border-color: var(--color-divider);
+}
+.build-card--skeleton:not(.build-card--page):hover,
+.build-card--skeleton:not(.build-card--page) {
+  background: var(--color-surface-2);
+}
+.build-card--skeleton.build-card--page:hover {
+  background: var(--color-surface);
 }
 .role-icon { flex-shrink: 0; object-fit: contain; opacity: .92; }
 .role-icon--sm { width: 16px; height: 16px; }
