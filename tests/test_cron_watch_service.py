@@ -218,10 +218,26 @@ def test_serve_fails_fast_when_the_riot_api_key_is_missing(
 ) -> None:
     """`serve()` must raise before ever calling `server.start()` when the key
     is missing, instead of starting successfully and silently never detecting
-    a new game (the finding's exact failure mode)."""
+    a new game (the finding's exact failure mode).
+
+    `_load_env_file()` (called by `serve()` via `load_web_config()`) is
+    monkeypatched to a no-op, not just `delenv`'d around: it merges a `.env`
+    into `os.environ` with `override=False`, so it only fills in what
+    `delenv` just cleared. Its search list includes
+    `PACKAGE_ROOT.parent.parent / ".env"` -- this repo's own project-root
+    `.env`, resolved from the installed package's location, independent of
+    the test's cwd -- so a plain `monkeypatch.chdir` cannot hide it. If that
+    real `.env` happens to define `CRON_WATCH_RIOT_API_KEY` (e.g. for
+    local/VPS deployment, as this repo's does), this test's "key is missing"
+    precondition becomes false, `_require_riot_api_key()` no longer raises,
+    and `serve()` runs all the way to a real
+    `await server.wait_for_termination()` -- hanging this test (and the
+    whole suite) forever instead of failing fast."""
+    import league_stats_common.core.config as config_module
     from league_stats_cron_watch.__main__ import serve
 
     monkeypatch.delenv("CRON_WATCH_RIOT_API_KEY", raising=False)
+    monkeypatch.setattr(config_module, "_load_env_file", lambda: None)
     with pytest.raises(RuntimeError, match="CRON_WATCH_RIOT_API_KEY"):
         asyncio.run(serve())
 

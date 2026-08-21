@@ -466,6 +466,24 @@ class RiotApiClient:
     def download_matches(self, puuid: str, match_ids: list[str]) -> set[str]:
         """Download matches + timelines into the store, skipping stored ones.
 
+        Does NOT populate PEERS' peer-game dataset (`upsert_peer_game`) --
+        that was a pre-microservices-split behavior, back when a single
+        combined store (the old monolith's `MatchStore`) backed both raw
+        match caching and peer-game rows, so every match a real user's job
+        downloaded also fed PEERS' sampling data as a free side effect.
+        Since Phase 8 replaced that combined store with `RawMatchStore`
+        (raw match/timeline caching only, no peer-game methods) for every
+        real caller of this method (RUNNER's `pipeline/fetch.py`), calling
+        `ingest_match` here unconditionally crashed with `AttributeError:
+        'RawMatchStore' object has no attribute 'upsert_peer_game'` on the
+        first match any real job downloaded -- 100% reproducible, caught
+        live in production (not by any test, since every existing test
+        calls `ingest_match` directly against a peer-game-capable store,
+        never through this method). PEERS now populates its own peer-game
+        dataset entirely independently via its own league-v4/match-v5
+        sampling (see `league_stats_peers/analysis/peer/benchmark_fetcher.py`),
+        so this method has nothing left to feed there even if it could.
+
         Args:
             puuid: The player's PUUID (recorded alongside each match).
             match_ids: Match ids to ensure are stored locally.
@@ -474,8 +492,6 @@ class RiotApiClient:
             Match ids newly available to this player: freshly downloaded or
             newly ownership-linked from an existing cached payload.
         """
-        from league_stats_peers.analysis.peer.ingest import ingest_match
-
         cached = [mid for mid in match_ids if self._store.has_match(mid)]
         pending = [mid for mid in match_ids if mid not in cached]
         new_ids: set[str] = set()
@@ -487,10 +503,6 @@ class RiotApiClient:
                 len(claimed),
                 len(cached) - len(claimed),
             )
-            for match_id in cached:
-                match = self._store.load_match(match_id)
-                if match is not None:
-                    ingest_match(self._store, match_id, match, self._platform)
         self._log.info("%d matches already cached, %d to download", len(cached), len(pending))
         total = len(pending)
         for index, match_id in enumerate(
@@ -506,7 +518,6 @@ class RiotApiClient:
                 continue
             self._store.save_match(match_id, puuid, match)
             self._store.save_timeline(match_id, timeline)
-            ingest_match(self._store, match_id, match, self._platform)
             new_ids.add(match_id)
             self._progress.update(
                 STAGE_FETCHING,
