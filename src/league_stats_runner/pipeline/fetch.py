@@ -7,8 +7,6 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from tqdm import tqdm
-
 from league_stats_common.core.config import PlayerIdentity
 from league_stats_common.core.models import MatchRecord
 from league_stats_common.core.progress import STAGE_FETCHING, STAGE_PARSING
@@ -138,9 +136,7 @@ def load_all_records(
                 [_record_key(match_id, puuid, catalog_key) for match_id in match_ids],
             )
             fresh: dict[str, Any] = {}
-            for index, match_id in enumerate(
-                tqdm(match_ids, desc="Parsing matches", unit="match"), start=1
-            ):
+            for index, match_id in enumerate(match_ids, start=1):
                 if index == 1 or index % 25 == 0 or index == total:
                     services.progress.update(
                         STAGE_PARSING,

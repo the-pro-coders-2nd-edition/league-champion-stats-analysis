@@ -60,7 +60,12 @@ from league_stats_runner.presentation.brand_assets import (
 )
 from league_stats_runner.presentation.report import discover_player_builds, is_group_player_label
 from league_stats_runner.presentation.report_json import rewrite_web_asset_hrefs
-from league_stats_common.utils import current_trace_id, set_trace_id, setup_logging
+from league_stats_common.utils import (
+    current_trace_id,
+    get_logger,
+    set_trace_id,
+    setup_logging,
+)
 from league_stats_runner.analysis.career.models import BLOCK_SLOTS
 from league_stats_common.infra.career_store import (
     build_key as career_build_key,
@@ -85,6 +90,8 @@ from league_stats_common.infra.jobs import (
 )
 from league_stats_api_ui.welcome_back_cache import WelcomeBackCache, WelcomeBackSubscriber
 from league_stats_runner.worker import AnalysisWorker
+
+log = get_logger("api_ui")
 
 SPA_DIST_DIR = Path(__file__).resolve().parent / "spa_dist"
 
@@ -294,8 +301,10 @@ def _verify_players_exist(
     """
     client = _build_precheck_client(region, output_dir, web_config)
     missing: list[str] = []
-    for player in players:
+    t0 = time.monotonic()
+    for index, player in enumerate(players, start=1):
         label = f"{player['riot_id']}#{player['tagline']}"
+        log.info("Verifying player %d of %d: %s (%s)", index, len(players), label, region)
         try:
             client.resolve_puuid(player["riot_id"], player["tagline"])
         except RiotApiError as exc:
@@ -304,6 +313,12 @@ def _verify_players_exist(
                 missing.append(label)
                 continue
             raise
+    log.info(
+        "Verified %d player(s) in %.1fs (%d missing)",
+        len(players),
+        time.monotonic() - t0,
+        len(missing),
+    )
     if not missing:
         return
     if len(missing) == 1:
@@ -1361,6 +1376,14 @@ def create_app(
                 )
             account_icons = _account_icon_hrefs(tracked, assets, build_dir)
             build_config.run_graphs_dir.mkdir(parents=True, exist_ok=True)
+            log.info(
+                "Building account-subset views for %s/%s: %d account(s), %d record(s)",
+                slug,
+                build_slug,
+                len(labels),
+                len(records),
+            )
+            t0 = time.monotonic()
             views = build_account_subset_views(
                 build_config,
                 records,
@@ -1368,6 +1391,12 @@ def create_app(
                 assets=assets,
                 account_icons=account_icons,
                 run_dir=build_dir,
+            )
+            log.info(
+                "Built account-subset views for %s/%s in %.1fs",
+                slug,
+                build_slug,
+                time.monotonic() - t0,
             )
         finally:
             match_store.close()

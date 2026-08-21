@@ -8,10 +8,15 @@ on the server.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any, Final
 
 import requests
+
+from league_stats_common.utils import get_logger
+
+log = get_logger("chat")
 
 GEMINI_MODEL: Final[str] = "gemini-3.5-flash"
 GEMINI_FALLBACK_MODEL: Final[str] = "gemini-3.1-flash-lite"
@@ -124,22 +129,37 @@ def _is_slug(value: str) -> bool:
 def _call_gemini(
     api_key: str, model: str, system_instruction: str, history: list[dict[str, Any]]
 ) -> str:
-    response = requests.post(
-        _gemini_url(model),
-        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
-        json={
-            "systemInstruction": {"parts": [{"text": system_instruction}]},
-            "contents": history,
-            "generationConfig": {"temperature": 0.4, "maxOutputTokens": 800},
-        },
-        timeout=REQUEST_TIMEOUT_S,
-    )
+    log.info("Calling Gemini: model=%s, history=%d message(s)", model, len(history))
+    t0 = time.monotonic()
+    try:
+        response = requests.post(
+            _gemini_url(model),
+            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+            json={
+                "systemInstruction": {"parts": [{"text": system_instruction}]},
+                "contents": history,
+                "generationConfig": {"temperature": 0.4, "maxOutputTokens": 800},
+            },
+            timeout=REQUEST_TIMEOUT_S,
+        )
+    except requests.RequestException:
+        log.warning(
+            "Gemini call failed: model=%s, took=%.1fs", model, time.monotonic() - t0
+        )
+        raise
     if response.status_code != 200:
+        log.warning(
+            "Gemini call returned HTTP %d: model=%s, took=%.1fs",
+            response.status_code,
+            model,
+            time.monotonic() - t0,
+        )
         try:
             detail = response.json().get("error", {}).get("message", "")
         except ValueError:
             detail = ""
         raise ChatError(detail or f"Gemini returned HTTP {response.status_code}")
+    log.info("Gemini call succeeded: model=%s, took=%.1fs", model, time.monotonic() - t0)
     payload = response.json()
     candidates = payload.get("candidates") or []
     parts = ((candidates[0] if candidates else {}).get("content") or {}).get("parts") or []

@@ -18,7 +18,6 @@ from collections import deque
 from typing import Any, Final
 
 import requests
-from tqdm import tqdm
 
 from league_stats_common.infra.cache import HttpCache
 from league_stats_common.core.config import AppConfig, PLATFORM_TO_REGION, RANKED_FLEX_QUEUE_ID, RANKED_SOLO_QUEUE_ID
@@ -505,9 +504,8 @@ class RiotApiClient:
             )
         self._log.info("%d matches already cached, %d to download", len(cached), len(pending))
         total = len(pending)
-        for index, match_id in enumerate(
-            tqdm(pending, desc="Downloading matches", unit="match"), start=1
-        ):
+        download_start = time.monotonic()
+        for index, match_id in enumerate(pending, start=1):
             match_url = f"{self._base}/lol/match/v5/matches/{match_id}"
             timeline_url = f"{match_url}/timeline"
             try:
@@ -519,6 +517,13 @@ class RiotApiClient:
             self._store.save_match(match_id, puuid, match)
             self._store.save_timeline(match_id, timeline)
             new_ids.add(match_id)
+            if index % 20 == 0 or index == total:
+                self._log.info(
+                    "Downloaded %d/%d matches (%.1fs elapsed)",
+                    index,
+                    total,
+                    time.monotonic() - download_start,
+                )
             self._progress.update(
                 STAGE_FETCHING,
                 current=index,

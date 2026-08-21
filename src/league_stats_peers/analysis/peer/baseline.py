@@ -254,7 +254,10 @@ def resolve_peer_baseline(
     )
     if baseline is not None:
         log.info(
-            "Resolved peer baseline: level=0, games=%d, source=store, took=%.1fs",
+            "Resolved peer baseline for %s on %s at %s: level=0, games=%d, source=store, took=%.1fs",
+            label,
+            client.platform,
+            ranked.label,
             baseline.games,
             time.monotonic() - t0,
         )
@@ -282,7 +285,11 @@ def resolve_peer_baseline(
     )
     if baseline is not None:
         log.info(
-            "Resolved peer baseline: level=1, games=%d, source=store (widened), took=%.1fs",
+            "Resolved peer baseline for %s on %s at %s: level=1, games=%d, source=store (widened), "
+            "took=%.1fs",
+            label,
+            client.platform,
+            ranked.label,
             baseline.games,
             time.monotonic() - t0,
         )
@@ -294,6 +301,12 @@ def resolve_peer_baseline(
             ),
         )
 
+    log.info(
+        "Falling through to live sampling (level=2) for %s on %s at %s: no store baseline yet",
+        label,
+        client.platform,
+        ranked.label,
+    )
     try:
         baseline = _try_live_baseline(
             client,
@@ -310,7 +323,11 @@ def resolve_peer_baseline(
         baseline = None
     if baseline is not None:
         log.info(
-            "Resolved peer baseline: level=2, games=%d, source=live/cache, took=%.1fs",
+            "Resolved peer baseline for %s on %s at %s: level=2, games=%d, source=live/cache, "
+            "took=%.1fs",
+            label,
+            client.platform,
+            ranked.label,
             baseline.games,
             time.monotonic() - t0,
         )
@@ -334,7 +351,11 @@ def resolve_peer_baseline(
     )
     if baseline is not None:
         log.info(
-            "Resolved peer baseline: level=3, games=%d, source=store (wider ±2), took=%.1fs",
+            "Resolved peer baseline for %s on %s at %s: level=3, games=%d, source=store (wider "
+            "±2), took=%.1fs",
+            label,
+            client.platform,
+            ranked.label,
             baseline.games,
             time.monotonic() - t0,
         )
@@ -349,7 +370,11 @@ def resolve_peer_baseline(
     static = try_static_benchmark(ranked.tier, champion, role)
     if static is not None:
         log.info(
-            "Resolved peer baseline: level=4, source=static champion JSON, took=%.1fs",
+            "Resolved peer baseline for %s on %s at %s: level=4, source=static champion JSON, "
+            "took=%.1fs",
+            label,
+            client.platform,
+            ranked.label,
             time.monotonic() - t0,
         )
         return PeerBaseline(
@@ -364,7 +389,11 @@ def resolve_peer_baseline(
     role_static = try_role_benchmark(ranked.tier, role)
     if role_static is not None:
         log.info(
-            "Resolved peer baseline: level=5, source=static role JSON, took=%.1fs",
+            "Resolved peer baseline for %s on %s at %s: level=5, source=static role JSON, "
+            "took=%.1fs",
+            label,
+            client.platform,
+            ranked.label,
             time.monotonic() - t0,
         )
         return PeerBaseline(
@@ -377,8 +406,9 @@ def resolve_peer_baseline(
         )
 
     log.warning(
-        "No peer baseline available for %s at %s (took %.1fs)",
+        "No peer baseline available for %s on %s at %s (took %.1fs)",
         label,
+        client.platform,
         ranked.label,
         time.monotonic() - t0,
     )

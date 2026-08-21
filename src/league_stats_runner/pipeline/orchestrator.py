@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from itertools import combinations
 from pathlib import Path
@@ -586,14 +587,19 @@ def run_analysis(
     account_icons = _account_icon_hrefs(meta_players, asset_catalog, run_dir)
 
     if full_frames is None:
+        frames_start = time.monotonic()
         full_frames = build_analysis_frames(records)
+        log.info("Built analysis frames for %d games in %.1fs", total_games, time.monotonic() - frames_start)
     if report_stats is None:
+        stats_start = time.monotonic()
         report_stats = compute_report_stats(full_frames, run_dir)
+        log.info("Trained report stats (RandomForest/correlation/clustering) in %.1fs", time.monotonic() - stats_start)
 
     # Career must build before Game Review: the live block's goal columns are
     # only known once the ladder has advanced, and Game Review needs them to
     # carry each goal's raw value even when it falls outside the curated
     # Overview key-stat list (see career_goal_values below).
+    report_views_start = time.monotonic()
     report_views, view_peers, default_queue = build_report_views(
         config,
         records,
@@ -602,12 +608,14 @@ def run_analysis(
         assets=asset_catalog,
         shared_stats=report_stats,
     )
+    log.info("Built report views in %.1fs", time.monotonic() - report_views_start)
 
     default_window = report_views[default_queue]["default_window"]
     default_bundle = report_views[default_queue]["windows"][default_window]
     default_peer = view_peers.get(default_queue, {}).get(default_window)
     goal_columns = live_block_goal_columns(default_bundle.get("career"))
 
+    game_review_start = time.monotonic()
     game_review = build_game_review_views(
         config,
         records,
@@ -618,7 +626,9 @@ def run_analysis(
         account_icons=account_icons,
         goal_columns=goal_columns,
     )
+    log.info("Built game review views in %.1fs", time.monotonic() - game_review_start)
 
+    exports_start = time.monotonic()
     summary = write_full_exports(
         config,
         records,
@@ -629,6 +639,7 @@ def run_analysis(
         report_stats=report_stats,
         game_review=game_review,
     )
+    log.info("Wrote full exports in %.1fs", time.monotonic() - exports_start)
     GraphFactory(
         graphs_dir,
         icon_resolver=ChartIconResolver(
@@ -708,8 +719,11 @@ def run_analysis(
             )
             members.append({**entry, "key": label, "games": games})
         member_labels = [member["key"] for member in members]
+        subsets = account_subset_keys(member_labels)
         subset_views: dict[str, Any] = {}
-        for subset in account_subset_keys(member_labels):
+        subsets_start = time.monotonic()
+        log.info("Building %d account-subset view(s) for %s", len(subsets), config.build_label)
+        for subset in subsets:
             subset_records = filter_records_by_accounts(records, set(subset))
             if not subset_records:
                 continue
@@ -721,6 +735,12 @@ def run_analysis(
                 account_icons=account_icons,
                 run_dir=run_dir,
             )
+        log.info(
+            "Built %d account-subset view(s) for %s in %.1fs",
+            len(subsets),
+            config.build_label,
+            time.monotonic() - subsets_start,
+        )
         account_filter_json = serialize_report_views_json(
             {
                 "enabled": True,

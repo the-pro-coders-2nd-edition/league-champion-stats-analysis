@@ -551,8 +551,10 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
             existing = self._inflight.get(key)
             if existing is not None and not existing.future.done():
                 PEERS_DEDUPED_REQUESTS_TOTAL.inc()
+                log.info("RequestBaseline deduped onto in-flight resolution for key=%s", key)
                 return existing
 
+            log.info("RequestBaseline starting new resolution for key=%s", key)
             started = threading.Event()
 
             def _run() -> PeerBaseline | None:
@@ -574,14 +576,25 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
                         patch=patch,
                     )
                 except Exception:
-                    PEERS_BASELINE_RESOLUTION_DURATION.observe(time.perf_counter() - resolution_start)
+                    duration = time.perf_counter() - resolution_start
+                    PEERS_BASELINE_RESOLUTION_DURATION.observe(duration)
                     PEERS_BASELINE_RESOLUTIONS_TOTAL.labels(source="error").inc()
+                    log.exception(
+                        "RequestBaseline resolution failed for key=%s after %.1fs", key, duration
+                    )
                     raise
                 finally:
                     PEERS_INFLIGHT_BASELINES.dec()
-                PEERS_BASELINE_RESOLUTION_DURATION.observe(time.perf_counter() - resolution_start)
+                duration = time.perf_counter() - resolution_start
+                PEERS_BASELINE_RESOLUTION_DURATION.observe(duration)
                 source = "live_sample" if baseline is not None and baseline.fallback_level == 2 else "cached"
                 PEERS_BASELINE_RESOLUTIONS_TOTAL.labels(source=source).inc()
+                log.info(
+                    "RequestBaseline resolution completed for key=%s: source=%s, took=%.1fs",
+                    key,
+                    source,
+                    duration,
+                )
                 return baseline
 
             future = self._executor.submit(_run)
@@ -646,10 +659,11 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
             started = record.started.is_set()
             PEERS_FAST_PATH_TIMEOUTS_TOTAL.labels(started=str(started)).inc()
             log.info(
-                "RequestBaseline fast path timed out for %s %s (%s), request_id=%s: %s",
+                "RequestBaseline fast path timed out for %s %s (%s, tier=%s), request_id=%s: %s",
                 champion,
                 role,
                 platform,
+                tier,
                 request_id,
                 "already running (likely live sampling)"
                 if started
