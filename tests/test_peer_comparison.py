@@ -202,7 +202,7 @@ def test_comparisons_dataframe_from_result() -> None:
 #
 # Phase 3 Task 3 fix round 1 extracted `finish_peer_comparison` out of
 # `build_peer_comparison` (the post-baseline finalisation step) so RUNNER's
-# `peers_mode="grpc"` path (`league_stats.web.worker._build_peer_for_pool_via_grpc`)
+# `RequestBaseline` path (`league_stats_runner.worker._build_peer_for_pool_via_grpc`)
 # could call the same function instead of duplicating its logic. There was no
 # direct test of `build_peer_comparison`'s own orchestration before this --
 # only indirect coverage via full pipeline/end-to-end tests -- so these close
@@ -293,8 +293,8 @@ def test_finish_peer_comparison_reads_user_history_via_raw_match_store() -> None
 
     This is the third call site Phase 5 Task 1's investigation flagged as
     needing `RawMatchStore.iter_match_ids` (alongside stage A's
-    `discover_build_pools`/`load_all_records`): RUNNER's `peers_mode="grpc"`
-    path (`web/worker.py`'s `_build_peer_for_pool_via_grpc`) calls
+    `discover_build_pools`/`load_all_records`): RUNNER's `RequestBaseline`
+    path (`worker.py`'s `_build_peer_for_pool_via_grpc`) calls
     `finish_peer_comparison(..., store=services.store, ...)`, and
     `services.store` is always a `RawMatchStore`. The end-to-end test in
     `test_runner_service.py`

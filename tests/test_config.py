@@ -99,18 +99,17 @@ def test_load_config_reads_gemini_api_key_from_dotenv(
 
 
 def test_web_config_runner_grpc_target_defaults_to_localhost() -> None:
-    assert WebConfig(peers_mode="grpc").runner_grpc_target == "localhost:50051"
+    assert WebConfig().runner_grpc_target == "localhost:50051"
 
 
 def test_web_config_runner_mongo_uri_defaults_to_localhost() -> None:
-    assert WebConfig(peers_mode="grpc").runner_mongo_uri == "mongodb://localhost:27017/league_stats"
+    assert WebConfig().runner_mongo_uri == "mongodb://localhost:27017/league_stats"
 
 
 def test_load_web_config_reads_runner_mongo_uri_from_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("RUNNER_MONGO_URI", "mongodb://mongo.internal:27017/league_stats")
-    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
     monkeypatch.chdir(tmp_path)
 
     config = load_web_config()
@@ -127,7 +126,6 @@ def test_load_web_config_runner_mongo_uri_falls_back_to_mongo_uri(
     service."""
     monkeypatch.delenv("RUNNER_MONGO_URI", raising=False)
     monkeypatch.setenv("MONGO_URI", "mongodb://mongo:27017/league_stats")
-    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
     monkeypatch.chdir(tmp_path)
 
     config = load_web_config()
@@ -141,7 +139,6 @@ def test_load_web_config_runner_mongo_uri_prefers_explicit_override_over_mongo_u
     over the shared MONGO_URI."""
     monkeypatch.setenv("MONGO_URI", "mongodb://mongo:27017/league_stats")
     monkeypatch.setenv("RUNNER_MONGO_URI", "mongodb://mongo-for-runner-only:27017/league_stats")
-    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
     monkeypatch.chdir(tmp_path)
 
     config = load_web_config()
@@ -153,7 +150,6 @@ def test_load_web_config_reads_runner_grpc_target_from_env(
 ) -> None:
     """RUNNER_GRPC_TARGET overrides the default localhost:50051 target."""
     monkeypatch.setenv("RUNNER_GRPC_TARGET", "runner.internal:9000")
-    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
     monkeypatch.chdir(tmp_path)
 
     config = load_web_config()

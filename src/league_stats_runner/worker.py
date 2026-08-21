@@ -36,7 +36,6 @@ from league_stats_runner.pipeline.orchestrator import (
     BuildBatch,
     NoEligibleBuildsError,
     analyze_build,
-    build_peer_for_pool,
     prepare_builds,
     report_needs_peer_comparison,
     resolve_ranked,
@@ -56,7 +55,7 @@ CHAT_ENDPOINT = "/api/chat"
 _RUNNER_ENQUEUE_TIMEOUT_S = 30.0
 _RUNNER_STREAM_TIMEOUT_S = 1800.0
 
-# Deadline for the peers_mode="grpc" `RequestBaseline` unary call itself (see
+# Deadline for the `RequestBaseline` unary call itself (see
 # `_build_peer_for_pool_via_grpc`). PEERS' own `RequestBaseline` blocks
 # internally for up to its `FAST_PATH_TIMEOUT_S` (3s, `peers/service.py`)
 # before answering with `cached=False`, so this deadline only needs to cover
@@ -379,9 +378,11 @@ def _build_job_services(
     http_cache = HttpCache(config.http_cache_dir)
     # `MatchStore` (the local on-disk store this replaced) was deleted in
     # Phase 8, Task 1 -- `RawMatchStore` is now the only backing
-    # implementation. Valid only with `peers_mode="grpc"`, since it does not
-    # implement the peer-game methods the in-process peer path needs (see
-    # `core/config.py`'s `WebConfig` docstring).
+    # implementation. It does not implement the peer-game methods the
+    # in-process peer path (`build_peer_for_pool`) needs -- fine here since
+    # `_run_stage_b` always resolves peers via PEERS over gRPC
+    # (`_build_peer_for_pool_via_grpc`), which never touches those methods
+    # (see `core/config.py`'s `WebConfig` docstring).
     mongo_client = _build_mongo_client(web_config.runner_mongo_uri)
     store: RawMatchStore = RawMatchStore(
         mongo_client, db_name=_db_name_from_uri(web_config.runner_mongo_uri)
@@ -498,10 +499,32 @@ def _build_peer_for_pool_via_grpc(
     store: JobStore | None = None,
     job_id: int | None = None,
 ) -> PeerComparisonResult | None:
-    """`peers_mode="grpc"` counterpart to `build_peer_for_pool`
-    (`league_stats_runner.pipeline.orchestrator`): resolves the peer baseline by
-    calling PEERS' `RequestBaseline` over gRPC instead of running
-    `resolve_peer_baseline` in this process.
+    """`_run_stage_b`'s sole peer-comparison path (since Phase 9 removed the
+    `peers_mode` flag and its in-process fallback): resolves the peer
+    baseline by calling PEERS' `RequestBaseline` over gRPC instead of running
+    `resolve_peer_baseline` in this process, unlike `build_peer_for_pool`
+    (`league_stats_runner.pipeline.orchestrator`, still used by that module's
+    own `run_all_builds` CLI/batch pipeline, unrelated to this path).
+
+    HARD PRECONDITION (relocated here from `WebConfig`'s removed
+    `_warn_on_peers_grpc_topology_precondition` validator, Phase 9): this
+    only works when THIS PROCESS is itself running as RUNNER
+    (`runner/__main__.py`, i.e. hosting a `RunnerServiceServicer`), because
+    PEERS' slow (live-sampling) path calls back into
+    `RunnerService.NotifyPeerBaselineReady` (`runner/service.py`) in
+    whichever process issued the original `RequestBaseline` call, and that
+    callback is only ever routed to this module's own, in-memory
+    `_peer_baseline_waiters` registry -- there is no cross-process delivery
+    mechanism. Calling this from a process that is NOT RUNNER (e.g. the
+    monolith's own web app, running `execute_job` in-process with no
+    `RunnerServiceServicer` anywhere in it) does not raise or fail fast:
+    every peer comparison that falls through to PEERS' slow path silently
+    blocks for the full `_PEERS_BASELINE_WAIT_TIMEOUT_S` waiting for a
+    callback that can never arrive, then skips that build's peer comparison
+    with only a warning log. Nothing here can verify "is this process
+    RUNNER" -- that is a deployment-topology fact, not something derivable
+    from `web_config` alone -- so this is a real, silent-failure-shaped risk
+    for any caller outside RUNNER's own dispatch, not merely a hypothetical.
 
     Contract with `PeersServicer.RequestBaseline` (`peers/service.py`):
     a synchronous response either carries `cached=True` plus `baseline_json`
@@ -673,12 +696,12 @@ def _run_stage_b(
 ) -> None:
     """Build peer comparisons and re-render each report as they land.
 
-    `web_config.peers_mode` (default "in_process") controls how each build's
-    peer comparison is resolved: "in_process" calls `build_peer_for_pool`
-    exactly as before (this branch's behavior is provably unchanged -- same
-    call, same arguments); "grpc" calls PEERS instead via
-    `_build_peer_for_pool_via_grpc`, added in Phase 3 of the microservices
-    migration.
+    Each build's peer comparison is always resolved by calling PEERS over
+    gRPC (`_build_peer_for_pool_via_grpc`, added in Phase 3 of the
+    microservices migration). Phase 9 removed the `peers_mode` flag that
+    used to let this fall back to resolving the baseline in-process
+    (`build_peer_for_pool`) -- see that function's docstring for the
+    topology precondition this gRPC-only path carries.
     """
     log = get_logger("worker")
     job_id = int(job["id"])
@@ -705,12 +728,9 @@ def _run_stage_b(
             current=index,
             total=total,
         )
-        if web_config.peers_mode == "grpc":
-            peer = _build_peer_for_pool_via_grpc(
-                services, batch, pool, ranked, web_config, store=store, job_id=job_id
-            )
-        else:
-            peer = build_peer_for_pool(services, batch, pool, ranked)
+        peer = _build_peer_for_pool_via_grpc(
+            services, batch, pool, ranked, web_config, store=store, job_id=job_id
+        )
         if peer is None:
             continue
         cached = analysed.get((pool.champion, pool.role))

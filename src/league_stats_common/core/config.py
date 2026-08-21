@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Final
 
 from league_stats_common.core.champions import (
     build_label,
@@ -413,33 +413,19 @@ class WebConfig(BaseModel):
     output_dir: Path = Path("output")
     gemini_api_key: str | None = None
     runner_grpc_target: str = "localhost:50051"
-    # Opt-in delegation of rank-peer baseline resolution to PEERS over gRPC
-    # (Phase 3 of the microservices migration). Default "in_process" keeps
-    # today's behavior unchanged -- stage B calls `build_peer_for_pool`
-    # (`league_stats.pipeline.orchestrator`), which runs `resolve_peer_baseline`
-    # in this process exactly as before. Setting "grpc" makes stage B call
-    # PEERS' `RequestBaseline` instead (see `league_stats.web.worker`'s
-    # `_build_peer_for_pool_via_grpc`).
-    #
-    # HARD PRECONDITION, unlike `runner_mode`/`watch_mode` above: this only
-    # works when THIS PROCESS is itself running as RUNNER (`runner/__main__.py`,
-    # i.e. hosting a `RunnerServiceServicer`), because PEERS' slow (live-
-    # sampling) path calls back into `RunnerService.NotifyPeerBaselineReady`
-    # (`runner/service.py`) in whichever process issued the original
-    # `RequestBaseline` call, and that callback is only ever routed to
-    # `web/worker.py`'s module-global, in-memory `_peer_baseline_waiters`
-    # registry -- there is no cross-process delivery mechanism. Setting
-    # `peers_mode="grpc"` on the monolith's own web app (which never hosts a
-    # `RunnerServiceServicer`) does not raise or fail fast: every peer
-    # comparison that falls through to PEERS' slow path silently blocks for
-    # the full `_PEERS_BASELINE_WAIT_TIMEOUT_S` (`web/worker.py`) waiting for a
-    # callback that can never arrive, then skips that build's peer comparison
-    # with only a warning log. This is intentionally not hard-validated here
-    # (unlike, say, rejecting an invalid `Literal` value) because "is this
-    # process RUNNER" is a deployment-topology fact this config object cannot
-    # observe on its own; `WebConfig`'s own validator below only logs a loud
-    # warning when `peers_mode="grpc"` is set, it cannot refuse construction.
-    peers_mode: Literal["in_process", "grpc"] = "in_process"
+    # Phase 9 removed `peers_mode` (the in-process/grpc choice for stage B's
+    # rank-peer baseline resolution): every path now unconditionally calls
+    # PEERS' `RequestBaseline` over gRPC (`league_stats_runner.worker`'s
+    # `_build_peer_for_pool_via_grpc`) -- see that function's docstring for
+    # the hard topology precondition this field's removed validator used to
+    # warn about (PEERS' async callback only reaches the process that issued
+    # the original request; that knowledge lives there now, not in a config
+    # field check). `build_peer_for_pool`
+    # (`league_stats_runner.pipeline.orchestrator`), the in-process
+    # implementation this field used to gate, is NOT dead: it's still called,
+    # unconditionally, by `orchestrator.run_all_builds` -- a separate,
+    # `peers_mode`-unrelated CLI/batch pipeline path this phase does not
+    # touch.
     peers_grpc_target: str = "localhost:50053"
     # Opt-in subscription to CronWatch's WatchUpdates push stream (Phase 4 of the
     # microservices migration). This gates only the gRPC SUBSCRIBER, which is
@@ -473,18 +459,23 @@ class WebConfig(BaseModel):
     # (`iter_unverified_puuids`, `iter_unverified_puuids_for_build`,
     # `set_puuid_rank`, `upsert_peer_game`, `load_peer_games`,
     # `count_peer_games`), which the in-process peer path
-    # (`build_peer_for_pool`, `peers_mode="in_process"`) calls on that exact
-    # same store object -- since `peers_mode`'s class-level default is
-    # deliberately still "in_process", any real job whose peer comparison
-    # reached `build_peer_for_pool` in-process would have crashed with an
-    # `AttributeError` the first time a ranked build needed a peer baseline.
-    # Fixed by pinning `api-ui` to `ANALYZER_PEERS_MODE=grpc` +
-    # `PEERS_GRPC_TARGET=peers:50053` in `docker-compose.yml`, routing that
-    # path through PEERS' real gRPC service instead (`_build_peer_for_pool_via_grpc`
-    # only touches `iter_match_ids`/`load_match`, both of which
-    # `RawMatchStore` implements). `cron-watch` never reaches
-    # `build_peer_for_pool` at all (it only enqueues into `JobStore`), so it
-    # needed no pin. Regression test:
+    # (`build_peer_for_pool`) calls on that exact same store object -- back
+    # when `peers_mode`'s class-level default was still "in_process", any
+    # real job whose peer comparison reached `build_peer_for_pool` in-process
+    # would have crashed with an `AttributeError` the first time a ranked
+    # build needed a peer baseline. Fixed at the time by pinning `api-ui` to
+    # `ANALYZER_PEERS_MODE=grpc` + `PEERS_GRPC_TARGET=peers:50053` in
+    # `docker-compose.yml`, routing that path through PEERS' real gRPC
+    # service instead (`_build_peer_for_pool_via_grpc` only touches
+    # `iter_match_ids`/`load_match`, both of which `RawMatchStore`
+    # implements). `cron-watch` never reaches `build_peer_for_pool` at all
+    # (it only enqueues into `JobStore`), so it needed no pin. Phase 9 then
+    # deleted `peers_mode` and its branch entirely, making the gRPC path the
+    # only one `_run_stage_b` ever takes -- `build_peer_for_pool` itself
+    # survives (still called by `orchestrator.run_all_builds`, unrelated to
+    # `peers_mode`), so this gap is still real for any caller that reaches
+    # it against a `RawMatchStore`-backed `Services` object; it's just no
+    # longer reachable through `_run_stage_b`. Regression test:
     # `tests/test_web_worker.py::test_raw_match_store_backed_services_crashes_in_process_but_not_via_grpc`.
     #
     # This class-level default is only used when neither RUNNER_MONGO_URI nor
@@ -493,36 +484,6 @@ class WebConfig(BaseModel):
     # service's compose block) before ever reaching this default, so a real
     # docker-compose deployment never actually observes this value.
     runner_mongo_uri: str = "mongodb://localhost:27017/league_stats"
-
-    @model_validator(mode="after")
-    def _warn_on_peers_grpc_topology_precondition(self) -> "WebConfig":
-        """Loudly flag `peers_mode="grpc"`'s hard precondition at construction time.
-
-        See the field comment above for the full correctness argument. This
-        cannot distinguish the one correct topology (this process IS RUNNER,
-        hosting `RunnerServiceServicer`) from the broken one (this is the
-        monolith's own web app, running `execute_job` in-process, with no
-        `RunnerServiceServicer` anywhere in this process) -- both produce a
-        `WebConfig` with `peers_mode="grpc"` that looks identical from here.
-        So this warns unconditionally rather than staying silent, matching
-        the "warn loudly" alternative for a precondition this object cannot
-        itself verify.
-        """
-        if self.peers_mode == "grpc":
-            from league_stats_common.utils import get_logger
-
-            get_logger("web_config").warning(
-                "peers_mode=grpc is set. This ONLY works when this process is "
-                "itself running as RUNNER (runner/__main__.py) -- PEERS' async "
-                "callback (NotifyPeerBaselineReady) is only ever delivered to "
-                "the in-memory waiter registry of the process that issued the "
-                "matching RequestBaseline call. If this is the monolith's own "
-                "web app (not RUNNER), every peer comparison that falls through "
-                "to PEERS' slow path will silently stall for the full "
-                "baseline-wait timeout and then skip, with no callback ever "
-                "able to arrive."
-            )
-        return self
 
     @property
     def reports_dir(self) -> Path:
@@ -535,8 +496,7 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
 
     Environment variables: ``ANALYZER_WEB_HOST``, ``ANALYZER_WEB_PORT``,
     ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``,
-    ``RUNNER_GRPC_TARGET``, ``ANALYZER_PEERS_MODE``,
-    ``PEERS_GRPC_TARGET``, ``CRON_WATCH_GRPC_TARGET``,
+    ``RUNNER_GRPC_TARGET``, ``PEERS_GRPC_TARGET``, ``CRON_WATCH_GRPC_TARGET``,
     ``RUNNER_MONGO_URI`` (falls back to ``MONGO_URI`` when unset).
     """
     _load_env_file()
@@ -550,7 +510,6 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
         "worker_concurrency": os.environ.get("ANALYZER_WORKER_CONCURRENCY"),
         "gemini_api_key": os.environ.get("GEMINI_API_KEY"),
         "runner_grpc_target": os.environ.get("RUNNER_GRPC_TARGET"),
-        "peers_mode": os.environ.get("ANALYZER_PEERS_MODE"),
         "peers_grpc_target": os.environ.get("PEERS_GRPC_TARGET"),
         "cron_watch_grpc_target": os.environ.get("CRON_WATCH_GRPC_TARGET"),
         # Falls back to the shared MONGO_URI (already set on every Mongo-backed

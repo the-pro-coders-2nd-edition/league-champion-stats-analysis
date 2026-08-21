@@ -10,14 +10,17 @@ tests).
 Phase 5 Task 1 of the microservices migration added ``iter_match_ids``/
 ``close``: without them, RUNNER's job pipeline crashed with
 ``AttributeError`` inside ``discover_build_pools``/``load_all_records``
-(stage A, called on every job unconditionally, not gated by ``peers_mode``)
-and inside ``execute_job``'s ``finally`` block. Deliberately still NOT
+(stage A, called on every job unconditionally). Deliberately still NOT
 implemented: ``iter_unverified_puuids``, ``iter_unverified_puuids_for_build``,
 ``set_puuid_rank``, ``upsert_peer_game``, ``load_peer_games``,
 ``count_peer_games`` -- those are only reachable through the in-process peer
-path (``build_peer_for_pool``, ``peers_mode="in_process"``), which real
-deployments rule out by pinning ``peers_mode="grpc"`` wherever this store
-is used (see ``docker-compose.yml``'s ``runner``/``api-ui`` pins).
+path (``build_peer_for_pool``), which ``_run_stage_b`` (the only place a
+``RawMatchStore``-backed ``Services`` object's peer comparison is resolved
+in a real deployment) never calls: Phase 9 removed the ``peers_mode`` flag
+that used to make this configurable, so ``_run_stage_b`` now always
+resolves peers via PEERS over gRPC instead (``_build_peer_for_pool_via_grpc``,
+which only touches ``iter_match_ids``/``load_match``, both implemented
+below).
 
 Reproduces ``MatchStore``'s real semantics:
 

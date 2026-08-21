@@ -189,7 +189,9 @@ def test_cron_watch_grpc_target_starts_and_stops_the_subscriber(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Setting cron_watch_grpc_target must start the subscriber on startup and
-    stop it on shutdown, mirroring runner_mode/watch_mode/peers_mode's pattern."""
+    stop it on shutdown -- the same start/stop-gated-by-config pattern
+    `runner_mode`/`watch_mode`/`peers_mode` used before Phase 9 deleted all
+    three."""
     monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
     _FakeSubscriber.instances = []
     monkeypatch.setattr(web_app, "WelcomeBackSubscriber", _FakeSubscriber)

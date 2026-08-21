@@ -472,7 +472,7 @@ def finish_peer_comparison(
     Extracted from `build_peer_comparison` (Phase 3 Task 3 fix round 1) so
     both the in-process path (`build_peer_comparison` below, which resolves
     its own baseline via `resolve_peer_baseline`) and RUNNER's
-    `peers_mode="grpc"` path (`league_stats.web.worker._build_peer_for_pool_via_grpc`,
+    `RequestBaseline` path (`league_stats_runner.worker._build_peer_for_pool_via_grpc`,
     which resolves its baseline over gRPC from PEERS) share the exact same
     post-baseline finalisation logic instead of one duplicating the other.
     `build_peer_comparison`'s own behavior is unchanged by this extraction --

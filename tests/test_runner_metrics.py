@@ -49,7 +49,7 @@ def test_run_job_records_duration_and_success_counter(monkeypatch) -> None:
         _generate_latest_default_registry(), "runner_job_duration_seconds_count"
     ) or 0.0
 
-    servicer = RunnerServicer(web_config=WebConfig(peers_mode="grpc"))
+    servicer = RunnerServicer(web_config=WebConfig())
     events: "queue.SimpleQueue" = queue.SimpleQueue()
     servicer._run_job({"id": 1}, object(), events, "1")
 
@@ -71,7 +71,7 @@ def test_run_job_records_failed_counter_on_crash(monkeypatch) -> None:
         _generate_latest_default_registry(), "runner_jobs_total", {"status": "failed"}
     ) or 0.0
 
-    servicer = RunnerServicer(web_config=WebConfig(peers_mode="grpc"))
+    servicer = RunnerServicer(web_config=WebConfig())
     events: "queue.SimpleQueue" = queue.SimpleQueue()
     servicer._run_job({"id": 1}, object(), events, "1")
 

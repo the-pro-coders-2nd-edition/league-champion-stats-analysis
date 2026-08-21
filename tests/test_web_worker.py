@@ -107,8 +107,11 @@ def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, **overrides: Any) -> list[s
             )
             or BuildAnalysisResult(path=Path("report.json"))
         ),
-        "build_peer_for_pool": (
-            lambda services, batch, pool, ranked: calls.append("peer") or object()
+        # `_run_stage_b` always resolves peers over gRPC since Phase 9 deleted
+        # `peers_mode` and its in-process `build_peer_for_pool` branch.
+        "_build_peer_for_pool_via_grpc": (
+            lambda services, batch, pool, ranked, web_config, **kwargs: calls.append("peer")
+            or object()
         ),
     }
     defaults.update(overrides)
@@ -292,10 +295,10 @@ def test_execute_job_peer_failure_is_soft(
 ) -> None:
     job = _claimed_job(store)
 
-    def boom(services: Any, batch: Any, pool: Any, ranked: Any) -> Any:
+    def boom(services: Any, batch: Any, pool: Any, ranked: Any, web_config: Any, **kwargs: Any) -> Any:
         raise RuntimeError("riot exploded")
 
-    _patch_pipeline(monkeypatch, build_peer_for_pool=boom)
+    _patch_pipeline(monkeypatch, _build_peer_for_pool_via_grpc=boom)
 
     worker.execute_job(job, store, web_config)
 
@@ -576,10 +579,7 @@ def test_build_job_services_uses_raw_match_store_in_mongo_mode(
     mongo_client = mongomock.MongoClient()
     monkeypatch.setattr(worker, "_build_mongo_client", lambda uri: mongo_client)
 
-    mongo_web_config = WebConfig(
-        output_dir=tmp_path / "output",
-        peers_mode="grpc",
-    )
+    mongo_web_config = WebConfig(output_dir=tmp_path / "output")
     job = {
         "id": 1,
         "player_slug": "test_euw",
@@ -660,9 +660,7 @@ def test_execute_job_delegates_to_runner_and_replays_progress(
         )
         match_store.save_timeline(match_id, make_timeline())
 
-    runner_web_config = WebConfig(
-        output_dir=tmp_path / "runner_output", peers_mode="grpc"
-    )
+    runner_web_config = WebConfig(output_dir=tmp_path / "runner_output")
     servicer = RunnerServicer(web_config=runner_web_config)
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
     runner_pb2_grpc.add_RunnerServiceServicer_to_server(servicer, server)
@@ -947,74 +945,37 @@ def test_execute_job_grpc_mode_round_trips_resolved_player_data_via_payload_json
     assert entry["solo_lp"] == 77
 
 
-# --------------------------------------------------------- peers_mode (Task 3)
+# --------------------------------------------------------- peers_mode removal (Task 3, Phase 9)
 
 
-def test_web_config_peers_mode_defaults_to_in_process() -> None:
-    assert WebConfig().peers_mode == "in_process"
-
-
-def test_web_config_peers_mode_can_be_set_to_grpc() -> None:
-    assert WebConfig(peers_mode="grpc").peers_mode == "grpc"
-
-
-def test_execute_job_peers_in_process_mode_does_not_call_peers_grpc_path(
+def test_execute_job_always_routes_stage_bs_peer_resolution_through_grpc(
     store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`peers_mode` defaults to "in_process" -- stage B must call
-    `build_peer_for_pool` exactly as before Task 3, with `_build_peer_for_pool_via_grpc`
-    never even attempted. This is the "provably unchanged" proof for the default path.
-    """
-    assert web_config.peers_mode == "in_process"
+    """Phase 9 deleted `peers_mode` and its in-process `build_peer_for_pool`
+    branch: `_run_stage_b` now always resolves peers by calling
+    `_build_peer_for_pool_via_grpc`, unconditionally, with no config flag
+    left to check. Proves the grpc path actually runs and its result feeds
+    the second, peer-aware render -- not merely that no in-process branch
+    exists to accidentally hit (there is none left in the source to hit)."""
     job = _claimed_job(store)
-    calls = _patch_pipeline(monkeypatch)
+    grpc_peer_calls = {"n": 0}
 
-    def boom(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("_build_peer_for_pool_via_grpc must not run in in_process mode")
+    def grpc_peer_stub(
+        services: Any, batch: Any, pool: Any, ranked: Any, web_config: Any, **kwargs: Any
+    ) -> Any:
+        grpc_peer_calls["n"] += 1
+        calls.append("peer")
+        return object()
 
-    monkeypatch.setattr(worker, "_build_peer_for_pool_via_grpc", boom)
+    calls = _patch_pipeline(monkeypatch, _build_peer_for_pool_via_grpc=grpc_peer_stub)
 
     worker.execute_job(job, store, web_config)
 
     final = store.get(int(job["id"]))
     assert final["state"] == jobs.DONE
     assert final["error"] == ""
-    assert calls == ["fetch", "prepare", "ranked", "analyze(peer=False)", "peer", "analyze(peer=True)"]
-
-
-def test_execute_job_peers_grpc_mode_calls_grpc_path_not_in_process(
-    store: JobStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """`peers_mode="grpc"` must route stage B's peer resolution through
-    `_build_peer_for_pool_via_grpc` instead of `build_peer_for_pool`."""
-    grpc_web_config = WebConfig(
-        output_dir=tmp_path / "output",
-        peers_mode="grpc",
-    )
-    job = _claimed_job(store)
-    grpc_peer_calls = {"n": 0}
-
-    def in_process_boom(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("build_peer_for_pool must not run in peers_mode=grpc")
-
-    def grpc_peer_stub(
-        services: Any, batch: Any, pool: Any, ranked: Any, web_config: Any, **kwargs: Any
-    ) -> Any:
-        grpc_peer_calls["n"] += 1
-        return object()
-
-    calls = _patch_pipeline(
-        monkeypatch,
-        build_peer_for_pool=in_process_boom,
-        _build_peer_for_pool_via_grpc=grpc_peer_stub,
-    )
-
-    worker.execute_job(job, store, grpc_web_config)
-
-    final = store.get(int(job["id"]))
-    assert final["state"] == jobs.DONE
     assert grpc_peer_calls["n"] == 1
-    assert "peer" not in calls
+    assert calls == ["fetch", "prepare", "ranked", "analyze(peer=False)", "peer", "analyze(peer=True)"]
 
 
 # ------------------------------------------------- _build_peer_for_pool_via_grpc
@@ -1107,7 +1068,7 @@ def test_build_peer_for_pool_via_grpc_uses_cached_baseline(
     servicer = _CachedPeersServicer()
     server, port = _start_peers_server(servicer)
     try:
-        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}", peers_mode="grpc")
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
         services = _fake_services_for_grpc_peer()
         monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
         batch = BuildBatch(
@@ -1171,7 +1132,7 @@ def test_build_peer_for_pool_via_grpc_waits_for_async_callback(
     _threading.Thread(target=_deliver_later, daemon=True).start()
 
     try:
-        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}", peers_mode="grpc")
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
         services = _fake_services_for_grpc_peer()
         monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
         batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
@@ -1205,7 +1166,7 @@ def test_build_peer_for_pool_via_grpc_times_out_if_peers_never_calls_back(
     monkeypatch.setattr(worker, "_PEERS_BASELINE_WAIT_TIMEOUT_S", 0.2)
 
     try:
-        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}", peers_mode="grpc")
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
         services = _fake_services_for_grpc_peer()
         monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
         batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
@@ -1257,7 +1218,7 @@ def test_build_peer_for_pool_via_grpc_notices_cancellation_within_the_poll_inter
     _threading.Thread(target=_cancel_shortly, daemon=True).start()
 
     try:
-        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}", peers_mode="grpc")
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
         services = _fake_services_for_grpc_peer()
         monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
         batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
@@ -1292,7 +1253,7 @@ def test_build_peer_for_pool_via_grpc_returns_none_when_peers_unreachable(
         free_port = probe.getsockname()[1]
 
     monkeypatch.setattr(worker, "_PEERS_REQUEST_TIMEOUT_S", 1.0)
-    web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{free_port}", peers_mode="grpc")
+    web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{free_port}")
     services = _fake_services_for_grpc_peer()
     monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
     batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
@@ -1353,7 +1314,7 @@ def test_build_peer_for_pool_via_grpc_survives_notification_arriving_before_wait
     )
     request_id = "req-race-1"
 
-    runner_servicer = RunnerServicer(web_config=WebConfig(peers_mode="grpc"))
+    runner_servicer = RunnerServicer(web_config=WebConfig())
     runner_server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
     runner_pb2_grpc.add_RunnerServiceServicer_to_server(runner_servicer, runner_server)
     runner_port = runner_server.add_insecure_port("127.0.0.1:0")
@@ -1382,7 +1343,7 @@ def test_build_peer_for_pool_via_grpc_survives_notification_arriving_before_wait
 
     peers_server, peers_port = _start_peers_server(_RaceyPeersServicer())
     try:
-        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{peers_port}", peers_mode="grpc")
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{peers_port}")
         services = _fake_services_for_grpc_peer()
         monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
         batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
@@ -1420,7 +1381,7 @@ def test_build_peer_for_pool_via_grpc_returns_none_on_peers_error(
 
     server, port = _start_peers_server(_ErrorPeersServicer())
     try:
-        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}", peers_mode="grpc")
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
         services = _fake_services_for_grpc_peer()
         monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
         batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
@@ -1443,7 +1404,7 @@ def test_build_peer_for_pool_via_grpc_returns_none_below_min_games(
     a PEERS call when there aren't enough games."""
     from league_stats_common.core.models import RankedEntry
 
-    web_config = WebConfig(peers_grpc_target="127.0.0.1:1", peers_mode="grpc")  # never dialed
+    web_config = WebConfig(peers_grpc_target="127.0.0.1:1")  # never dialed
     services = _fake_services_for_grpc_peer(min_games=99)
     monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
     batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
@@ -1671,8 +1632,9 @@ def test_raw_match_store_backed_services_crashes_in_process_but_not_via_grpc(
     `RawMatchStore` (the only store `_build_job_services` has constructed
     since Task 1 deleted `MatchStore`) does not implement any of
     `MatchStore`'s former peer-game methods. `docker-compose.yml`'s `api-ui`
-    service now pins `ANALYZER_PEERS_MODE=grpc` instead of `in_process`
-    specifically because of this.
+    service pinned `ANALYZER_PEERS_MODE=grpc` (now unnecessary -- Phase 9
+    deleted `peers_mode` and made `_run_stage_b` always resolve peers over
+    gRPC) specifically because of this.
 
     Proves both halves of that fix, against the exact real call path Task 1's
     report traced (`build_peer_for_pool` -> `build_peer_comparison` ->
@@ -1680,12 +1642,14 @@ def test_raw_match_store_backed_services_crashes_in_process_but_not_via_grpc(
     `services.store` directly), not merely a config field assertion:
 
     1. The regression is real: calling the in-process path
-       (`build_peer_for_pool`) with a real `RawMatchStore`-backed `Services`
-       object really does raise `AttributeError` on a missing peer-game
-       method, exactly as the report describes.
+       (`build_peer_for_pool`, still live today via
+       `orchestrator.run_all_builds`'s own CLI/batch pipeline, unrelated to
+       `_run_stage_b`) with a real `RawMatchStore`-backed `Services` object
+       really does raise `AttributeError` on a missing peer-game method,
+       exactly as the report describes.
     2. The fix works: routing the identical `Services` object through the
-       gRPC path (`_build_peer_for_pool_via_grpc`, what `peers_mode="grpc"`
-       makes `_run_stage_b` call instead) against a real, in-process
+       gRPC path (`_build_peer_for_pool_via_grpc`, the only path
+       `_run_stage_b` calls since Phase 9) against a real, in-process
        `PeersServicer` server resolves a peer comparison successfully --
        `finish_peer_comparison`'s own store use
        (`collect_user_history_peers` -> `store.iter_match_ids`/`load_match`)
@@ -1752,10 +1716,7 @@ def test_raw_match_store_backed_services_crashes_in_process_but_not_via_grpc(
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()
     try:
-        grpc_web_config = WebConfig(
-            peers_grpc_target=f"127.0.0.1:{port}",
-            peers_mode="grpc",
-        )
+        grpc_web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
         result = worker._build_peer_for_pool_via_grpc(
             services, batch, pool, ranked, grpc_web_config
         )
