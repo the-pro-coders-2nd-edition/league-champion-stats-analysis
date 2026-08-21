@@ -118,14 +118,23 @@
   }
 </script>
 
-<button id="chatbot-toggle" class="chatbot-toggle" aria-label="Ask about your stats" title="Ask coach" on:click={() => (isOpen ? closePanel() : openPanel())}>
-  <iconify-icon icon="lucide:message-circle" aria-hidden="true"></iconify-icon>
+<button
+  id="chatbot-toggle"
+  class="chatbot-toggle{isOpen ? ' is-open' : ''}"
+  aria-label="Ask about your stats"
+  aria-expanded={isOpen}
+  title="Ask coach"
+  on:click={() => (isOpen ? closePanel() : openPanel())}
+>
+  <iconify-icon icon="lucide:message-circle" width="25" height="25" aria-hidden="true"></iconify-icon>
 </button>
 <aside id="chatbot-panel" class="chatbot-panel{isOpen ? ' is-open' : ''}" aria-hidden={!isOpen}>
   <div id="chatbot-resize-handle" class="chatbot-resize-handle"></div>
   <div class="chatbot-header">
-    <h2>Ask about your stats</h2>
-    <button id="chatbot-close" class="chatbot-close" aria-label="Close" on:click={closePanel}>✕</button>
+    <h2>Ask coach</h2>
+    <button id="chatbot-close" class="chatbot-close" type="button" aria-label="Close" on:click={closePanel}>
+      <iconify-icon icon="mdi:close" width="16" height="16" aria-hidden="true"></iconify-icon>
+    </button>
   </div>
   {#if !consentAccepted}
     <div id="chatbot-consent" class="chatbot-consent">

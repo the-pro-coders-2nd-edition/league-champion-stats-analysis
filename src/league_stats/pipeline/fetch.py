@@ -26,20 +26,26 @@ class FetchResult:
     new_match_ids: frozenset[str]
 
 
+def _ranked_context_fields(ranked) -> tuple[str | None, str | None, int | None]:
+    if ranked is None:
+        return None, None, None
+    tier = ranked.tier.upper()
+    division = ranked.rank.upper() if ranked.rank else None
+    return tier, division, ranked.league_points
+
+
 def _resolve_player_context(services: Services, player: PlayerIdentity) -> PlayerContext:
-    """Resolve PUUID and cache profile icon + solo/duo rank when available."""
+    """Resolve PUUID and cache profile icon + solo/flex rank when available."""
     puuid = services.client.resolve_puuid(player.riot_id, player.tagline)
     icon_id = services.client.fetch_profile_icon_id(puuid)
     if icon_id is not None:
         services.assets.ensure_profile_icon(icon_id)
-    ranked = services.client.fetch_solo_rank(puuid)
-    solo_tier = solo_rank = None
-    solo_lp: int | None = None
-    if ranked is not None:
-        solo_tier = ranked.tier.upper()
-        solo_rank = ranked.rank.upper() if ranked.rank else None
-        solo_lp = ranked.league_points
-        services.assets.ensure_rank_emblem(solo_tier)
+    queues = services.client.fetch_ranked_queues(puuid)
+    solo_tier, solo_rank, solo_lp = _ranked_context_fields(queues.get("solo"))
+    flex_tier, flex_rank, flex_lp = _ranked_context_fields(queues.get("flex"))
+    for tier in (solo_tier, flex_tier):
+        if tier:
+            services.assets.ensure_rank_emblem(tier)
     return PlayerContext(
         riot_id=player.riot_id,
         tagline=player.tagline,
@@ -48,6 +54,9 @@ def _resolve_player_context(services: Services, player: PlayerIdentity) -> Playe
         solo_tier=solo_tier,
         solo_rank=solo_rank,
         solo_lp=solo_lp,
+        flex_tier=flex_tier,
+        flex_rank=flex_rank,
+        flex_lp=flex_lp,
     )
 
 

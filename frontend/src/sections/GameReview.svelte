@@ -1,5 +1,5 @@
 <script>
-  import { tick } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import SectionHeader from '../components/SectionHeader.svelte';
   import SkillGrid from '../components/SkillGrid.svelte';
   import Panel from '../components/Panel.svelte';
@@ -41,11 +41,12 @@
   let moreOpen = false;
   let moreOpenInitialized = false;
   let scoreDetailsOpen = false;
-  let objectivesOpen = false;
   let timelineMode = 'lane';
   let timelineMetric = 'gold';
   let chartEl;
   let plotlyReady = typeof window !== 'undefined' && !!window.Plotly;
+  let listHtml = '';
+  let extraGamesHtml = '';
 
   // `iconCell(name, iconHref, true)` from report.html — always icon-only in this section.
   const iconCellHtml = soloIconCellHtml;
@@ -135,6 +136,30 @@
     const row = event.target.closest('.game-review-row');
     if (row) selectedMatchId = row.getAttribute('data-match-id');
   }
+
+  async function selectGameByMatchId(matchId) {
+    await tick();
+    const allListed = [...visibleGames, ...extraGames];
+    if (!allListed.some((game) => game.match_id === matchId)) return;
+    selectedMatchId = matchId;
+    if (extraGames.some((game) => game.match_id === matchId)) {
+      moreOpen = true;
+    }
+    await tick();
+    const row = document.querySelector(
+      `.game-review-row[data-match-id="${CSS.escape(matchId)}"]`
+    );
+    row?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  onMount(() => {
+    if (!reportNav?.pendingGameReviewMatchId) return;
+    return reportNav.pendingGameReviewMatchId.subscribe(async (matchId) => {
+      if (!matchId) return;
+      await selectGameByMatchId(matchId);
+      reportNav.pendingGameReviewMatchId.set(null);
+    });
+  });
 
   // --- Key Moments feed tab (deaths / fights / objectives) ---
 
@@ -378,10 +403,16 @@
   // clears fast can be several categories ago by the time this renders, and a
   // generic label would read as if nothing had changed since.
   $: liveBlockName = (career?.blocks || []).find((b) => b.is_active)?.name || 'Career';
-  $: listHtml = visibleGames
-    .map((game, index) => (index === careerDividerIndex ? careerDividerHtml() + gameReviewRowHtml(game) : gameReviewRowHtml(game)))
-    .join('');
-  $: extraGamesHtml = extraGames.map(gameReviewRowHtml).join('');
+  // selectedMatchId must be referenced here so Svelte re-runs row HTML when selection changes.
+  $: {
+    selectedMatchId;
+    listHtml = visibleGames
+      .map((game, index) =>
+        index === careerDividerIndex ? careerDividerHtml() + gameReviewRowHtml(game) : gameReviewRowHtml(game)
+      )
+      .join('');
+    extraGamesHtml = extraGames.map(gameReviewRowHtml).join('');
+  }
 
   function careerDividerHtml() {
     return '<a href="#career" class="game-review-career-divider" data-career-divider="1">' +
@@ -528,7 +559,7 @@
                   Whether this game met the live block's per-game bar. Only games after the block started counting toward the 20-game window.
                 </span>
                 <span class="game-goals-list">
-                  {#each trackedGoals as goal (goal.column)}
+                  {#each trackedGoals as goal (goal.key)}
                     <span class="game-goal game-goal--{goal.outcome}">
                       <span class="game-goal-mark" aria-hidden="true">
                         {goal.outcome === 'met' ? '✓' : goal.outcome === 'missed' ? '✕' : '–'}
@@ -691,7 +722,6 @@
                         variant="objective"
                         chevron="trailing"
                         class="game-review-objective game-review-objective--{outcome.tone}{objectiveGrubClass(row)}"
-                        bind:open={objectivesOpen}
                       >
                         <svelte:fragment slot="summary">
                           <span class="game-review-objective-time">{formatGameTime(row.minute)}</span>

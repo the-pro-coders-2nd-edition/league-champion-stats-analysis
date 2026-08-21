@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS players (
 
 def encode_players(players: list[dict[str, Any]]) -> str:
     """Serialize tracked players for SQLite storage."""
-    from league_stats.core.models import solo_rank_fields
+    from league_stats.core.models import player_rank_fields
 
     payload: list[dict[str, Any]] = []
     for player in players:
@@ -98,7 +98,7 @@ def encode_players(players: list[dict[str, Any]]) -> str:
                 entry["profile_icon_id"] = int(raw_icon)
             except (TypeError, ValueError):
                 pass
-        entry.update(solo_rank_fields(player))
+        entry.update(player_rank_fields(player))
         payload.append(entry)
     return json.dumps(payload, separators=(",", ":"))
 
@@ -107,7 +107,7 @@ def decode_players(
     raw: str | None, *, riot_id: str = "", tagline: str = ""
 ) -> list[dict[str, Any]]:
     """Deserialize tracked players, falling back to the primary identity."""
-    from league_stats.core.models import solo_rank_fields
+    from league_stats.core.models import player_rank_fields
 
     if raw:
         try:
@@ -130,7 +130,7 @@ def decode_players(
                         entry["profile_icon_id"] = int(raw_icon)
                     except (TypeError, ValueError):
                         pass
-                entry.update(solo_rank_fields(item))
+                entry.update(player_rank_fields(item))
                 players.append(entry)
             if players:
                 return players

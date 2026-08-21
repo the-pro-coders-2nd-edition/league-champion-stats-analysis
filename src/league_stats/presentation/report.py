@@ -30,6 +30,17 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def game_creation_ms_to_iso(game_creation_ms: int) -> str:
+    """Convert a Riot match ``gameCreation`` millisecond timestamp to ISO-8601 UTC."""
+    if game_creation_ms <= 0:
+        return ""
+    return (
+        datetime.fromtimestamp(game_creation_ms / 1000, tz=timezone.utc)
+        .replace(microsecond=0)
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+
+
 def is_group_player_label(player: str) -> bool:
     """True when the label represents a pooled multi-account run."""
     return "," in player

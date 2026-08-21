@@ -50,7 +50,7 @@ def _slug_for_players(players: list[dict[str, Any]]) -> str:
 
 def _players_from_reports(output_dir: Path, job_slug: str) -> list[dict[str, Any]]:
     """Recover pooled identities from on-disk report metadata when the DB drifted."""
-    from league_stats.core.models import solo_rank_fields
+    from league_stats.core.models import player_rank_fields
 
     builds = discover_player_builds(output_dir / "reports" / job_slug)
     for build in builds:
@@ -72,7 +72,7 @@ def _players_from_reports(output_dir: Path, job_slug: str) -> list[dict[str, Any
                     entry["profile_icon_id"] = int(raw_icon)
                 except (TypeError, ValueError):
                     pass
-            entry.update(solo_rank_fields(item))
+            entry.update(player_rank_fields(item))
             players.append(entry)
         if players and _slug_for_players(players) == job_slug:
             return players

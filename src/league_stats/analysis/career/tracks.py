@@ -39,6 +39,7 @@ from league_stats.analysis.career.steps import (
     CATEGORY_UTILITY,
     CATEGORY_VISION,
     STEP_BANK,
+    control_ward_rung,
     rank_steps,
     steps_for_category,
     at_most_line,
@@ -258,6 +259,7 @@ def build_step_catalog(ctx: TrackContext) -> list[dict[str, Any]]:
             steps.append({
                 "key": step.key,
                 "text": rung.text if rung is not None else "",
+                "why": rung.why if rung is not None else "",
                 "role_mismatch": not step.serves_role(ctx.role),
                 "insufficient_data": rung is None,
             })
@@ -592,6 +594,9 @@ def _map_presence(ctx: TrackContext) -> tuple[Rung, ...] | None:
         return None
     pit_target = _next_decile(presence)
     fight_target = _next_decile(fights)
+    ward_rung = control_ward_rung(ctx)
+    if ward_rung is None:
+        return None
     return (
         Rung(
             text=f"Present at {pit_target * 100:.0f}% of pit takes in 15 of 20 games",
@@ -601,14 +606,7 @@ def _map_presence(ctx: TrackContext) -> tuple[Rung, ...] | None:
             need=CLEAR_BAR,
             why=WHY_BY_COLUMN.get("objectives_present_rate", ""),
         ),
-        Rung(
-            text="One control ward per game in 15 of 20 games",
-            column="control_wards",
-            comparator="at_least",
-            target=1.0,
-            need=CLEAR_BAR,
-            why=WHY_BY_COLUMN.get("control_wards", ""),
-        ),
+        ward_rung,
         Rung(
             text=f"Attend {fight_target * 100:.0f}% of teamfights in 15 of 20 games",
             column="tf_participation",

@@ -74,6 +74,29 @@ def test_landing_page_lists_reports(client: TestClient) -> None:
     assert by_slug["test_euw"]["player"] == "Test#EUW"
     assert by_slug["test_euw"]["has_report"] is True
     assert by_slug["test_euw"]["build_count"] == 1
+    previews = by_slug["test_euw"]["preview_builds"]
+    assert len(previews) == 1
+    assert previews[0]["slug"] == "viktor_middle"
+    assert previews[0]["champion"]
+    assert previews[0]["games"] == 42
+
+
+def test_landing_page_preview_builds_are_most_recent(client: TestClient) -> None:
+    _write_report(
+        client.web_config.output_dir, "test_euw", "ahri_middle",
+        champion="Ahri", games=10, winrate=0.4,
+        last_game_at="2026-08-10T10:00:00Z",
+    )
+    _write_report(
+        client.web_config.output_dir, "test_euw", "viktor_middle",
+        champion="Viktor", games=42, winrate=0.55,
+        last_game_at="2026-08-01T10:00:00Z",
+    )
+    groups = client.get("/api/groups").json()["groups"]
+    group = next(group for group in groups if group["slug"] == "test_euw")
+    slugs = [build["slug"] for build in group["preview_builds"]]
+    assert slugs[0] == "ahri_middle"
+    assert "viktor_middle" in slugs
 
 
 def test_landing_page_shows_profile_icons(client: TestClient) -> None:
@@ -324,17 +347,231 @@ def test_cancel_keeps_existing_base_report(client: TestClient) -> None:
 
 
 def test_player_status_serves_existing_reports(client: TestClient) -> None:
-    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    report_dir = _write_report(
+        client.web_config.output_dir,
+        "test_euw",
+        "viktor_middle",
+        score=72,
+        score_color="var(--tone-good-fg)",
+        score_verdict_label="Strength",
+        last_game_at="2026-08-01T09:00:00Z",
+    )
+    (report_dir / "report.json").write_text(
+        json.dumps({"score": 72, "score_color": "var(--tone-good-fg)", "score_verdict_label": "Strength"}),
+        encoding="utf-8",
+    )
     response = client.get("/api/players/test_euw")
     assert response.status_code == 200
     body = response.json()
     assert body["has_report"] is True
-    assert body["builds"][0]["slug"] == "viktor_middle"
-    assert body["builds"][0]["href"] == "/out/reports/test_euw/viktor_middle/report.json"
-    assert body["builds"][0]["peers_ready"] is False
+    build = body["builds"][0]
+    assert build["slug"] == "viktor_middle"
+    assert build["href"] == "/out/reports/test_euw/viktor_middle/report.json"
+    assert build["peers_ready"] is False
+    assert build["score"] == 72
+    assert build["last_game_at"] == "2026-08-01T09:00:00Z"
     assert body["active_job"] is None
 
     assert client.get("/api/players/unknown_player").status_code == 404
+
+
+def test_player_status_reads_score_from_report_json(client: TestClient) -> None:
+    """Older meta.json files omit score; hub cards read it from report.json."""
+    report_dir = _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    (report_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "score": 63.8,
+                "score_color": "var(--tone-good-fg)",
+                "score_verdict_label": "Solid",
+            }
+        ),
+        encoding="utf-8",
+    )
+    build = client.get("/api/players/test_euw").json()["builds"][0]
+    assert build["score"] == 63.8
+    assert build["score_verdict_label"] == "Solid"
+
+
+def test_player_status_includes_flex_rank(client: TestClient) -> None:
+    rank_dir = client.web_config.output_dir / "assets" / "ranks"
+    rank_dir.mkdir(parents=True, exist_ok=True)
+    (rank_dir / "GOLD.png").write_bytes(b"png")
+    (rank_dir / "PLATINUM.png").write_bytes(b"png")
+    _write_report(
+        client.web_config.output_dir,
+        "test_euw",
+        "viktor_middle",
+        players=[
+            {
+                "riot_id": "Test",
+                "tagline": "EUW",
+                "solo_tier": "GOLD",
+                "solo_rank": "IV",
+                "solo_lp": 42,
+                "flex_tier": "PLATINUM",
+                "flex_rank": "II",
+                "flex_lp": 31,
+            }
+        ],
+    )
+    player = client.get("/api/players/test_euw").json()["players"][0]
+    assert player["solo_rank_division"] == "Gold IV"
+    assert player["flex_rank_division"] == "Platinum II"
+    assert player["solo_lp"] == 42
+    assert player["flex_lp"] == 31
+
+
+def test_player_status_merges_flex_from_store_when_meta_is_solo_only(
+    client: TestClient,
+) -> None:
+    rank_dir = client.web_config.output_dir / "assets" / "ranks"
+    rank_dir.mkdir(parents=True, exist_ok=True)
+    (rank_dir / "GOLD.png").write_bytes(b"png")
+    (rank_dir / "PLATINUM.png").write_bytes(b"png")
+    _write_report(
+        client.web_config.output_dir,
+        "test_euw",
+        "viktor_middle",
+        players=[
+            {
+                "riot_id": "Test",
+                "tagline": "EUW",
+                "solo_tier": "GOLD",
+                "solo_rank": "II",
+                "solo_lp": 68,
+            }
+        ],
+    )
+    client.job_store.upsert_player(
+        slug="test_euw",
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        players=[
+            {
+                "riot_id": "Test",
+                "tagline": "EUW",
+                "solo_tier": "GOLD",
+                "solo_rank": "II",
+                "solo_lp": 68,
+                "flex_tier": "PLATINUM",
+                "flex_rank": "IV",
+                "flex_lp": 12,
+            }
+        ],
+    )
+
+    player = client.get("/api/players/test_euw").json()["players"][0]
+
+    assert player["solo_rank_division"] == "Gold II"
+    assert player["solo_lp"] == 68
+    assert player["flex_rank_division"] == "Platinum IV"
+    assert player["flex_lp"] == 12
+
+
+def test_player_status_hydrates_missing_flex(client: TestClient, monkeypatch) -> None:
+    from league_stats.core.models import RankedEntry
+
+    rank_dir = client.web_config.output_dir / "assets" / "ranks"
+    rank_dir.mkdir(parents=True, exist_ok=True)
+    (rank_dir / "DIAMOND.png").write_bytes(b"png")
+    (rank_dir / "EMERALD.png").write_bytes(b"png")
+    _write_report(
+        client.web_config.output_dir,
+        "meojifo_moc",
+        "viktor_middle",
+        players=[
+            {
+                "riot_id": "meojifo",
+                "tagline": "moc",
+                "solo_tier": "DIAMOND",
+                "solo_rank": "IV",
+                "solo_lp": 1,
+            }
+        ],
+    )
+    client.job_store.upsert_player(
+        slug="meojifo_moc",
+        riot_id="meojifo",
+        tagline="moc",
+        region="euw1",
+        players=[
+            {
+                "riot_id": "meojifo",
+                "tagline": "moc",
+                "solo_tier": "DIAMOND",
+                "solo_rank": "IV",
+                "solo_lp": 1,
+            }
+        ],
+    )
+
+    class FakeClient:
+        def resolve_puuid(self, riot_id: str, tagline: str) -> str:
+            return "puuid-1"
+
+        def fetch_ranked_queues(self, puuid: str) -> dict[str, RankedEntry]:
+            return {
+                "flex": RankedEntry(
+                    tier="EMERALD",
+                    rank="IV",
+                    league_points=79,
+                    wins=10,
+                    losses=8,
+                )
+            }
+
+    monkeypatch.setattr(web_app, "_build_precheck_client", lambda region, output_dir: FakeClient())
+
+    player = client.get("/api/players/meojifo_moc").json()["players"][0]
+
+    assert player["solo_rank_division"] == "Diamond IV"
+    assert player["flex_rank_division"] == "Emerald IV"
+    assert player["flex_lp"] == 79
+    saved = client.job_store.get_player("meojifo_moc")
+    assert saved is not None
+    assert saved["players"][0]["flex_tier"] == "EMERALD"
+
+
+def test_hydrate_tracked_ranks_fetches_missing_flex(client: TestClient, monkeypatch) -> None:
+    from league_stats.core.models import RankedEntry
+
+    class FakeClient:
+        def resolve_puuid(self, riot_id: str, tagline: str) -> str:
+            return "puuid-1"
+
+        def fetch_ranked_queues(self, puuid: str) -> dict[str, RankedEntry]:
+            return {
+                "flex": RankedEntry(
+                    tier="PLATINUM",
+                    rank="III",
+                    league_points=22,
+                    wins=10,
+                    losses=8,
+                )
+            }
+
+    monkeypatch.setattr(web_app, "_build_precheck_client", lambda region, output_dir: FakeClient())
+
+    tracked, changed = web_app._hydrate_tracked_ranks(
+        [
+            {
+                "riot_id": "Test",
+                "tagline": "EUW",
+                "solo_tier": "DIAMOND",
+                "solo_rank": "IV",
+                "solo_lp": 68,
+            }
+        ],
+        region="euw1",
+        output_dir=client.web_config.output_dir,
+    )
+
+    assert changed is True
+    assert tracked[0]["flex_tier"] == "PLATINUM"
+    assert tracked[0]["flex_rank"] == "III"
+    assert tracked[0]["flex_lp"] == 22
 
 
 def test_get_build_payload_returns_report_json(client: TestClient) -> None:

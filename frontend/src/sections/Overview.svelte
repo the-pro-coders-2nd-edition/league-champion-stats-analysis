@@ -4,7 +4,7 @@
   import Meter from '../components/Meter.svelte';
   import MetricCard from '../components/MetricCard.svelte';
   import CareerNode from '../components/CareerNode.svelte';
-  import Chip from '../components/Chip.svelte';
+  import AccountsPanel from '../components/AccountsPanel.svelte';
 
   export let data;
   // Career follows neither the queue nor the game-window filter, so the widget
@@ -75,35 +75,7 @@
         </div>
       </div>
       {#if showPlayerChips}
-        <div class="accounts-panel accounts-panel--hero">
-          <div class="accounts-panel-head">
-            <span class="accounts-panel-label">Accounts in this pool</span>
-            <span class="accounts-panel-count">{data.report_players.length} accounts</span>
-          </div>
-          {#each data.report_players as member}
-            <div class="accounts-panel-row">
-              {#if member.profile_icon}
-                <img src={member.profile_icon} alt="" class="accounts-panel-icon">
-              {:else}
-                <span class="accounts-panel-icon accounts-panel-icon--placeholder" aria-hidden="true"></span>
-              {/if}
-              <span class="accounts-panel-name">
-                {member.label}
-                {#if member.is_main}
-                  <Chip tone="good" fill={true} density="compact" label="Main" />
-                {/if}
-              </span>
-              <span class="accounts-panel-rank">
-                {#if member.solo_rank_icon}
-                  <img src={member.solo_rank_icon} alt="" class="accounts-panel-rank-icon">
-                {/if}
-                <span>{member.solo_rank_division || 'Unranked'}</span>
-              </span>
-              <span class="accounts-panel-lp">{member.solo_lp != null ? `${member.solo_lp} LP` : '—'}</span>
-              <span class="accounts-panel-region">{member.region || '—'}</span>
-            </div>
-          {/each}
-        </div>
+        <AccountsPanel members={data.report_players} title="Accounts in this pool" variant="hero" />
       {/if}
     </div>
     <div class="hero-actions-block">

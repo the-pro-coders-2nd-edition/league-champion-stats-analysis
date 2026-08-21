@@ -265,7 +265,10 @@
             {#if step.insufficient_data}
               <span class="career-catalog-step-text">Not enough data yet</span>
             {:else}
-              <span class="career-catalog-step-text">{step.text}</span>
+              <span class="career-catalog-step-text">
+                {step.text}
+                {#if step.why}<MetricTooltip label="this goal" tooltip={step.why} />{/if}
+              </span>
             {/if}
             {#if step.role_mismatch}
               <Chip tone="flat" fill={false} bordered={true} label="Not your role" />
@@ -417,7 +420,7 @@
     border-radius: var(--radius-sm);
     background: var(--color-surface-2);
   }
-  .career-catalog-step-text { font-size: 12px; line-height: 1.4; color: var(--color-text); }
+  .career-catalog-step-text { font-size: 12px; line-height: 1.4; color: var(--color-text); min-width: 0; }
   .career-catalog-step--muted { opacity: .55; }
   .career-catalog-step--muted .career-catalog-step-text { color: var(--color-neutral-500); }
 

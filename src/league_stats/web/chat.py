@@ -16,6 +16,9 @@ import requests
 GEMINI_MODEL: Final[str] = "gemini-3.5-flash"
 GEMINI_FALLBACK_MODEL: Final[str] = "gemini-3.1-flash-lite"
 REQUEST_TIMEOUT_S: Final[float] = 60.0
+# Gemini 3.x thinking tokens count toward maxOutputTokens; keep thinking minimal
+# for short coaching replies and leave room for the visible answer.
+MAX_OUTPUT_TOKENS: Final[int] = 4096
 
 MAX_HISTORY_MESSAGES: Final[int] = 40
 MAX_MESSAGE_CHARS: Final[int] = 4000
@@ -121,6 +124,28 @@ def _is_slug(value: str) -> bool:
     return bool(value) and all(ch.isalnum() or ch == "_" for ch in value)
 
 
+def _extract_reply_text(parts: list[dict[str, Any]]) -> str:
+    """Join visible model output, skipping internal thought summaries."""
+    chunks: list[str] = []
+    for part in parts:
+        if part.get("thought"):
+            continue
+        text = part.get("text")
+        if text:
+            chunks.append(str(text))
+    return "".join(chunks)
+
+
+def _generation_config() -> dict[str, Any]:
+    return {
+        "temperature": 0.4,
+        "maxOutputTokens": MAX_OUTPUT_TOKENS,
+        # Coaching replies should be fast and concise; default "medium" thinking
+        # on Gemini 3.5 Flash can consume most of the output token budget.
+        "thinkingConfig": {"thinkingLevel": "minimal"},
+    }
+
+
 def _call_gemini(
     api_key: str, model: str, system_instruction: str, history: list[dict[str, Any]]
 ) -> str:
@@ -130,7 +155,7 @@ def _call_gemini(
         json={
             "systemInstruction": {"parts": [{"text": system_instruction}]},
             "contents": history,
-            "generationConfig": {"temperature": 0.4, "maxOutputTokens": 800},
+            "generationConfig": _generation_config(),
         },
         timeout=REQUEST_TIMEOUT_S,
     )
@@ -142,10 +167,14 @@ def _call_gemini(
         raise ChatError(detail or f"Gemini returned HTTP {response.status_code}")
     payload = response.json()
     candidates = payload.get("candidates") or []
-    parts = ((candidates[0] if candidates else {}).get("content") or {}).get("parts") or []
-    text = "".join(str(part.get("text", "")) for part in parts)
+    candidate = candidates[0] if candidates else {}
+    parts = (candidate.get("content") or {}).get("parts") or []
+    text = _extract_reply_text(parts)
     if not text:
         raise ChatError("Gemini returned an empty response")
+    finish_reason = candidate.get("finishReason")
+    if finish_reason == "MAX_TOKENS":
+        text = text.rstrip() + "…"
     return text
 
 
