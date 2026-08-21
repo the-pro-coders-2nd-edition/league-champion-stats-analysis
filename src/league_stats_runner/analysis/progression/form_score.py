@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from league_stats_runner.analysis.progression.metrics import ProgressionMetricSpec, form_score_metrics
+from league_stats_runner.analysis.progression.metrics import form_score_metrics
 from league_stats_common.core.models import MetricDelta
 
 

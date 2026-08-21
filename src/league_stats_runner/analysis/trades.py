@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from league_stats_runner.analysis.buildings import structure_display_label, structure_label
+from league_stats_runner.analysis.buildings import structure_display_label
 from league_stats_runner.analysis.timeline import TimelineContext
 from league_stats_common.core.models import BuildingRecord, ObjectiveKind, ObjectiveRecord
-from league_stats_common.utils import ms_to_min
 
 TradeOutcome = Literal["none", "won", "lost", "traded_for", "traded_away", "held", "even"]
 

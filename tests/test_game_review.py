@@ -5,15 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pandas as pd
-
 from league_stats_runner.analysis.game_review.behaviors import evaluate_behaviors
 from league_stats_runner.analysis.game_review.compare import compare_key_stats_to_baseline, compare_to_baseline
 from league_stats_runner.analysis.game_review.export import game_review_chatbot_export
 from league_stats_runner.analysis.game_review.score import compute_game_score
 from league_stats_runner.analysis.game_review.views import build_game_review_views
 from league_stats_runner.analysis.progression.slicing import slice_recent
-from league_stats_runner.analysis.statistics import StatisticsEngine
 from league_stats_common.core.config import (
     GAME_REVIEW_MAX_BEHAVIORS,
     GAME_REVIEW_MAX_COMPARISONS,

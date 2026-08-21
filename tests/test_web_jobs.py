@@ -402,7 +402,7 @@ def test_cancel_queued_job(store: JobStore) -> None:
 
 
 def test_cancel_running_job_blocks_further_state_updates(store: JobStore) -> None:
-    job = _enqueue(store)
+    _enqueue(store)
     claimed = store.claim_next()
     assert claimed is not None
     job_id = int(claimed["id"])

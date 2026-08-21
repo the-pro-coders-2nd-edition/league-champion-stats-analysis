@@ -20,7 +20,6 @@ from league_stats_common.utils import (
     BARON_PIT,
     DRAGON_PIT,
     MAP_SIZE,
-    TOWER_RADIUS,
     classify_zone,
     distance,
     is_side_lane,

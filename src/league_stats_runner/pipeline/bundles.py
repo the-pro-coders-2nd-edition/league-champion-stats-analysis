@@ -8,8 +8,6 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Final
 
-import pandas as pd
-
 from league_stats_runner.analysis.career.engine import advance_career
 from league_stats_runner.analysis.career.tracks import TrackContext
 from league_stats_runner.analysis.coach.engine import VISIBLE_RECOMMENDATIONS
@@ -37,10 +35,9 @@ from league_stats_common.infra.career_store import build_key, open_career_store
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_runner.presentation.career import (
     build_career_view,
-    career_scope_view,
     empty_career_view,
 )
-from league_stats_runner.pipeline.frames import AnalysisFrames, build_analysis_frames, build_overview
+from league_stats_runner.pipeline.frames import AnalysisFrames, build_analysis_frames
 from league_stats_common.utils import get_logger
 from league_stats_runner.pipeline.summaries import ReportStats, build_domain_summaries, generate_recommendations
 from league_stats_common.core.role_metrics import role_profile

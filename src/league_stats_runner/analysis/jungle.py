@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from league_stats_runner.analysis.timeline import TimelineContext
-from league_stats_common.utils import ms_to_min
 
 LANER_ROLES: frozenset[str] = frozenset({"TOP", "MIDDLE", "BOTTOM", "UTILITY"})
 EARLY_GAME_MS: int = 15 * 60 * 1000

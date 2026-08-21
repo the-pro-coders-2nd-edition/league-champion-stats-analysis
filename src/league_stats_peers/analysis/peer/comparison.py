@@ -19,7 +19,7 @@ from league_stats_common.core.champions import build_label
 from league_stats_common.core.models import MatchRecord, MetricComparison, PeerComparisonResult, RankedEntry, Recommendation
 from league_stats_common.core.progress import NULL_REPORTER, ProgressReporter
 from league_stats_common.infra.riot_api import RiotApiClient
-from league_stats_common.utils import get_logger, safe_div
+from league_stats_common.utils import get_logger
 
 MIN_PEER_GAMES: Final[int] = 12
 PEER_LOOKUP_CAP: Final[int] = 80

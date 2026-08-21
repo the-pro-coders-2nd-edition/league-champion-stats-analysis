@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from league_stats_peers.analysis.peer.benchmark_fetcher import (
     extract_champion_role_for_puuid,
     fetch_benchmark_from_api,

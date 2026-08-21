@@ -31,7 +31,7 @@ from prometheus_client import start_http_server
 
 from league_stats_common.core.config import WebConfig, load_config, load_web_config
 from league_stats_common.infra.cache import HttpCache
-from league_stats_common.infra.jobs import JobStore, open_jobs_store
+from league_stats_common.infra.jobs import open_jobs_store
 from league_stats_common.infra.mongo import db_name_from_uri
 from league_stats_common.infra.riot_api import RiotApiClient, shared_rate_limiter
 from league_stats_common.infra.trace_context import AsyncTraceServerInterceptor

@@ -139,7 +139,7 @@ def test_a_client_that_does_not_accept_gzip_gets_plain_json(client: TestClient) 
 
 def test_a_tiny_response_is_not_worth_compressing(client: TestClient) -> None:
     """Below the threshold gzip costs CPU and framing bytes for nothing."""
-    response = client.get("/api/players", headers={"Accept-Encoding": "gzip"})
+    response = client.get("/api/activity", headers={"Accept-Encoding": "gzip"})
 
     assert response.status_code == 200
     assert response.headers.get("content-encoding") is None

@@ -31,7 +31,6 @@ from league_stats_runner.presentation.metric_colors import (
     NEUTRAL_HEX,
     colors_for_winrates,
     interpolate_metric_color,
-    score_peer_gap,
 )
 from league_stats_runner.analysis.deaths import death_heatmap_coords
 from league_stats_common.utils import MAP_SIZE, get_logger
@@ -560,59 +559,6 @@ class GraphFactory:
             color_discrete_map={"Present": WIN_COLOR, "Absent": LOSS_COLOR},
         )
         fig.update_layout(title="Objective takes and your presence", xaxis_title="Minute")
-        return _div(fig)
-
-    def peer_comparison_chart(self, comparisons: list[Any], *, build_label: str) -> str:
-        """Horizontal bar chart of % gap vs rank-peer averages."""
-        if not comparisons:
-            return _div(go.Figure().update_layout(title="Rank peer comparison (unavailable)"))
-        labels = [c.label for c in comparisons]
-        deltas = []
-        colors = []
-        for c in comparisons:
-            if c.delta_pct is None:
-                deltas.append(0.0)
-                gap_score = score_peer_gap(
-                    metric=c.metric,
-                    delta_pct=None,
-                    delta=c.delta,
-                    direction=c.direction,
-                )
-                colors.append(interpolate_metric_color(gap_score) if gap_score is not None else NEUTRAL_HEX)
-                continue
-            if c.direction == "lower":
-                pct = -c.delta_pct
-            else:
-                pct = c.delta_pct
-            deltas.append(pct)
-            gap_score = score_peer_gap(
-                metric=c.metric,
-                delta_pct=c.delta_pct,
-                delta=c.delta,
-                direction=c.direction,
-            )
-            colors.append(interpolate_metric_color(gap_score) if gap_score is not None else NEUTRAL_HEX)
-        compressed = [_compress_signed(d) for d in deltas]
-        fig = go.Figure(go.Bar(
-            x=compressed,
-            y=labels,
-            orientation="h",
-            marker_color=colors,
-            text=[f"{d:+.0f}%" for d in deltas],
-            textposition="outside",
-            customdata=deltas,
-            hovertemplate="%{y}: %{customdata:+.0f}%<extra></extra>",
-        ))
-        fig.add_vline(x=0, line_color="#888", line_dash="dot")
-        fig.update_layout(
-            title=f"Gap vs average {build_label} at your rank (% difference)",
-            xaxis=_compressed_xaxis(
-                raw_values=deltas,
-                title="% above (+) or below (-) peers (compressed scale)",
-                suffix="%",
-            ),
-            height=max(420, 28 * len(labels)),
-        )
         return _div(fig)
 
     def form_rolling_wr(

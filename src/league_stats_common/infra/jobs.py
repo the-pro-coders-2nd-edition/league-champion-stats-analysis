@@ -662,13 +662,6 @@ class JobStore:
         with self._lock:
             self._players.update_one({"_id": slug}, {"$set": {"peer_failed": 1}})
 
-    def recent_players(self, limit: int = 50) -> list[dict[str, Any]]:
-        """Players ordered by most recent activity."""
-        with self._lock:
-            cursor = list(self._players.find({}).sort("base_completed_at", -1).limit(limit))
-            return [self._doc_to_player(doc) for doc in cursor]
-
-
 # Process-wide Mongo clients keyed by URI, mirroring `career_store.py`'s own
 # `_SHARED_MONGO_CLIENTS`: neither `api_ui/app.py` nor `cron_watch/__main__.py`
 # carries a Mongo client for `JobStore` today -- both only ever resolved an

@@ -60,7 +60,7 @@ import os
 import threading
 from datetime import datetime, timezone
 from types import TracebackType
-from typing import Any, Sequence
+from typing import Sequence
 
 import pymongo
 

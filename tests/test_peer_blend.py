@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import mongomock
 import pytest
@@ -16,7 +16,6 @@ from league_stats_peers.analysis.peer.benchmark_fetcher import (
 )
 from league_stats_peers.analysis.peer.baseline import resolve_peer_baseline
 from league_stats_peers.analysis.peer.rank_scope import (
-    build_exact_scope,
     build_wider_scope,
     build_widened_scope,
     league_lookup_pairs,
@@ -264,8 +263,6 @@ def test_store_threshold_requires_fifty_games(
     tmp_path, monkeypatch, ranked_gold: RankedEntry
 ) -> None:
     """A store with fewer than 50 games does not satisfy the exact-rank baseline."""
-    import league_stats_peers.analysis.peer.baseline as peer_baseline
-
     store = CombinedMatchAndPeerStore()
     for index in range(30):
         match = make_match()
@@ -293,8 +290,6 @@ def test_widened_store_resolves_at_fifty_games(
     tmp_path, monkeypatch, ranked_gold: RankedEntry
 ) -> None:
     """Games from an adjacent tier resolve at level 1 once MIN_WIDENED_GAMES is met."""
-    import league_stats_peers.analysis.peer.baseline as peer_baseline
-
     store = CombinedMatchAndPeerStore()
     for index in range(50):
         match = make_match()

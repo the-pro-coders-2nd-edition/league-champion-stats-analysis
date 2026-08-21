@@ -15,7 +15,7 @@ from league_stats_runner.analysis.progression.slicing import (
     slice_baseline_inclusive,
     slice_recent,
 )
-from league_stats_runner.analysis.progression.stats import proportion_test, welch_test, winrate_significant
+from league_stats_runner.analysis.progression.stats import welch_test, winrate_significant
 from league_stats_common.core.config import AppConfig
 from league_stats_common.core.models import MatchRecord, MetricDelta
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline

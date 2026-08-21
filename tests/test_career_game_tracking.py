@@ -15,8 +15,6 @@ older than the live block was never tracked by it and must not be shown as a mis
 
 from __future__ import annotations
 
-import pandas as pd
-
 from league_stats_runner.analysis.career.engine import CareerBlockState, CareerSnapshot
 from league_stats_runner.analysis.career.models import CLEAR_BAR, Rung, StoredGoal
 from league_stats_runner.presentation.career import build_career_view

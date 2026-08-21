@@ -312,22 +312,6 @@ class RiotApiClient:
         self._log.info("No ranked solo queue entry found for %s", puuid[:12])
         return None
 
-    def fetch_tiers_for_puuids(self, puuids: set[str]) -> dict[str, str]:
-        """Resolve solo queue tiers for many PUUIDs (cached per player).
-
-        Args:
-            puuids: PUUIDs to look up.
-
-        Returns:
-            Mapping of PUUID to tier string (e.g. ``"GOLD"``).
-        """
-        tiers: dict[str, str] = {}
-        for puuid in puuids:
-            ranked = self.fetch_solo_rank(puuid)
-            if ranked is not None:
-                tiers[puuid] = ranked.tier
-        return tiers
-
     def fetch_league_entries(
         self, tier: str, rank: str = "", *, page: int = 1
     ) -> list[dict[str, Any]]:
@@ -568,16 +552,3 @@ class RiotApiClient:
             authenticated=False,
         )
         return build_champion_catalog(payload["data"])
-
-    def resolve_champion_name(self, user_input: str) -> str:
-        """Resolve user input to the official Riot champion id.
-
-        Args:
-            user_input: Raw champion string from CLI or config.
-
-        Returns:
-            Official champion id used in match-v5 payloads.
-        """
-        from league_stats_common.core.champions import resolve_champion_name
-
-        return resolve_champion_name(user_input, self.fetch_champion_catalog())
