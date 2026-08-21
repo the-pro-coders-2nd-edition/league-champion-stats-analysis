@@ -3,13 +3,8 @@ services:
     build:
       context: .
       args:
-        # Passed through from the host's GIT_COMMIT env var (set by CI to
-        # `$(git rev-parse HEAD)` at build time; defaults to "dev" for a
-        # local/unset build -- see .env.example) -- Finding 2 of the Phase 6
-        # final whole-branch review: without this, GIT_COMMIT is read
-        # everywhere (`os.environ.get("GIT_COMMIT", "dev")`) but never
-        # actually set, so every real deployment's `version` tag silently
-        # stays "dev".
+        # Set by CI to `$(git rev-parse HEAD)`; defaults to "dev" locally.
+        # Baked into the running service's `version` tag (see .env.example).
         GIT_COMMIT: ${GIT_COMMIT:-dev}
     ports:
       - "8000:8000"
@@ -18,50 +13,27 @@ services:
     environment:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - RUNNER_GRPC_TARGET=runner:50051
-      # Phase 9 deleted `watch_mode`/`peers_mode` entirely: `api-ui` no longer
-      # runs its own in-process watcher (CronWatch's own always-on
-      # `WatchPoller` is the sole source of watch detection) and
-      # `_run_stage_b` always resolves peer comparisons over gRPC
-      # (`_build_peer_for_pool_via_grpc`) with no config flag left to check --
-      # there is nothing left here to pin for either. `_run_stage_b`'s gRPC
-      # path never touches `services.store`'s peer-game surface
-      # (`finish_peer_comparison`'s own store use, `collect_user_history_peers`,
-      # only calls `iter_match_ids`/`load_match`, which `RawMatchStore` does
-      # implement), so the `AttributeError` risk the old `ANALYZER_PEERS_MODE=grpc`
-      # pin existed to dodge is gone along with the in-process path itself
-      # (`build_peer_for_pool`, deleted in Phase 9's final dead-code sweep).
+      # api-ui has no peer-comparison code path of its own; it always
+      # delegates job execution to `runner` over gRPC. `_run_stage_b` there
+      # calls PEERS directly, but api-ui never hosts a RunnerServiceServicer,
+      # so a slow-path (live-sampling) PEERS baseline requested via this
+      # process degrades to a timeout-and-skip for that one build rather than
+      # crashing (base report is still served).
       #
-      # `api-ui` still never hosts a `RunnerServiceServicer`, so PEERS' async
-      # `NotifyPeerBaselineReady` callback still can never reach it -- this
-      # precondition now lives in `_build_peer_for_pool_via_grpc`'s own
-      # docstring (`league_stats_runner/worker.py`), since there is no config
-      # field left to gate a runtime warning on. The accepted tradeoff is
-      # `_run_stage_b`'s documented behavior when a PEERS baseline falls to
-      # the slow path from this process: `_build_peer_for_pool_via_grpc` polls
-      # `_peer_baseline_waiters` for the callback that will never come, until
-      # `_PEERS_BASELINE_WAIT_TIMEOUT_S` elapses, then logs and skips that
-      # one build's peer comparison (soft failure -- the base report is
-      # already served). Degraded-but-correct beats an `AttributeError`
-      # crash on every ranked build.
-      #
-      # PEERS_GRPC_TARGET defaults to localhost:50053 (wrong from inside this
-      # container) -- must point at the compose network's `peers` host, same
-      # as `runner`'s own pin below. Port matches `peers`' `PEERS_GRPC_PORT`.
+      # Must point at the compose network's `peers` host (default is
+      # localhost, wrong inside this container); port matches `peers`'
+      # PEERS_GRPC_PORT.
       - PEERS_GRPC_TARGET=peers:50053
-      # Without this, api-ui's WelcomeBackSubscriber is never constructed (it's
-      # gated on this var being set -- see WebConfig.cron_watch_grpc_target), so
-      # the welcome-back feature would have no live gRPC path in this
-      # deployment even though cron-watch is actually running here. Port must
-      # match cron-watch's CRON_WATCH_GRPC_PORT below.
+      # Required for welcome-back notifications: unset means
+      # WelcomeBackSubscriber never starts. Port must match cron-watch's
+      # CRON_WATCH_GRPC_PORT below.
       - CRON_WATCH_GRPC_TARGET=cron-watch:50052
     volumes:
-      # Report artifacts (HTML/CSV/JSON) referenced by job rows, now stored in
-      # Mongo (`JobStore`, Phase 8 Task 4) rather than the deleted `app-data`
-      # volume. Without this, recreating this container wipes
-      # `/app/output` while the DB still says jobs completed, so a "done"
-      # job's report link 404s. `/app/.cache` (match/HTTP caches) is
-      # deliberately left ephemeral: losing it only costs slower re-fetches on
-      # next start, not a broken link, so it's not worth a volume here.
+      # Report artifacts (HTML/CSV/JSON), referenced by job rows in Mongo.
+      # Without this, recreating the container wipes /app/output while jobs
+      # still show as completed, so "done" report links 404. /app/.cache
+      # (match/HTTP caches) is left ephemeral -- losing it just costs slower
+      # re-fetches, not a broken link.
       - app-output:/app/output
     depends_on:
       - mongo
@@ -77,28 +49,18 @@ services:
     build:
       context: .
       args:
-        # Passed through from the host's GIT_COMMIT env var (set by CI to
-        # `$(git rev-parse HEAD)` at build time; defaults to "dev" for a
-        # local/unset build -- see .env.example) -- Finding 2 of the Phase 6
-        # final whole-branch review: without this, GIT_COMMIT is read
-        # everywhere (`os.environ.get("GIT_COMMIT", "dev")`) but never
-        # actually set, so every real deployment's `version` tag silently
-        # stays "dev".
+        # Set by CI to `$(git rev-parse HEAD)`; defaults to "dev" locally.
+        # Baked into the running service's `version` tag (see .env.example).
         GIT_COMMIT: ${GIT_COMMIT:-dev}
     command: ["uv", "run", "python", "-m", "league_stats_runner"]
     environment:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - RUNNER_GRPC_PORT=50051
       - RUNNER_METRICS_PORT=9100
-      # Phase 9 deleted `peers_mode` entirely: `_run_stage_b` always resolves
-      # peer comparisons over gRPC (`_build_peer_for_pool_via_grpc`) with no
-      # config flag left to check, so there is nothing left here to pin for
-      # that. PEERS_GRPC_TARGET itself still must point at the compose
-      # network's `peers` host, since its own default (localhost:50053) is
-      # wrong here -- RUNNER still needs to dial PEERS. This combination is
-      # not yet fully wired/tested end-to-end in compose (known follow-up):
-      # PEERS' baseline callback path (NotifyPeerBaselineReady) back into
-      # RUNNER hasn't been exercised against this specific topology.
+      # Must point at the compose network's `peers` host (default is
+      # localhost, wrong here). Known follow-up: PEERS' baseline callback
+      # (NotifyPeerBaselineReady) back into RUNNER hasn't been exercised
+      # end-to-end against this specific topology yet.
       - PEERS_GRPC_TARGET=peers:50053
     env_file:
       - .env
@@ -113,13 +75,8 @@ services:
     build:
       context: .
       args:
-        # Passed through from the host's GIT_COMMIT env var (set by CI to
-        # `$(git rev-parse HEAD)` at build time; defaults to "dev" for a
-        # local/unset build -- see .env.example) -- Finding 2 of the Phase 6
-        # final whole-branch review: without this, GIT_COMMIT is read
-        # everywhere (`os.environ.get("GIT_COMMIT", "dev")`) but never
-        # actually set, so every real deployment's `version` tag silently
-        # stays "dev".
+        # Set by CI to `$(git rev-parse HEAD)`; defaults to "dev" locally.
+        # Baked into the running service's `version` tag (see .env.example).
         GIT_COMMIT: ${GIT_COMMIT:-dev}
     command: ["uv", "run", "python", "-m", "league_stats_peers"]
     environment:
@@ -129,18 +86,9 @@ services:
       - PEERS_METRICS_PORT=9102
     env_file:
       - .env
-    # No `ports:` here on purpose, same reasoning as `runner`/`cron-watch`:
-    # nothing outside the compose network dials PEERS directly today.
-    # `api-ui` also pins `PEERS_GRPC_TARGET=peers:50053` (Phase 8, Task 1
-    # fix, `ANALYZER_PEERS_MODE=grpc` pin retired in Phase 9 once `peers_mode`
-    # itself was deleted -- see its own comment: `RawMatchStore` doesn't
-    # support the now-deleted in-process peer path's peer-game methods), so
-    # `runner`, `peers` and `api-ui` all dial this service today. `cron-watch`
-    # deliberately does not: it never calls `execute_job` (or any peer
-    # comparison) at all (its `CronWatchServicer` only enqueues into the
-    # shared `JobStore` -- see `cron_watch/service.py`'s "shared job store"
-    # design note), so it has no peer-comparison code path to route through
-    # PEERS.
+    # No `ports:` here on purpose: nothing outside the compose network dials
+    # PEERS directly today. `runner` and `api-ui` both dial this service;
+    # `cron-watch` never reaches peer comparison, so it doesn't.
     depends_on:
       - mongo
 
@@ -148,13 +96,8 @@ services:
     build:
       context: .
       args:
-        # Passed through from the host's GIT_COMMIT env var (set by CI to
-        # `$(git rev-parse HEAD)` at build time; defaults to "dev" for a
-        # local/unset build -- see .env.example) -- Finding 2 of the Phase 6
-        # final whole-branch review: without this, GIT_COMMIT is read
-        # everywhere (`os.environ.get("GIT_COMMIT", "dev")`) but never
-        # actually set, so every real deployment's `version` tag silently
-        # stays "dev".
+        # Set by CI to `$(git rev-parse HEAD)`; defaults to "dev" locally.
+        # Baked into the running service's `version` tag (see .env.example).
         GIT_COMMIT: ${GIT_COMMIT:-dev}
     command: ["uv", "run", "python", "-m", "league_stats_cron_watch"]
     environment:
