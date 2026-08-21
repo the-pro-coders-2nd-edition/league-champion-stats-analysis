@@ -64,6 +64,19 @@ services:
       - PEERS_GRPC_TARGET=peers:50053
     env_file:
       - .env
+    volumes:
+      # RUNNER is the only service that actually writes report artifacts
+      # (report.json/meta.json under output/reports/); api-ui only reads them
+      # back via its own `app-output` mount above. Without RUNNER sharing the
+      # same named volume, every report it writes lands in its own container's
+      # ephemeral filesystem -- invisible to api-ui (has_report/builds stay
+      # empty, 404 on every /out/reports/... path) and lost on container
+      # recreation, even though the job itself completes cleanly and RUNNER's
+      # own logs say "Done. Wrote ...report.json". Confirmed live: a real job
+      # for a real player completed end to end (base + peer stages both
+      # finished, timestamps recorded) with zero report ever visible to the
+      # frontend, purely from this missing mount.
+      - app-output:/app/output
     # No `ports:` here on purpose: RUNNER is only ever dialed by `api-ui` over
     # the compose network (`RUNNER_GRPC_TARGET=runner:50051` above), never
     # from outside it. Add a `ports:` mapping here if external debugging
