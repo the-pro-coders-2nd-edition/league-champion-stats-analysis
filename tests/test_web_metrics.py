@@ -19,6 +19,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
         app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
         gemini_api_key="fake-key",
+        runner_storage_mode="sqlite",
     )
     application = web_app.create_app(config, start_worker=False)
     with TestClient(application) as test_client:

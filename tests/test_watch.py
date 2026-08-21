@@ -552,7 +552,7 @@ def test_budget_exhaustion_defers_instead_of_failing(store: JobStore) -> None:
 @pytest.fixture()
 def client(tmp_path: Path):
     config = WebConfig(
-        output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite"
+        output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite", runner_storage_mode="sqlite"
     )
     app = create_app(config, start_worker=False)
     with TestClient(app) as handle:
@@ -595,7 +595,7 @@ def test_career_banner_ack_route(tmp_path: Path) -> None:
     from league_stats_common.core.config import load_config
     from league_stats_common.infra.career_store import CareerStore, build_key as career_build_key
 
-    config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite")
+    config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite", runner_storage_mode="sqlite")
     build_dir = config.reports_dir / SLUG / "viktor_middle"
     build_dir.mkdir(parents=True)
     (build_dir / "meta.json").write_text(
@@ -633,7 +633,7 @@ def test_career_banner_ack_route(tmp_path: Path) -> None:
 
 
 def test_career_banner_ack_404s_on_unknown_build(tmp_path: Path) -> None:
-    config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite")
+    config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite", runner_storage_mode="sqlite")
     app = create_app(config, start_worker=False)
     with TestClient(app) as handle:
         assert (

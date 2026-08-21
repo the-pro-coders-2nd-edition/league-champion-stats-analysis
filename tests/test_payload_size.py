@@ -82,7 +82,9 @@ def _write_report(reports: Path, payload: dict) -> None:
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)
-    config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite")
+    config = WebConfig(
+        output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite", runner_storage_mode="sqlite"
+    )
     # Compressible bulk, the shape a real report's figures have.
     _write_report(
         tmp_path / "out" / "reports",

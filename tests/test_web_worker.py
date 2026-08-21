@@ -48,7 +48,9 @@ def store(tmp_path: Path) -> JobStore:
 @pytest.fixture()
 def web_config(tmp_path: Path) -> WebConfig:
     return WebConfig(
-        app_db_path=tmp_path / "app.sqlite", output_dir=tmp_path / "output"
+        app_db_path=tmp_path / "app.sqlite",
+        output_dir=tmp_path / "output",
+        runner_storage_mode="sqlite",
     )
 
 
@@ -646,11 +648,11 @@ def test_build_mongo_client_reuses_the_same_client_for_the_same_uri() -> None:
 
 
 def test_web_config_runner_mode_defaults_to_in_process() -> None:
-    assert WebConfig().runner_mode == "in_process"
+    assert WebConfig(peers_mode="grpc").runner_mode == "in_process"
 
 
 def test_web_config_runner_mode_can_be_set_to_grpc() -> None:
-    assert WebConfig(runner_mode="grpc").runner_mode == "grpc"
+    assert WebConfig(runner_mode="grpc", peers_mode="grpc").runner_mode == "grpc"
 
 
 def test_execute_job_in_process_mode_does_not_call_runner(
@@ -714,7 +716,9 @@ def test_execute_job_grpc_mode_delegates_to_runner_and_replays_progress(
         match_store.save_timeline(match_id, make_timeline())
     match_store.close()
 
-    runner_web_config = WebConfig(output_dir=tmp_path / "runner_output")
+    runner_web_config = WebConfig(
+        output_dir=tmp_path / "runner_output", runner_storage_mode="sqlite"
+    )
     servicer = RunnerServicer(web_config=runner_web_config)
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
     runner_pb2_grpc.add_RunnerServiceServicer_to_server(servicer, server)
@@ -1004,7 +1008,7 @@ def test_execute_job_grpc_mode_round_trips_resolved_player_data_via_payload_json
 
 
 def test_web_config_peers_mode_defaults_to_in_process() -> None:
-    assert WebConfig().peers_mode == "in_process"
+    assert WebConfig(runner_storage_mode="sqlite").peers_mode == "in_process"
 
 
 def test_web_config_peers_mode_can_be_set_to_grpc() -> None:
@@ -1161,7 +1165,7 @@ def test_build_peer_for_pool_via_grpc_uses_cached_baseline(
     servicer = _CachedPeersServicer()
     server, port = _start_peers_server(servicer)
     try:
-        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}", peers_mode="grpc")
         services = _fake_services_for_grpc_peer()
         monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
         batch = BuildBatch(
@@ -1225,7 +1229,7 @@ def test_build_peer_for_pool_via_grpc_waits_for_async_callback(
     _threading.Thread(target=_deliver_later, daemon=True).start()
 
     try:
-        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}", peers_mode="grpc")
         services = _fake_services_for_grpc_peer()
         monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
         batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
@@ -1259,7 +1263,7 @@ def test_build_peer_for_pool_via_grpc_times_out_if_peers_never_calls_back(
     monkeypatch.setattr(worker, "_PEERS_BASELINE_WAIT_TIMEOUT_S", 0.2)
 
     try:
-        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}", peers_mode="grpc")
         services = _fake_services_for_grpc_peer()
         monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
         batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
@@ -1311,7 +1315,7 @@ def test_build_peer_for_pool_via_grpc_notices_cancellation_within_the_poll_inter
     _threading.Thread(target=_cancel_shortly, daemon=True).start()
 
     try:
-        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}", peers_mode="grpc")
         services = _fake_services_for_grpc_peer()
         monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
         batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
@@ -1346,7 +1350,7 @@ def test_build_peer_for_pool_via_grpc_returns_none_when_peers_unreachable(
         free_port = probe.getsockname()[1]
 
     monkeypatch.setattr(worker, "_PEERS_REQUEST_TIMEOUT_S", 1.0)
-    web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{free_port}")
+    web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{free_port}", peers_mode="grpc")
     services = _fake_services_for_grpc_peer()
     monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
     batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
@@ -1407,7 +1411,7 @@ def test_build_peer_for_pool_via_grpc_survives_notification_arriving_before_wait
     )
     request_id = "req-race-1"
 
-    runner_servicer = RunnerServicer(web_config=WebConfig())
+    runner_servicer = RunnerServicer(web_config=WebConfig(peers_mode="grpc"))
     runner_server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
     runner_pb2_grpc.add_RunnerServiceServicer_to_server(runner_servicer, runner_server)
     runner_port = runner_server.add_insecure_port("127.0.0.1:0")
@@ -1436,7 +1440,7 @@ def test_build_peer_for_pool_via_grpc_survives_notification_arriving_before_wait
 
     peers_server, peers_port = _start_peers_server(_RaceyPeersServicer())
     try:
-        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{peers_port}")
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{peers_port}", peers_mode="grpc")
         services = _fake_services_for_grpc_peer()
         monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
         batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
@@ -1474,7 +1478,7 @@ def test_build_peer_for_pool_via_grpc_returns_none_on_peers_error(
 
     server, port = _start_peers_server(_ErrorPeersServicer())
     try:
-        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}", peers_mode="grpc")
         services = _fake_services_for_grpc_peer()
         monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
         batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
@@ -1497,7 +1501,7 @@ def test_build_peer_for_pool_via_grpc_returns_none_below_min_games(
     a PEERS call when there aren't enough games."""
     from league_stats_common.core.models import RankedEntry
 
-    web_config = WebConfig(peers_grpc_target="127.0.0.1:1")  # never dialed
+    web_config = WebConfig(peers_grpc_target="127.0.0.1:1", peers_mode="grpc")  # never dialed
     services = _fake_services_for_grpc_peer(min_games=99)
     monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
     batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")

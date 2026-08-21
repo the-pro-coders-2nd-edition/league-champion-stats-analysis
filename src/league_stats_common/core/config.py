@@ -488,12 +488,13 @@ class WebConfig(BaseModel):
     # since in that topology this process's own `WatchPoller` is not started
     # and cannot fire `on_new_game` itself.
     cron_watch_grpc_target: str | None = None
-    # Opt-in swap of RUNNER's local SQLite match cache for the Mongo-backed
-    # `RawMatchStore` (Phase 5 of the microservices migration). Default
-    # "sqlite" keeps today's behavior unchanged -- `web/worker.py`'s
-    # `_build_job_services` constructs `MatchStore(config.db_path)` exactly
-    # as before. Setting "mongo" makes it construct `RawMatchStore` against
-    # `runner_mongo_uri` instead.
+    # Swap of RUNNER's local SQLite match cache for the Mongo-backed
+    # `RawMatchStore` (Phase 5 of the microservices migration; default
+    # flipped to "mongo" in Phase 8, Task 1). "mongo" makes
+    # `worker.py`'s `_build_job_services` construct `RawMatchStore` against
+    # `runner_mongo_uri`. "sqlite" remains available for callers that still
+    # need `MatchStore`'s peer-game methods (`peers_mode="in_process"`) --
+    # see the hard precondition below.
     #
     # HARD PRECONDITION, validated below (unlike `peers_mode="grpc"`'s own
     # topology precondition above, which this object cannot verify and only
@@ -505,7 +506,7 @@ class WebConfig(BaseModel):
     # `peers_mode="in_process"`) calls all of them, so pairing
     # `runner_storage_mode="mongo"` with `peers_mode="in_process"` would
     # crash the moment stage B reaches its first build's peer comparison.
-    runner_storage_mode: Literal["sqlite", "mongo"] = "sqlite"
+    runner_storage_mode: Literal["sqlite", "mongo"] = "mongo"
     # This class-level default is only used when neither RUNNER_MONGO_URI nor
     # the shared MONGO_URI is set in the environment -- `load_web_config`
     # below falls back to MONGO_URI (already set on every Mongo-backed

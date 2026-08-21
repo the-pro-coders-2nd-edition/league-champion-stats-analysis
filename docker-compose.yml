@@ -87,20 +87,22 @@ services:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - RUNNER_GRPC_PORT=50051
       - RUNNER_METRICS_PORT=9100
-      # Not active by default -- example only (Phase 5 final review, Finding
-      # 3). Enabling ANALYZER_RUNNER_STORAGE_MODE=mongo in the shared .env
-      # alone crashes RUNNER at its own WebConfig validator, which requires
-      # peers_mode=grpc whenever runner_storage_mode=mongo. Uncomment both
-      # lines below on THIS service (not the shared .env, which api-ui and
-      # cron-watch also read) to actually enable it -- PEERS_GRPC_TARGET
-      # must point at the compose network's `peers` host, since its own
-      # default (localhost:50053) is wrong here. This combination is not yet
-      # fully wired/tested end-to-end in compose (known follow-up): nothing
-      # here changes RUNNER's own image/dependencies, and PEERS' baseline
-      # callback path (NotifyPeerBaselineReady) back into RUNNER hasn't been
-      # exercised against this specific topology.
-      # - ANALYZER_PEERS_MODE=grpc
-      # - PEERS_GRPC_TARGET=peers:50053
+      # REQUIRED, not opt-in (Phase 8, Task 1): `runner_storage_mode` now
+      # defaults to "mongo" (MatchStore/SQLite was deleted), and WebConfig's
+      # own validator raises at construction time if `peers_mode` isn't
+      # "grpc" whenever `runner_storage_mode` is "mongo" -- without the pin
+      # below, RUNNER would crash immediately on startup the moment it built
+      # its own WebConfig. Pinned here (not the shared .env, which api-ui and
+      # cron-watch also read) so it doesn't also flip on those services --
+      # they still pin ANALYZER_RUNNER_STORAGE_MODE=sqlite for themselves.
+      # PEERS_GRPC_TARGET must point at the compose network's `peers` host,
+      # since its own default (localhost:50053) is wrong here. This
+      # combination is not yet fully wired/tested end-to-end in compose
+      # (known follow-up): PEERS' baseline callback path
+      # (NotifyPeerBaselineReady) back into RUNNER hasn't been exercised
+      # against this specific topology.
+      - ANALYZER_PEERS_MODE=grpc
+      - PEERS_GRPC_TARGET=peers:50053
     env_file:
       - .env
     # No `ports:` here on purpose: RUNNER is only ever dialed by `api-ui` over

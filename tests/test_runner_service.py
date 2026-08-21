@@ -129,7 +129,9 @@ def test_enqueue_job_and_stream_progress_reports_a_real_analysis(
         store.save_timeline(match_id, make_timeline())
     store.close()
 
-    web_config = WebConfig(output_dir=tmp_path / "output")
+    web_config = WebConfig(
+        output_dir=tmp_path / "output", peers_mode="grpc", runner_storage_mode="sqlite"
+    )
     servicer = RunnerServicer(web_config=web_config)
     server, port = _start_runner_server(servicer)
     channel = grpc.insecure_channel(f"127.0.0.1:{port}")
@@ -278,13 +280,14 @@ def test_runner_servicer_never_delegates_even_with_grpc_mode_in_env(
     "in_process" regardless of what the environment says.
     """
     monkeypatch.setenv("ANALYZER_RUNNER_MODE", "grpc")
+    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
     servicer = RunnerServicer()
     assert servicer._web_config.runner_mode == "in_process"
 
 
 def test_enqueue_job_rejects_unspecified_kind() -> None:
     """JOB_KIND_UNSPECIFIED must be rejected, not silently defaulted to 'analyze'."""
-    servicer = RunnerServicer(web_config=WebConfig())
+    servicer = RunnerServicer(web_config=WebConfig(peers_mode="grpc"))
     server, port = _start_runner_server(servicer)
     channel = grpc.insecure_channel(f"127.0.0.1:{port}")
     try:
@@ -312,7 +315,7 @@ def test_run_job_wraps_execute_job_so_a_crash_still_yields_a_final_event(
         raise RuntimeError("boom")
 
     monkeypatch.setattr(runner_service, "execute_job", _boom)
-    servicer = RunnerServicer(web_config=WebConfig())
+    servicer = RunnerServicer(web_config=WebConfig(peers_mode="grpc"))
     server, port = _start_runner_server(servicer)
     channel = grpc.insecure_channel(f"127.0.0.1:{port}")
     try:
@@ -360,7 +363,7 @@ def test_enqueue_job_threads_the_callers_trace_id_into_the_spawned_job_thread(
         store.set_state(job["id"], job_states.DONE, detail="stub")
 
     monkeypatch.setattr(runner_service, "execute_job", _recording_execute_job)
-    servicer = RunnerServicer(web_config=WebConfig())
+    servicer = RunnerServicer(web_config=WebConfig(peers_mode="grpc"))
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=4), interceptors=[TraceServerInterceptor()]
     )
@@ -399,7 +402,7 @@ def test_notify_peer_baseline_ready_delivers_to_a_registered_waiter() -> None:
     import league_stats_runner.worker as web_worker
 
     events = web_worker._register_peer_baseline_waiter("req-notify-1")
-    servicer = RunnerServicer(web_config=WebConfig())
+    servicer = RunnerServicer(web_config=WebConfig(peers_mode="grpc"))
 
     request = runner_pb2.PeerBaselineReadyRequest(
         request_id="req-notify-1",
@@ -430,7 +433,7 @@ def test_notify_peer_baseline_ready_reports_ok_false_when_no_waiter() -> None:
     """
     import league_stats_runner.worker as web_worker
 
-    servicer = RunnerServicer(web_config=WebConfig())
+    servicer = RunnerServicer(web_config=WebConfig(peers_mode="grpc"))
 
     request = runner_pb2.PeerBaselineReadyRequest(
         request_id="req-nobody-waiting",
@@ -457,7 +460,7 @@ def test_stream_job_progress_reconnect_after_terminal_returns_immediately(
         store.set_state(job["id"], job_states.DONE, detail="ok")
 
     monkeypatch.setattr(runner_service, "execute_job", _fake_execute_job)
-    servicer = RunnerServicer(web_config=WebConfig())
+    servicer = RunnerServicer(web_config=WebConfig(peers_mode="grpc"))
     server, port = _start_runner_server(servicer)
     channel = grpc.insecure_channel(f"127.0.0.1:{port}")
     try:

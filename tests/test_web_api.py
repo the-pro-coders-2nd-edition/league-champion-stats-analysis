@@ -48,6 +48,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
         app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
         gemini_api_key="fake-key",
+        runner_storage_mode="sqlite",
     )
     application = web_app.create_app(config, start_worker=False)
     with TestClient(application) as test_client:
@@ -832,7 +833,9 @@ def test_watch_mode_in_process_starts_the_watcher_by_default(
     monkeypatch.setattr(web_app, "WatchPoller", _FakeWatcher)
     monkeypatch.setattr(web_app, "AnalysisWorker", _FakeWorker)
 
-    config = WebConfig(app_db_path=tmp_path / "app.sqlite", output_dir=tmp_path / "output")
+    config = WebConfig(
+        app_db_path=tmp_path / "app.sqlite", output_dir=tmp_path / "output", runner_storage_mode="sqlite"
+    )
     assert config.watch_mode == "in_process"
     application = web_app.create_app(config, start_worker=True)
     with TestClient(application):
@@ -857,6 +860,7 @@ def test_watch_mode_grpc_skips_starting_the_watcher(
         app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
         watch_mode="grpc",
+        runner_storage_mode="sqlite",
     )
     application = web_app.create_app(config, start_worker=True)
     with TestClient(application):
@@ -888,6 +892,7 @@ def test_watch_mode_grpc_does_not_change_worker_startup(
         app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
         watch_mode="grpc",
+        runner_storage_mode="sqlite",
     )
     application = web_app.create_app(config, start_worker=True)
     with TestClient(application):
@@ -906,7 +911,9 @@ def test_watch_mode_default_does_not_start_watcher_when_start_worker_false(
     monkeypatch.setattr(web_app, "WatchPoller", _FakeWatcher)
     monkeypatch.setattr(web_app, "AnalysisWorker", _FakeWorker)
 
-    config = WebConfig(app_db_path=tmp_path / "app.sqlite", output_dir=tmp_path / "output")
+    config = WebConfig(
+        app_db_path=tmp_path / "app.sqlite", output_dir=tmp_path / "output", runner_storage_mode="sqlite"
+    )
     application = web_app.create_app(config, start_worker=False)
     with TestClient(application):
         watcher = _FakeWatcher.instances[0]

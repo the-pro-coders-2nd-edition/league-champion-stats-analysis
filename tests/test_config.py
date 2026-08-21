@@ -100,11 +100,11 @@ def test_load_config_reads_gemini_api_key_from_dotenv(
 
 def test_web_config_runner_mode_defaults_to_in_process() -> None:
     """runner_mode defaults off — the monolith runs jobs itself unless opted in."""
-    assert WebConfig().runner_mode == "in_process"
+    assert WebConfig(peers_mode="grpc").runner_mode == "in_process"
 
 
 def test_web_config_runner_grpc_target_defaults_to_localhost() -> None:
-    assert WebConfig().runner_grpc_target == "localhost:50051"
+    assert WebConfig(peers_mode="grpc").runner_grpc_target == "localhost:50051"
 
 
 def test_load_web_config_reads_runner_mode_from_env(
@@ -113,6 +113,7 @@ def test_load_web_config_reads_runner_mode_from_env(
     """ANALYZER_RUNNER_MODE overrides the default, matching the other ANALYZER_WEB_*
     env vars load_web_config already reads."""
     monkeypatch.setenv("ANALYZER_RUNNER_MODE", "grpc")
+    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
     monkeypatch.chdir(tmp_path)
 
     config = load_web_config()
@@ -121,7 +122,7 @@ def test_load_web_config_reads_runner_mode_from_env(
 
 def test_web_config_watch_mode_defaults_to_in_process() -> None:
     """watch_mode defaults off — the monolith runs its own WatchPoller unless opted in."""
-    assert WebConfig().watch_mode == "in_process"
+    assert WebConfig(peers_mode="grpc").watch_mode == "in_process"
 
 
 def test_load_web_config_reads_watch_mode_from_env(
@@ -129,20 +130,22 @@ def test_load_web_config_reads_watch_mode_from_env(
 ) -> None:
     """ANALYZER_WATCH_MODE overrides the default, matching ANALYZER_RUNNER_MODE."""
     monkeypatch.setenv("ANALYZER_WATCH_MODE", "grpc")
+    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
     monkeypatch.chdir(tmp_path)
 
     config = load_web_config()
     assert config.watch_mode == "grpc"
 
 
-def test_web_config_runner_storage_mode_defaults_to_sqlite() -> None:
-    """runner_storage_mode defaults off — RUNNER uses the local SQLite MatchStore
-    unless opted into RawMatchStore/Mongo."""
-    assert WebConfig().runner_storage_mode == "sqlite"
+def test_web_config_runner_storage_mode_defaults_to_mongo() -> None:
+    """runner_storage_mode now defaults to "mongo" (Phase 8, Task 1) -- RUNNER
+    uses RawMatchStore unless explicitly opted back into the legacy SQLite
+    MatchStore (peers_mode must be "grpc" for the mongo default to validate)."""
+    assert WebConfig(peers_mode="grpc").runner_storage_mode == "mongo"
 
 
 def test_web_config_runner_mongo_uri_defaults_to_localhost() -> None:
-    assert WebConfig().runner_mongo_uri == "mongodb://localhost:27017/league_stats"
+    assert WebConfig(peers_mode="grpc").runner_mongo_uri == "mongodb://localhost:27017/league_stats"
 
 
 def test_web_config_runner_storage_mode_mongo_requires_peers_grpc() -> None:
@@ -173,6 +176,7 @@ def test_load_web_config_reads_runner_mongo_uri_from_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("RUNNER_MONGO_URI", "mongodb://mongo.internal:27017/league_stats")
+    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
     monkeypatch.chdir(tmp_path)
 
     config = load_web_config()
@@ -189,6 +193,7 @@ def test_load_web_config_runner_mongo_uri_falls_back_to_mongo_uri(
     network's `mongo` service."""
     monkeypatch.delenv("RUNNER_MONGO_URI", raising=False)
     monkeypatch.setenv("MONGO_URI", "mongodb://mongo:27017/league_stats")
+    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
     monkeypatch.chdir(tmp_path)
 
     config = load_web_config()
@@ -202,6 +207,7 @@ def test_load_web_config_runner_mongo_uri_prefers_explicit_override_over_mongo_u
     over the shared MONGO_URI."""
     monkeypatch.setenv("MONGO_URI", "mongodb://mongo:27017/league_stats")
     monkeypatch.setenv("RUNNER_MONGO_URI", "mongodb://mongo-for-runner-only:27017/league_stats")
+    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
     monkeypatch.chdir(tmp_path)
 
     config = load_web_config()
@@ -213,6 +219,7 @@ def test_load_web_config_reads_runner_grpc_target_from_env(
 ) -> None:
     """RUNNER_GRPC_TARGET overrides the default localhost:50051 target."""
     monkeypatch.setenv("RUNNER_GRPC_TARGET", "runner.internal:9000")
+    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
     monkeypatch.chdir(tmp_path)
 
     config = load_web_config()

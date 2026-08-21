@@ -48,7 +48,9 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # hangs off it, so without this the drop route writes into the repo's real
     # career database instead of the test's.
     monkeypatch.chdir(tmp_path)
-    config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite")
+    config = WebConfig(
+        output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite", runner_storage_mode="sqlite"
+    )
     reports = tmp_path / "out" / "reports"
     _write_build(reports, SLUG, BUILD, "Aatrox", "TOP")
     _write_build(reports, SLUG, OTHER, "Jinx", "BOTTOM")

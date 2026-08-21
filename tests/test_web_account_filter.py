@@ -26,6 +26,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     config = WebConfig(
         app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
+        runner_storage_mode="sqlite",
     )
     real_load_config = web_app.load_config
 
