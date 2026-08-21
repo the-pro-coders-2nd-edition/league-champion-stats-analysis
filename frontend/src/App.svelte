@@ -3,6 +3,7 @@
   import Landing from './routes/Landing.svelte';
   import PlayerHub from './routes/PlayerHub.svelte';
   import Report from './routes/Report.svelte';
+  import ErrorToast from './components/ErrorToast.svelte';
 
   const routes = {
     '/': Landing,
@@ -17,3 +18,7 @@
 </script>
 
 <Router {routes} />
+<!-- Mounted once at the root (not per-route, unlike WelcomeBackToast) so an
+     API failure on any page -- including Landing, before a player exists --
+     still surfaces a generic toast. -->
+<ErrorToast />
