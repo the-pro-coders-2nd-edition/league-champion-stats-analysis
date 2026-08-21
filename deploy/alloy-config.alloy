@@ -1,0 +1,77 @@
+// Discovers every container on this Docker host (reads the socket directly,
+// no changes needed to any service's own logging setup -- this just tails
+// what Docker already captures from each container's stdout/stderr).
+discovery.docker "containers" {
+	host = "unix:///var/run/docker.sock"
+}
+
+// Tag every log stream with the same service name docker-compose itself
+// uses (and that deploy/prometheus.yml's scrape `job_name`s already use for
+// metrics) -- not the raw container name, which varies by compose version
+// naming scheme (e.g. "league-champion-stats-analysis-api-ui-1" vs
+// "league-champion-stats-analysis_api-ui_1"). This keeps logs and metrics
+// joinable on the same `service` label across the whole stack.
+discovery.relabel "containers" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "service"
+	}
+}
+
+loki.source.docker "containers" {
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.containers.output
+	forward_to = [loki.process.app_logs.receiver]
+}
+
+// api-ui/runner/peers/cron-watch all share one log line format (Phase 6,
+// league_stats_common/utils.py::setup_logging):
+//   14:23:01 INFO    league_stats [service=api-ui version=abc1234 trace_id=xyz]: message
+// mongo/prometheus/grafana/loki/alloy's own containers use different log
+// formats and simply won't match this regex -- their logs still flow
+// through to Loki untouched (just without the extra parsed fields below),
+// not dropped or errored.
+loki.process "app_logs" {
+	stage.regex {
+		expression = "^(?P<time>\\d{2}:\\d{2}:\\d{2}) (?P<level>\\S+)\\s+(?P<logger>\\S+) \\[service=(?P<log_service>[^ ]*) version=(?P<version>[^ ]*) trace_id=(?P<trace_id>[^\\]]*)\\]: (?P<message>.*)$"
+	}
+
+	// Low-cardinality (a handful of values, same as api-ui/runner/peers/
+	// cron-watch/mongo/etc.) -- safe as a real Loki label, unlike trace_id/
+	// version below.
+	stage.labels {
+		values = {
+			level = "level",
+		}
+	}
+
+	// trace_id is unique per request and version changes every deploy --
+	// both would blow up Loki's label-index cardinality if used as labels.
+	// Structured metadata keeps them queryable (`| trace_id="..."` in LogQL)
+	// without that cost.
+	stage.structured_metadata {
+		values = {
+			trace_id = "trace_id",
+			version  = "version",
+			logger   = "logger",
+		}
+	}
+
+	// Replace the raw line with just the extracted message -- the
+	// timestamp/level/service/version/trace_id are already available as
+	// Loki's own ingestion metadata/labels/structured metadata, so keeping
+	// them duplicated in the line text too would just be noise in Explore.
+	stage.output {
+		source = "message"
+	}
+
+	forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}

@@ -137,6 +137,8 @@ services:
       - GF_LOG_MODE=console file
     volumes:
       - ./deploy/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./deploy/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deploy/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
       - ./deploy/grafana/logs:/var/log/grafana
     # TEMPORARY, for pre-DNS testing only: published on all interfaces so
@@ -149,8 +151,34 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
+      - loki
+
+  loki:
+    image: grafana/loki:3.3.2
+    volumes:
+      - ./deploy/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    # No `ports:` here on purpose, same reasoning as `prometheus`: only
+    # `alloy` pushes logs in and only `grafana` queries out, both over the
+    # compose network.
+
+  alloy:
+    image: grafana/alloy:v1.5.1
+    volumes:
+      # Read-only access to the Docker socket is how Alloy discovers every
+      # container on this host and tails its stdout/stderr directly --
+      # no changes needed to any service's own logging driver/config.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./deploy/alloy-config.alloy:/etc/alloy/config.alloy:ro
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "/etc/alloy/config.alloy"]
+    # No `ports:` here either -- Alloy's own debug UI (12345) is for local
+    # troubleshooting only, not something this deployment exposes.
+    depends_on:
+      - loki
 
 volumes:
   mongo-data:
   app-output:
   grafana-data:
+  loki-data:

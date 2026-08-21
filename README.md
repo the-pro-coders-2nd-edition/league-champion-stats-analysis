@@ -160,6 +160,8 @@ flowchart TD
     MONGO[("mongo")]
     PROM["prometheus"]
     GRAF["grafana"]
+    LOKI[("loki")]
+    ALLOY["alloy"]
 
     Browser -->|HTTP/REST, polling| API_UI
     API_UI -->|gRPC: EnqueueJob, StreamJobProgress| RUNNER
@@ -177,6 +179,13 @@ flowchart TD
     PROM -->|scrape /metrics| PEERS
     PROM -->|scrape /metrics| CRON
     GRAF -->|query| PROM
+
+    ALLOY -->|reads container logs via Docker socket| API_UI
+    ALLOY -.->|reads container logs| RUNNER
+    ALLOY -.->|reads container logs| PEERS
+    ALLOY -.->|reads container logs| CRON
+    ALLOY -->|push| LOKI
+    GRAF -->|query| LOKI
 ```
 
 **A note on what this diagram deliberately does *not* draw:** the original
@@ -222,7 +231,21 @@ Per-service breakdown:
   cache. No SQLite anywhere in the app.
 - **prometheus** / **grafana** — pull-based metrics scraping
   (`deploy/prometheus.yml`) of each app service's `/metrics`, visualized in
-  Grafana. See `docker-compose.yml` for exact ports.
+  Grafana. Dashboards (one per app service — request/job/resolution rates,
+  latency percentiles, CPU/memory, live logs) are provisioned automatically
+  from `deploy/grafana/dashboards/`.
+- **loki** / **alloy** — structured logging. `alloy` reads every container's
+  stdout/stderr directly via the Docker socket (no per-service logging
+  config needed) and pushes it to `loki`. Every log stream is tagged with a
+  `service` label matching the same name Prometheus's `job_name`s use;
+  api-ui/runner/peers/cron-watch's log lines additionally carry `trace_id`
+  and `version` as Loki structured metadata (queryable via LogQL without the
+  cardinality cost of using them as labels), read straight out of the
+  `service`/`version`/`trace_id` tags every log line already carries (see
+  `league_stats_common/utils.py::setup_logging`). Grafana's per-service
+  dashboards each end with a live logs panel scoped to that service.
+  Grafana itself also logs failed admin logins to a mounted file, watched by
+  a `deploy/fail2ban/` jail that permanently bans an IP after 10 failures.
 
 ### Package layout
 
