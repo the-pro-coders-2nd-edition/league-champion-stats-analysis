@@ -19,3 +19,4 @@ spa_dist/
 data/*
 !data/benchmarks/
 !data/benchmarks/**
+deploy/grafana/logs/

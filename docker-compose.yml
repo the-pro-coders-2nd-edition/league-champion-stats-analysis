@@ -130,9 +130,15 @@ services:
     # sourced via `env_file`, never inlined.
     env_file:
       - .env
+    environment:
+      # Logs to both stdout (docker compose logs) and a file on the host
+      # filesystem (below) so fail2ban -- which runs on the host, not in a
+      # container -- can watch failed-login attempts directly.
+      - GF_LOG_MODE=console file
     volumes:
       - ./deploy/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - grafana-data:/var/lib/grafana
+      - ./deploy/grafana/logs:/var/log/grafana
     # TEMPORARY, for pre-DNS testing only: published on all interfaces so
     # Grafana is reachable at <vps-ip-or-domain>:3000 without Caddy/DNS/TLS
     # in front of it. This means the admin login goes over plain HTTP,
