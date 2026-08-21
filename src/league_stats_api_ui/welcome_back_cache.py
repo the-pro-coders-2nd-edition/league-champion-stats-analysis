@@ -31,9 +31,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from league_stats_common.utils import get_logger
+
+if TYPE_CHECKING:
+    from league_stats_api_ui.job_events import JobEventBus
 
 log = get_logger("welcome_back_cache")
 
@@ -76,9 +79,15 @@ class WelcomeBackSubscriber:
     from `create_app`'s lifespan exactly like `WatchPoller`/`AnalysisWorker`.
     """
 
-    def __init__(self, cache: WelcomeBackCache, grpc_target: str) -> None:
+    def __init__(
+        self,
+        cache: WelcomeBackCache,
+        grpc_target: str,
+        bus: "JobEventBus | None" = None,
+    ) -> None:
         self._cache = cache
         self._grpc_target = grpc_target
+        self._bus = bus
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
 
@@ -163,3 +172,10 @@ class WelcomeBackSubscriber:
                 "detected_at_unix": update.detected_at_unix,
             },
         )
+        # `update.puuid` is already the slug (see this module's docstring). Runs
+        # directly on the event loop already, so `publish()` can be called with no
+        # thread-safety concern -- it works identically from the loop thread or a
+        # worker thread. `None` when the bus is unavailable (e.g. an older caller
+        # constructing this class without one) -- best-effort, not load-bearing.
+        if self._bus is not None:
+            self._bus.publish(update.puuid)
