@@ -30,6 +30,13 @@ methods (`iter_unverified_puuids`, `iter_unverified_puuids_for_build`,
 `set_puuid_rank`, `upsert_peer_game`, `load_peer_games`, `count_peer_games`),
 which only the in-process peer path (`peers_mode="in_process"`) calls.
 
+Phase 8's Task 1 finished this substitution: `MatchStore` (and its
+`sqlite3` backing) was deleted outright, `runner_storage_mode`'s
+class-level default flipped to `"mongo"`, and `_build_job_services`
+now constructs `RawMatchStore` unconditionally -- the
+`runner_storage_mode`/`MatchStore` branch described above no longer
+exists.
+
 Similarly, `RunnerServiceServicer` (generated from `runner.proto`) is a
 **synchronous** servicer base class (`grpc.server(...)`, not
 `grpc.aio.server(...)`) -- the task brief assumed `grpc.aio` and `async def`

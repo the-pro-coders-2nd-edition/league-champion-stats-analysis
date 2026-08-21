@@ -6,9 +6,10 @@ from dataclasses import dataclass, field
 
 from league_stats_common.core.config import AppConfig
 from league_stats_common.core.progress import ProgressReporter
-from league_stats_common.infra.cache import HttpCache, MatchStore
+from league_stats_common.infra.cache import HttpCache
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_common.infra.riot_api import RiotApiClient
+from league_stats_runner.infra.raw_match_store import RawMatchStore
 
 
 @dataclass
@@ -17,7 +18,7 @@ class Services:
 
     config: AppConfig
     http_cache: HttpCache
-    store: MatchStore
+    store: RawMatchStore
     client: RiotApiClient
     assets: DDragonAssets
     progress: ProgressReporter = field(default_factory=ProgressReporter)

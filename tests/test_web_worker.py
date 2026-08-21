@@ -560,42 +560,14 @@ def test_build_job_services_applies_min_games(
 # ------------------------------------ runner_storage_mode (Phase 5 Task 1)
 
 
-def test_build_job_services_defaults_to_sqlite_match_store(
-    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """runner_storage_mode defaults to "sqlite" -- _build_job_services must keep
-    constructing a real MatchStore, provably unchanged from before this task."""
-    from league_stats_common.infra.cache import MatchStore
-
-    monkeypatch.setenv("RIOT_API_KEY", "RGAPI-test")
-    assert web_config.runner_storage_mode == "sqlite"
-    job = {
-        "id": 1,
-        "player_slug": "test_euw",
-        "riot_id": "Test",
-        "tagline": "EUW",
-        "region": "euw1",
-        "players_json": '[{"riot_id":"Test","tagline":"EUW"}]',
-        "filter_champion": None,
-        "filter_role": None,
-    }
-    reporter = SimpleNamespace(update=lambda *a, **k: None)
-
-    services = worker._build_job_services(job, web_config, reporter, job_store=store)
-    try:
-        assert isinstance(services.store, MatchStore)
-    finally:
-        services.store.close()
-        services.http_cache.close()
-
-
 def test_build_job_services_uses_raw_match_store_in_mongo_mode(
     store: JobStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """runner_storage_mode="mongo" (only valid with peers_mode="grpc") must
-    construct a RawMatchStore instead, via the process-wide client seam
-    `_build_mongo_client` -- monkeypatched here to a mongomock client instead
-    of dialing a real Mongo."""
+    """`_build_job_services` always constructs a `RawMatchStore` -- `MatchStore`
+    (local SQLite) was deleted in Phase 8, Task 1, so this is unconditional
+    regardless of `runner_storage_mode`'s value. Uses the process-wide client
+    seam `_build_mongo_client`, monkeypatched here to a mongomock client
+    instead of dialing a real Mongo."""
     import mongomock
 
     from league_stats_runner.infra.raw_match_store import RawMatchStore
@@ -686,18 +658,20 @@ def test_execute_job_grpc_mode_delegates_to_runner_and_replays_progress(
     test_execute_job_two_stage_happy_path).
 
     Runs RUNNER's actual `execute_job` against offline fixture data (no real
-    Riot API / Mongo), reusing the exact pattern
-    tests/test_runner_service.py's `test_enqueue_job_and_stream_progress_reports_a_real_analysis`
-    already established for this: seed a local SQLite MatchStore at the path
-    `_build_job_services` hardcodes, monkeypatch RiotApiClient's network calls,
-    and use kind=REGENERATE so `execute_job` never calls `fetch_matches`.
+    Riot API / Mongo -- `mongomock` stands in), reusing the exact pattern
+    tests/test_runner_service.py's
+    `test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode`
+    already established for this: seed a mongomock-backed RawMatchStore,
+    monkeypatch RiotApiClient's network calls and `_build_mongo_client`, and
+    use kind=REGENERATE so `execute_job` never calls `fetch_matches`.
     """
     from concurrent import futures
 
     import grpc
+    import mongomock
 
-    from league_stats_common.infra.cache import MatchStore
     from league_stats_common.infra.riot_api import RiotApiClient
+    from league_stats_runner.infra.raw_match_store import RawMatchStore
     from league_stats_runner.service import RunnerServicer
     from league_stats_rpc.v1 import runner_pb2_grpc
     from tests.fixtures import MY_PUUID, make_player_match, make_timeline
@@ -707,17 +681,19 @@ def test_execute_job_grpc_mode_delegates_to_runner_and_replays_progress(
     monkeypatch.setattr(RiotApiClient, "fetch_profile_icon_id", lambda self, puuid: None)
     monkeypatch.setattr(RiotApiClient, "fetch_solo_rank", lambda self, puuid: None)
 
-    match_store = MatchStore(Path(".cache") / "matches.sqlite")
+    mongo_client = mongomock.MongoClient()
+    monkeypatch.setattr(worker, "_build_mongo_client", lambda uri: mongo_client)
+
+    match_store = RawMatchStore(mongo_client, db_name="league_stats")
     for index in range(6):
         match_id = f"EUW1_v{index}"
         match_store.save_match(
             match_id, MY_PUUID, make_player_match(match_id, champion="Viktor", position="MIDDLE")
         )
         match_store.save_timeline(match_id, make_timeline())
-    match_store.close()
 
     runner_web_config = WebConfig(
-        output_dir=tmp_path / "runner_output", runner_storage_mode="sqlite"
+        output_dir=tmp_path / "runner_output", peers_mode="grpc", runner_storage_mode="mongo"
     )
     servicer = RunnerServicer(web_config=runner_web_config)
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))

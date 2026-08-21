@@ -10,9 +10,8 @@ from league_stats_peers.analysis.peer.benchmark_fetcher import (
     extract_champion_role_for_puuid,
     fetch_benchmark_from_api,
 )
-from league_stats_common.infra.cache import MatchStore
 from league_stats_common.core.models import RankedEntry
-from tests.fixtures import make_match
+from tests.fixtures import CombinedMatchAndPeerStore, make_match
 
 
 def _league_entry(puuid: str) -> dict[str, str]:
@@ -52,7 +51,7 @@ def test_fetch_benchmark_from_api_aggregates_league_sample(tmp_path, monkeypatch
     monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.TARGET_PEER_GAMES", 3)
     monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.MAX_MATCH_DOWNLOADS", 10)
 
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     client = MagicMock()
     client.configure_mock(platform="euw1")
     client.fetch_league_entries_pages.return_value = [
@@ -81,7 +80,7 @@ def test_fetch_benchmark_persists_downloaded_matches(tmp_path, monkeypatch) -> N
     monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.MIN_BENCHMARK_GAMES", 1)
     monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.TARGET_PEER_GAMES", 1)
 
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     client = MagicMock()
     client.configure_mock(platform="euw1")
     client.fetch_league_entries_pages.return_value = [_league_entry("peer-1")]

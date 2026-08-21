@@ -6,7 +6,12 @@ player (participant 1, blue side) plays Viktor mid against Syndra.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterator
+
+import mongomock
+
+from league_stats_peers.infra.peer_sample_store import PeerSampleStore
+from league_stats_runner.infra.raw_match_store import RawMatchStore
 
 MY_PUUID = "puuid-viktor"
 MATCH_ID = "EUW1_9999"
@@ -313,3 +318,82 @@ def make_timeline(duration_s: int = 1200) -> dict[str, Any]:
     ]
     frames[-1]["events"] = sorted(events, key=lambda e: e["timestamp"])
     return {"info": {"frames": frames}}
+
+
+class CombinedMatchAndPeerStore:
+    """Test-only double combining `RawMatchStore` + `PeerSampleStore`.
+
+    Phase 8, Task 1 deleted `MatchStore`, the single SQLite database that
+    used to expose both the raw match/timeline surface (now `RawMatchStore`)
+    and the peer-game surface (now `PeerSampleStore`) on one object. No real
+    production call site needs both surfaces on the same object today
+    (PEERS' `_PeerStoreAdapter` wraps `PeerSampleStore` alone; RUNNER's job
+    pipeline store, `RawMatchStore`, is deliberately peer-game-method-free
+    per its own module docstring) -- but `resolve_peer_baseline`,
+    `build_peer_comparison`, `fetch_benchmark_from_api` and `ingest_match`
+    are duck-typed against a single object exposing BOTH surfaces (this is
+    exactly what `MatchStore` used to provide), and their existing tests
+    exercise both surfaces together against one fixture object. This double
+    reproduces that combined surface for tests only, backed by a fresh
+    `mongomock.MongoClient()` per instance -- it is not used by any
+    production code path.
+    """
+
+    def __init__(self) -> None:
+        client = mongomock.MongoClient()
+        self._matches = RawMatchStore(client, db_name="league_stats")
+        self._peers = PeerSampleStore(client, db_name="league_stats")
+
+    # -- raw match/timeline surface (RawMatchStore) ------------------------
+    def has_match(self, match_id: str) -> bool:
+        return self._matches.has_match(match_id)
+
+    def save_match(self, match_id: str, puuid: str, match: dict[str, Any]) -> None:
+        self._matches.save_match(match_id, puuid, match)
+
+    def save_timeline(self, match_id: str, timeline: dict[str, Any]) -> None:
+        self._matches.save_timeline(match_id, timeline)
+
+    def load_match(self, match_id: str) -> dict[str, Any] | None:
+        return self._matches.load_match(match_id)
+
+    def load_timeline(self, match_id: str) -> dict[str, Any] | None:
+        return self._matches.load_timeline(match_id)
+
+    def claim_ownership(self, puuid: str, match_ids: list[str]) -> list[str]:
+        return self._matches.claim_ownership(puuid, match_ids)
+
+    def iter_all_match_ids(self) -> Iterator[str]:
+        return self._matches.iter_all_match_ids()
+
+    def count(self) -> int:
+        return self._matches.count()
+
+    def iter_match_ids(self, puuid: str) -> Iterator[str]:
+        return self._matches.iter_match_ids(puuid)
+
+    # -- peer-game surface (PeerSampleStore) -------------------------------
+    def upsert_peer_game(self, row: dict[str, Any]) -> bool:
+        return self._peers.upsert_peer_game(row)
+
+    def load_peer_games(
+        self, *, champion: str, role: str, platform: str
+    ) -> list[dict[str, Any]]:
+        return self._peers.load_peer_games(champion=champion, role=role, platform=platform)
+
+    def count_peer_games(self, *, champion: str, role: str, platform: str) -> int:
+        return self._peers.count_peer_games(champion=champion, role=role, platform=platform)
+
+    def iter_unverified_puuids(self, limit: int = 100) -> list[str]:
+        return self._peers.iter_unverified_puuids(limit)
+
+    def iter_unverified_puuids_for_build(
+        self, champion: str, role: str, platform: str, limit: int = 200
+    ) -> list[str]:
+        return self._peers.iter_unverified_puuids_for_build(champion, role, platform, limit)
+
+    def set_puuid_rank(self, puuid: str, tier: str, rank: str) -> int:
+        return self._peers.set_puuid_rank(puuid, tier, rank)
+
+    def close(self) -> None:
+        """No-op, matching `RawMatchStore.close()`'s shared-client contract."""

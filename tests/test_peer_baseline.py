@@ -8,9 +8,8 @@ import pytest
 
 from league_stats_peers.analysis.peer.baseline import resolve_peer_baseline
 from league_stats_peers.analysis.peer.ingest import ingest_match
-from league_stats_common.infra.cache import MatchStore
 from league_stats_common.core.models import RankedEntry
-from tests.fixtures import make_match
+from tests.fixtures import CombinedMatchAndPeerStore, make_match
 
 
 @pytest.fixture
@@ -20,7 +19,7 @@ def ranked() -> RankedEntry:
 
 def test_resolve_peer_baseline_uses_static_fallback(tmp_path, ranked: RankedEntry) -> None:
     """When store and live sampling are empty, static benchmarks are used."""
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     client = MagicMock()
     client.configure_mock(platform="euw1")
 
@@ -46,7 +45,7 @@ def test_resolve_peer_baseline_uses_role_only_when_champion_missing(
     import league_stats_peers.analysis.peer.baseline as peer_baseline
 
     monkeypatch.setattr(peer_baseline, "try_static_benchmark", lambda *args, **kwargs: None)
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     client = MagicMock()
     client.configure_mock(platform="euw1")
 
@@ -69,7 +68,7 @@ def test_resolve_peer_baseline_uses_store_when_enough_games(
     import league_stats_peers.analysis.peer.baseline as peer_baseline
 
     monkeypatch.setattr(peer_baseline, "MIN_EXACT_GAMES", 2)
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     for index in range(2):
         match = make_match()
         match["info"]["participants"][1]["puuid"] = f"peer-{index}"
@@ -103,7 +102,7 @@ def test_resolve_peer_baseline_high_confidence_at_hundred_games(
 
     monkeypatch.setattr(peer_baseline, "MIN_EXACT_GAMES", 2)
     monkeypatch.setattr(peer_baseline, "HIGH_CONFIDENCE_GAMES", 2)
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     for index in range(2):
         match = make_match()
         match["info"]["participants"][1]["puuid"] = f"peer-{index}"
@@ -136,7 +135,7 @@ def test_resolve_peer_baseline_wider_scope_requires_fifty_games(
     monkeypatch.setattr(peer_baseline, "try_static_benchmark", lambda *args, **kwargs: None)
     monkeypatch.setattr(peer_baseline, "try_role_benchmark", lambda *args, **kwargs: None)
 
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     # Only 4 games — below the 50-game floor
     for index in range(4):
         match = make_match()

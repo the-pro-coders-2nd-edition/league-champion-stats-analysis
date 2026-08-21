@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import mongomock
+
 import json
 from pathlib import Path
 
 import pytest
 
-from league_stats_common.infra.cache import MatchStore
 from league_stats_common.core.config import PlayerIdentity, load_config
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_runner.ingest.parser import ItemCatalog, MatchParser, discover_build_pools
+from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.fetch import group_records
 from league_stats_runner.pipeline.orchestrator import run_all_builds
 from league_stats_runner.pipeline.services import PlayerContext, Services
@@ -23,7 +25,7 @@ ALT_PUUID = "alt-puuid-22222222-2222-2222-2222-222222222222"
 def test_discover_build_pools_pools_multiple_players(tmp_path: Path) -> None:
     """Champion+lane counts combine games from every tracked player."""
     config = _config(tmp_path)
-    store = MatchStore(config.db_path)
+    store = RawMatchStore(mongomock.MongoClient(), db_name="league_stats")
     _seed_store(store, MY_PUUID, viktor=10, ahri=0)
     for index in range(15):
         match_id = f"EUW1_alt_v{index}"
@@ -98,7 +100,7 @@ def test_run_all_builds_pools_multi_player_reports(
         template_dir=Path(__file__).resolve().parent.parent / "src/league_stats/presentation/templates",
     )
     config.ensure_directories()
-    store = MatchStore(config.db_path)
+    store = RawMatchStore(mongomock.MongoClient(), db_name="league_stats")
     http_cache = HttpCache(config.http_cache_dir)
     client = RiotApiClient(config, http_cache, store)
     _seed_store(store, MY_PUUID, viktor=10, ahri=0)

@@ -6,13 +6,14 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import mongomock
 import pytest
 
 from league_stats_common.core.config import AppConfig
 from league_stats_common.core.models import MatchRecord
 from league_stats_common.core.progress import ProgressReporter
-from league_stats_common.infra.cache import MatchStore
 from league_stats_runner.infra.derived import KIND_RECORD, DerivedStore
+from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.ingest import parser as parser_module
 from league_stats_runner.pipeline.fetch import load_all_records
 from league_stats_runner.pipeline.services import Services
@@ -23,12 +24,14 @@ PUUID = MY_PUUID
 
 @pytest.fixture()
 def make_services(request: pytest.FixtureRequest):
-    """Factory that closes every MatchStore it opens.
+    """Factory that closes every RawMatchStore it opens.
 
-    Windows cannot remove a SQLite file that is still open, so leaking stores
-    turns tmp_path cleanup into a CI-only failure.
+    Kept for symmetry with the pre-Phase-8 SQLite `MatchStore` version of
+    this fixture -- `RawMatchStore.close()` is a documented no-op (the
+    underlying Mongo client is shared/process-wide), so nothing actually
+    needs cleanup here anymore, but the finalizer pattern is harmless to keep.
     """
-    opened: list[MatchStore] = []
+    opened: list[RawMatchStore] = []
 
     def factory(tmp_path: Path, match_count: int = 6) -> Services:
         services = _services(tmp_path, match_count)
@@ -54,7 +57,7 @@ def _services(tmp_path: Path, match_count: int = 6) -> Services:
         cache_dir=tmp_path / "cache",
     )
     config.ensure_directories()
-    store = MatchStore(config.db_path)
+    store = RawMatchStore(mongomock.MongoClient(), db_name="league_stats")
     for index in range(match_count):
         match = make_match()
         match["info"]["gameCreation"] = 1_700_000_000_000 + index * 3_600_000

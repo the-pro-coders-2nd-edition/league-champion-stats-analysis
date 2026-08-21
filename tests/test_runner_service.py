@@ -64,7 +64,6 @@ import pytest
 
 from league_stats_common.core.config import WebConfig
 from league_stats_common.core.champions import players_group_slug
-from league_stats_common.infra.cache import MatchStore
 from league_stats_common.infra.riot_api import RiotApiClient
 from league_stats_runner import service as runner_service
 from league_stats_runner.service import RunnerServicer
@@ -81,27 +80,22 @@ def _start_runner_server(runner_servicer):
     return server, port
 
 
-def test_enqueue_job_and_stream_progress_reports_a_real_analysis(
+def test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """End-to-end: EnqueueJob triggers execute_job against fixture match
-    data (no real Riot API, no real Mongo), StreamJobProgress yields at
-    least one STAGE_A progress update and a final message.
+    data (no real Riot API, no real Mongo -- `mongomock` stands in),
+    StreamJobProgress yields at least one STAGE_A progress update and a
+    final message, and the real report artifact lands on disk.
 
-    Uses this repo's existing offline-pipeline pattern (tests/fixtures.py's
-    synthetic match/timeline builders, as used by
-    tests/test_incremental_regen_end_to_end.py) instead of inventing new
-    fixture infrastructure.
-
-    NOTE on scope: `execute_job`'s match-store construction is hardcoded
-    inside the private `_build_job_services` (see service.py's module
-    docstring) -- it always builds a local SQLite `MatchStore`, not the
-    Mongo-backed `RawMatchStore` from Task 3. So this test seeds match data
-    into a real SQLite `MatchStore` at the exact path `_build_job_services`
-    will construct (`<cwd>/.cache/matches.sqlite`, since `AppConfig.cache_dir`
-    is never overridden by the job-building code path, in RUNNER or in the
-    monolith), not into `RawMatchStore`. That is the real, current behavior
-    of `execute_job` -- not a simplification chosen for this test.
+    `MatchStore` (local SQLite) was deleted in Phase 8, Task 1 --
+    `_build_job_services` now unconditionally constructs `RawMatchStore`
+    regardless of `runner_storage_mode`'s value (this test pins
+    `runner_storage_mode="mongo"` anyway, for clarity, since that's the
+    class-level default as of this same task). Uses this repo's existing
+    offline-pipeline pattern (tests/fixtures.py's synthetic match/timeline
+    builders, as used by tests/test_incremental_regen_end_to_end.py) instead
+    of inventing new fixture infrastructure.
 
     The job uses kind=REGENERATE, which makes `execute_job` call
     `resolve_player_contexts` (PUUID/profile-icon/rank lookups only) instead
@@ -111,88 +105,6 @@ def test_enqueue_job_and_stream_progress_reports_a_real_analysis(
     (`build_peer_comparison` returns `None` when `ranked is None`) instead of
     attempting a real network call for peer sampling -- this is a real,
     ordinary code path (an unranked player), not a bypass of the peer stage.
-    """
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(RiotApiClient, "resolve_puuid", lambda self, riot_id, tagline: MY_PUUID)
-    monkeypatch.setattr(RiotApiClient, "fetch_profile_icon_id", lambda self, puuid: None)
-    monkeypatch.setattr(RiotApiClient, "fetch_solo_rank", lambda self, puuid: None)
-
-    # Seed the local match store at the exact path `_build_job_services` will
-    # open (AppConfig.cache_dir defaults to `.cache` under the cwd; never
-    # overridden by the job-construction code path).
-    store = MatchStore(Path(".cache") / "matches.sqlite")
-    for index in range(6):
-        match_id = f"EUW1_v{index}"
-        store.save_match(
-            match_id, MY_PUUID, make_player_match(match_id, champion="Viktor", position="MIDDLE")
-        )
-        store.save_timeline(match_id, make_timeline())
-    store.close()
-
-    web_config = WebConfig(
-        output_dir=tmp_path / "output", peers_mode="grpc", runner_storage_mode="sqlite"
-    )
-    servicer = RunnerServicer(web_config=web_config)
-    server, port = _start_runner_server(servicer)
-    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
-    try:
-        stub = runner_pb2_grpc.RunnerServiceStub(channel)
-        player_slug = players_group_slug([("Test", "EUW")])
-        request = runner_pb2.EnqueueJobRequest(
-            riot_id="Test",
-            tagline="EUW",
-            region=common_pb2.EUROPE,
-            kind=runner_pb2.JOB_KIND_REGENERATE,
-            player_slug=player_slug,
-            min_games=5,
-        )
-        response = stub.EnqueueJob(request)
-        assert response.job_id
-
-        results = list(
-            stub.StreamJobProgress(runner_pb2.StreamJobProgressRequest(job_id=response.job_id))
-        )
-    finally:
-        channel.close()
-        server.stop(grace=None)
-
-    assert results, "expected at least one StageResult message"
-    assert results[-1].final is True
-    # `error == ""` is the actual proof of success -- a job that crashed
-    # during/after setup would still satisfy `final is True` and even have a
-    # non-final STAGE_A event (the initial `set_state(FETCHING, ...)`) before
-    # blowing up, so neither of those alone distinguishes success from failure.
-    assert results[-1].error == "", f"job failed: {results[-1].error!r}"
-    stage_a_progress = [
-        r for r in results if r.stage == common_pb2.STAGE_A and r.detail and not r.final
-    ]
-    assert stage_a_progress, "expected at least one non-final STAGE_A progress update"
-    # The strongest proof the pipeline genuinely ran end to end: the real
-    # report artifact execute_job/run_analysis writes lands on disk.
-    report_path = (
-        tmp_path / "output" / "reports" / player_slug / "viktor_middle" / "report.json"
-    )
-    assert report_path.exists(), f"expected report artifact at {report_path}"
-
-
-def test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """End-to-end proof that `runner_storage_mode="mongo"` (only valid with
-    `peers_mode="grpc"`) genuinely runs a job through `RawMatchStore`/Mongo,
-    with zero `MatchStore`/SQLite file ever touched.
-
-    Mirrors `test_enqueue_job_and_stream_progress_reports_a_real_analysis`
-    (the sqlite baseline above) almost exactly -- same fixture data, same
-    REGENERATE kind, same `fetch_solo_rank -> None` (an ordinary unranked
-    player, which makes stage B's peer resolution -- in-process OR
-    `peers_mode="grpc"`'s `_build_peer_for_pool_via_grpc` alike -- return
-    `None` immediately per `if ... or ranked is None: return None`, with no
-    PEERS server needed for this test). The only real difference: match data
-    is seeded into a `mongomock`-backed `RawMatchStore` instead of a real
-    on-disk SQLite `MatchStore`, and `_build_mongo_client` is monkeypatched
-    so `_build_job_services` picks up that same mongomock client instead of
-    dialing a real Mongo.
     """
     import mongomock
 

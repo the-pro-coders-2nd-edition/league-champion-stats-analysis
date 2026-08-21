@@ -10,6 +10,8 @@ build's on-disk report is actually left alone. This closes that gap.
 
 from __future__ import annotations
 
+import mongomock
+
 import json
 from pathlib import Path
 
@@ -17,10 +19,11 @@ import pytest
 
 from league_stats_common.core.config import AppConfig
 from league_stats_common.core.models import RankedEntry
-from league_stats_common.infra.cache import HttpCache, MatchStore
+from league_stats_common.infra.cache import HttpCache
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_common.infra.riot_api import RiotApiClient
 from league_stats_runner.pipeline.orchestrator import run_all_builds
+from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.services import PlayerContext, Services
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_player_match, make_timeline
 
@@ -41,7 +44,7 @@ def _config(tmp_path: Path) -> AppConfig:
     return config
 
 
-def _seed(store: MatchStore, *, viktor: int, ahri: int) -> None:
+def _seed(store: RawMatchStore, *, viktor: int, ahri: int) -> None:
     for index in range(viktor):
         match_id = f"EUW1_v{index}"
         store.save_match(
@@ -56,7 +59,7 @@ def _seed(store: MatchStore, *, viktor: int, ahri: int) -> None:
         store.save_timeline(match_id, make_timeline())
 
 
-def _services(config: AppConfig, store: MatchStore, monkeypatch: pytest.MonkeyPatch) -> Services:
+def _services(config: AppConfig, store: RawMatchStore, monkeypatch: pytest.MonkeyPatch) -> Services:
     http_cache = HttpCache(config.http_cache_dir)
     client = RiotApiClient(config, http_cache, store)
     monkeypatch.setattr(
@@ -78,7 +81,7 @@ def test_refresh_with_one_new_game_only_touches_the_affected_build(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
-    store = MatchStore(config.db_path)
+    store = RawMatchStore(mongomock.MongoClient(), db_name="league_stats")
     _seed(store, viktor=25, ahri=25)
     services = _services(config, store, monkeypatch)
     contexts = [PlayerContext(riot_id="Test", tagline="EUW", puuid=MY_PUUID)]

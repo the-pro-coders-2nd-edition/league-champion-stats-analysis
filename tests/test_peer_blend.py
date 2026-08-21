@@ -22,9 +22,8 @@ from league_stats_peers.analysis.peer.rank_scope import (
     league_lookup_pairs,
     rank_matches,
 )
-from league_stats_common.infra.cache import MatchStore
 from league_stats_common.core.models import RankedEntry
-from tests.fixtures import make_match
+from tests.fixtures import CombinedMatchAndPeerStore, make_match
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +69,7 @@ def test_non_scanned_player_build_is_captured(tmp_path, monkeypatch, ranked_gold
     monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.TARGET_PEER_GAMES", 1)
     monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.MAX_MATCH_DOWNLOADS", 5)
 
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     client = MagicMock()
     client.configure_mock(platform="euw1")
 
@@ -108,7 +107,7 @@ def test_seed_rank_skips_fetch_solo_rank(tmp_path, monkeypatch, ranked_gold: Ran
     monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.MAX_MATCH_DOWNLOADS", 5)
     monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.MATCH_IDS_PER_PLAYER", 1)
 
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     client = MagicMock()
     client.configure_mock(platform="euw1")
 
@@ -202,7 +201,7 @@ def test_live_cache_hit_skips_live_api(tmp_path, monkeypatch, ranked_gold: Ranke
     )
     write_live_cache("euw1", "GOLD", "Zac", "JUNGLE", snapshot)
 
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     client = MagicMock()
     client.configure_mock(platform="euw1")
 
@@ -267,7 +266,7 @@ def test_store_threshold_requires_fifty_games(
     """A store with fewer than 50 games does not satisfy the exact-rank baseline."""
     import league_stats_peers.analysis.peer.baseline as peer_baseline
 
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     for index in range(30):
         match = make_match()
         match["info"]["participants"][1]["puuid"] = f"peer-{index}"
@@ -296,7 +295,7 @@ def test_widened_store_resolves_at_fifty_games(
     """Games from an adjacent tier resolve at level 1 once MIN_WIDENED_GAMES is met."""
     import league_stats_peers.analysis.peer.baseline as peer_baseline
 
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     for index in range(50):
         match = make_match()
         match["info"]["participants"][1]["puuid"] = f"peer-{index}"

@@ -24,7 +24,7 @@ from league_stats_peers.analysis.peer.baseline import PeerBaseline
 from league_stats_common.core.champions import players_group_slug
 from league_stats_common.core.config import PLATFORM_TO_REGION, PlayerIdentity, WebConfig, load_config
 from league_stats_common.core.models import PeerComparisonResult, RankedEntry
-from league_stats_common.infra.cache import HttpCache, MatchStore
+from league_stats_common.infra.cache import HttpCache
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_common.infra.mongo import db_name_from_uri as _db_name_from_uri
 from league_stats_runner.infra.raw_match_store import RawMatchStore
@@ -377,17 +377,18 @@ def _build_job_services(
     config.status_endpoint = f"/api/players/{config.reports_group_slug}"
     config.ensure_directories()
     http_cache = HttpCache(config.http_cache_dir)
-    store: MatchStore | RawMatchStore
-    if web_config.runner_storage_mode == "mongo":
-        # Valid only with `peers_mode="grpc"` -- enforced by `WebConfig`'s own
-        # `_validate_runner_storage_mode` at construction time, so this branch
-        # never needs to re-check it (see `core/config.py`).
-        mongo_client = _build_mongo_client(web_config.runner_mongo_uri)
-        store = RawMatchStore(
-            mongo_client, db_name=_db_name_from_uri(web_config.runner_mongo_uri)
-        )
-    else:
-        store = MatchStore(config.db_path)
+    # `MatchStore` (local SQLite) was deleted in Phase 8, Task 1 -- RawMatchStore
+    # is now the only backing implementation, regardless of
+    # `web_config.runner_storage_mode`'s value. Valid only with
+    # `peers_mode="grpc"` -- enforced by `WebConfig`'s own
+    # `_validate_runner_storage_mode` at construction time, so this never
+    # needs to re-check it (see `core/config.py`). `runner_storage_mode`
+    # remains a config field (Task 5 of this phase decides whether to drop
+    # it) but no longer selects between two implementations here.
+    mongo_client = _build_mongo_client(web_config.runner_mongo_uri)
+    store: RawMatchStore = RawMatchStore(
+        mongo_client, db_name=_db_name_from_uri(web_config.runner_mongo_uri)
+    )
     client = RiotApiClient(
         config,
         http_cache,

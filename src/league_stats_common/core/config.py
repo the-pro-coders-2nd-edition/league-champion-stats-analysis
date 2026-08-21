@@ -488,24 +488,39 @@ class WebConfig(BaseModel):
     # since in that topology this process's own `WatchPoller` is not started
     # and cannot fire `on_new_game` itself.
     cron_watch_grpc_target: str | None = None
-    # Swap of RUNNER's local SQLite match cache for the Mongo-backed
-    # `RawMatchStore` (Phase 5 of the microservices migration; default
-    # flipped to "mongo" in Phase 8, Task 1). "mongo" makes
-    # `worker.py`'s `_build_job_services` construct `RawMatchStore` against
-    # `runner_mongo_uri`. "sqlite" remains available for callers that still
-    # need `MatchStore`'s peer-game methods (`peers_mode="in_process"`) --
-    # see the hard precondition below.
+    # Was an opt-in swap of RUNNER's local SQLite match cache for the
+    # Mongo-backed `RawMatchStore` (Phase 5 of the microservices migration).
+    # Phase 8, Task 1 deleted `MatchStore` (and its `sqlite3` backing)
+    # outright and flipped this field's default to "mongo" --
+    # `worker.py`'s `_build_job_services` now constructs `RawMatchStore`
+    # unconditionally, regardless of this field's value. "sqlite" remains a
+    # valid literal (removing it is Task 5's call, once every other
+    # `runner_storage_mode`/`app_db_path`-style dead field this phase leaves
+    # behind is swept up together) but no longer selects a different
+    # implementation anywhere.
+    #
+    # CRITICAL KNOWN GAP surfaced by this same deletion, not fixed by this
+    # task (out of scope -- flagged for the next phase to decide): every
+    # `_build_job_services` caller's `RawMatchStore` does not implement any
+    # of `MatchStore`'s former peer-game methods (`iter_unverified_puuids`,
+    # `iter_unverified_puuids_for_build`, `set_puuid_rank`,
+    # `upsert_peer_game`, `load_peer_games`, `count_peer_games`), which the
+    # in-process peer path (`build_peer_for_pool`, `peers_mode="in_process"`)
+    # calls on that exact same store object. Since `peers_mode`'s
+    # class-level default is deliberately still "in_process" (this phase's
+    # Step 1 decision), any real job whose peer comparison reaches
+    # `build_peer_for_pool` -- e.g. `api-ui`'s current docker-compose
+    # topology, which pins `peers_mode="in_process"` and runs jobs
+    # in-process by default -- now crashes with an `AttributeError` the
+    # first time a ranked build needs a peer baseline. Fixing this requires
+    # either flipping that topology's `peers_mode` to "grpc" (which needs
+    # `PEERS_GRPC_TARGET` wired for `api-ui`, itself flagged elsewhere in
+    # `docker-compose.yml` as an undecided follow-up) or giving
+    # `RawMatchStore` a peer-game-capable sibling for the in-process path.
     #
     # HARD PRECONDITION, validated below (unlike `peers_mode="grpc"`'s own
     # topology precondition above, which this object cannot verify and only
-    # warns about): only valid together with `peers_mode="grpc"`.
-    # `RawMatchStore` does not implement any of `MatchStore`'s peer-game
-    # methods (`iter_unverified_puuids`, `iter_unverified_puuids_for_build`,
-    # `set_puuid_rank`, `upsert_peer_game`, `load_peer_games`,
-    # `count_peer_games`) -- the in-process peer path (`build_peer_for_pool`,
-    # `peers_mode="in_process"`) calls all of them, so pairing
-    # `runner_storage_mode="mongo"` with `peers_mode="in_process"` would
-    # crash the moment stage B reaches its first build's peer comparison.
+    # warns about): "mongo" is only valid together with `peers_mode="grpc"`.
     runner_storage_mode: Literal["sqlite", "mongo"] = "mongo"
     # This class-level default is only used when neither RUNNER_MONGO_URI nor
     # the shared MONGO_URI is set in the environment -- `load_web_config`

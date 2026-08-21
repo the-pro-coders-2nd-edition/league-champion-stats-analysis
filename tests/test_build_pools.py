@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import mongomock
+
 import json
 from pathlib import Path
 
 import pytest
 
-from league_stats_common.infra.cache import MatchStore
 from league_stats_common.core.config import AppConfig
 from league_stats_common.infra.riot_api import RiotApiClient
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_runner.ingest.parser import ItemCatalog, MatchParser, discover_build_pools
+from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.fetch import group_records
 from league_stats_runner.pipeline.orchestrator import run_all_builds
 from league_stats_runner.pipeline.services import PlayerContext, Services
@@ -32,7 +34,7 @@ def _config(tmp_path: Path) -> AppConfig:
     )
 
 
-def _seed_store(store: MatchStore, puuid: str, *, viktor: int, ahri: int) -> None:
+def _seed_store(store: RawMatchStore, puuid: str, *, viktor: int, ahri: int) -> None:
     for index in range(viktor):
         match_id = f"EUW1_v{index}"
         store.save_match(match_id, puuid, make_player_match(match_id, champion="Viktor", position="MIDDLE"))
@@ -46,7 +48,7 @@ def _seed_store(store: MatchStore, puuid: str, *, viktor: int, ahri: int) -> Non
 def test_discover_build_pools_respects_min_games(tmp_path: Path) -> None:
     """Only champion+lane pairs with enough games are returned."""
     config = _config(tmp_path)
-    store = MatchStore(config.db_path)
+    store = RawMatchStore(mongomock.MongoClient(), db_name="league_stats")
     _seed_store(store, MY_PUUID, viktor=25, ahri=10)
     try:
         pools = discover_build_pools(store, MY_PUUID, config, min_games=20)
@@ -61,7 +63,7 @@ def test_discover_build_pools_respects_min_games(tmp_path: Path) -> None:
 def test_discover_build_pools_treats_lanes_separately(tmp_path: Path) -> None:
     """Same champion on different lanes counts as separate builds."""
     config = _config(tmp_path)
-    store = MatchStore(config.db_path)
+    store = RawMatchStore(mongomock.MongoClient(), db_name="league_stats")
     for index in range(20):
         match_id = f"EUW1_t{index}"
         store.save_match(
@@ -113,7 +115,7 @@ def test_run_all_builds_generates_player_hub(tmp_path: Path, monkeypatch: pytest
 
     config = _config(tmp_path)
     config.ensure_directories()
-    store = MatchStore(config.db_path)
+    store = RawMatchStore(mongomock.MongoClient(), db_name="league_stats")
     http_cache = HttpCache(config.http_cache_dir)
     client = RiotApiClient(config, http_cache, store)
     _seed_store(store, MY_PUUID, viktor=20, ahri=20)

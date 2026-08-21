@@ -20,8 +20,9 @@ from league_stats_peers.analysis.peer.baseline import PeerBaseline
 from league_stats_peers.analysis.peer.ingest import ingest_match
 from league_stats_common.core.config import VALID_PLATFORMS
 from league_stats_common.core.models import RankedEntry
-from league_stats_common.infra.cache import HttpCache, MatchStore
+from league_stats_common.infra.cache import HttpCache
 from league_stats_peers.infra.peer_sample_store import PeerSampleStore
+from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_peers import service as peers_service
 from league_stats_peers.service import (
     PeersServicer,
@@ -143,7 +144,7 @@ class _FakeSession:
 
 def _riot_client_test_deps(tmp_path):
     http_cache = HttpCache(tmp_path / "http")
-    match_store = MatchStore(tmp_path / "matches.sqlite")
+    match_store = RawMatchStore(mongomock.MongoClient(), db_name="league_stats")
     return http_cache, match_store
 
 
