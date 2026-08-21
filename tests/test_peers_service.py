@@ -989,17 +989,35 @@ def test_resolve_peer_baseline_via_live_sampling_survives_the_noop_store_methods
     which calls `load_match`/`save_match` via `_load_or_fetch_match`, and the
     store bootstrap in `collect_peer_games_from_store`, which calls
     `iter_match_ids`/`load_match` -- survives running against `_PeerStoreAdapter`'s
-    no-op stubs for those three methods, exactly as it would in production."""
+    no-op stubs for those three methods, exactly as it would in production.
+
+    Since the batched round-robin scheduler landed (RFC "Batched, Round-Robin
+    Live Sampling for PEERS"), level 2 hands its result back to the caller by
+    writing to the live cache and having `_try_live_baseline` re-read it --
+    so this test points the live cache at a fresh mongomock-backed store
+    (same pattern as `test_peer_cache_invalidation.py`'s `cache_store`
+    fixture) instead of stubbing `read_live_cache`/`write_live_cache` out
+    entirely, which would make the scheduler's hand-off invisible to the
+    caller and always fall through past level 2.
+    """
+    import mongomock
+
     import league_stats_peers.analysis.peer.baseline as peer_baseline
+    import league_stats_peers.analysis.peer.benchmark_cache as benchmark_cache
+    import league_stats_peers.analysis.peer.sampling_task as sampling_task
+    from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
 
     monkeypatch.setattr(
-        "league_stats_peers.analysis.peer.benchmark_fetcher.MIN_BENCHMARK_GAMES", 3
+        benchmark_cache, "_store", LiveBenchmarkCacheStore(mongomock.MongoClient(), db_name="test_live_cache")
     )
-    monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.TARGET_PEER_GAMES", 3)
-    monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.MAX_MATCH_DOWNLOADS", 10)
-    # Keep this test off the real on-disk live-sample file cache.
-    monkeypatch.setattr(peer_baseline, "read_live_cache", lambda *a, **k: None)
-    monkeypatch.setattr(peer_baseline, "write_live_cache", lambda *a, **k: None)
+    # A "full"-confidence live-cache entry still needs `MIN_BENCHMARK_GAMES`
+    # (benchmark_cache.py's own copy of the name, imported by value from
+    # benchmark_fetcher.py -- not a live reference, so it needs its own patch
+    # here rather than reusing benchmark_fetcher's).
+    monkeypatch.setattr(benchmark_cache, "MIN_BENCHMARK_GAMES", 3)
+    monkeypatch.setattr(sampling_task, "TARGET_PEER_GAMES", 3)
+    monkeypatch.setattr(sampling_task, "INTERIM_THRESHOLD", 3)
+    monkeypatch.setattr(sampling_task, "CEILING", 10)
 
     adapter = _PeerStoreAdapter(peer_store)
     client = MagicMock()

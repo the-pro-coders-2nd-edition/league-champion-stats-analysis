@@ -1690,7 +1690,14 @@ def test_via_grpc_peer_resolution_works_against_raw_match_store(
 
     servicer = peers_service.PeersServicer(
         peer_store=peer_store,
-        riot_client_factory=lambda platform: MagicMock(),
+        # `platform` must be a real string, not a bare `MagicMock()` (whose
+        # `.platform` would itself default to an auto-generated child mock):
+        # the batch scheduler's live-cache round trip (`SamplingTask.
+        # build_snapshot`/`write_live_cache`) formats it into a cache key via
+        # `.lower()`, and Ahri/MIDDLE has no store data here (the seeded rows
+        # are all LeeSin/JUNGLE) so this test's request always falls through
+        # to level 2.
+        riot_client_factory=lambda platform: MagicMock(platform=platform),
         fast_path_timeout_s=3.0,
     )
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))

@@ -109,6 +109,43 @@ def extract_champion_role_rows(
     return rows
 
 
+def extract_all_champion_role_rows(
+    match: dict[str, Any],
+    *,
+    exclude_puuid: str = "",
+) -> list[dict[str, Any]]:
+    """Pull a stat row for every participant in a match, tagged with their own champion+role.
+
+    Unlike `extract_champion_role_rows` (one target champion+role), this keeps all ~10
+    participants -- used by the peers batch scheduler's shared match cache
+    (`peer_match_samples`, RFC "Batched, Round-Robin Live Sampling", Phase 2) so a match
+    downloaded for one champion's sampling task can still seed every *other*
+    champion+role pair that happened to appear in it, instead of throwing that data away.
+    """
+    duration_min = match_duration_minutes(match)
+    if duration_min is None:
+        return []
+
+    participants: list[dict[str, Any]] = match.get("info", {}).get("participants", [])
+    team_damage = team_damage_totals(participants)
+    rows: list[dict[str, Any]] = []
+    for participant in participants:
+        puuid = str(participant.get("puuid", ""))
+        if not puuid or puuid == exclude_puuid:
+            continue
+        champion = str(participant.get("championName", ""))
+        role = participant_position(participant)
+        if not champion or not role:
+            continue
+        row = participant_row(participant, duration_min)
+        team_id = int(participant.get("teamId", 0))
+        row["damage_share"] = safe_div(row["damage"], team_damage.get(team_id, row["damage"]))
+        row["champion"] = champion
+        row["role"] = role
+        rows.append(row)
+    return rows
+
+
 def team_damage_totals(participants: list[dict[str, Any]]) -> dict[int, int]:
     """Sum champion damage dealt per team id."""
     totals: dict[int, int] = {}

@@ -155,6 +155,17 @@ def _snapshot_from_data(
 
     Shared by both backends (Mongo and file) so the patch/TTL/min-games gates
     stay identical regardless of which one actually served the hit.
+
+    The min-games gate is confidence-aware (RFC "Batched, Round-Robin Live
+    Sampling for PEERS", §5.1.3): a ``confidence="full"`` entry still needs
+    ``MIN_BENCHMARK_GAMES`` (today's all-or-nothing bar), but a
+    ``confidence="low"`` entry -- an interim snapshot from a `SamplingTask`
+    still running, or one it finalized on after exhausting its ceiling below
+    target -- is servable with as few as one real game. A zero-game low-
+    confidence entry (e.g. a task that found no seeds at all) is still not
+    servable; there is nothing in it to serve. Missing ``confidence`` is
+    treated as ``"full"`` so cache entries written before this field existed
+    keep their original (strict) gate.
     """
     if _patch_is_stale(str(data.get("patch", "")), patch):
         return None
@@ -164,7 +175,9 @@ def _snapshot_from_data(
         return None
 
     games = int(data.get("games", 0))
-    if games < MIN_BENCHMARK_GAMES:
+    confidence = str(data.get("confidence", "full"))
+    min_games = 1 if confidence == "low" else MIN_BENCHMARK_GAMES
+    if games < min_games:
         return None
 
     return BenchmarkSnapshot(
@@ -173,6 +186,8 @@ def _snapshot_from_data(
         players_sampled=int(data.get("players", 0)),
         from_cache=True,
         platform=platform,
+        confidence=confidence,
+        still_refining=bool(data.get("still_refining", False)),
     )
 
 
@@ -265,6 +280,8 @@ def write_live_cache(
         "tier": tier.upper(),
         "platform": platform.lower(),
         "patch": patch,
+        "confidence": snapshot.confidence,
+        "still_refining": snapshot.still_refining,
     }
     try:
         _get_store().write(key, data)

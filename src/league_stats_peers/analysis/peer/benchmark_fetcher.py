@@ -27,6 +27,15 @@ from league_stats_common.core.progress import STAGE_PEER, NULL_REPORTER, Progres
 from league_stats_common.infra.riot_api import RiotApiClient, RiotApiError
 from league_stats_common.utils import get_logger, safe_div
 
+# `fetch_benchmark_from_api` (below) and its 400-download ceiling are kept as
+# the legacy, run-to-completion sampler -- still used directly by tests and
+# any caller that wants a single synchronous scan. Production live sampling
+# (`analysis.peer.baseline._try_live_baseline`) no longer calls this function:
+# it goes through `analysis.peer.sampling_task.SamplingTask` /
+# `analysis.peer.scheduler.SamplingScheduler` instead (RFC "Batched,
+# Round-Robin Live Sampling for PEERS"), whose ceiling is 1000, not 400. A
+# concurrent metrics RFC is also touching this module (a match-downloads
+# histogram) in a separate worktree; expected to be resolved at merge time.
 MIN_BENCHMARK_GAMES: Final[int] = 50
 TARGET_PEER_GAMES: Final[int] = 50
 MAX_PLAYERS_TO_SCAN: Final[int] = 150
@@ -66,7 +75,19 @@ PEERS_LIVE_SAMPLE_MATCH_DOWNLOADS = Histogram(
 
 @dataclass(frozen=True)
 class BenchmarkSnapshot:
-    """Peer baseline built from Riot API sampling."""
+    """Peer baseline built from Riot API sampling.
+
+    ``confidence``/``still_refining`` (RFC "Batched, Round-Robin Live Sampling
+    for PEERS", §6) distinguish a fully-sampled result (``confidence="full"``,
+    ``target`` games reached) from one served while a `SamplingTask` is still
+    running in the background (``confidence="low"``) -- either an interim
+    snapshot (``still_refining=True``, will be overwritten by a better one on
+    the next batch) or a partial one the task finalized on after exhausting
+    its download ceiling below target (``still_refining=False``, no more work
+    will ever improve it). Defaults keep every existing caller that builds a
+    `BenchmarkSnapshot` without these two fields unchanged (`confidence="full"`
+    matches today's implicit all-or-nothing behavior).
+    """
 
     metrics: dict[str, float]
     games_sampled: int
@@ -75,6 +96,8 @@ class BenchmarkSnapshot:
     platform: str
     metrics_p50: dict[str, float] = field(default_factory=dict)
     metrics_p75: dict[str, float] = field(default_factory=dict)
+    confidence: str = "full"
+    still_refining: bool = False
 
 
 def extract_champion_role_for_puuid(

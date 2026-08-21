@@ -8,7 +8,7 @@ from typing import Any, Final
 from prometheus_client import Counter
 
 from league_stats_peers.analysis.peer.benchmark_cache import read_live_cache, write_live_cache
-from league_stats_peers.analysis.peer.benchmark_fetcher import BenchmarkSnapshot, fetch_benchmark_from_api
+from league_stats_peers.analysis.peer.benchmark_fetcher import BenchmarkSnapshot
 from league_stats_peers.analysis.peer.benchmarks import try_role_benchmark, try_static_benchmark
 from league_stats_peers.analysis.peer.cache import (
     PeerSample,
@@ -17,6 +17,8 @@ from league_stats_peers.analysis.peer.cache import (
     peer_metric_quantiles,
 )
 from league_stats_peers.analysis.peer.rank_scope import RankScope, build_exact_scope, build_wider_scope, build_widened_scope
+from league_stats_peers.analysis.peer.sampling_task import SamplingTask, TaskKey
+from league_stats_peers.analysis.peer.scheduler import SamplingScheduler
 from league_stats_common.core.champions import build_label
 from league_stats_common.core.models import RankedEntry
 from league_stats_common.core.progress import NULL_REPORTER, ProgressReporter
@@ -29,6 +31,51 @@ MIN_WIDENED_GAMES: Final[int] = 50
 MIN_LIVE_GAMES: Final[int] = 50
 # Exact-rank store confidence is "high" once we have this many games.
 HIGH_CONFIDENCE_GAMES: Final[int] = 100
+# Defense-in-depth ceiling on how long a worker thread waits on a SamplingTask
+# to reach its interim threshold or finalize -- see `_try_live_baseline`.
+LIVE_SAMPLING_WAIT_TIMEOUT_S: Final[float] = 30.0
+
+
+def _on_task_interim(task: SamplingTask) -> None:
+    """Scheduler hook: write the task's current aggregate as an interim cache entry.
+
+    RFC §5.1.2: called once per batch once `interim_threshold` is crossed, so
+    the entry keeps improving for whoever reads it next, without a second
+    notification to the original caller.
+    """
+    snapshot = task.build_snapshot(confidence="low", still_refining=True)
+    write_live_cache(task.client.platform, task.ranked.tier, task.champion, task.role, snapshot, patch=task.patch)
+
+
+def _on_task_finalize(task: SamplingTask, status: str) -> None:
+    """Scheduler hook: write the task's final result -- full or partial (RFC §5.1.3).
+
+    Always writes, even below `target` -- the whole point of "no-waste
+    caching" is that a task exhausting its ceiling short of 50 games still
+    persists whatever it found instead of discarding it.
+    """
+    confidence = "full" if status == "full" else "low"
+    snapshot = task.build_snapshot(confidence=confidence, still_refining=False)
+    write_live_cache(task.client.platform, task.ranked.tier, task.champion, task.role, snapshot, patch=task.patch)
+
+
+# Process-wide singleton (RFC §5.1: "single in-process queue -- safe given the
+# confirmed single-replica deployment"). Built lazily so importing this module
+# never spins up worker threads, and tests can inject their own scheduler via
+# `resolve_peer_baseline`'s `scheduler` keyword instead of touching this.
+_default_scheduler: SamplingScheduler | None = None
+
+
+def _get_default_scheduler() -> SamplingScheduler:
+    global _default_scheduler
+    if _default_scheduler is None:
+        import os
+
+        num_workers = int(os.environ.get("PEERS_MAX_CONCURRENT_BASELINES", "4"))
+        _default_scheduler = SamplingScheduler(
+            num_workers=num_workers, on_interim=_on_task_interim, on_finalize=_on_task_finalize
+        )
+    return _default_scheduler
 
 # Resolution mix visibility: which rung of the fallback ladder (0/1/3/4/5 all
 # local reads, cost-equivalent; 2 is live Riot sampling -- see `source` on
@@ -124,10 +171,21 @@ def _try_store_baseline(
 def _baseline_from_snapshot(
     snapshot: BenchmarkSnapshot, champion: str, role: str, *, level: int
 ) -> PeerBaseline:
-    """Wrap a BenchmarkSnapshot in a PeerBaseline."""
+    """Wrap a BenchmarkSnapshot in a PeerBaseline.
+
+    A ``confidence="low"`` snapshot (an interim or ceiling-exhausted-partial
+    result, RFC §5.1.3) is surfaced as ``confidence="low"`` on the
+    `PeerBaseline` too, and its source string says so -- callers should not
+    mistake a partial 11-game sample for the usual 50+-game "medium"
+    confidence live result.
+    """
     metrics = snapshot.metrics
     if "win" not in metrics and "winrate" in metrics:
         metrics = {**metrics, "win": float(metrics["winrate"])}
+    is_low = snapshot.confidence == "low"
+    qualifier = ""
+    if is_low:
+        qualifier = " (still refining)" if snapshot.still_refining else " (partial -- below target)"
     return PeerBaseline(
         metrics=metrics,
         games=snapshot.games_sampled,
@@ -135,13 +193,50 @@ def _baseline_from_snapshot(
         source=(
             f"{'Cached' if snapshot.from_cache else 'Live API'} sample: "
             f"{snapshot.games_sampled} ranked solo games "
-            f"from {snapshot.players_sampled} players on {build_label(champion, role)}."
+            f"from {snapshot.players_sampled} players on {build_label(champion, role)}{qualifier}."
         ),
-        confidence="medium",
+        confidence="low" if is_low else "medium",
         fallback_level=level,
         metrics_p50=dict(snapshot.metrics_p50),
         metrics_p75=dict(snapshot.metrics_p75),
     )
+
+
+def _task_key(platform: str, tier: str, champion: str, role: str, patch: str) -> TaskKey:
+    return (platform.lower(), tier.upper(), champion.lower(), role.upper(), patch)
+
+
+def _enqueue_sampling_task(
+    scheduler: SamplingScheduler,
+    client: RiotApiClient,
+    store: Any,
+    ranked: RankedEntry,
+    champion: str,
+    role: str,
+    *,
+    exclude_puuid: str | None,
+    patch: str,
+    match_sample_store: Any | None,
+) -> TaskKey:
+    """Get-or-create the `SamplingTask` for this key on `scheduler` and start it running."""
+    key = _task_key(client.platform, ranked.tier, champion, role, patch)
+
+    def _factory() -> SamplingTask:
+        return SamplingTask(
+            key=key,
+            client=client,
+            store=store,
+            ranked=ranked,
+            champion=champion,
+            role=role,
+            exclude_puuid=exclude_puuid,
+            patch=patch,
+            match_sample_store=match_sample_store,
+        )
+
+    scheduler.get_or_create(key, _factory)
+    scheduler.start()
+    return key
 
 
 def _try_live_baseline(
@@ -154,70 +249,88 @@ def _try_live_baseline(
     exclude_puuid: str | None,
     patch: str = "",
     progress: ProgressReporter = NULL_REPORTER,
+    match_sample_store: Any | None = None,
+    scheduler: SamplingScheduler | None = None,
 ) -> PeerBaseline | None:
-    """Return a peer baseline from the Mongo-backed live cache or live snowball sampling.
+    """Return a peer baseline from the Mongo-backed live cache, or a batched live scan.
 
-    The cache (``analysis/peer/benchmark_cache.py``, Mongo-backed since Phase 5)
-    is checked first to make re-runs near-instant; it is only reused on the
-    same patch, in the same tier, and within its TTL. After a successful live
-    sample the result is written back so the next run on this patch skips the
-    API entirely.
+    RFC "Batched, Round-Robin Live Sampling for PEERS": live sampling no
+    longer runs a whole scan to completion on this call. Instead it attaches
+    to (or creates) a `SamplingTask` on the shared `SamplingScheduler`, whose
+    batch-workers advance it (and every other active task) round-robin, and
+    blocks only until that task reaches its interim threshold or finalizes
+    (RFC §5.1.2) -- both of which write the result to the live cache, which
+    is then re-read here. A cache hit already marked ``still_refining`` still
+    has a `SamplingTask` (re-)enqueued in the background to keep improving it
+    for the *next* reader (RFC §6), without making this caller wait for that.
     """
     log = get_logger("peer_baseline")
+    active_scheduler = scheduler or _get_default_scheduler()
 
     cached = read_live_cache(client.platform, ranked.tier, champion, role, patch=patch)
     if cached is not None:
         log.info(
-            "Live cache hit for %s %s (platform=%s, tier=%s): %d games",
+            "Live cache hit for %s %s (platform=%s, tier=%s): %d games, confidence=%s, "
+            "still_refining=%s",
             champion,
             role,
             client.platform,
             ranked.tier,
             cached.games_sampled,
+            cached.confidence,
+            cached.still_refining,
         )
+        # RFC §6: "a low-confidence hit could itself enqueue a SamplingTask to
+        # keep improving." Deliberately scoped to `still_refining` (an interim
+        # snapshot, mid-scan) rather than every `confidence="low"` hit: an
+        # already ceiling-exhausted partial result finalized because a full
+        # scan already spent its 1000-download budget without reaching
+        # target, so re-attaching a fresh task on every subsequent cache read
+        # within the 3-day TTL would repeatedly re-spend that same budget for
+        # a build that's already shown itself to be low-yield, worsening the
+        # exact "one job hogs the shared rate limit" problem this RFC exists
+        # to fix. It still gets cheaper over time via Phase 2's shared cache
+        # (RFC §7) the next time this key's cache entry goes stale and a new
+        # request re-triggers a task from scratch -- just not on every read.
+        if cached.still_refining:
+            _enqueue_sampling_task(
+                active_scheduler,
+                client,
+                store,
+                ranked,
+                champion,
+                role,
+                exclude_puuid=exclude_puuid,
+                patch=patch,
+                match_sample_store=match_sample_store,
+            )
         return _baseline_from_snapshot(cached, champion, role, level=2)
 
-    snapshot = fetch_benchmark_from_api(
+    key = _enqueue_sampling_task(
+        active_scheduler,
         client,
         store,
         ranked,
         champion,
         role,
         exclude_puuid=exclude_puuid,
-        progress=progress,
-    )
-    if snapshot is None:
-        return None
-
-    write_live_cache(client.platform, ranked.tier, champion, role, snapshot, patch=patch)
-
-    sample = collect_peer_games_from_store(
-        store,
-        champion=champion,
-        role=role,
-        platform=client.platform,
-        scope=build_widened_scope(ranked),
-        exclude_puuid=exclude_puuid or "",
-        client=client,
         patch=patch,
-        min_games=MIN_LIVE_GAMES,
+        match_sample_store=match_sample_store,
     )
-    if sample.games < MIN_LIVE_GAMES:
-        return _baseline_from_snapshot(snapshot, champion, role, level=2)
+    # Defense in depth, not the primary bound: `SamplingTask`/`SamplingScheduler`
+    # are designed to always finalize a key eventually (target, ceiling, or a
+    # stalled/empty snowball queue -- see `SamplingTask.exhausted`), and the
+    # scheduler itself guarantees a waiter is released even if a batch or a
+    # cache-write hook raises unexpectedly. This ceiling exists purely so an
+    # entirely unanticipated future bug degrades to "falls through the rest
+    # of the fallback ladder" within a bounded time instead of hanging this
+    # worker thread (and the PEERS executor slot it occupies) forever.
+    active_scheduler.wait_for_signal(key, timeout=LIVE_SAMPLING_WAIT_TIMEOUT_S)
 
-    return _baseline_from_sample(
-        PeerSample(
-            rows=sample.rows,
-            games=sample.games,
-            players=sample.players,
-            source=(
-                f"Peer store + live sample: {sample.games} ranked solo games "
-                f"from {sample.players} players on {build_label(champion, role)}."
-            ),
-        ),
-        level=2,
-        confidence="medium",
-    )
+    cached = read_live_cache(client.platform, ranked.tier, champion, role, patch=patch)
+    if cached is None:
+        return None
+    return _baseline_from_snapshot(cached, champion, role, level=2)
 
 
 def resolve_peer_baseline(
@@ -230,17 +343,30 @@ def resolve_peer_baseline(
     exclude_puuid: str | None = None,
     patch: str = "",
     progress: ProgressReporter = NULL_REPORTER,
+    match_sample_store: Any | None = None,
+    scheduler: SamplingScheduler | None = None,
 ) -> PeerBaseline | None:
     """Resolve the best available peer baseline using the fallback ladder.
 
     Levels:
     0 — Peer store, exact rank, ≥50 games (high confidence at ≥100)
     1 — Peer store, ±1 widened rank, ≥50 games
-    2 — Mongo-backed live cache or live API snowball, ≥50 games (cache reused
-        only on the same patch and tier, and within its TTL)
-    3 — Peer store, ±2 wider rank, ≥50 games (post-live-attempt)
+    2 — Mongo-backed live cache (full or low-confidence/interim), or a batched
+        live snowball scan via `SamplingScheduler` (cache reused only on the
+        same patch and tier, and within its TTL). A low-confidence level-2
+        result (an interim or ceiling-exhausted-partial sample, RFC "Batched,
+        Round-Robin Live Sampling for PEERS" §5.1.3) is still preferred over
+        falling through to level 3 -- real partial data beats a wider-rank
+        guess.
+    3 — Peer store, ±2 wider rank, ≥50 games (only reached when level 2 has
+        zero live data at all)
     4 — Static champion JSON
     5 — Static role JSON
+
+    ``match_sample_store``/``scheduler`` are optional injection points for the
+    Phase 2 shared cross-champion match cache and the batch scheduler,
+    respectively -- both default to production singletons when omitted (see
+    `PeersServicer` for how they're wired in `service.py`).
     """
     import time
 
@@ -334,6 +460,8 @@ def resolve_peer_baseline(
             exclude_puuid=exclude_puuid,
             patch=patch,
             progress=progress,
+            match_sample_store=match_sample_store,
+            scheduler=scheduler,
         )
     except RiotApiError as exc:
         log.warning("Live peer sampling failed: %s", exc)
