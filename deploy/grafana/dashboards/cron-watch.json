@@ -159,7 +159,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service=\"cron-watch\"}",
+          "expr": "{service=\"cron-watch\"} != `/metrics`",
           "refId": "A"
         }
       ]

@@ -159,7 +159,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service=\"runner\"}",
+          "expr": "{service=\"runner\"} != `/metrics`",
           "refId": "A"
         }
       ]

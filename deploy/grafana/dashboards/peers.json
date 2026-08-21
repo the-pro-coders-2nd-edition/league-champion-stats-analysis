@@ -251,7 +251,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service=\"peers\"}",
+          "expr": "{service=\"peers\"} != `/metrics`",
           "refId": "A"
         }
       ]

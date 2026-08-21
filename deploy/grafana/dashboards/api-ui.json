@@ -190,7 +190,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service=\"api-ui\"}",
+          "expr": "{service=\"api-ui\"} != `/metrics`",
           "refId": "A"
         }
       ]
