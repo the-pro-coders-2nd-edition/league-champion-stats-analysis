@@ -220,6 +220,7 @@ from league_stats_common.core.config import AppConfig, PLATFORM_TO_REGION, REGIO
 from league_stats_common.core.models import RankedEntry
 from league_stats_common.infra.cache import HttpCache
 from league_stats_common.infra.mongo import db_name_from_uri as _db_name_from_uri
+from league_stats_peers.infra.peer_match_sample_store import PeerMatchSampleStore
 from league_stats_peers.infra.peer_sample_store import PeerSampleStore
 from league_stats_common.infra.riot_api import RiotApiClient, shared_rate_limiter
 from league_stats_runner.infra.raw_match_store import RawMatchStore
@@ -258,6 +259,12 @@ PEERS_DEDUPED_REQUESTS_TOTAL = Counter(
 # below, which is the single code path both RequestBaseline's fast (same-thread) wait
 # and its backgrounded live-sampling continuation share -- so both are covered by one
 # instrumentation point.
+# Note: since the batched round-robin scheduler landed (RFC "Batched,
+# Round-Robin Live Sampling for PEERS"), a level-2 resolution's duration here
+# only covers the wait for interim/finalize on its SamplingTask, not the full
+# live scan -- a concurrent metrics RFC is also touching this histogram
+# (splitting it by source) in a separate worktree; that overlap is expected
+# and resolved at merge time, not here.
 PEERS_BASELINE_RESOLUTION_DURATION = Histogram(
     "peers_baseline_resolution_duration_seconds",
     "Time resolve_peer_baseline took to run one baseline resolution, from worker "
@@ -358,6 +365,42 @@ def _build_default_peer_store(
     return PeerSampleStore(client, db_name=_db_name_from_uri(mongo_uri))
 
 
+def _build_default_match_sample_store(
+    client: pymongo.MongoClient | None = None,
+) -> PeerMatchSampleStore:
+    """Build the Phase 2 shared match cache store (`peer_match_samples`).
+
+    TTL mirrors `analysis.peer.benchmark_cache`'s existing pattern (RFC §5.2):
+    the same total window (its `CACHE_TTL_S`, patch-based staleness) plus the
+    same margin, kept as a pure housekeeping backstop against unbounded
+    growth rather than the actual staleness check (that's the caller's
+    `patch` filter on `find_candidates`).
+
+    Builds its own client with a short `serverSelectionTimeoutMS` (matching
+    `analysis.peer.benchmark_cache._get_store`'s convention) when none is
+    given -- unlike `_build_default_peer_store`/`_build_default_riot_client_factory`,
+    this is reached from inside a live-sampling batch (`SamplingTask.
+    _check_shared_cache`, via `_LazyMatchSampleStore`), a best-effort cache
+    lookup that must fail fast, not stall for pymongo's ~30s default, on an
+    unreachable Mongo. `_check_shared_cache`/`run_batch` also wrap every call
+    on this store in a broad `except Exception` regardless, so this is
+    defense in depth, not the only guard.
+    """
+    from league_stats_peers.analysis.peer.benchmark_cache import (
+        CACHE_TTL_S,
+        _SERVER_SELECTION_TIMEOUT_MS,
+        _TTL_INDEX_MARGIN_S,
+    )
+
+    mongo_uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017/league_stats")
+    client = client or pymongo.MongoClient(
+        mongo_uri, serverSelectionTimeoutMS=_SERVER_SELECTION_TIMEOUT_MS
+    )
+    return PeerMatchSampleStore(
+        client, db_name=_db_name_from_uri(mongo_uri), ttl_seconds=CACHE_TTL_S + _TTL_INDEX_MARGIN_S
+    )
+
+
 def _resolve_default_platform() -> str:
     """The platform used when a request carries no `platform` and `PEERS_PLATFORM`
     is unset. Normalized lowercase, always a member of `VALID_PLATFORMS`."""
@@ -402,6 +445,39 @@ def _build_riot_client_for_platform(
     return RiotApiClient(config, http_cache, match_store, session=session, limiter=limiter)
 
 
+class _LazyMatchSampleStore:
+    """Defers building the real `PeerMatchSampleStore` until first genuine use.
+
+    `PeerMatchSampleStore.__init__` calls `create_index` -- a real Mongo
+    round-trip -- so building it eagerly in `PeersServicer.__init__` would
+    touch Mongo on every servicer construction, even for requests that never
+    reach level 2 (most don't) and for tests that inject fakes for
+    everything else but don't care about Phase 2's shared match cache. This
+    proxy is passed to `resolve_peer_baseline` in its place and only
+    triggers the real construction the first time a `SamplingTask` actually
+    calls `find_candidates`/`upsert_rows` on it (i.e. only once live
+    sampling genuinely starts).
+    """
+
+    def __init__(self, factory: "Callable[[], Any]") -> None:
+        self._factory = factory
+        self._store: Any = None
+        self._lock = threading.Lock()
+
+    def _get(self) -> Any:
+        if self._store is None:
+            with self._lock:
+                if self._store is None:
+                    self._store = self._factory()
+        return self._store
+
+    def find_candidates(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return self._get().find_candidates(**kwargs)
+
+    def upsert_rows(self, *args: Any, **kwargs: Any) -> None:
+        self._get().upsert_rows(*args, **kwargs)
+
+
 class _InFlightResolution:
     """One shared `resolve_peer_baseline` call, possibly awaited by several callers."""
 
@@ -438,6 +514,7 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         fast_path_timeout_s: float = FAST_PATH_TIMEOUT_S,
         executor: ThreadPoolExecutor | None = None,
         default_platform: str | None = None,
+        match_sample_store: "PeerMatchSampleStore | None" = None,
     ) -> None:
         # Built once and reused for both defaults below (Phase 8, Task 1) --
         # avoids opening a second Mongo client purely for the raw-match store
@@ -452,6 +529,20 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
             peer_store
             if peer_store is not None
             else _build_default_peer_store(default_mongo_client)
+        )
+        # Phase 2 shared cross-champion/cross-tier match cache (RFC "Batched,
+        # Round-Robin Live Sampling for PEERS", §5.2) -- passed through to
+        # `resolve_peer_baseline` so every `SamplingTask` can both read from it
+        # (before live-scanning its own key) and write to it (every downloaded
+        # match's other participants, regardless of what champion the task
+        # was actually sampling). Wrapped in `_LazyMatchSampleStore` when not
+        # explicitly injected so building it (a real Mongo `create_index`
+        # round-trip) only happens on first genuine live-sampling use, not on
+        # every servicer construction -- see that class's docstring.
+        self._match_sample_store = (
+            match_sample_store
+            if match_sample_store is not None
+            else _LazyMatchSampleStore(_build_default_match_sample_store)
         )
         self._default_platform = (default_platform or _resolve_default_platform()).strip().lower()
         self._riot_client_factory: "Callable[[str], Any]" = (
@@ -574,6 +665,7 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
                         role,
                         exclude_puuid=exclude_puuid,
                         patch=patch,
+                        match_sample_store=self._match_sample_store,
                     )
                 except Exception:
                     duration = time.perf_counter() - resolution_start
