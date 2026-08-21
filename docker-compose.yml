@@ -35,6 +35,16 @@ services:
       # (match/HTTP caches) is left ephemeral -- losing it just costs slower
       # re-fetches, not a broken link.
       - app-output:/app/output
+      # Shared Data Dragon champion/rune/item/summoner icon cache
+      # (`AppConfig.assets_dir`/`WebConfig.assets_dir`), deliberately a
+      # SEPARATE volume from `app-output` above: report artifacts are per-job
+      # and tied to a job's lifecycle, while this cache is shared,
+      # patch-versioned, and read-mostly -- it has nothing to do with any
+      # individual job, so it does not belong in the same volume just because
+      # both used to incidentally nest under `output/`. api-ui only ever
+      # serves these files to the browser (via `/ddragon`), never writes
+      # them -- mounted `:ro` here; `runner` (below) is the only writer.
+      - ddragon-assets:/app/assets:ro
     depends_on:
       - mongo
 
@@ -64,6 +74,28 @@ services:
       - PEERS_GRPC_TARGET=peers:50053
     env_file:
       - .env
+    volumes:
+      # RUNNER is the only service that actually writes report artifacts
+      # (report.json/meta.json under output/reports/); api-ui only reads them
+      # back via its own `app-output` mount above. Without RUNNER sharing the
+      # same named volume, every report it writes lands in its own container's
+      # ephemeral filesystem -- invisible to api-ui (has_report/builds stay
+      # empty, 404 on every /out/reports/... path) and lost on container
+      # recreation, even though the job itself completes cleanly and RUNNER's
+      # own logs say "Done. Wrote ...report.json". Confirmed live: a real job
+      # for a real player completed end to end (base + peer stages both
+      # finished, timestamps recorded) with zero report ever visible to the
+      # frontend, purely from this missing mount.
+      - app-output:/app/output
+      # Shared Data Dragon icon cache -- SEPARATE volume from `app-output`
+      # (see api-ui's identical mount above for the full reasoning: report
+      # artifacts are per-job, this cache is shared/patch-versioned and
+      # unrelated to any one job's lifecycle). RUNNER is the only service
+      # that ever downloads/writes these icons (`DDragonAssets`), so this is
+      # the only read-write mount of this volume; without it, every
+      # container restart re-downloads hundreds of icons from Data Dragon
+      # from scratch -- the bug this whole split exists to fix.
+      - ddragon-assets:/app/assets
     # No `ports:` here on purpose: RUNNER is only ever dialed by `api-ui` over
     # the compose network (`RUNNER_GRPC_TARGET=runner:50051` above), never
     # from outside it. Add a `ports:` mapping here if external debugging
@@ -180,5 +212,10 @@ services:
 volumes:
   mongo-data:
   app-output:
+  # Data Dragon icon cache (`assets_dir`), kept separate from `app-output`:
+  # shared/patch-versioned/read-mostly, with no per-job lifecycle of its own,
+  # unlike report artifacts -- see the mount comments on `runner`/`api-ui`
+  # above for the full reasoning.
+  ddragon-assets:
   grafana-data:
   loki-data:

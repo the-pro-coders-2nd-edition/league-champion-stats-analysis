@@ -1273,13 +1273,6 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   font-size: 12px; color: var(--color-neutral-400);
 }
-.game-review-bool {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; border-radius: 999px;
-}
-.game-review-bool iconify-icon { width: 14px; height: 14px; }
-.game-review-bool--yes { color: var(--tone-good-fg); background: rgba(65, 183, 140, 0.15); }
-.game-review-bool--no { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.15); }
 .key-moment-layout { display: grid; grid-template-columns: minmax(220px, 280px) auto; gap: 16px; align-items: start; }
 .key-moment-viewer { width: min(100%, 300px); }
 .key-moment-list { display: flex; flex-direction: column; gap: 8px; }
@@ -1420,30 +1413,6 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
   .game-review-timeline-toolbar { flex-direction: column; align-items: stretch; }
 }
 
-/* --- UI components (chips, progress bars, score callouts) --- */
-.ui-chip,
-.game-review-chip,
-.peer-meta-chip,
-.form-badge {
-  display: inline-flex; align-items: center;
-  font-size: 11px; font-weight: 600; letter-spacing: .05em;
-  padding: 4px 8px; border-radius: 999px;
-  border: 1px solid var(--color-divider);
-  background: var(--color-surface-2); color: var(--color-neutral-400);
-  white-space: nowrap;
-}
-.ui-chip--good, .game-review-chip--good { color: var(--tone-good-fg); border-color: rgba(65, 183, 140, 0.35); background: rgba(65, 183, 140, 0.08); }
-.ui-chip--bad, .game-review-chip--bad { color: var(--tone-bad-fg); border-color: rgba(224, 85, 99, 0.35); background: rgba(224, 85, 99, 0.08); }
-.ui-chip--warn, .game-review-chip--warn { color: var(--tone-warn-line); border-color: rgba(224, 177, 85, 0.35); background: rgba(224, 177, 85, 0.08); }
-.ui-chip--stat, .ui-chip--neutral,
-.game-review-chip--stat, .game-review-chip--neutral {
-  color: var(--color-neutral-400); border-color: var(--color-divider); background: rgba(255, 255, 255, 0.05);
-}
-.ui-chip--flag, .game-review-chip--flag {
-  color: var(--color-text);
-  border-color: rgba(224, 85, 99, 0.65);
-  background: transparent;
-}
 
 /* --- Deep Dive section pulse (score callout + biggest-fix link) --- */
 .section-pulse {
@@ -1466,18 +1435,7 @@ footer { color: var(--color-neutral-400); font-size: 13px; padding: 24px 0; bord
     grid-template-columns: 1fr;
   }
 }
-.ui-chip--meta, .peer-meta-chip { text-transform: uppercase; background: var(--color-surface); }
-.ui-chip--confidence, .peer-meta-chip--confidence { color: var(--color-text); text-transform: uppercase; }
-.ui-chip--improving, .form-badge--improving { color: var(--tone-good-fg); background: var(--win-tint-12); text-transform: uppercase; }
-.ui-chip--declining, .form-badge--declining { color: var(--tone-bad-fg); background: rgba(224, 85, 99, 0.12); text-transform: uppercase; }
-.ui-chip--stable, .form-badge--stable { color: var(--color-neutral-400); text-transform: uppercase; }
-.ui-chip-row, .game-review-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
-
-/* --- Muted filters --- */
-.filter-group.is-muted { opacity: .4; }
-
-/* --- Nav back links --- */
-.nav-back a.nav-back-secondary { flex: 0 1 auto; background: transparent; }
+.ui-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* --- Career mode --- */
 .career-rules {

@@ -104,6 +104,7 @@ def test_run_all_builds_pools_multi_player_reports(
         min_games=20,
         cache_dir=tmp_path / "cache",
         output_dir=tmp_path / "output",
+        assets_dir=tmp_path / "assets",
         template_dir=Path(__file__).resolve().parent.parent / "src/league_stats/presentation/templates",
     )
     config.ensure_directories()

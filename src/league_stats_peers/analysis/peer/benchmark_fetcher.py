@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import random
+import time
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Final
 
 import pandas as pd
 from prometheus_client import Counter, Histogram
-from tqdm import tqdm
 
 from league_stats_peers.analysis.peer.ingest import ingest_match
 from league_stats_peers.analysis.peer.metrics import (
@@ -34,6 +34,10 @@ MATCH_IDS_PER_PLAYER: Final[int] = 30
 MAX_MATCH_DOWNLOADS: Final[int] = 400
 LEAGUE_PAGES: Final[int] = 3
 MAX_LEAGUE_CANDIDATES: Final[int] = 500
+# How often (in downloaded matches) live sampling logs progress -- with
+# MAX_MATCH_DOWNLOADS at 400, this yields at most 8 log lines per sample
+# instead of one line per match, avoiding log-volume blowup on the inner loop.
+LIVE_SAMPLING_LOG_EVERY_N_DOWNLOADS: Final[int] = 50
 
 # Live-sampling-scoped Riot API call volume -- distinct from the cross-cutting
 # `riot_api_requests_total` (every RiotApiClient call, every service): this
@@ -268,83 +272,91 @@ def _collect_sample_rows(
     rank_cache: dict[str, tuple[str, str]] = dict(seed_ranks)
     queue: deque[str] = deque(seed_puuids)
 
-    progress = tqdm(total=MAX_MATCH_DOWNLOADS, desc="Sampling rank peers", unit="match")
-    try:
-        while queue and downloads < MAX_MATCH_DOWNLOADS and len(rows) < TARGET_PEER_GAMES:
-            puuid = queue.popleft()
-            if puuid in seen_for_snowball:
-                continue
-            seen_for_snowball.add(puuid)
+    while queue and downloads < MAX_MATCH_DOWNLOADS and len(rows) < TARGET_PEER_GAMES:
+        puuid = queue.popleft()
+        if puuid in seen_for_snowball:
+            continue
+        seen_for_snowball.add(puuid)
 
-            PEERS_RIOT_API_CALLS_TOTAL.labels(endpoint="match_ids").inc()
-            try:
-                match_ids = client.fetch_match_ids(
-                    puuid, MATCH_IDS_PER_PLAYER, queue_id=RANKED_SOLO_QUEUE_ID
+        PEERS_RIOT_API_CALLS_TOTAL.labels(endpoint="match_ids").inc()
+        try:
+            match_ids = client.fetch_match_ids(
+                puuid, MATCH_IDS_PER_PLAYER, queue_id=RANKED_SOLO_QUEUE_ID
+            )
+        except RiotApiError as exc:
+            log.debug("Skipping %s...: %s", puuid[:12], exc)
+            continue
+
+        for match_id in match_ids:
+            if len(rows) >= TARGET_PEER_GAMES or downloads >= MAX_MATCH_DOWNLOADS:
+                break
+            if match_id in seen_matches:
+                continue
+            seen_matches.add(match_id)
+
+            match = _load_or_fetch_match(client, store, match_id, puuid)
+            if match is None:
+                continue
+            downloads += 1
+            if downloads % 10 == 0 or len(rows) >= TARGET_PEER_GAMES:
+                reporter.update(
+                    STAGE_PEER,
+                    current=len(rows),
+                    total=TARGET_PEER_GAMES,
+                    detail=(
+                        f"Sampling rank peers: {len(rows)}/{TARGET_PEER_GAMES} games "
+                        f"({downloads} matches scanned)"
+                    ),
                 )
-            except RiotApiError as exc:
-                log.debug("Skipping %s...: %s", puuid[:12], exc)
+            if downloads % LIVE_SAMPLING_LOG_EVERY_N_DOWNLOADS == 0:
+                log.info(
+                    "Live sampling progress for %s %s on %s at %s: %d/%d matches "
+                    "downloaded, %d/%d peer rows collected",
+                    champion,
+                    role,
+                    client.platform,
+                    ranked.label,
+                    downloads,
+                    MAX_MATCH_DOWNLOADS,
+                    len(rows),
+                    TARGET_PEER_GAMES,
+                )
+
+            if not _match_has_build(match, champion, role):
                 continue
 
-            for match_id in match_ids:
-                if len(rows) >= TARGET_PEER_GAMES or downloads >= MAX_MATCH_DOWNLOADS:
+            # Snowball: enqueue all participants for future scanning
+            for other_puuid in _participant_puuids(match):
+                if other_puuid and other_puuid not in seen_for_snowball:
+                    queue.append(other_puuid)
+
+            # Extract ALL players who played the target champion+lane in this match,
+            # not just the currently-scanned player. Since each ranked match has at
+            # most one player per champion, this extracts the one Azir (or whoever)
+            # from every match that contains them, regardless of who we're scanning.
+            match_rows = extract_champion_role_rows(
+                match,
+                exclude_puuid=exclude_puuid or "",
+                champion=champion,
+                role=role,
+            )
+            for row in match_rows:
+                p_puuid = str(row.get("puuid", ""))
+                if not p_puuid:
+                    continue
+                resolved = _resolve_rank(p_puuid, rank_cache, client, store)
+                if resolved is None:
+                    continue
+                tier, rank_str = resolved
+                if not rank_matches(tier, rank_str, scope):
+                    continue
+
+                row["match_id"] = match_id
+                rows.append(row)
+                players_used.add(p_puuid)
+
+                if len(rows) >= TARGET_PEER_GAMES:
                     break
-                if match_id in seen_matches:
-                    continue
-                seen_matches.add(match_id)
-
-                match = _load_or_fetch_match(client, store, match_id, puuid)
-                if match is None:
-                    continue
-                downloads += 1
-                progress.update(1)
-                if downloads % 10 == 0 or len(rows) >= TARGET_PEER_GAMES:
-                    reporter.update(
-                        STAGE_PEER,
-                        current=len(rows),
-                        total=TARGET_PEER_GAMES,
-                        detail=(
-                            f"Sampling rank peers: {len(rows)}/{TARGET_PEER_GAMES} games "
-                            f"({downloads} matches scanned)"
-                        ),
-                    )
-
-                if not _match_has_build(match, champion, role):
-                    continue
-
-                # Snowball: enqueue all participants for future scanning
-                for other_puuid in _participant_puuids(match):
-                    if other_puuid and other_puuid not in seen_for_snowball:
-                        queue.append(other_puuid)
-
-                # Extract ALL players who played the target champion+lane in this match,
-                # not just the currently-scanned player. Since each ranked match has at
-                # most one player per champion, this extracts the one Azir (or whoever)
-                # from every match that contains them, regardless of who we're scanning.
-                match_rows = extract_champion_role_rows(
-                    match,
-                    exclude_puuid=exclude_puuid or "",
-                    champion=champion,
-                    role=role,
-                )
-                for row in match_rows:
-                    p_puuid = str(row.get("puuid", ""))
-                    if not p_puuid:
-                        continue
-                    resolved = _resolve_rank(p_puuid, rank_cache, client, store)
-                    if resolved is None:
-                        continue
-                    tier, rank_str = resolved
-                    if not rank_matches(tier, rank_str, scope):
-                        continue
-
-                    row["match_id"] = match_id
-                    rows.append(row)
-                    players_used.add(p_puuid)
-
-                    if len(rows) >= TARGET_PEER_GAMES:
-                        break
-    finally:
-        progress.close()
 
     PEERS_LIVE_SAMPLE_MATCH_DOWNLOADS.observe(downloads)
     return rows, len(rows), len(players_used)
@@ -362,6 +374,17 @@ def fetch_benchmark_from_api(
 ) -> BenchmarkSnapshot | None:
     """Sample rank-scoped players and aggregate their champion + lane stats."""
     log = get_logger("benchmark_fetcher")
+    sampling_start = time.monotonic()
+    log.info(
+        "Starting live Riot sampling for %s %s on %s at %s: up to %d matches from up to %d "
+        "seed players",
+        champion,
+        role,
+        client.platform,
+        ranked.label,
+        MAX_MATCH_DOWNLOADS,
+        MAX_PLAYERS_TO_SCAN,
+    )
     scope = build_widened_scope(ranked)
     seed_puuids, seed_ranks = _gather_seeds(client, scope, exclude_puuid)
     if not seed_puuids:
@@ -396,11 +419,13 @@ def fetch_benchmark_from_api(
 
     metrics = _aggregate_rows(rows)
     log.info(
-        "Built benchmark from %d games across %d players (%s %s)",
+        "Built benchmark from %d games across %d players (%s %s on %s), took=%.1fs",
         games,
         players,
         champion,
         role,
+        client.platform,
+        time.monotonic() - sampling_start,
     )
     return BenchmarkSnapshot(
         metrics=metrics,

@@ -6,11 +6,11 @@ import base64
 import json
 import os
 import struct
+import time
 from pathlib import Path
 from typing import Any
 
 import requests
-from tqdm import tqdm
 
 from league_stats_common.core.champions import VALID_ROLES, champion_display_name, champion_icon_id
 from league_stats_common.core.config import AppConfig
@@ -35,6 +35,12 @@ STAT_SHARD_ICON_PATHS: dict[int, str] = {
     5011: "perk-images/StatMods/StatModsHealthPlusIcon.png",
     5013: "perk-images/StatMods/StatModsTenacityIcon.png",
 }
+
+# A tqdm-style progress bar renders as garbled carriage-return escapes once captured by
+# Docker's log driver and shipped to Loki (no TTY there) -- long icon-download loops log
+# plain periodic progress every N items instead, to avoid both that and multi-minute
+# silent gaps.
+ICON_DOWNLOAD_LOG_EVERY: int = 50
 
 COMMUNITY_DRAGON_BASE = "https://raw.communitydragon.org/latest"
 ROLE_ICON_FILES: dict[str, str] = {
@@ -156,7 +162,7 @@ def build_summoner_icon_files(spells: dict[str, dict[str, Any]]) -> dict[str, st
 
 
 class DDragonAssets:
-    """Local cache of champion and keystone icons under ``output/assets/``."""
+    """Local cache of champion and keystone icons under ``config.assets_dir``."""
 
     def __init__(
         self,
@@ -164,7 +170,7 @@ class DDragonAssets:
         session: requests.Session | None = None,
     ) -> None:
         self._config = config
-        self._assets_root = config.output_dir / "assets"
+        self._assets_root = config.assets_dir
         self._champions_dir = self._assets_root / "champions"
         self._runes_dir = self._assets_root / "runes"
         self._rune_trees_dir = self._assets_root / "rune_trees"
@@ -291,6 +297,7 @@ class DDragonAssets:
                 return cached_version
             return version
 
+        download_start = time.monotonic()
         self._download_champion_icons(version, champions, force=refresh)
         self._download_rune_icons(version, rune_icons, force=refresh)
         self._download_item_icons(version, items, force=refresh)
@@ -310,12 +317,13 @@ class DDragonAssets:
             items=len(items),
         )
         self._log.info(
-            "Downloaded %d champion icons, %d keystone icons, %d item icons and %d role icons (patch %s)",
+            "Downloaded %d champion icons, %d keystone icons, %d item icons and %d role icons (patch %s) in %.1fs",
             len(champions),
             len(rune_icons),
             len(items),
             len(ROLE_ICON_FILES),
             version,
+            time.monotonic() - download_start,
         )
         return version
 
@@ -799,7 +807,8 @@ class DDragonAssets:
         *,
         force: bool,
     ) -> None:
-        for data in tqdm(champions.values(), desc="Champion icons", unit="icon"):
+        self._log.info("Downloading up to %d champion icons for patch %s", len(champions), version)
+        for index, data in enumerate(champions.values(), start=1):
             champion_id = str(data.get("id", ""))
             if not champion_id:
                 continue
@@ -808,6 +817,8 @@ class DDragonAssets:
                 continue
             url = f"{DDRAGON_BASE}/cdn/{version}/img/champion/{champion_id}.png"
             self._download_binary(url, destination)
+            if index % ICON_DOWNLOAD_LOG_EVERY == 0:
+                self._log.info("Champion icons: %d/%d checked", index, len(champions))
 
     def _download_rune_icons(
         self,
@@ -816,12 +827,15 @@ class DDragonAssets:
         *,
         force: bool,
     ) -> None:
-        for perk_id, icon_path in tqdm(rune_icons.items(), desc="Rune icons", unit="icon"):
+        self._log.info("Downloading up to %d rune icons for patch %s", len(rune_icons), version)
+        for index, (perk_id, icon_path) in enumerate(rune_icons.items(), start=1):
             destination = self._runes_dir / f"{perk_id}.png"
             if destination.is_file() and not force:
                 continue
             url = f"{DDRAGON_BASE}/cdn/img/{icon_path}"
             self._download_binary(url, destination)
+            if index % ICON_DOWNLOAD_LOG_EVERY == 0:
+                self._log.info("Rune icons: %d/%d checked", index, len(rune_icons))
 
     def _download_rune_tree_icons(
         self,
@@ -830,12 +844,15 @@ class DDragonAssets:
         *,
         force: bool,
     ) -> None:
-        for tree_name, icon_path in tqdm(tree_icons.items(), desc="Rune tree icons", unit="icon"):
+        self._log.info("Downloading up to %d rune tree icons for patch %s", len(tree_icons), version)
+        for index, (tree_name, icon_path) in enumerate(tree_icons.items(), start=1):
             destination = self._rune_trees_dir / f"{tree_name}.png"
             if destination.is_file() and not force:
                 continue
             url = f"{DDRAGON_BASE}/cdn/img/{icon_path}"
             self._download_binary(url, destination)
+            if index % ICON_DOWNLOAD_LOG_EVERY == 0:
+                self._log.info("Rune tree icons: %d/%d checked", index, len(tree_icons))
 
     def _download_summoner_icons(
         self,
@@ -844,12 +861,15 @@ class DDragonAssets:
         *,
         force: bool,
     ) -> None:
-        for spell_name, filename in tqdm(spell_icons.items(), desc="Summoner icons", unit="icon"):
+        self._log.info("Downloading up to %d summoner icons for patch %s", len(spell_icons), version)
+        for index, (spell_name, filename) in enumerate(spell_icons.items(), start=1):
             destination = self._summoners_dir / f"{spell_name}.png"
             if destination.is_file() and not force:
                 continue
             url = f"{DDRAGON_BASE}/cdn/{version}/img/spell/{filename}"
             self._download_binary(url, destination)
+            if index % ICON_DOWNLOAD_LOG_EVERY == 0:
+                self._log.info("Summoner icons: %d/%d checked", index, len(spell_icons))
 
     def _download_item_icons(
         self,
@@ -858,7 +878,8 @@ class DDragonAssets:
         *,
         force: bool,
     ) -> None:
-        for item_id, data in tqdm(items.items(), desc="Item icons", unit="icon"):
+        self._log.info("Downloading up to %d item icons for patch %s", len(items), version)
+        for index, (item_id, data) in enumerate(items.items(), start=1):
             image = data.get("image") or {}
             filename = str(image.get("full", ""))
             if not filename:
@@ -868,6 +889,8 @@ class DDragonAssets:
                 continue
             url = f"{DDRAGON_BASE}/cdn/{version}/img/item/{filename}"
             self._download_binary(url, destination)
+            if index % ICON_DOWNLOAD_LOG_EVERY == 0:
+                self._log.info("Item icons: %d/%d checked", index, len(items))
 
     def _ensure_role_icons(self, *, force: bool = False) -> None:
         if self._roles_cached() and not force:

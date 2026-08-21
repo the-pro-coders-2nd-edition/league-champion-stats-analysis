@@ -26,6 +26,7 @@ ENDPOINT = f"/api/players/{GROUP_SLUG}/builds/{BUILD_SLUG}/account-views"
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     config = WebConfig(
         output_dir=tmp_path / "output",
+        assets_dir=tmp_path / "assets",
     )
     real_load_config = web_app.load_config
 

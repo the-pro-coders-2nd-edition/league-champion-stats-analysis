@@ -2,8 +2,8 @@
 
 The pipeline layers (fetch, orchestrator, peer sampling) emit coarse progress
 events through a :class:`ProgressReporter`. The default implementation is a
-no-op so CLI behavior (tqdm bars) is unchanged; the web worker installs a
-reporter that persists progress to the job store so users can poll it.
+no-op so CLI behavior is unchanged; the web worker installs a reporter that
+persists progress to the job store so users can poll it.
 """
 
 from __future__ import annotations

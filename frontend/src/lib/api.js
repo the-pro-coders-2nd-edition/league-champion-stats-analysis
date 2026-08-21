@@ -42,6 +42,39 @@ export async function fetchActivity() {
   return response.json();
 }
 
+/**
+ * Subscribes to a `text/event-stream` endpoint, calling `onMessage` with the
+ * parsed JSON payload of every event (including the initial snapshot the
+ * server sends immediately on connect). Uses the browser's native
+ * `EventSource`, which reconnects automatically on a dropped connection --
+ * no manual reconnect logic needed here. `onError`, if given, fires while a
+ * connection attempt is failing/retrying (matches the transient-error UI a
+ * poller would have shown between failed ticks). Returns an `unsubscribe()`
+ * function that closes the connection; call it from the component's teardown.
+ *
+ * A malformed event is swallowed -- the next one will still arrive.
+ */
+function subscribeEvents(endpoint, onMessage, onError) {
+  const source = new EventSource(endpoint);
+  source.onmessage = (event) => {
+    try {
+      onMessage(JSON.parse(event.data));
+    } catch {
+      // Ignore a malformed event -- the next one will still arrive.
+    }
+  };
+  if (onError) source.onerror = onError;
+  return () => source.close();
+}
+
+export function subscribePlayerStatus(slug, onMessage, onError) {
+  return subscribeEvents(`/api/players/${slug}/events`, onMessage, onError);
+}
+
+export function subscribeActivity(onMessage, onError) {
+  return subscribeEvents('/api/activity/events', onMessage, onError);
+}
+
 export async function submitAnalysis({ players, region, minGames }) {
   const response = await fetch('/api/analyses', {
     method: 'POST',

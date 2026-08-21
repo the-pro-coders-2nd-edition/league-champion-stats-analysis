@@ -34,6 +34,12 @@ RATE_WINDOW_BUDGET: int = 15
 # ``watch_interval_s``, so a short tick just means better staggering.
 TICK_INTERVAL_S: float = 20.0
 
+# `tick()` sweeps groups sequentially, so a long watch list with a slow Riot
+# API can otherwise go minutes without a single log line. A heartbeat this
+# often makes an in-progress sweep visible in Loki without flooding it when
+# the list is small and the sweep finishes in well under this interval.
+TICK_PROGRESS_INTERVAL_S: float = 30.0
+
 # Consecutive-failure backoff, capped so a recovered API is picked up promptly.
 BACKOFF_BASE_S: float = 60.0
 BACKOFF_MAX_S: float = 1800.0
@@ -193,11 +199,15 @@ class WatchPoller:
         # all (the genuine stalled-loop blind spot this metric exists to
         # close) shows up as a growing staleness gap immediately, not after
         # whatever the sweep's own duration happens to be.
-        CRON_WATCH_LAST_TICK_TIMESTAMP.set(self._now())
+        start = self._now()
+        CRON_WATCH_LAST_TICK_TIMESTAMP.set(start)
         rows = self._store.list_watched_players()
         CRON_WATCH_WATCHED_GROUPS.set(len(rows))
         CRON_WATCH_WATCHED_ACCOUNTS.set(sum(len(row.get("players") or []) for row in rows))
+        self._log.info("Watch tick starting; %d group(s) to consider", len(rows))
         refreshed: list[str] = []
+        checked = 0
+        last_progress_at = start
         for row in rows:
             if self._stop.is_set():
                 break
@@ -208,8 +218,28 @@ class WatchPoller:
                 # A refresh is already running; enqueueing again would queue
                 # duplicates faster than the worker can drain them.
                 continue
+            checked += 1
             if await self._check_group(row, slug):
                 refreshed.append(slug)
+            # The sweep is sequential (each group's Riot API calls await the
+            # previous one), so a large watch list can run silent for minutes.
+            # A time-gated heartbeat -- rather than every-N-groups -- keeps the
+            # noise flat regardless of how many groups are actually due.
+            now = self._now()
+            if now - last_progress_at >= TICK_PROGRESS_INTERVAL_S:
+                self._log.info(
+                    "Watch tick in progress: %d/%d group(s) checked so far, %d new game(s) found",
+                    checked,
+                    len(rows),
+                    len(refreshed),
+                )
+                last_progress_at = now
+        self._log.info(
+            "Watch tick finished: %d group(s) checked, %d new game(s) found, took %.2fs",
+            checked,
+            len(refreshed),
+            self._now() - start,
+        )
         return refreshed
 
     def _is_due(self, row: dict[str, Any], slug: str) -> bool:
@@ -268,7 +298,9 @@ class WatchPoller:
             try:
                 puuid = await self._puuid_for(client, label, player)
             except Exception as exc:  # noqa: BLE001 - any API failure backs off
-                self._note_failure(slug, str(exc), stage="puuid_resolution")
+                self._note_failure(
+                    slug, f"puuid resolution failed for {label}: {exc}", stage="puuid_resolution"
+                )
                 return False
             CRON_WATCH_ACCOUNTS_CHECKED_TOTAL.inc()
             queues_seen = seen.setdefault(puuid, {})
@@ -286,7 +318,11 @@ class WatchPoller:
                         use_cache=False,
                     )
                 except Exception as exc:  # noqa: BLE001 - any API failure backs off
-                    self._note_failure(slug, str(exc), stage="match_fetch")
+                    self._note_failure(
+                        slug,
+                        f"match id fetch failed for {label} (queue {queue_id}): {exc}",
+                        stage="match_fetch",
+                    )
                     return False
                 if not newest:
                     continue

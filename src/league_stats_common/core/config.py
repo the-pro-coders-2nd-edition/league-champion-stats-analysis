@@ -137,6 +137,14 @@ class AppConfig(BaseModel):
     output_reports_slug: str | None = None
     queue_id: int = RANKED_SOLO_QUEUE_ID
     output_dir: Path = Path("output")
+    # Champion/rune/item/summoner icon cache (`DDragonAssets`), deliberately
+    # decoupled from `output_dir`: report artifacts are per-job and tied to a
+    # job's lifecycle, while this cache is shared, patch-versioned, read-mostly,
+    # and has nothing to do with any individual job. Nesting it under
+    # `output_dir` used to mean the two lived in the same volume for no reason
+    # other than incidentally both landing under one `output/` mount -- giving
+    # it its own field lets RUNNER/api-ui mount it as its own dedicated volume.
+    assets_dir: Path = Path("assets")
     cache_dir: Path = Path(".cache")
     template_dir: Path = DEFAULT_TEMPLATE_DIR
     requests_per_second: int = Field(default=18, ge=1)
@@ -263,13 +271,16 @@ class AppConfig(BaseModel):
         """Directory of the diskcache HTTP cache."""
         return self.cache_dir / "http"
 
-    @property
-    def assets_dir(self) -> Path:
-        """Shared champion/rune icons for generated HTML reports."""
-        return self.output_dir / "assets"
-
     def ensure_directories(self) -> None:
-        """Create output, player report and cache directories if missing."""
+        """Create output, player report and cache directories if missing.
+
+        Deliberately excludes `assets_dir`: `DDragonAssets.ensure_downloaded()`
+        already creates its own full subdirectory tree (champions/, runes/,
+        items/, ...) the first time it runs, so pre-creating just the bare
+        root here would be redundant -- and would force every caller that only
+        wants output/cache paths (many test fixtures included) to also think
+        about assets_dir's default relative path.
+        """
         for path in (self.output_dir, self.player_reports_dir, self.cache_dir):
             path.mkdir(parents=True, exist_ok=True)
 
@@ -411,6 +422,14 @@ class WebConfig(BaseModel):
     worker_concurrency: int = Field(default=1, ge=1, le=8)
     worker_poll_interval_s: float = Field(default=1.0, gt=0)
     output_dir: Path = Path("output")
+    # Mirrors `AppConfig.assets_dir` (see its field comment): the same shared
+    # DDragon icon cache, mounted as its own dedicated volume separate from
+    # `output_dir`'s per-job report artifacts. `_build_job_services` (RUNNER's
+    # worker) threads this through to the per-job `AppConfig` it builds via
+    # `load_config`, and api-ui's `create_app` mounts it read-only at
+    # `/ddragon` for the browser -- both must agree on this path since it is
+    # the same on-disk directory shared between the two containers.
+    assets_dir: Path = Path("assets")
     gemini_api_key: str | None = None
     runner_grpc_target: str = "localhost:50051"
     # Phase 9 removed `peers_mode` (the in-process/grpc choice for stage B's

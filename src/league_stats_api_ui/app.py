@@ -1,25 +1,31 @@
 """FastAPI application: SPA hosting, JSON API, static report serving.
 
 Generated reports remain plain files under ``output/`` (served at ``/out``);
-the Svelte SPA (built to ``spa_dist/``) is served at ``/`` and talks to the
-job API and the Gemini chat proxy defined here.
+the shared Data Dragon icon cache lives in its own volume under
+``assets_dir`` (served read-only at ``/ddragon``, separate from ``/out``
+since it is not tied to any individual job's lifecycle -- see
+``AppConfig.assets_dir``'s field comment); the Svelte SPA (built to
+``spa_dist/``) is served at ``/`` and talks to the job API and the Gemini
+chat proxy defined here.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
 import threading
 import time
 import uuid
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
 
 import pymongo
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from starlette.middleware.gzip import GZipMiddleware
@@ -61,7 +67,12 @@ from league_stats_runner.presentation.brand_assets import (
 )
 from league_stats_runner.presentation.report import discover_player_builds, is_group_player_label
 from league_stats_runner.presentation.report_json import rewrite_web_asset_hrefs
-from league_stats_common.utils import current_trace_id, set_trace_id, setup_logging
+from league_stats_common.utils import (
+    current_trace_id,
+    get_logger,
+    set_trace_id,
+    setup_logging,
+)
 from league_stats_runner.analysis.career.models import BLOCK_SLOTS
 from league_stats_common.infra.career_store import (
     build_key as career_build_key,
@@ -82,11 +93,14 @@ from league_stats_common.infra.jobs import (
     JOB_KIND_REFRESH,
     JobStore,
     decode_players,
-    open_jobs_store,
     players_label,
 )
+from league_stats_api_ui.job_events import JobEventBus
+from league_stats_api_ui.notifying_job_store import open_notifying_jobs_store
 from league_stats_api_ui.welcome_back_cache import WelcomeBackCache, WelcomeBackSubscriber
 from league_stats_runner.worker import AnalysisWorker
+
+log = get_logger("api_ui")
 
 SPA_DIST_DIR = Path(__file__).resolve().parent / "spa_dist"
 
@@ -301,9 +315,11 @@ def _verify_players_exist(
     """
     client = _build_precheck_client(region, output_dir, web_config)
     missing: list[str] = []
-    for player in players:
+    t0 = time.monotonic()
+    for index, player in enumerate(players, start=1):
         label = f"{player['riot_id']}#{player['tagline']}"
         start = time.perf_counter()
+        log.info("Verifying player %d of %d: %s (%s)", index, len(players), label, region)
         try:
             client.resolve_puuid(player["riot_id"], player["tagline"])
         except RiotApiError as exc:
@@ -319,6 +335,12 @@ def _verify_players_exist(
             OUTBOUND_RPC_DURATION.labels(
                 target="riot_api", operation="resolve_puuid", outcome="ok"
             ).observe(time.perf_counter() - start)
+    log.info(
+        "Verified %d player(s) in %.1fs (%d missing)",
+        len(players),
+        time.monotonic() - t0,
+        len(missing),
+    )
     if not missing:
         return
     if len(missing) == 1:
@@ -522,16 +544,16 @@ def _job_public(store: JobStore, job: dict[str, Any] | None) -> dict[str, Any] |
     return public
 
 
-def _web_asset_href(output_dir: Path, *parts: str) -> str | None:
-    """Absolute ``/out/...`` URL when the asset exists on disk."""
-    path = output_dir.joinpath(*parts)
+def _ddragon_asset_href(assets_dir: Path, *parts: str) -> str | None:
+    """Absolute ``/ddragon/...`` URL when the cached icon exists on disk."""
+    path = assets_dir.joinpath(*parts)
     if not path.is_file():
         return None
-    return "/out/" + "/".join(parts)
+    return "/ddragon/" + "/".join(parts)
 
 
 def _shaped_players(
-    output_dir: Path, tracked: list[dict[str, Any]]
+    assets_dir: Path, tracked: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """API/template shape for group members (label + optional icon/rank)."""
     from league_stats_common.core.models import format_solo_rank_label, solo_rank_fields
@@ -545,8 +567,8 @@ def _shaped_players(
         raw_icon = player.get("profile_icon_id")
         if raw_icon is not None:
             try:
-                icon_href = _web_asset_href(
-                    output_dir, "assets", "profile_icons", f"{int(raw_icon)}.png"
+                icon_href = _ddragon_asset_href(
+                    assets_dir, "profile_icons", f"{int(raw_icon)}.png"
                 )
             except (TypeError, ValueError):
                 icon_href = None
@@ -564,17 +586,17 @@ def _shaped_players(
                 str(rank.get("solo_rank") or ""),
                 rank.get("solo_lp"),
             )
-            emblem = fetch_rank_emblem(output_dir / "assets" / "ranks", tier)
+            emblem = fetch_rank_emblem(assets_dir / "ranks", tier)
             if emblem is not None:
-                entry["solo_rank_icon"] = _web_asset_href(
-                    output_dir, "assets", "ranks", emblem.name
+                entry["solo_rank_icon"] = _ddragon_asset_href(
+                    assets_dir, "ranks", emblem.name
                 )
         shaped.append(entry)
     return shaped
 
 
 def _profile_icon_hrefs(
-    output_dir: Path,
+    assets_dir: Path,
     players: list[dict[str, Any]] | None = None,
     *,
     primary_icon_id: int | None = None,
@@ -592,22 +614,20 @@ def _profile_icon_hrefs(
             continue
         if icon_id in seen:
             continue
-        href = _web_asset_href(
-            output_dir, "assets", "profile_icons", f"{icon_id}.png"
-        )
+        href = _ddragon_asset_href(assets_dir, "profile_icons", f"{icon_id}.png")
         if href:
             hrefs.append(href)
             seen.add(icon_id)
     if not hrefs and primary_icon_id is not None:
-        href = _web_asset_href(
-            output_dir, "assets", "profile_icons", f"{int(primary_icon_id)}.png"
+        href = _ddragon_asset_href(
+            assets_dir, "profile_icons", f"{int(primary_icon_id)}.png"
         )
         if href:
             hrefs.append(href)
     return hrefs
 
 
-def _player_builds(output_dir: Path, slug: str) -> list[dict[str, Any]]:
+def _player_builds(output_dir: Path, assets_dir: Path, slug: str) -> list[dict[str, Any]]:
     """On-disk builds for one player, with web hrefs and icon URLs."""
     builds = discover_player_builds(output_dir / "reports" / slug)
     shaped: list[dict[str, Any]] = []
@@ -629,15 +649,12 @@ def _player_builds(output_dir: Path, slug: str) -> list[dict[str, Any]]:
                 "generated_at": build.get("generated_at", ""),
                 "peers_ready": _build_peers_ready(build, report_dir),
                 "href": f"/out/reports/{slug}/{build.get('href', '')}",
-                "champion_icon": _web_asset_href(
-                    output_dir,
-                    "assets",
+                "champion_icon": _ddragon_asset_href(
+                    assets_dir,
                     "champions",
                     f"{champion_icon_id(champion_id)}.png",
                 ),
-                "role_icon": _web_asset_href(
-                    output_dir, "assets", "roles", f"{role}.png"
-                ),
+                "role_icon": _ddragon_asset_href(assets_dir, "roles", f"{role}.png"),
             }
         )
     return shaped
@@ -657,7 +674,7 @@ def _build_peers_ready(meta: dict[str, Any], report_dir: Path) -> bool:
 
 
 def _report_groups(
-    reports_dir: Path, store: JobStore | None = None
+    reports_dir: Path, assets_dir: Path, store: JobStore | None = None
 ) -> list[dict[str, Any]]:
     """Player cards for the landing page from on-disk report metadata.
 
@@ -665,7 +682,6 @@ def _report_groups(
     active (queued/running) job, and players with an active job but no report
     yet are included so queued first-time analyses appear on the home page.
     """
-    output_dir = reports_dir.parent
     groups: list[dict[str, Any]] = []
     seen: set[str] = set()
     if reports_dir.is_dir():
@@ -692,12 +708,12 @@ def _report_groups(
                 primary_icon_id = int(primary_icon) if primary_icon is not None else None
             except (TypeError, ValueError):
                 primary_icon_id = None
-            shaped = _shaped_players(output_dir, tracked)
+            shaped = _shaped_players(assets_dir, tracked)
             if not shaped and label:
                 shaped = [{"label": label, "profile_icon": None}]
             elif not shaped and primary_icon_id is not None:
                 icons = _profile_icon_hrefs(
-                    output_dir, None, primary_icon_id=primary_icon_id
+                    assets_dir, None, primary_icon_id=primary_icon_id
                 )
                 shaped = [
                     {
@@ -748,7 +764,7 @@ def _report_groups(
                 if tracked
                 else f"{job['riot_id']}#{job['tagline']}"
             )
-            shaped = _shaped_players(output_dir, tracked)
+            shaped = _shaped_players(assets_dir, tracked)
             if not shaped:
                 shaped = [{"label": label, "profile_icon": None}]
             groups.append(
@@ -797,22 +813,38 @@ def create_app(
     config = web_config or load_web_config()
     config.output_dir.mkdir(parents=True, exist_ok=True)
     config.reports_dir.mkdir(parents=True, exist_ok=True)
+    # DDragon icon cache: a separate volume from output_dir (see
+    # `WebConfig.assets_dir`'s field comment). RUNNER is the only writer;
+    # api-ui only ever mounts/reads it, but still needs it to exist before the
+    # `/ddragon` StaticFiles mount below, e.g. on a fresh dev checkout that
+    # never ran RUNNER first.
+    config.assets_dir.mkdir(parents=True, exist_ok=True)
     ensure_brand_assets(config.output_dir)
     refresh_saved_report_branding(config.output_dir)
 
-    store = open_jobs_store()
+    # SSE relay (see the SSE migration design doc): `NotifyingJobStore` publishes to
+    # `job_event_bus` on every state-changing call, `AnalysisWorker`'s worker threads
+    # and `WelcomeBackSubscriber`'s event-loop task both write through it. The bus
+    # itself is inert until `bind_loop()` runs in the lifespan below (it needs a
+    # running event loop, only available once uvicorn/TestClient starts one).
+    job_event_bus = JobEventBus()
+    store = open_notifying_jobs_store(job_event_bus)
     worker = AnalysisWorker(store, config)
     # Always created (cheap, gRPC-free) so a later task can read from it
     # unconditionally; only the subscriber below is gated on the env var.
     welcome_back_cache = WelcomeBackCache()
     welcome_back_subscriber = (
-        WelcomeBackSubscriber(welcome_back_cache, config.cron_watch_grpc_target)
+        WelcomeBackSubscriber(welcome_back_cache, config.cron_watch_grpc_target, job_event_bus)
         if config.cron_watch_grpc_target
         else None
     )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        # Always bound, regardless of `start_worker`: `TestClient` runs this lifespan
+        # even for tests that pass `start_worker=False`, and SSE endpoint tests need
+        # `publish()` to actually reach subscribers.
+        job_event_bus.bind_loop(asyncio.get_running_loop())
         store.recover_orphans()
         if start_worker:
             worker.start()
@@ -830,6 +862,7 @@ def create_app(
 
     app = FastAPI(title=APP_TITLE, lifespan=lifespan)
     app.state.job_store = store
+    app.state.job_event_bus = job_event_bus
     app.state.web_config = config
     app.state.welcome_back_cache = welcome_back_cache
 
@@ -909,6 +942,11 @@ def create_app(
             ).inc()
 
     app.mount("/out", StaticFiles(directory=str(config.output_dir), html=True), name="out")
+    # Read-only on api-ui's side of the mount (RUNNER is the only writer, per
+    # `docker-compose.yml`'s `ddragon-assets` volume comment); served under
+    # its own prefix, not nested under `/out`, since this cache is not tied to
+    # any individual job's lifecycle the way report artifacts are.
+    app.mount("/ddragon", StaticFiles(directory=str(config.assets_dir)), name="ddragon")
 
     # ------------------------------------------------------------------ pages
 
@@ -967,7 +1005,7 @@ def create_app(
             "job": _job_public(store, job),
             "created": created,
             "player_slug": slug,
-            "has_report": bool(_player_builds(config.output_dir, slug)),
+            "has_report": bool(_player_builds(config.output_dir, config.assets_dir, slug)),
         }
 
     @app.get("/api/jobs/{job_id}")
@@ -994,11 +1032,16 @@ def create_app(
     @app.get("/api/groups")
     def groups() -> dict[str, Any]:
         """Report groups for the landing page (same shape as the ``groups`` template var)."""
-        return {"groups": _report_groups(config.reports_dir, store)}
+        return {"groups": _report_groups(config.reports_dir, config.assets_dir, store)}
 
-    @app.get("/api/activity")
-    def activity() -> dict[str, Any]:
-        """Active jobs for the landing-page status dots."""
+    def _activity_payload() -> dict[str, Any]:
+        """Active jobs for the landing-page status dots.
+
+        Shared by the plain `GET /api/activity` and `GET /api/activity/events`
+        (SSE) handlers below -- unlike `_player_status_payload`, this has no
+        consume-on-read state, so both call it directly with no single-flight
+        wrapper needed.
+        """
         items: list[dict[str, Any]] = []
         for job in store.list_active_jobs():
             slug = str(job["player_slug"])
@@ -1011,7 +1054,7 @@ def create_app(
                 if tracked
                 else f"{job['riot_id']}#{job['tagline']}"
             )
-            shaped = _shaped_players(config.output_dir, tracked)
+            shaped = _shaped_players(config.assets_dir, tracked)
             if not shaped:
                 shaped = [{"label": label, "profile_icon": None}]
             items.append(
@@ -1020,25 +1063,39 @@ def create_app(
                     "player_label": label,
                     "players": shaped,
                     "state": job.get("state"),
-                    "has_report": bool(_player_builds(config.output_dir, slug)),
+                    "has_report": bool(
+                        _player_builds(config.output_dir, config.assets_dir, slug)
+                    ),
                 }
             )
         return {"items": items}
 
-    @app.get("/api/players/{slug}")
-    def player_status(slug: str, response: Response) -> dict[str, Any]:
+    @app.get("/api/activity")
+    def activity() -> dict[str, Any]:
+        """Active jobs for the landing-page status dots."""
+        return _activity_payload()
+
+    def _player_status_payload(slug: str) -> dict[str, Any] | None:
         """Player/job status, including the welcome-back payload if any.
 
+        `None` means "unknown player" (the caller turns that into a 404).
+        Shared by the plain `GET /api/players/{slug}` and
+        `GET /api/players/{slug}/events` (SSE) handlers below -- the plain GET
+        handler calls this directly (independent computation per request,
+        matching its current, already-accepted behavior); the SSE handler
+        calls it through `_player_status_snapshot`'s single-flight wrapper
+        instead (see that function's docstring for why).
+
         The `welcome_back` field is consumed-on-read (`WelcomeBackCache.get`
-        pops it), so this response must never be cached or coalesced: a
-        second reader (a duplicate tab, a prefetch, a caching proxy) would
-        silently eat the one delivery a genuine poller was waiting for.
+        pops it), so a caller must never cache or coalesce results across
+        distinct logical reads: a second reader (a duplicate tab, a
+        prefetch, a caching proxy) would silently eat the one delivery a
+        genuine poller was waiting for.
         """
-        response.headers["Cache-Control"] = "no-store"
         player = store.get_player(slug)
-        builds = _player_builds(config.output_dir, slug)
+        builds = _player_builds(config.output_dir, config.assets_dir, slug)
         if player is None and not builds:
-            raise HTTPException(status_code=404, detail="Unknown player")
+            return None
         active = store.active_job_for_player(slug)
         meta_builds = discover_player_builds(config.reports_dir / slug)
         tracked = _resolve_tracked_players(
@@ -1052,7 +1109,7 @@ def create_app(
         return {
             "slug": slug,
             "player_label": label,
-            "players": _shaped_players(config.output_dir, tracked),
+            "players": _shaped_players(config.assets_dir, tracked),
             "active_job": _job_public(store, active),
             "builds": builds,
             "has_report": bool(builds),
@@ -1063,6 +1120,97 @@ def create_app(
             "welcome_back": welcome_back_cache.get(slug),
             **watch_public_fields(player or {}),
         }
+
+    @app.get("/api/players/{slug}")
+    def player_status(slug: str, response: Response) -> dict[str, Any]:
+        """Player/job status, including the welcome-back payload if any.
+
+        See `_player_status_payload`'s docstring for the consume-on-read caveat.
+        """
+        response.headers["Cache-Control"] = "no-store"
+        payload = _player_status_payload(slug)
+        if payload is None:
+            raise HTTPException(status_code=404, detail="Unknown player")
+        return payload
+
+    # ---------------------------------------------------------- SSE (events)
+
+    # Per-slug single-flight guard for `_player_status_payload`, scoped to this
+    # `create_app` call (fresh per app instance, same lifetime as `job_event_bus`) --
+    # see `_player_status_snapshot` below for why this exists at all.
+    _player_status_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+    _player_status_cache: dict[str, tuple[int, dict[str, Any] | None]] = {}
+
+    async def _player_status_snapshot(slug: str) -> dict[str, Any] | None:
+        """Single-flight `_player_status_payload(slug)` across sibling SSE subscribers.
+
+        `WelcomeBackCache.get` is consume-on-read: if two browser tabs are open on
+        the same slug and both independently recomputed their own payload on the
+        same bus wake-up, only the first to run would see a pending welcome-back
+        payload; the second would get `None`. Memoized by `job_event_bus`'s
+        per-slug generation counter (bumped once per `publish(slug)` call): the
+        first subscriber task to wake for a given `(slug, generation)` pair
+        computes the payload; any sibling woken by that same publish reuses it
+        instead of recomputing. The next publish bumps the generation, forcing a
+        fresh computation. Run off the event loop thread (`asyncio.to_thread`)
+        since `_player_status_payload` does blocking Mongo I/O, mirroring why the
+        plain GET routes in this app are defined as `def`, not `async def`
+        (FastAPI dispatches those through a threadpool automatically; this SSE
+        route is `async def` so it can `await bus.subscribe(...)`, so the
+        blocking call needs an explicit hop instead).
+        """
+        generation = job_event_bus.generation(slug)
+        async with _player_status_locks[slug]:
+            cached = _player_status_cache.get(slug)
+            if cached is not None and cached[0] == generation:
+                return cached[1]
+            payload = await asyncio.to_thread(_player_status_payload, slug)
+            _player_status_cache[slug] = (generation, payload)
+            return payload
+
+    @app.get("/api/players/{slug}/events")
+    async def player_status_events(slug: str) -> StreamingResponse:
+        """SSE stream of `_player_status_payload(slug)`, same shape as the plain GET.
+
+        Subscribes to `job_event_bus` before computing anything (see
+        `JobEventBus.subscribe`'s docstring: registration happens synchronously,
+        so a publish landing between subscribing and the first snapshot cannot be
+        missed), sends one snapshot immediately, then a fresh one on every
+        subsequent wake-up. A client disconnect cancels this generator; the
+        `finally:` in `JobEventBus.subscribe` handles cleanup with no extra code
+        here.
+        """
+        updates = await job_event_bus.subscribe(slug)
+        initial = await _player_status_snapshot(slug)
+        if initial is None:
+            raise HTTPException(status_code=404, detail="Unknown player")
+
+        async def event_stream() -> AsyncIterator[str]:
+            yield f"data: {json.dumps(initial)}\n\n"
+            async for _ in updates:
+                payload = await _player_status_snapshot(slug)
+                if payload is not None:
+                    yield f"data: {json.dumps(payload)}\n\n"
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+    @app.get("/api/activity/events")
+    async def activity_events() -> StreamingResponse:
+        """SSE stream of `_activity_payload()`, same shape as the plain GET.
+
+        Subscribes to the wildcard topic (`slug=None`): every job-state publish,
+        for any slug, wakes this stream, matching `/api/activity`'s "every active
+        job" scope. No single-flight needed here (no consume-on-read state).
+        """
+        updates = await job_event_bus.subscribe(None)
+
+        async def event_stream() -> AsyncIterator[str]:
+            yield f"data: {json.dumps(await asyncio.to_thread(_activity_payload))}\n\n"
+            async for _ in updates:
+                payload = await asyncio.to_thread(_activity_payload)
+                yield f"data: {json.dumps(payload)}\n\n"
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     def _career_ladder_ref(slug: str, build_slug: str) -> tuple[str, str, str]:
         """The ladder key (plus champion/role) behind a report URL.
@@ -1353,6 +1501,7 @@ def create_app(
             tagline=str(tracked[0]["tagline"]),
             region=region,
             output_dir=config.output_dir,
+            assets_dir=config.assets_dir,
             players=[
                 PlayerIdentity(riot_id=str(p["riot_id"]), tagline=str(p["tagline"]))
                 for p in tracked
@@ -1402,6 +1551,14 @@ def create_app(
                 )
             account_icons = _account_icon_hrefs(tracked, assets, build_dir)
             build_config.run_graphs_dir.mkdir(parents=True, exist_ok=True)
+            log.info(
+                "Building account-subset views for %s/%s: %d account(s), %d record(s)",
+                slug,
+                build_slug,
+                len(labels),
+                len(records),
+            )
+            t0 = time.monotonic()
             views = build_account_subset_views(
                 build_config,
                 records,
@@ -1409,6 +1566,12 @@ def create_app(
                 assets=assets,
                 account_icons=account_icons,
                 run_dir=build_dir,
+            )
+            log.info(
+                "Built account-subset views for %s/%s in %.1fs",
+                slug,
+                build_slug,
+                time.monotonic() - t0,
             )
         finally:
             match_store.close()

@@ -315,6 +315,7 @@ def _config(output_dir: Path, *, champion: str, role: str) -> AppConfig:
         champion=champion,
         role=role,
         output_dir=output_dir,
+        assets_dir=output_dir.parent / "preview-assets",
         cache_dir=output_dir.parent / "preview-cache",
     )
     config.ensure_directories()

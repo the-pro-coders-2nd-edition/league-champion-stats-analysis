@@ -1,8 +1,7 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { link, push } from 'svelte-spa-router';
-  import { submitAnalysis, fetchActivity, fetchGroups } from '../lib/api.js';
-  import { createPoller } from '../lib/poller.js';
+  import { submitAnalysis, subscribeActivity, fetchGroups } from '../lib/api.js';
   import Button from '../components/Button.svelte';
   import Panel from '../components/Panel.svelte';
   import Chip from '../components/Chip.svelte';
@@ -44,7 +43,7 @@
   let groups = [];
   let groupsLoaded = false;
   let searchQuery = '';
-  const poller = createPoller();
+  let unsubscribeActivity = null;
 
   function addPlayerRow() {
     if (playerInputs.length >= MAX_PLAYERS) return;
@@ -133,19 +132,16 @@
     if (needsReload) loadGroups();
   }
 
-  async function pollActivity() {
-    try {
-      const data = await fetchActivity();
-      applyActivity(data.items || []);
-    } catch {
-      // Ignore transient polling errors.
-    }
-  }
-
   onMount(() => {
     loadGroups().then(() => {
-      poller.start(pollActivity, 3000);
+      unsubscribeActivity = subscribeActivity((data) => {
+        applyActivity(data.items || []);
+      });
     });
+  });
+
+  onDestroy(() => {
+    if (unsubscribeActivity) unsubscribeActivity();
   });
 
   $: normalizedQuery = searchQuery.trim().toLowerCase();

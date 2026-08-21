@@ -15,6 +15,10 @@ from typing import Any, Final
 import requests
 from prometheus_client import Histogram
 
+from league_stats_common.utils import get_logger
+
+log = get_logger("chat")
+
 GEMINI_MODEL: Final[str] = "gemini-3.5-flash"
 GEMINI_FALLBACK_MODEL: Final[str] = "gemini-3.1-flash-lite"
 REQUEST_TIMEOUT_S: Final[float] = 60.0
@@ -141,6 +145,7 @@ def _is_slug(value: str) -> bool:
 def _call_gemini(
     api_key: str, model: str, system_instruction: str, history: list[dict[str, Any]]
 ) -> str:
+    log.info("Calling Gemini: model=%s, history=%d message(s)", model, len(history))
     start = time.perf_counter()
     outcome = "error"
     try:
@@ -158,7 +163,18 @@ def _call_gemini(
         except requests.Timeout:
             outcome = "timeout"
             raise
+        except requests.RequestException:
+            log.warning(
+                "Gemini call failed: model=%s, took=%.1fs", model, time.perf_counter() - start
+            )
+            raise
         if response.status_code != 200:
+            log.warning(
+                "Gemini call returned HTTP %d: model=%s, took=%.1fs",
+                response.status_code,
+                model,
+                time.perf_counter() - start,
+            )
             try:
                 detail = response.json().get("error", {}).get("message", "")
             except ValueError:
@@ -171,6 +187,9 @@ def _call_gemini(
         if not text:
             raise ChatError("Gemini returned an empty response")
         outcome = "ok"
+        log.info(
+            "Gemini call succeeded: model=%s, took=%.1fs", model, time.perf_counter() - start
+        )
         return text
     finally:
         OUTBOUND_RPC_DURATION.labels(

@@ -17,6 +17,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
     config = WebConfig(
         output_dir=tmp_path / "output",
+        assets_dir=tmp_path / "assets",
         gemini_api_key="fake-key",
     )
     application = web_app.create_app(config, start_worker=False)
