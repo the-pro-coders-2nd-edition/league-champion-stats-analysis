@@ -412,10 +412,6 @@ class WebConfig(BaseModel):
     worker_poll_interval_s: float = Field(default=1.0, gt=0)
     output_dir: Path = Path("output")
     gemini_api_key: str | None = None
-    # Opt-in delegation of job execution to RUNNER over gRPC (Phase 1 of the
-    # microservices migration). Default "in_process" keeps today's behavior
-    # unchanged — the worker runs `execute_job` itself, exactly as before.
-    runner_mode: Literal["in_process", "grpc"] = "in_process"
     runner_grpc_target: str = "localhost:50051"
     # Opt-in delegation of new-game detection to CRON-watch running as its own
     # process against the same shared database (Phase 2 of the microservices
@@ -548,7 +544,7 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
     """Build a :class:`WebConfig` from ``[web]`` table, environment and overrides.
 
     Environment variables: ``ANALYZER_WEB_HOST``, ``ANALYZER_WEB_PORT``,
-    ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``, ``ANALYZER_RUNNER_MODE``,
+    ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``,
     ``RUNNER_GRPC_TARGET``, ``ANALYZER_WATCH_MODE``, ``ANALYZER_PEERS_MODE``,
     ``PEERS_GRPC_TARGET``, ``CRON_WATCH_GRPC_TARGET``,
     ``RUNNER_MONGO_URI`` (falls back to ``MONGO_URI`` when unset).
@@ -563,7 +559,6 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
         "port": os.environ.get("ANALYZER_WEB_PORT"),
         "worker_concurrency": os.environ.get("ANALYZER_WORKER_CONCURRENCY"),
         "gemini_api_key": os.environ.get("GEMINI_API_KEY"),
-        "runner_mode": os.environ.get("ANALYZER_RUNNER_MODE"),
         "runner_grpc_target": os.environ.get("RUNNER_GRPC_TARGET"),
         "watch_mode": os.environ.get("ANALYZER_WATCH_MODE"),
         "peers_mode": os.environ.get("ANALYZER_PEERS_MODE"),

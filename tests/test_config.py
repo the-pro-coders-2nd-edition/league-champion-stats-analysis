@@ -98,26 +98,8 @@ def test_load_config_reads_gemini_api_key_from_dotenv(
     assert config.gemini_api_key == "AIza-from-dotenv"
 
 
-def test_web_config_runner_mode_defaults_to_in_process() -> None:
-    """runner_mode defaults off — the monolith runs jobs itself unless opted in."""
-    assert WebConfig(peers_mode="grpc").runner_mode == "in_process"
-
-
 def test_web_config_runner_grpc_target_defaults_to_localhost() -> None:
     assert WebConfig(peers_mode="grpc").runner_grpc_target == "localhost:50051"
-
-
-def test_load_web_config_reads_runner_mode_from_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """ANALYZER_RUNNER_MODE overrides the default, matching the other ANALYZER_WEB_*
-    env vars load_web_config already reads."""
-    monkeypatch.setenv("ANALYZER_RUNNER_MODE", "grpc")
-    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
-    monkeypatch.chdir(tmp_path)
-
-    config = load_web_config()
-    assert config.runner_mode == "grpc"
 
 
 def test_web_config_watch_mode_defaults_to_in_process() -> None:

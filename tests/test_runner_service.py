@@ -171,23 +171,66 @@ def test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode(
     assert report_path.exists(), f"expected report artifact at {report_path}"
 
 
-def test_runner_servicer_never_delegates_even_with_grpc_mode_in_env(
+def test_runner_servicer_never_delegates_even_with_stale_runner_mode_env_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """RUNNER must never dial another RUNNER.
 
-    Under the documented docker-compose deployment, `runner`'s `env_file: .env`
-    is the same file `app` reads -- if `ANALYZER_RUNNER_MODE=grpc` is set there
-    (the only documented way to enable the opt-in feature), RUNNER's own
-    `load_web_config()` fallback would otherwise pick it up too, making its
-    internal `execute_job` call delegate back to RUNNER itself (unbounded
-    recursive job fan-out). `RunnerServicer` must force `runner_mode` to
-    "in_process" regardless of what the environment says.
+    Phase 9 removed `runner_mode`/`ANALYZER_RUNNER_MODE` entirely: there is no
+    longer a flag `RunnerServicer` could pick up (from `env_file: .env` or an
+    explicitly-passed `web_config`) that would make its internal job dispatch
+    delegate back to RUNNER itself (unbounded recursive job fan-out). This is
+    now structural rather than flag-enforced: `_run_job` calls `execute_job`
+    directly, and `execute_job` has no gRPC-delegation branch at all -- that's
+    `_execute_job_via_runner`, which only api-ui's/cron-watch's own
+    `AnalysisWorker._loop` ever calls (see `league_stats_runner.worker`).
+
+    Proves this two ways: (1) an unrecognised `ANALYZER_RUNNER_MODE=grpc` env
+    var (pydantic's `extra="ignore"` means a leftover env-map entry pointing
+    at a deleted field would silently no-op even if config.py's env map still
+    referenced it) does not survive onto `WebConfig` at all -- there is no
+    `runner_mode` attribute left to carry a wrong value; and (2) actually
+    running a job through the real servicer calls `execute_job`, never
+    `_execute_job_via_runner`.
     """
+    import league_stats_runner.worker as web_worker
+
     monkeypatch.setenv("ANALYZER_RUNNER_MODE", "grpc")
     monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
     servicer = RunnerServicer()
-    assert servicer._web_config.runner_mode == "in_process"
+    assert not hasattr(servicer._web_config, "runner_mode")
+
+    def _boom_if_delegated(*_args, **_kwargs):
+        raise AssertionError("RunnerServicer must never call _execute_job_via_runner")
+
+    monkeypatch.setattr(web_worker, "_execute_job_via_runner", _boom_if_delegated)
+
+    observed: list[bool] = []
+
+    def _recording_execute_job(job, store, web_config):
+        observed.append(True)
+        store.set_state(job["id"], job_states.DONE, detail="stub")
+
+    monkeypatch.setattr(runner_service, "execute_job", _recording_execute_job)
+
+    server, port = _start_runner_server(servicer)
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        stub = runner_pb2_grpc.RunnerServiceStub(channel)
+        request = runner_pb2.EnqueueJobRequest(
+            riot_id="Test",
+            tagline="EUW",
+            region=common_pb2.EUROPE,
+            kind=runner_pb2.JOB_KIND_REGENERATE,
+            player_slug="test_euw",
+        )
+        response = stub.EnqueueJob(request)
+        list(stub.StreamJobProgress(runner_pb2.StreamJobProgressRequest(job_id=response.job_id)))
+    finally:
+        channel.close()
+        server.stop(grace=None)
+
+    assert observed == [True]
 
 
 def test_enqueue_job_rejects_unspecified_kind() -> None:

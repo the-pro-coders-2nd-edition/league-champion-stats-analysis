@@ -162,17 +162,14 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
 
     def __init__(self, web_config: Any | None = None) -> None:
         resolved = web_config if web_config is not None else load_web_config()
-        # RUNNER must never delegate to another RUNNER. Under the documented
-        # docker-compose deployment, `runner`'s `env_file: .env` is the same file
-        # `app` reads -- if ANALYZER_RUNNER_MODE=grpc is set there (the only
-        # documented way to enable the opt-in feature), a `web_config` built from
-        # the environment (the `load_web_config()` fallback above) would carry
-        # `runner_mode="grpc"` too, making RUNNER's own internal `execute_job`
-        # call dial `runner_grpc_target` -- from inside RUNNER's own process,
-        # that's itself, causing unbounded recursive job fan-out. Force
-        # in_process unconditionally, regardless of what the environment or an
-        # explicitly-passed `web_config` says.
-        self._web_config = resolved.model_copy(update={"runner_mode": "in_process"})
+        # RUNNER must never delegate to another RUNNER. This is now structural
+        # rather than flag-enforced: `_run_job` below calls `execute_job`
+        # directly, and `execute_job` has no gRPC-delegation branch at all
+        # (that's `_execute_job_via_runner`, which only api-ui's/cron-watch's
+        # own `AnalysisWorker._loop` ever calls) -- so there is no code path
+        # by which RUNNER's own job dispatch could dial `runner_grpc_target`
+        # and recursively fan out into itself.
+        self._web_config = resolved
         self._queues: dict[str, "queue.SimpleQueue[dict[str, Any]]"] = {}
         # Last terminal event per job_id, kept after its live queue is
         # dropped so a late/reconnecting StreamJobProgress call gets the

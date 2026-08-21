@@ -51,7 +51,7 @@ from league_stats_common.utils import get_logger, set_trace_id
 
 CHAT_ENDPOINT = "/api/chat"
 
-# Deadlines for the grpc runner_mode RPCs (see `_execute_job_via_runner`), so a
+# Deadlines for the gRPC RPCs to RUNNER (see `_execute_job_via_runner`), so a
 # RUNNER that's reachable but hung doesn't block the worker thread forever.
 _RUNNER_ENQUEUE_TIMEOUT_S = 30.0
 _RUNNER_STREAM_TIMEOUT_S = 1800.0
@@ -763,8 +763,17 @@ def _merge_player_enrichment(
 def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> None:
     """Delegate one claimed job to RUNNER over gRPC, replaying its progress into `store`.
 
-    Opt-in counterpart to the in-process path above, used only when
-    `web_config.runner_mode == "grpc"`. Opens a plain (synchronous) `grpc.Channel`
+    This is the only path `AnalysisWorker._loop` (api-ui's/cron-watch's own
+    job-claim loop) ever takes -- those processes never run a job themselves,
+    they only ever hand it to RUNNER. `execute_job` below is RUNNER's own
+    in-process executor, reached only from `RunnerServicer._run_job`, once a
+    job has already been delegated here and RUNNER has received it over
+    `EnqueueJob`. Restores the originating trace_id (`job.get("trace_id")`,
+    `JobStore`'s `trace_id` column persisted at enqueue time) onto this
+    thread's ContextVar before opening a channel to RUNNER, so
+    `TraceClientInterceptor` attaches the real originating trace_id rather
+    than whatever this long-lived worker thread happened to have left over
+    from a previous job. Opens a plain (synchronous) `grpc.Channel`
     to RUNNER at `web_config.runner_grpc_target`, calls `EnqueueJob`, then consumes
     `StreamJobProgress` and replays each `StageResult` into the real `store` using
     the same `set_state`/`update_progress`/`mark_player_*` calls the in-process path
@@ -886,6 +895,10 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
       RUNNER access to the monolith's on-disk report metadata for anything
       else RUNNER's own `execute_job` run might independently need it for.
     """
+    trace_id = job.get("trace_id")
+    if trace_id:
+        set_trace_id(trace_id)
+
     import grpc
 
     from league_stats_common.infra.trace_context import TraceClientInterceptor
@@ -1062,26 +1075,25 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
 def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> None:
     """Run one claimed job end to end, updating its state as stages complete.
 
+    This is RUNNER's own in-process executor, reached only from
+    `RunnerServicer._run_job` once a job has been delegated to RUNNER over
+    gRPC (see `_execute_job_via_runner`, the delegator counterpart used by
+    api-ui's/cron-watch's own `AnalysisWorker._loop`). RUNNER never calls
+    `_execute_job_via_runner` from here -- there is no branch left to choose
+    it -- so a RUNNER process can never gRPC-delegate to itself.
+
     Restores the originating trace_id (`JobStore`'s `trace_id` column,
     persisted at enqueue time by `app.py`'s HTTP handlers and `WatchPoller`'s
     self-originated detection) onto this thread's ContextVar *before* doing
-    anything else -- in particular before the `runner_mode == "grpc"` branch
-    below opens a channel to RUNNER, so `TraceClientInterceptor` attaches the
-    real originating trace_id rather than whatever (if anything) this
-    long-lived worker thread happened to have left over from a previous job.
-    `job.get("trace_id")` is only falsy for a job dict that never had a
-    trace_id to begin with (e.g. RUNNER's own internal `execute_job` call,
-    whose job dict is built from `EnqueueJobRequest`, which carries no
-    trace_id field) -- in that case this leaves whatever the caller already
-    set (e.g. RUNNER's own `_run_job`, which sets it from the gRPC call it
-    received) untouched, rather than clobbering it with an empty string.
+    anything else. `job.get("trace_id")` is falsy for RUNNER's own internal
+    job dicts (built from `EnqueueJobRequest`, which carries no trace_id
+    field) -- in that case this leaves whatever the caller already set
+    (`RunnerServicer._run_job` sets it from the gRPC call it received)
+    untouched, rather than clobbering it with an empty string.
     """
     trace_id = job.get("trace_id")
     if trace_id:
         set_trace_id(trace_id)
-    if web_config.runner_mode == "grpc":
-        _execute_job_via_runner(job, store, web_config)
-        return
 
     log = get_logger("worker")
     job_id = int(job["id"])
@@ -1185,7 +1197,7 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
 
 
 class AnalysisWorker:
-    """Thread pool that drains the job queue."""
+    """Thread pool that drains the job queue by delegating each job to RUNNER over gRPC."""
 
     def __init__(self, store: JobStore, web_config: WebConfig) -> None:
         self._store = store
@@ -1214,4 +1226,4 @@ class AnalysisWorker:
             if job is None:
                 self._stop.wait(self._web_config.worker_poll_interval_s)
                 continue
-            execute_job(job, self._store, self._web_config)
+            _execute_job_via_runner(job, self._store, self._web_config)

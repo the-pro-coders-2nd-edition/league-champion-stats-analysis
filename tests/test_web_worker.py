@@ -612,45 +612,17 @@ def test_build_mongo_client_reuses_the_same_client_for_the_same_uri() -> None:
     assert first is second
 
 
-# --------------------------------------------------------- runner_mode (Task 6)
+# --------------------------------------------------------- runner delegation (Task 1, Phase 9)
 
 
-def test_web_config_runner_mode_defaults_to_in_process() -> None:
-    assert WebConfig(peers_mode="grpc").runner_mode == "in_process"
-
-
-def test_web_config_runner_mode_can_be_set_to_grpc() -> None:
-    assert WebConfig(runner_mode="grpc", peers_mode="grpc").runner_mode == "grpc"
-
-
-def test_execute_job_in_process_mode_does_not_call_runner(
-    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`runner_mode` defaults to "in_process" — execute_job must run exactly as
-    before, with no gRPC call attempted."""
-    assert web_config.runner_mode == "in_process"
-    job = _claimed_job(store)
-    _patch_pipeline(monkeypatch)
-    called = {"n": 0}
-    monkeypatch.setattr(
-        worker, "_execute_job_via_runner", lambda *a, **k: called.__setitem__("n", called["n"] + 1)
-    )
-
-    worker.execute_job(job, store, web_config)
-
-    assert called["n"] == 0
-    final = store.get(int(job["id"]))
-    assert final["state"] == jobs.DONE
-    assert final["error"] == ""
-
-
-def test_execute_job_grpc_mode_delegates_to_runner_and_replays_progress(
+def test_execute_job_delegates_to_runner_and_replays_progress(
     tmp_path: Path, store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """When `runner_mode` is "grpc", execute_job delegates to a real (in-process)
-    RunnerServicer over gRPC, and replays its StageResult stream into the real
-    (local) JobStore -- ending in the same terminal state/registry updates the
-    in_process path produces for an equivalent run (see
+    """`AnalysisWorker`'s job-claim loop always delegates to RUNNER via
+    `_execute_job_via_runner`, over a real (in-process) RunnerServicer over
+    gRPC, and replays its StageResult stream into the real (local) JobStore --
+    ending in the same terminal state/registry updates RUNNER's own
+    `execute_job` produces for an equivalent run (see
     test_execute_job_two_stage_happy_path).
 
     Runs RUNNER's actual `execute_job` against offline fixture data (no real
@@ -698,12 +670,12 @@ def test_execute_job_grpc_mode_delegates_to_runner_and_replays_progress(
     server.start()
     try:
         grpc_web_config = web_config.model_copy(
-            update={"runner_mode": "grpc", "runner_grpc_target": f"127.0.0.1:{port}"}
+            update={"runner_grpc_target": f"127.0.0.1:{port}"}
         )
         job = _claimed_regenerate_job(store)
         job["min_games"] = 5
 
-        worker.execute_job(job, store, grpc_web_config)
+        worker._execute_job_via_runner(job, store, grpc_web_config)
     finally:
         server.stop(grace=None)
 
@@ -720,10 +692,10 @@ def test_execute_job_grpc_mode_delegates_to_runner_and_replays_progress(
 def _run_scripted_grpc_job(
     store: JobStore, web_config: WebConfig, results: list[Any]
 ) -> dict[str, Any]:
-    """Run `worker.execute_job` in grpc mode against a scripted `StreamJobProgress`
-    reply, to exercise `_execute_job_via_runner`'s replay logic in isolation from
-    a real pipeline run (used for the FAILED/soft-DONE inference branches, which
-    only depend on the shape of the StageResult stream, not on real analysis).
+    """Run `worker._execute_job_via_runner` against a scripted `StreamJobProgress`
+    reply, to exercise its replay logic in isolation from a real pipeline run
+    (used for the FAILED/soft-DONE inference branches, which only depend on
+    the shape of the StageResult stream, not on real analysis).
     """
     from concurrent import futures
 
@@ -745,9 +717,9 @@ def _run_scripted_grpc_job(
     try:
         job = _claimed_job(store)
         grpc_web_config = web_config.model_copy(
-            update={"runner_mode": "grpc", "runner_grpc_target": f"127.0.0.1:{port}"}
+            update={"runner_grpc_target": f"127.0.0.1:{port}"}
         )
-        worker.execute_job(job, store, grpc_web_config)
+        worker._execute_job_via_runner(job, store, grpc_web_config)
     finally:
         server.stop(grace=None)
     return job
@@ -757,12 +729,12 @@ def test_execute_job_grpc_mode_unreachable_runner_marks_failed_not_hangs(
     store: JobStore, web_config: WebConfig
 ) -> None:
     """RUNNER unreachable (nothing listening on the target port) must not hang
-    the worker thread or raise out of `execute_job` -- the job must reach a
-    terminal FAILED state instead. Regression test for the gap where only a
-    bare `finally: channel.close()` guarded the RPC calls, so a `grpc.RpcError`
-    (RUNNER down, UNAVAILABLE, connection reset mid-stream) would propagate out
-    of `execute_job` into `AnalysisWorker._loop`, which has no try/except of
-    its own -- permanently killing the worker thread.
+    the worker thread or raise out of `_execute_job_via_runner` -- the job must
+    reach a terminal FAILED state instead. Regression test for the gap where
+    only a bare `finally: channel.close()` guarded the RPC calls, so a
+    `grpc.RpcError` (RUNNER down, UNAVAILABLE, connection reset mid-stream)
+    would propagate out of `_execute_job_via_runner` into `AnalysisWorker._loop`,
+    which has no try/except of its own -- permanently killing the worker thread.
     """
     import socket
 
@@ -774,12 +746,11 @@ def test_execute_job_grpc_mode_unreachable_runner_marks_failed_not_hangs(
     job = _claimed_job(store)
     grpc_web_config = web_config.model_copy(
         update={
-            "runner_mode": "grpc",
             "runner_grpc_target": f"127.0.0.1:{free_port}",
         }
     )
 
-    worker.execute_job(job, store, grpc_web_config)
+    worker._execute_job_via_runner(job, store, grpc_web_config)
 
     final = store.get(int(job["id"]))
     assert final["state"] == jobs.FAILED
@@ -1530,15 +1501,20 @@ def test_enqueue_without_trace_id_defaults_to_empty_string(store: JobStore) -> N
     assert job["trace_id"] == ""
 
 
-def test_execute_job_restores_trace_id_from_job_before_grpc_delegation(
+def test_execute_job_via_runner_restores_trace_id_from_job_before_delegation(
     store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`execute_job` must call `set_trace_id` from the claimed job's `trace_id`
-    column before doing anything else -- in particular before the `runner_mode
-    == "grpc"` branch would open a channel to RUNNER, so `TraceClientInterceptor`
-    attaches the real originating trace_id instead of whatever this long-lived
-    worker thread happened to have left over from a previous job."""
+    """`_execute_job_via_runner` must call `set_trace_id` from the claimed
+    job's `trace_id` column before doing anything else -- in particular
+    before it opens a channel to RUNNER, so `TraceClientInterceptor` attaches
+    the real originating trace_id instead of whatever this long-lived worker
+    thread happened to have left over from a previous job. Verified by
+    patching the gRPC stub call `_execute_job_via_runner` makes right after
+    the restore, so no real network work is needed."""
+    import grpc as grpc_module
+
     from league_stats_common.utils import current_trace_id, set_trace_id
+    from league_stats_rpc.v1 import runner_pb2_grpc
 
     set_trace_id("stale-trace-from-a-previous-job")
     store.enqueue(
@@ -1554,40 +1530,64 @@ def test_execute_job_restores_trace_id_from_job_before_grpc_delegation(
     assert job is not None
 
     observed: list[str] = []
-    monkeypatch.setattr(
-        worker,
-        "_execute_job_via_runner",
-        lambda *a, **k: observed.append(current_trace_id()),
-    )
-    grpc_web_config = web_config.model_copy(update={"runner_mode": "grpc"})
 
-    worker.execute_job(job, store, grpc_web_config)
+    class _Boom(grpc_module.RpcError):
+        pass
+
+    real_init = runner_pb2_grpc.RunnerServiceStub.__init__
+
+    def _patched_init(self, channel):
+        real_init(self, channel)
+
+        def _fake_enqueue_job(request, timeout=None):
+            observed.append(current_trace_id())
+            raise _Boom("stop before any real network work")
+
+        self.EnqueueJob = _fake_enqueue_job
+
+    monkeypatch.setattr(runner_pb2_grpc.RunnerServiceStub, "__init__", _patched_init)
+
+    worker._execute_job_via_runner(job, store, web_config)
 
     assert observed == ["this-jobs-real-trace"]
 
 
-def test_execute_job_leaves_trace_id_untouched_when_job_has_none(
+def test_execute_job_via_runner_leaves_trace_id_untouched_when_job_has_none(
     store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """RUNNER's own internal `execute_job` call (job dict built from
-    `EnqueueJobRequest`, which has no trace_id field) must not clobber the
-    trace_id `RunnerServicer._run_job` already set on this thread from the
-    real gRPC call it received."""
-    from league_stats_common.utils import current_trace_id, set_trace_id
+    """A job dict with no `trace_id` (e.g. one built without going through
+    `JobStore.enqueue`) must not clobber whatever trace_id is already set on
+    this thread."""
+    import grpc as grpc_module
 
-    set_trace_id("set-by-runners-run-job")
+    from league_stats_common.utils import current_trace_id, set_trace_id
+    from league_stats_rpc.v1 import runner_pb2_grpc
+
+    set_trace_id("set-by-caller")
     job = _claimed_job(store)
     job["trace_id"] = ""
 
     observed: list[str] = []
-    monkeypatch.setattr(
-        worker, "_execute_job_via_runner", lambda *a, **k: observed.append(current_trace_id())
-    )
-    grpc_web_config = web_config.model_copy(update={"runner_mode": "grpc"})
 
-    worker.execute_job(job, store, grpc_web_config)
+    class _Boom(grpc_module.RpcError):
+        pass
 
-    assert observed == ["set-by-runners-run-job"]
+    real_init = runner_pb2_grpc.RunnerServiceStub.__init__
+
+    def _patched_init(self, channel):
+        real_init(self, channel)
+
+        def _fake_enqueue_job(request, timeout=None):
+            observed.append(current_trace_id())
+            raise _Boom("stop before any real network work")
+
+        self.EnqueueJob = _fake_enqueue_job
+
+    monkeypatch.setattr(runner_pb2_grpc.RunnerServiceStub, "__init__", _patched_init)
+
+    worker._execute_job_via_runner(job, store, web_config)
+
+    assert observed == ["set-by-caller"]
 
 
 def test_trace_id_survives_jobstore_handoff_through_a_real_runner_server(
@@ -1651,9 +1651,9 @@ def test_trace_id_survives_jobstore_handoff_through_a_real_runner_server(
         assert job is not None
 
         grpc_web_config = web_config.model_copy(
-            update={"runner_mode": "grpc", "runner_grpc_target": f"127.0.0.1:{port}"}
+            update={"runner_grpc_target": f"127.0.0.1:{port}"}
         )
-        worker.execute_job(job, store, grpc_web_config)
+        worker._execute_job_via_runner(job, store, grpc_web_config)
     finally:
         server.stop(grace=None)
 
