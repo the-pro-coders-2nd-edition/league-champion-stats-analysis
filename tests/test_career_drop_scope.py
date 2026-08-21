@@ -49,7 +49,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # app_db_path) still hang off cwd -- keep the chdir so those stay isolated.
     monkeypatch.chdir(tmp_path)
     config = WebConfig(
-        output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite", runner_storage_mode="sqlite"
+        output_dir=tmp_path / "out"
     )
     reports = tmp_path / "out" / "reports"
     _write_build(reports, SLUG, BUILD, "Aatrox", "TOP")

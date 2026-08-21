@@ -110,11 +110,11 @@ def test_the_overview_widget_carries_the_why_too(store: CareerStore) -> None:
 def test_a_ladder_written_before_the_column_existed_still_loads() -> None:
     """Older documents have no `why` field; they must read as empty, not raise.
 
-    Mongo has no `ALTER TABLE`/migration step -- the old SQLite test dropped
+    Mongo has no `ALTER TABLE`/migration step -- the old SQL test dropped
     the column with a raw connection to simulate a pre-existing database;
     here the equivalent is unsetting the field directly on the raw
     mongomock collection, bypassing the store's own write methods the same
-    way the old test bypassed it via `sqlite3.connect`.
+    way the old test bypassed it via a raw connection.
     """
     client = mongomock.MongoClient()
     with CareerStore(client, db_name="career") as first:

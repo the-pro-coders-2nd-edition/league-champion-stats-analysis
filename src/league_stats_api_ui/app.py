@@ -255,7 +255,7 @@ def _build_precheck_client(
 ) -> RiotApiClient:
     """Build a Riot client sharing cache + rate limiter with analysis jobs.
 
-    Match/timeline storage moved from `MatchStore` (local SQLite) to
+    Match/timeline storage moved from `MatchStore` (a local on-disk store) to
     `RawMatchStore` (Mongo) in Phase 8, Task 1 -- this client never uses any
     of `MatchStore`'s peer-game methods, only the raw match/timeline surface
     `RawMatchStore` already implements identically.
@@ -824,8 +824,8 @@ def create_app(
         store.recover_orphans()
         if start_worker:
             worker.start()
-            # watch_mode == "grpc" means CRON-watch polls this same app.sqlite
-            # externally; starting this poller too would race it over
+            # watch_mode == "grpc" means CRON-watch polls the same shared
+            # database externally; starting this poller too would race it over
             # watch_seen_json (see league_stats.cron_watch.service's docstring).
             if config.watch_mode == "in_process":
                 watcher.start()

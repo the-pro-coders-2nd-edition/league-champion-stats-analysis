@@ -11,8 +11,8 @@ is silent and produces wrong coaching. Every key therefore carries a
 of artifact (see :func:`code_version`), so a code change cannot hit a stale
 entry -- it simply looks under a different key and recomputes.
 
-Backed by ``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in tests)
-instead of SQLite. One ``derived`` collection, one document per
+Backed by ``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in tests).
+One ``derived`` collection, one document per
 ``(kind, key, code_version)``, keyed by ``_id = f"{kind}\\x1f{key}\\x1f
 {code_version}"`` (same separator convention as
 ``PeerSampleStore._dedup_key``).
@@ -101,7 +101,7 @@ def slice_fingerprint(match_ids: Sequence[str], *, salt: str = "") -> str:
 class DerivedStore:
     """MongoDB cache of derived artifacts, keyed by content and code version.
 
-    Reproduces ``DerivedStore``'s prior SQLite semantics:
+    Reproduces ``DerivedStore``'s prior on-disk semantics:
 
     - ``put``/``put_many`` mirror the SQL ``ON CONFLICT ... DO UPDATE SET
       payload = excluded.payload, bytes = excluded.bytes, hit_at =
@@ -112,7 +112,7 @@ class DerivedStore:
     - ``delete(kind, key)`` removes the artifact across *every*
       ``code_version`` (no version filter), matching the SQL version's
       ``DELETE FROM derived WHERE kind = ? AND key = ?``.
-    - ``get``'s old SQLite path treated malformed JSON in a stored payload as
+    - ``get``'s old on-disk path treated malformed JSON in a stored payload as
       a miss and deleted the row -- that failure mode does not carry over:
       the payload is stored as a native BSON document/array/scalar with no
       decode step to fail, so there's nothing analogous to catch. Real
@@ -195,8 +195,9 @@ class DerivedStore:
         One query instead of one per key, which is what makes warm loads cheap
         when a history has hundreds of games. Batched in chunks of 500 keys --
         not required by any Mongo `$in` size limit (verified: no
-        placeholder-count cap like SQLite's), but kept as a bounded batch size
-        to avoid ever building one pathologically large query document.
+        placeholder-count cap like the old on-disk store had), but kept as a
+        bounded batch size to avoid ever building one pathologically large
+        query document.
         """
         if not keys:
             return {}

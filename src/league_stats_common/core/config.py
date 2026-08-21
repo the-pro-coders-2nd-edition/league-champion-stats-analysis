@@ -418,7 +418,7 @@ class WebConfig(BaseModel):
     runner_mode: Literal["in_process", "grpc"] = "in_process"
     runner_grpc_target: str = "localhost:50051"
     # Opt-in delegation of new-game detection to CRON-watch running as its own
-    # process against the same `app.sqlite` (Phase 2 of the microservices
+    # process against the same shared database (Phase 2 of the microservices
     # migration). Default "in_process" keeps today's behavior unchanged — the
     # monolith starts its own WatchPoller in `create_app`'s lifespan, exactly as
     # before. Setting "grpc" skips starting that in-process poller: it MUST be
@@ -458,7 +458,7 @@ class WebConfig(BaseModel):
     # Opt-in subscription to CronWatch's WatchUpdates push stream (Phase 4 of the
     # microservices migration). This gates only the gRPC SUBSCRIBER, which is
     # only useful when a separate CronWatch process is watching the same
-    # `app.sqlite` (i.e. `watch_mode="grpc"` deployments, such as docker-compose).
+    # shared database (i.e. `watch_mode="grpc"` deployments, such as docker-compose).
     # The welcome-back feature itself is NOT gated on this var: `create_app`
     # always wires `WatchPoller`'s own `on_new_game` hook (`web/watch.py`,
     # already carrying the same `compute_welcome_back_summary` payload
@@ -472,32 +472,25 @@ class WebConfig(BaseModel):
     # since in that topology this process's own `WatchPoller` is not started
     # and cannot fire `on_new_game` itself.
     cron_watch_grpc_target: str | None = None
-    # Was an opt-in swap of RUNNER's local SQLite match cache for the
-    # Mongo-backed `RawMatchStore` (Phase 5 of the microservices migration).
-    # Phase 8, Task 1 deleted `MatchStore` (and its `sqlite3` backing)
-    # outright and flipped this field's default to "mongo" --
-    # `worker.py`'s `_build_job_services` now constructs `RawMatchStore`
-    # unconditionally, regardless of this field's value. "sqlite" remains a
-    # valid literal -- `docker-compose.yml`'s `api-ui`/`cron-watch` pin
-    # `ANALYZER_RUNNER_STORAGE_MODE=sqlite` and many test fixtures still set
-    # it explicitly -- but it no longer selects a different implementation
-    # anywhere. Phase 8, Task 5 removed the other now-dead path-shaped config
-    # fields this phase left behind (`AppConfig.db_path`/`career_db_path`/
-    # `derived_db_path`, `WebConfig.app_db_path`); it deliberately left this
-    # `Literal`'s "sqlite" value in place since real compose/test call sites
-    # still pass it and removing it would be a real (if inert) behavior
-    # change, not pure dead-code cleanup.
+    # RUNNER's raw match/timeline store is Mongo-backed (`RawMatchStore`,
+    # `infra/raw_match_store.py`) unconditionally -- Phase 8 deleted the local
+    # on-disk `MatchStore` it replaced outright, and a follow-up cleanup pass
+    # then deleted this field itself (`runner_storage_mode`, which used to
+    # toggle between the two): every real compose/test call site had already
+    # settled on the Mongo-backed store, so the field had nothing left to
+    # select between. See `tests/test_runner_service.py` and
+    # `tests/test_web_worker.py::test_raw_match_store_backed_services_crashes_in_process_but_not_via_grpc`
+    # for the peer-game-method gap this store still carries (below).
     #
-    # KNOWN GAP surfaced by this same deletion, FIXED (see below, do not
-    # reopen): `RawMatchStore` never implemented `MatchStore`'s former
-    # peer-game methods (`iter_unverified_puuids`,
-    # `iter_unverified_puuids_for_build`, `set_puuid_rank`,
-    # `upsert_peer_game`, `load_peer_games`, `count_peer_games`), which the
-    # in-process peer path (`build_peer_for_pool`, `peers_mode="in_process"`)
-    # calls on that exact same store object -- since `peers_mode`'s
-    # class-level default is deliberately still "in_process" (this phase's
-    # Step 1 decision), any real job whose peer comparison reached
-    # `build_peer_for_pool` in-process would have crashed with an
+    # KNOWN GAP, FIXED (see below, do not reopen): `RawMatchStore` never
+    # implemented `MatchStore`'s former peer-game methods
+    # (`iter_unverified_puuids`, `iter_unverified_puuids_for_build`,
+    # `set_puuid_rank`, `upsert_peer_game`, `load_peer_games`,
+    # `count_peer_games`), which the in-process peer path
+    # (`build_peer_for_pool`, `peers_mode="in_process"`) calls on that exact
+    # same store object -- since `peers_mode`'s class-level default is
+    # deliberately still "in_process", any real job whose peer comparison
+    # reached `build_peer_for_pool` in-process would have crashed with an
     # `AttributeError` the first time a ranked build needed a peer baseline.
     # Fixed by pinning `api-ui` to `ANALYZER_PEERS_MODE=grpc` +
     # `PEERS_GRPC_TARGET=peers:50053` in `docker-compose.yml`, routing that
@@ -508,36 +501,12 @@ class WebConfig(BaseModel):
     # needed no pin. Regression test:
     # `tests/test_web_worker.py::test_raw_match_store_backed_services_crashes_in_process_but_not_via_grpc`.
     #
-    # HARD PRECONDITION, validated below (unlike `peers_mode="grpc"`'s own
-    # topology precondition above, which this object cannot verify and only
-    # warns about): "mongo" is only valid together with `peers_mode="grpc"`.
-    runner_storage_mode: Literal["sqlite", "mongo"] = "mongo"
     # This class-level default is only used when neither RUNNER_MONGO_URI nor
     # the shared MONGO_URI is set in the environment -- `load_web_config`
     # below falls back to MONGO_URI (already set on every Mongo-backed
     # service's compose block) before ever reaching this default, so a real
     # docker-compose deployment never actually observes this value.
     runner_mongo_uri: str = "mongodb://localhost:27017/league_stats"
-
-    @model_validator(mode="after")
-    def _validate_runner_storage_mode(self) -> "WebConfig":
-        """Fail loudly on `runner_storage_mode="mongo"` without `peers_mode="grpc"`.
-
-        See the field comment above for the full argument. Unlike
-        `peers_mode="grpc"`'s own topology precondition (unverifiable from
-        this object alone, so it only warns), this combination is fully
-        knowable from these two field values, so it raises instead.
-        """
-        if self.runner_storage_mode == "mongo" and self.peers_mode != "grpc":
-            raise ValueError(
-                "runner_storage_mode='mongo' requires peers_mode='grpc'. "
-                "RawMatchStore does not implement MatchStore's peer-game "
-                "methods (iter_unverified_puuids, iter_unverified_puuids_for_build, "
-                "set_puuid_rank, upsert_peer_game, load_peer_games, "
-                "count_peer_games), which the in-process peer path "
-                "(peers_mode='in_process') calls."
-            )
-        return self
 
     @model_validator(mode="after")
     def _warn_on_peers_grpc_topology_precondition(self) -> "WebConfig":
@@ -582,8 +551,7 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
     ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``, ``ANALYZER_RUNNER_MODE``,
     ``RUNNER_GRPC_TARGET``, ``ANALYZER_WATCH_MODE``, ``ANALYZER_PEERS_MODE``,
     ``PEERS_GRPC_TARGET``, ``CRON_WATCH_GRPC_TARGET``,
-    ``ANALYZER_RUNNER_STORAGE_MODE``, ``RUNNER_MONGO_URI`` (falls back to
-    ``MONGO_URI`` when unset).
+    ``RUNNER_MONGO_URI`` (falls back to ``MONGO_URI`` when unset).
     """
     _load_env_file()
     data: dict[str, Any] = {}
@@ -601,15 +569,14 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
         "peers_mode": os.environ.get("ANALYZER_PEERS_MODE"),
         "peers_grpc_target": os.environ.get("PEERS_GRPC_TARGET"),
         "cron_watch_grpc_target": os.environ.get("CRON_WATCH_GRPC_TARGET"),
-        "runner_storage_mode": os.environ.get("ANALYZER_RUNNER_STORAGE_MODE"),
         # Falls back to the shared MONGO_URI (already set on every Mongo-backed
         # service's compose block, e.g. `peers/service.py`'s own
         # `_build_default_peer_store`) when RUNNER_MONGO_URI isn't set --
-        # without this fallback, enabling runner_storage_mode=mongo in the real
-        # docker-compose deployment would silently default to
-        # "mongodb://localhost:27017/league_stats" instead of the compose
-        # network's `mongo` service, since only MONGO_URI (not
-        # RUNNER_MONGO_URI) is set on `runner`'s environment block.
+        # without this fallback, RUNNER in the real docker-compose deployment
+        # would silently default to "mongodb://localhost:27017/league_stats"
+        # instead of the compose network's `mongo` service, since only
+        # MONGO_URI (not RUNNER_MONGO_URI) is set on `runner`'s environment
+        # block.
         "runner_mongo_uri": os.environ.get("RUNNER_MONGO_URI") or os.environ.get("MONGO_URI"),
     }
     data.update({k: v for k, v in env_map.items() if v})

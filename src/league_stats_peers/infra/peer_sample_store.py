@@ -5,14 +5,13 @@ Mirrors the subset of ``infra.cache.MatchStore``'s method surface (see
 ``analysis.peer.ingest``: ``upsert_peer_game``, ``load_peer_games``,
 ``count_peer_games``, ``iter_unverified_puuids``,
 ``iter_unverified_puuids_for_build``, ``set_puuid_rank``. Backed by
-``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in tests) instead of
-SQLite.
+``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in tests).
 
 Reproduces ``MatchStore``'s real semantics:
 
-- ``upsert_peer_game`` dedups on the same key as the SQL ``UNIQUE
+- ``upsert_peer_game`` dedups on the same key as the old ``UNIQUE
   (match_id, puuid, champion, role)`` constraint (``cache.py:40-54``) via
-  an ``INSERT OR IGNORE`` (``cache.py:315``): inserting the same
+  an ``INSERT OR IGNORE``-style upsert (``cache.py:315``): inserting the same
   (match_id, puuid, champion, role) tuple again is a no-op and reports
   ``False``, even if other fields (metrics, tier, ...) differ.
 - ``iter_unverified_puuids``/``iter_unverified_puuids_for_build``
@@ -21,7 +20,7 @@ Reproduces ``MatchStore``'s real semantics:
   need rank backfill", not "every row is unverified".
 - ``set_puuid_rank`` (``cache.py:421-433``) uppercases tier/rank and marks
   *every* peer row owned by that puuid as verified, regardless of which
-  champion/role/match it came from. Its return value mirrors SQLite's
+  champion/role/match it came from. Its return value mirrors the old
   ``cursor.rowcount`` for the ``UPDATE`` -- the count of rows *matched* by
   the ``WHERE puuid = ?`` clause, not the count of rows whose values
   actually changed, so calling it again with the same tier/rank still
@@ -52,7 +51,7 @@ class PeerSampleStore:
         """
         db = client[db_name]
         self._peer_games = db["peer_games"]
-        # Mirrors the real SQL indexes this store's SQLite counterpart has
+        # Mirrors the real SQL indexes this store's deleted predecessor had
         # (`idx_peer_lookup`/`idx_peer_puuid`, `infra/cache.py`) -- without
         # these, every `load_peer_games`/`count_peer_games` call does an
         # unindexed `find`/`count_documents`, and `iter_unverified_puuids`

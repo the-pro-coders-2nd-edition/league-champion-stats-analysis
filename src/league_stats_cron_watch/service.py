@@ -65,7 +65,7 @@ against production Riot credentials needs to close that gap first (most
 likely: extending `RegisterAccountRequest` with riot_id/tagline, since a
 puuid does not resolve back to one through any API this codebase calls).
 
-Design note -- enqueue target: shared SQLite volume, not RUNNER's `EnqueueJob`.
+Design note -- enqueue target: shared job store, not RUNNER's `EnqueueJob`.
 
 Once CRON-watch runs as its own process, it can no longer call the
 monolith's in-process `JobStore.enqueue(...)` the way `WatchPoller` did
@@ -73,9 +73,10 @@ when it lived inside `web/app.py`. Two options were on the table (see the
 Phase 2 plan's Global Constraints): (a) call RUNNER's `EnqueueJob` RPC
 (`league_stats.runner.service.RunnerServicer.EnqueueJob`), matching the
 original design's CRON -> RUNNER arrow, or (b) have CRON-watch and the
-monolith open separate `JobStore` connections onto the same `app.sqlite`
-file (a docker-compose mounted volume in production; Task 5's concern),
-with CRON-watch still calling `JobStore.enqueue` directly, unchanged.
+monolith open separate `JobStore` connections onto the same shared
+database (Phase 8, Task 4: a Mongo database; originally a docker-compose
+mounted local file), with CRON-watch still calling `JobStore.enqueue`
+directly, unchanged.
 
 (b) was chosen. `web/app.py`'s job-status surface (`_job_public`, and the
 `/api/players/{slug}`, `/api/jobs/{job_id}`, `/api/groups`, `/api/activity`
@@ -100,28 +101,28 @@ for an end-to-end proof using two independent `JobStore` connections onto
 one file, one driven through this servicer and the other through a real
 `web.app.create_app()` instance.
 
-Correction (found in review, do not repeat this claim): `JobStore`'s
-`PRAGMA journal_mode=WAL` / `PRAGMA busy_timeout=30000` /
-`check_same_thread=False` (see `web/jobs.py`) prevent `SQLITE_BUSY` errors
-under concurrent access, but they do NOT make a check-then-insert sequence
-atomic across separate processes -- `JobStore._lock` (a `threading.Lock`)
-is process-local and provides zero cross-process protection. `enqueue`'s
-existing-active-job dedup (SELECT for an active job, then INSERT if none)
-was a real TOCTOU race under option (b): two processes (the monolith and
-CRON-watch) could both see "no active job for this slug" and both insert,
-producing duplicate active jobs the UI's busy-dots and cancel button don't
-expect. Fixed alongside this note by wrapping that check-then-insert in an
-explicit `BEGIN IMMEDIATE` transaction in `JobStore.enqueue`
-(`web/jobs.py`), which takes SQLite's write lock before the SELECT so a
-second process's own `BEGIN IMMEDIATE` blocks (up to `busy_timeout`) until
-the first transaction commits or rolls back, making the dedup check
-atomic across processes too, not just across threads.
+Correction (found in review, do not repeat this claim): `JobStore._lock`
+(a `threading.Lock`) is process-local and provides zero cross-process
+protection on its own. `enqueue`'s existing-active-job dedup (check for an
+active job, then insert if none) was a real TOCTOU race under option (b):
+two processes (the monolith and CRON-watch) could both see "no active job
+for this slug" and both insert, producing duplicate active jobs the UI's
+busy-dots and cancel button don't expect. Originally fixed by wrapping that
+check-then-insert in an explicit transaction that took the database's
+write lock before the check, so a second process's own transaction
+blocked until the first committed or rolled back. Phase 8, Task 4 replaced
+`JobStore` with a Mongo-backed store, whose `enqueue` now relies on a
+partial unique index on `jobs.player_slug` (scoped to active states) to
+enforce this same invariant server-side -- a colliding insert raises
+`DuplicateKeyError` regardless of how many processes are racing it,
+closing the same TOCTOU gap without needing an explicit lock at all (see
+`JobStore.enqueue`, `common/infra/jobs.py`).
 
 CRITICAL PRECONDITION for whoever builds Task 6 (the monolith's opt-in
 `watch_mode`): once CRON-watch is deployed, the monolith's own in-process
 `WatchPoller` (started unconditionally today in `web/app.py`'s
 `create_app`, around the `watcher.start()` call in its `lifespan`) MUST
-NOT also run against the same `app.sqlite`. Both pollers independently
+NOT also run against the same shared database. Both pollers independently
 read the same `watch_enabled` rows and both call `record_watch_tick(slug,
 seen=..., ...)`, which persists `watch_seen_json` -- whichever poller
 ticks first "consumes" the new match id (the other then sees
@@ -141,7 +142,7 @@ Handoff note for Task 5 (CRON-watch's entrypoint): `JobStore.recover_orphans()`
 (`web/jobs.py`) marks every job in `RUNNING_STATES` as failed, and runs
 unconditionally on every `JobStore`-backed startup path in this codebase
 today (see `web/app.py`'s `lifespan`, which calls it even when
-`start_worker=False`). On a shared `app.sqlite`, a naive CRON-watch
+`start_worker=False`). On a shared job store, a naive CRON-watch
 entrypoint that also calls `recover_orphans()` on its own startup would
 kill the monolith's genuinely in-flight jobs, not just its own orphans.
 CRON-watch's entrypoint must NOT call `recover_orphans()` on the shared
@@ -269,9 +270,9 @@ class CronWatchServicer(cron_watch_pb2_grpc.CronWatchServiceServicer):
         `record_watch_tick(slug, seen=seen)` afterward, so without
         serialization the loser's newly-recorded `seen` entries are silently
         dropped -- an intra-process version of the exact bug class `enqueue`'s
-        `BEGIN IMMEDIATE` fix closed cross-process, except this one is a pure
-        asyncio ordering issue, not a SQLite one, so an `asyncio.Lock` is the
-        right tool rather than another SQLite transaction.
+        cross-process dedup guards against, except this one is a pure asyncio
+        ordering issue, not a cross-process one, so an `asyncio.Lock` is the
+        right tool rather than another database-level guard.
 
         Wired the same way `_instrument_tick` wires its own wrapper: replacing
         the instance attribute shadows the class method for every caller,

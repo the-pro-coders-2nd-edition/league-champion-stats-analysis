@@ -49,9 +49,7 @@ def store(tmp_path: Path) -> JobStore:
 @pytest.fixture()
 def web_config(tmp_path: Path) -> WebConfig:
     return WebConfig(
-        app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
-        runner_storage_mode="sqlite",
     )
 
 
@@ -558,17 +556,17 @@ def test_build_job_services_applies_min_games(
         services.http_cache.close()
 
 
-# ------------------------------------ runner_storage_mode (Phase 5 Task 1)
+# ------------------------------------ RawMatchStore wiring (Phase 5 Task 1)
 
 
 def test_build_job_services_uses_raw_match_store_in_mongo_mode(
     store: JobStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`_build_job_services` always constructs a `RawMatchStore` -- `MatchStore`
-    (local SQLite) was deleted in Phase 8, Task 1, so this is unconditional
-    regardless of `runner_storage_mode`'s value. Uses the process-wide client
-    seam `_build_mongo_client`, monkeypatched here to a mongomock client
-    instead of dialing a real Mongo."""
+    (the local on-disk store this replaced) was deleted in Phase 8, Task 1, so
+    this is unconditional. Uses the process-wide client seam
+    `_build_mongo_client`, monkeypatched here to a mongomock client instead of
+    dialing a real Mongo."""
     import mongomock
 
     from league_stats_runner.infra.raw_match_store import RawMatchStore
@@ -579,10 +577,8 @@ def test_build_job_services_uses_raw_match_store_in_mongo_mode(
     monkeypatch.setattr(worker, "_build_mongo_client", lambda uri: mongo_client)
 
     mongo_web_config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
         peers_mode="grpc",
-        runner_storage_mode="mongo",
     )
     job = {
         "id": 1,
@@ -606,7 +602,6 @@ def test_build_job_services_uses_raw_match_store_in_mongo_mode(
     finally:
         services.store.close()
         services.http_cache.close()
-    assert not (tmp_path / ".cache" / "matches.sqlite").exists()
 
 
 def test_build_mongo_client_reuses_the_same_client_for_the_same_uri() -> None:
@@ -694,7 +689,7 @@ def test_execute_job_grpc_mode_delegates_to_runner_and_replays_progress(
         match_store.save_timeline(match_id, make_timeline())
 
     runner_web_config = WebConfig(
-        output_dir=tmp_path / "runner_output", peers_mode="grpc", runner_storage_mode="mongo"
+        output_dir=tmp_path / "runner_output", peers_mode="grpc"
     )
     servicer = RunnerServicer(web_config=runner_web_config)
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
@@ -985,7 +980,7 @@ def test_execute_job_grpc_mode_round_trips_resolved_player_data_via_payload_json
 
 
 def test_web_config_peers_mode_defaults_to_in_process() -> None:
-    assert WebConfig(runner_storage_mode="sqlite").peers_mode == "in_process"
+    assert WebConfig().peers_mode == "in_process"
 
 
 def test_web_config_peers_mode_can_be_set_to_grpc() -> None:
@@ -1022,7 +1017,6 @@ def test_execute_job_peers_grpc_mode_calls_grpc_path_not_in_process(
     """`peers_mode="grpc"` must route stage B's peer resolution through
     `_build_peer_for_pool_via_grpc` instead of `build_peer_for_pool`."""
     grpc_web_config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
         peers_mode="grpc",
     )
@@ -1761,7 +1755,6 @@ def test_raw_match_store_backed_services_crashes_in_process_but_not_via_grpc(
         grpc_web_config = WebConfig(
             peers_grpc_target=f"127.0.0.1:{port}",
             peers_mode="grpc",
-            runner_storage_mode="mongo",
         )
         result = worker._build_peer_for_pool_via_grpc(
             services, batch, pool, ranked, grpc_web_config

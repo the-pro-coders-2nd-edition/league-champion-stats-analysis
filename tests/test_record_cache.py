@@ -27,7 +27,7 @@ PUUID = MY_PUUID
 def make_services(request: pytest.FixtureRequest):
     """Factory that closes every RawMatchStore it opens.
 
-    Kept for symmetry with the pre-Phase-8 SQLite `MatchStore` version of
+    Kept for symmetry with the pre-Phase-8 on-disk `MatchStore` version of
     this fixture -- `RawMatchStore.close()` is a documented no-op (the
     underlying Mongo client is shared/process-wide), so nothing actually
     needs cleanup here anymore, but the finalizer pattern is harmless to keep.

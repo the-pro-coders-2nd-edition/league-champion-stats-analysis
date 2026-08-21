@@ -25,9 +25,7 @@ ENDPOINT = f"/api/players/{GROUP_SLUG}/builds/{BUILD_SLUG}/account-views"
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
-        runner_storage_mode="sqlite",
     )
     real_load_config = web_app.load_config
 

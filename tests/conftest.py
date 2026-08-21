@@ -62,7 +62,7 @@ def _derived_store_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
     `build_game_review_views` would try a real network connection and hang
     until pymongo's server-selection timeout, since no real Mongo instance
     runs in this test environment. One fresh client per test (function-scoped
-    fixture) mirrors the old per-test `tmp_path` SQLite file isolation --
+    fixture) mirrors the old per-test `tmp_path` on-disk file isolation --
     tests that need to inspect the store's raw documents install their own
     dedicated mongomock client and override this fixture's monkeypatch (it
     simply runs after this one).
@@ -83,7 +83,7 @@ def _career_store_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
     HTTP route touching Career (`career/ack`, `career/recap/ack`,
     `career/drop`) or `pipeline/bundles.py::build_career_bundle` would try a
     real network connection and hang. One fresh client per test
-    (function-scoped fixture) mirrors the old per-test `tmp_path` SQLite file
+    (function-scoped fixture) mirrors the old per-test `tmp_path` on-disk file
     isolation -- tests that need a specific client (e.g. to seed data the
     real route must also see, or to prove two different stores are isolated)
     construct their own `CareerStore`/`mongomock.MongoClient()` directly and
@@ -105,7 +105,7 @@ def _jobs_store_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
     `career_store.py` use. Without this fixture, `create_app` (via
     `api_ui/app.py`'s `open_jobs_store()` call) would try a real network
     connection and hang. One fresh client per test (function-scoped fixture)
-    mirrors the old per-test `tmp_path` SQLite file isolation -- tests
+    mirrors the old per-test `tmp_path` on-disk file isolation -- tests
     needing two "processes" to observe the same store (e.g.
     `test_cron_watch_service.py`'s cross-boundary test) call
     `jobs.open_jobs_store()` from both sides so they share this fixture's

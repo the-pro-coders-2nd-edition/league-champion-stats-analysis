@@ -140,7 +140,7 @@ def test_a_blind_then_peer_run_matches_a_ladder_seeded_with_peers(
 
     # A separate mongomock client, not just a different db_name on the same
     # one -- proves the two ladders are genuinely independent stores, the
-    # same isolation the old "fresh.sqlite" path gave.
+    # same isolation a genuinely separate on-disk store used to give.
     with CareerStore(mongomock.MongoClient(), db_name="career") as fresh:
         advance_career(fresh, KEY, _ctx(matches, PEERS), WEAK_LANING)
         assert _ladder(store) == _ladder(fresh)
@@ -289,7 +289,7 @@ def test_since_ms_migration_keeps_older_rows_unseeded() -> None:
     """A ladder written before the field existed must not read as seeded.
 
     Mongo has no `ALTER TABLE`/migration step -- the equivalent of the old
-    SQLite test's "drop the column with a raw connection" is unsetting the
+    SQL test's "drop the column with a raw connection" is unsetting the
     field directly on the raw mongomock collection, bypassing the store's
     own write methods.
     """
@@ -362,7 +362,7 @@ def test_block_on_a_retired_track_is_replaced(store: CareerStore) -> None:
     matches = _matches()
     advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)
     # Simulate a track that was dropped from the pool between releases, the way
-    # preview-cache/career.sqlite still holds `economy_discipline` goals.
+    # an old career ladder can still hold `economy_discipline` goals.
     store.write_slot(
         KEY,
         0,

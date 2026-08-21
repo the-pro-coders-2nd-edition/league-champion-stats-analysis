@@ -16,10 +16,8 @@ import league_stats_api_ui.app as web_app
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
     config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
         gemini_api_key="fake-key",
-        runner_storage_mode="sqlite",
     )
     application = web_app.create_app(config, start_worker=False)
     with TestClient(application) as test_client:

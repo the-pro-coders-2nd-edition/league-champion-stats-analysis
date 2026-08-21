@@ -302,11 +302,9 @@ def report_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     shutil.copy(FIXTURES_DIR / "meta.json", report_dir / "meta.json")
 
     config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
         gemini_api_key="fake-key",
         port=_free_port(),
-        runner_storage_mode="sqlite",
     )
     application = create_app(config, start_worker=False)
 

@@ -50,12 +50,6 @@ services:
       # container) -- must point at the compose network's `peers` host, same
       # as `runner`'s own pin below. Port matches `peers`' `PEERS_GRPC_PORT`.
       - PEERS_GRPC_TARGET=peers:50053
-      # `runner_storage_mode`'s "sqlite" value no longer selects a different
-      # implementation (Phase 8, Task 1 deleted `MatchStore`) -- kept here
-      # only so this pin's history is legible; "mongo" would now also pass
-      # WebConfig's validator since peers_mode=grpc is pinned above, but
-      # changing it is Task 5's call (dead-field sweep), not this fix's.
-      - ANALYZER_RUNNER_STORAGE_MODE=sqlite
       # Without this, api-ui's WelcomeBackSubscriber is never constructed (it's
       # gated on this var being set -- see WebConfig.cron_watch_grpc_target), so
       # the welcome-back feature would have no live gRPC path in this
@@ -65,7 +59,7 @@ services:
     volumes:
       # Report artifacts (HTML/CSV/JSON) referenced by job rows, now stored in
       # Mongo (`JobStore`, Phase 8 Task 4) rather than the deleted `app-data`
-      # SQLite volume. Without this, recreating this container wipes
+      # volume. Without this, recreating this container wipes
       # `/app/output` while the DB still says jobs completed, so a "done"
       # job's report link 404s. `/app/.cache` (match/HTTP caches) is
       # deliberately left ephemeral: losing it only costs slower re-fetches on
@@ -98,14 +92,14 @@ services:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - RUNNER_GRPC_PORT=50051
       - RUNNER_METRICS_PORT=9100
-      # REQUIRED, not opt-in (Phase 8, Task 1): `runner_storage_mode` now
-      # defaults to "mongo" (MatchStore/SQLite was deleted), and WebConfig's
-      # own validator raises at construction time if `peers_mode` isn't
-      # "grpc" whenever `runner_storage_mode` is "mongo" -- without the pin
-      # below, RUNNER would crash immediately on startup the moment it built
-      # its own WebConfig. Pinned here (not the shared .env, which api-ui and
-      # cron-watch also read) so it doesn't also flip on those services --
-      # they still pin ANALYZER_RUNNER_STORAGE_MODE=sqlite for themselves.
+      # REQUIRED, not opt-in (Phase 8, Task 1): RUNNER's `_build_job_services`
+      # always constructs the Mongo-backed `RawMatchStore` (`MatchStore`, its
+      # local on-disk predecessor, was deleted), which does not implement the
+      # peer-game methods the in-process peer path needs -- without this pin,
+      # RUNNER would crash with an `AttributeError` on the first ranked
+      # build's peer comparison. Pinned here (not the shared .env, which
+      # api-ui and cron-watch also read) so it doesn't also flip on those
+      # services, which don't need it for their own topologies.
       # PEERS_GRPC_TARGET must point at the compose network's `peers` host,
       # since its own default (localhost:50053) is wrong here. This
       # combination is not yet fully wired/tested end-to-end in compose
@@ -151,8 +145,8 @@ services:
     # peer-game methods), so `runner`, `peers` and `api-ui` all dial this
     # service today. `cron-watch` deliberately does not: it never calls
     # `execute_job`/`build_peer_for_pool` at all (its `CronWatchServicer`
-    # only enqueues into the shared `JobStore` file -- see
-    # `cron_watch/service.py`'s "shared SQLite volume" design note), so it
+    # only enqueues into the shared `JobStore` -- see
+    # `cron_watch/service.py`'s "shared job store" design note), so it
     # has no peer-comparison code path to route through PEERS.
     depends_on:
       - mongo
@@ -174,12 +168,6 @@ services:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - CRON_WATCH_GRPC_PORT=50052
       - CRON_WATCH_METRICS_PORT=9101
-      # Same reasoning as api-ui's pin above: cron-watch's __main__ also calls
-      # load_web_config() (to build the WebConfig its own JobStore/enqueue
-      # path needs), and its peers_mode is never pinned to grpc here, so
-      # inheriting ANALYZER_RUNNER_STORAGE_MODE=mongo from the shared .env
-      # would trip WebConfig's runner_storage_mode validator and crash it too.
-      - ANALYZER_RUNNER_STORAGE_MODE=sqlite
     env_file:
       - .env
     # No `ports:` here on purpose, same reasoning as `runner`: nothing outside

@@ -295,7 +295,7 @@ def _tracked_players_for_job(
 
 
 # Process-wide Mongo clients keyed by URI, mirroring `shared_rate_limiter`
-# above: reused across jobs so `runner_storage_mode="mongo"` doesn't open a
+# above: reused across jobs so RUNNER's `RawMatchStore` doesn't open a
 # fresh connection pool per job. `RawMatchStore.close()` is deliberately a
 # no-op for the same reason -- nothing here ever closes this client either.
 _SHARED_MONGO_CLIENTS: dict[str, pymongo.MongoClient] = {}
@@ -312,11 +312,11 @@ def _build_mongo_client(mongo_uri: str) -> pymongo.MongoClient:
     (e.g. `_build_peer_for_pool_via_grpc`).
 
     No short `serverSelectionTimeoutMS` here (unlike `analysis.peer.
-    benchmark_cache`'s best-effort live cache): `RawMatchStore` backs
-    `runner_storage_mode="mongo"`'s match persistence, a required store for
-    the job pipeline when that mode is on, not an optional cache -- there is
-    no fallback path if this client fails fast, so waiting out pymongo's
-    ~30s default on a slow/starting-up Mongo is the right tradeoff.
+    benchmark_cache`'s best-effort live cache): `RawMatchStore` is the
+    required match persistence for the job pipeline, not an optional cache
+    -- there is no fallback path if this client fails fast, so waiting out
+    pymongo's ~30s default on a slow/starting-up Mongo is the right
+    tradeoff.
     """
     with _SHARED_MONGO_CLIENTS_LOCK:
         client = _SHARED_MONGO_CLIENTS.get(mongo_uri)
@@ -377,14 +377,11 @@ def _build_job_services(
     config.status_endpoint = f"/api/players/{config.reports_group_slug}"
     config.ensure_directories()
     http_cache = HttpCache(config.http_cache_dir)
-    # `MatchStore` (local SQLite) was deleted in Phase 8, Task 1 -- RawMatchStore
-    # is now the only backing implementation, regardless of
-    # `web_config.runner_storage_mode`'s value. Valid only with
-    # `peers_mode="grpc"` -- enforced by `WebConfig`'s own
-    # `_validate_runner_storage_mode` at construction time, so this never
-    # needs to re-check it (see `core/config.py`). `runner_storage_mode`
-    # remains a config field (Task 5 of this phase decides whether to drop
-    # it) but no longer selects between two implementations here.
+    # `MatchStore` (the local on-disk store this replaced) was deleted in
+    # Phase 8, Task 1 -- `RawMatchStore` is now the only backing
+    # implementation. Valid only with `peers_mode="grpc"`, since it does not
+    # implement the peer-game methods the in-process peer path needs (see
+    # `core/config.py`'s `WebConfig` docstring).
     mongo_client = _build_mongo_client(web_config.runner_mongo_uri)
     store: RawMatchStore = RawMatchStore(
         mongo_client, db_name=_db_name_from_uri(web_config.runner_mongo_uri)

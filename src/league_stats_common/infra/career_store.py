@@ -6,8 +6,8 @@ and rung targets are frozen at generation time so they never move under a player
 who is closing in on them. Both live here, keyed by champion + role + the
 primary account slug.
 
-Backed by ``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in tests)
-instead of SQLite. Reproduces the 3 SQL tables' semantics as 3 collections:
+Backed by ``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in tests).
+Reproduces the 3 SQL tables' semantics as 3 collections:
 
 - ``career_goals``: one document per ``(build_key, slot, goal_index)``,
   ``_id = f"{build_key}\\x1f{slot}\\x1f{goal_index}"`` (same separator

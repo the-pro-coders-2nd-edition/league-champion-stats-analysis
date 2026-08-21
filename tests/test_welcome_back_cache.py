@@ -163,7 +163,7 @@ def test_no_subscriber_is_created_when_cron_watch_grpc_target_is_unset(
     monkeypatch.setattr(web_app, "WelcomeBackSubscriber", _FakeSubscriber)
 
     config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite", output_dir=tmp_path / "output", runner_storage_mode="sqlite"
+        output_dir=tmp_path / "output"
     )
     assert config.cron_watch_grpc_target is None
     application = web_app.create_app(config, start_worker=True)
@@ -179,7 +179,7 @@ def test_welcome_back_cache_is_always_exposed_on_app_state(
     read from it regardless of whether the subscriber feature is enabled."""
     monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
     config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite", output_dir=tmp_path / "output", runner_storage_mode="sqlite"
+        output_dir=tmp_path / "output"
     )
     application = web_app.create_app(config, start_worker=False)
     assert isinstance(application.state.welcome_back_cache, WelcomeBackCache)
@@ -195,10 +195,8 @@ def test_cron_watch_grpc_target_starts_and_stops_the_subscriber(
     monkeypatch.setattr(web_app, "WelcomeBackSubscriber", _FakeSubscriber)
 
     config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
         cron_watch_grpc_target="localhost:50054",
-        runner_storage_mode="sqlite",
     )
     application = web_app.create_app(config, start_worker=True)
     with TestClient(application):
@@ -218,10 +216,8 @@ def test_cron_watch_grpc_target_does_not_start_subscriber_when_start_worker_is_f
     monkeypatch.setattr(web_app, "WelcomeBackSubscriber", _FakeSubscriber)
 
     config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
         cron_watch_grpc_target="localhost:50054",
-        runner_storage_mode="sqlite",
     )
     application = web_app.create_app(config, start_worker=False)
     with TestClient(application):

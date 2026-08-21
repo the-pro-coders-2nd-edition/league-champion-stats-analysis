@@ -21,21 +21,20 @@ called unconditionally in `execute_job`'s `finally` block.
 
 Task 1's follow-up closed both gaps: `RawMatchStore` (`infra/raw_match_store.py`)
 now implements `iter_match_ids`/`close()`, and `_build_job_services`
-(`web/worker.py`) now takes `WebConfig.runner_storage_mode` (`core/config.py`,
-default `"sqlite"`, matching today's behavior) to decide between `MatchStore`
-and `RawMatchStore`. Setting `runner_storage_mode="mongo"` requires
-`peers_mode="grpc"` -- enforced by `WebConfig`'s own validator, since
+(`web/worker.py`) originally took a config flag to decide between `MatchStore`
+and `RawMatchStore`, requiring `peers_mode="grpc"` whenever `RawMatchStore`
+was selected -- enforced by `WebConfig`'s own validator at the time, since
 `RawMatchStore` still does not implement any of `MatchStore`'s peer-game
 methods (`iter_unverified_puuids`, `iter_unverified_puuids_for_build`,
 `set_puuid_rank`, `upsert_peer_game`, `load_peer_games`, `count_peer_games`),
 which only the in-process peer path (`peers_mode="in_process"`) calls.
 
-Phase 8's Task 1 finished this substitution: `MatchStore` (and its
-`sqlite3` backing) was deleted outright, `runner_storage_mode`'s
-class-level default flipped to `"mongo"`, and `_build_job_services`
-now constructs `RawMatchStore` unconditionally -- the
-`runner_storage_mode`/`MatchStore` branch described above no longer
-exists.
+Phase 8's Task 1 finished this substitution: `MatchStore` (and its on-disk
+backing) was deleted outright and `_build_job_services` now constructs
+`RawMatchStore` unconditionally. A later cleanup pass then deleted the
+now-vestigial config flag itself, since every real deployment had already
+settled on `RawMatchStore` -- the branch described above no longer exists
+in any form.
 
 Similarly, `RunnerServiceServicer` (generated from `runner.proto`) is a
 **synchronous** servicer base class (`grpc.server(...)`, not
@@ -113,7 +112,7 @@ def _job_from_request(request: runner_pb2.EnqueueJobRequest, job_id: int) -> dic
     `league_stats.web.jobs.JobStore._get`): a `players_json` string plus a
     parallel decoded `players` list, so `_tracked_players_for_job`'s
     `decode_players(job.get("players_json"), ...)` call behaves exactly as
-    it would against a real SQLite row.
+    it would against a real `JobStore` row.
     """
     players = [{"riot_id": p.riot_id, "tagline": p.tagline} for p in request.players]
     return {

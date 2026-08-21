@@ -5,7 +5,7 @@ Mirrors the subset of ``infra.cache.MatchStore``'s method surface (see
 ``save_match``, ``save_timeline``, ``load_match``, ``load_timeline``,
 ``claim_ownership``, ``iter_all_match_ids``, ``count``, ``iter_match_ids``,
 ``close``. Backed by ``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in
-tests) instead of SQLite.
+tests).
 
 Phase 5 Task 1 of the microservices migration added ``iter_match_ids``/
 ``close``: without them, RUNNER's job pipeline crashed with
@@ -15,9 +15,9 @@ and inside ``execute_job``'s ``finally`` block. Deliberately still NOT
 implemented: ``iter_unverified_puuids``, ``iter_unverified_puuids_for_build``,
 ``set_puuid_rank``, ``upsert_peer_game``, ``load_peer_games``,
 ``count_peer_games`` -- those are only reachable through the in-process peer
-path (``build_peer_for_pool``, ``peers_mode="in_process"``), which
-``WebConfig``'s ``runner_storage_mode="mongo"`` precondition (``core/
-config.py``) requires ``peers_mode="grpc"`` to rule out.
+path (``build_peer_for_pool``, ``peers_mode="in_process"``), which real
+deployments rule out by pinning ``peers_mode="grpc"`` wherever this store
+is used (see ``docker-compose.yml``'s ``runner``/``api-ui`` pins).
 
 Reproduces ``MatchStore``'s real semantics:
 
@@ -199,9 +199,8 @@ class RawMatchStore:
         process-wide client shared across jobs -- see ``web/worker.py``'s
         ``_build_mongo_client``, mirroring ``shared_rate_limiter``'s
         already-established sharing pattern). Closing a shared client here
-        would break every other job/store still using it. ``MatchStore.
-        close()`` (``cache.py:461-463``) can close unconditionally because it
-        owns a private ``sqlite3.connect`` handle nobody else holds; this
-        store has no equivalent connection of its own to release.
+        would break every other job/store still using it -- unlike its
+        deleted predecessor, which owned a private connection nobody else
+        held, this store has no equivalent connection of its own to release.
         """
         return None

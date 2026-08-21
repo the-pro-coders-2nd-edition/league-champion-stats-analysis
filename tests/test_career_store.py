@@ -161,7 +161,8 @@ def test_move_slot_can_restamp_the_start_line() -> None:
 def test_a_goal_document_missing_since_ms_defaults_to_zero_on_load() -> None:
     """Mongo has no `ALTER TABLE`; a document written before `since_ms`
     existed (or by a client that omitted it) must default to 0 on read, the
-    same as the old SQLite migration's `DEFAULT 0` did for pre-existing rows.
+    same as the old SQL schema migration's `DEFAULT 0` did for pre-existing
+    rows.
     """
     key = build_key("p", "Viktor", "MIDDLE")
     with _store() as store:

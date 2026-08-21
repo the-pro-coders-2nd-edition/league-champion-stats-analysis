@@ -5,7 +5,7 @@ directly for the calls it makes on its ``store`` parameter -- it only relies
 on a handful of methods, called positionally/by-keyword exactly the way
 ``JobStore`` implements them. That makes it possible to substitute an object
 with the same surface that streams progress into an in-memory queue instead
-of writing to SQLite.
+of writing to the shared job store.
 
 The exact method list below was catalogued by reading ``execute_job`` and
 everything it calls end to end (``_build_job_services``, ``_tracked_players_for_job``,
@@ -56,7 +56,7 @@ from typing import Any
 
 
 class RunnerJobAdapter:
-    """Streams one job's progress into an in-memory queue instead of SQLite.
+    """Streams one job's progress into an in-memory queue instead of the shared job store.
 
     Implements every method ``execute_job`` (and what it calls) invokes on
     its ``store``/``job_store`` parameter, so ``execute_job`` can run

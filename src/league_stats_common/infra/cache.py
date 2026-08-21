@@ -4,8 +4,8 @@
 responses (account lookups, match-id pages, static data) with TTLs.
 
 The permanent raw match/timeline store this module used to also hold
-(``MatchStore``, a :mod:`sqlite3` database) was deleted in Phase 8, Task 1 of
-the microservices migration -- every real call site now uses the Mongo-backed
+(``MatchStore``) was deleted in Phase 8, Task 1 of the microservices
+migration -- every real call site now uses the Mongo-backed
 ``RawMatchStore`` (``league_stats_runner/infra/raw_match_store.py``) instead.
 """
 

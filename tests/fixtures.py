@@ -323,7 +323,7 @@ def make_timeline(duration_s: int = 1200) -> dict[str, Any]:
 class CombinedMatchAndPeerStore:
     """Test-only double combining `RawMatchStore` + `PeerSampleStore`.
 
-    Phase 8, Task 1 deleted `MatchStore`, the single SQLite database that
+    Phase 8, Task 1 deleted `MatchStore`, the single on-disk store that
     used to expose both the raw match/timeline surface (now `RawMatchStore`)
     and the peer-game surface (now `PeerSampleStore`) on one object. No real
     production call site needs both surfaces on the same object today

@@ -16,7 +16,7 @@ recommendations.
 
 - Downloads up to 500 ranked solo queue matches once (paged, cached, rate-limited,
   auto-retrying, with progress bars). A match is **never downloaded twice**
-  (permanent SQLite store).
+  (permanent MongoDB-backed store).
 - Discovers every **champion + lane** pair with enough solo/duo games (default
   20+) and pre-generates a full report for each — Akali mid and Akali top are
   separate builds.
@@ -89,7 +89,7 @@ Open the home page, enter a Riot ID (e.g. `YourName#EUW`), and submit. The app
 queues the job, downloads matches, and builds reports for every eligible
 champion + lane.
 
-- Submissions are queued (`data/app.sqlite`) and processed by a background worker;
+- Submissions are queued (persisted in MongoDB) and processed by a background worker;
   the status page shows live progress (queue position, download counts, ETA).
 - Reports appear in **two stages**: the base dashboard first, then the rank-peer
   sections fill in automatically when peer sampling finishes.

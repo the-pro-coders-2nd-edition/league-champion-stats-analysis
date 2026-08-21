@@ -553,7 +553,7 @@ def test_budget_exhaustion_defers_instead_of_failing(store: JobStore) -> None:
 @pytest.fixture()
 def client(tmp_path: Path):
     config = WebConfig(
-        output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite", runner_storage_mode="sqlite"
+        output_dir=tmp_path / "out"
     )
     app = create_app(config, start_worker=False)
     with TestClient(app) as handle:
@@ -598,7 +598,7 @@ def test_career_banner_ack_route(tmp_path: Path) -> None:
         open_career_store,
     )
 
-    config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite", runner_storage_mode="sqlite")
+    config = WebConfig(output_dir=tmp_path / "out")
     build_dir = config.reports_dir / SLUG / "viktor_middle"
     build_dir.mkdir(parents=True)
     (build_dir / "meta.json").write_text(
@@ -633,7 +633,7 @@ def test_career_banner_ack_route(tmp_path: Path) -> None:
 
 
 def test_career_banner_ack_404s_on_unknown_build(tmp_path: Path) -> None:
-    config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite", runner_storage_mode="sqlite")
+    config = WebConfig(output_dir=tmp_path / "out")
     app = create_app(config, start_worker=False)
     with TestClient(app) as handle:
         assert (

@@ -45,10 +45,8 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     # Skip Riot account-v1 lookup; dedicated tests cover the precheck path.
     monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
     config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
         gemini_api_key="fake-key",
-        runner_storage_mode="sqlite",
     )
     application = web_app.create_app(config, start_worker=False)
     with TestClient(application) as test_client:
@@ -296,7 +294,7 @@ def test_verify_players_exist_raises_for_404(
             ],
             "euw1",
             tmp_path,
-            WebConfig(runner_storage_mode="sqlite"),
+            WebConfig(),
         )
 
 
@@ -314,7 +312,7 @@ def test_verify_players_exist_passes(
         [{"riot_id": "Alice", "tagline": "EUW"}],
         "euw1",
         tmp_path,
-        WebConfig(runner_storage_mode="sqlite"),
+        WebConfig(),
     )
 
 
@@ -859,7 +857,7 @@ def test_watch_mode_in_process_starts_the_watcher_by_default(
     monkeypatch.setattr(web_app, "AnalysisWorker", _FakeWorker)
 
     config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite", output_dir=tmp_path / "output", runner_storage_mode="sqlite"
+        output_dir=tmp_path / "output"
     )
     assert config.watch_mode == "in_process"
     application = web_app.create_app(config, start_worker=True)
@@ -874,7 +872,7 @@ def test_watch_mode_grpc_skips_starting_the_watcher(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """watch_mode="grpc" must NOT start the in-process WatchPoller: CRON-watch is
-    expected to poll the same app.sqlite externally instead. Starting both would
+    expected to poll the same shared database externally instead. Starting both would
     race over watch_seen_json (see league_stats.cron_watch.service's docstring)."""
     monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
     _FakeWatcher.instances = []
@@ -882,10 +880,8 @@ def test_watch_mode_grpc_skips_starting_the_watcher(
     monkeypatch.setattr(web_app, "AnalysisWorker", _FakeWorker)
 
     config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
         watch_mode="grpc",
-        runner_storage_mode="sqlite",
     )
     application = web_app.create_app(config, start_worker=True)
     with TestClient(application):
@@ -914,10 +910,8 @@ def test_watch_mode_grpc_does_not_change_worker_startup(
     monkeypatch.setattr(web_app, "AnalysisWorker", RecordingWorker)
 
     config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
         watch_mode="grpc",
-        runner_storage_mode="sqlite",
     )
     application = web_app.create_app(config, start_worker=True)
     with TestClient(application):
@@ -937,7 +931,7 @@ def test_watch_mode_default_does_not_start_watcher_when_start_worker_false(
     monkeypatch.setattr(web_app, "AnalysisWorker", _FakeWorker)
 
     config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite", output_dir=tmp_path / "output", runner_storage_mode="sqlite"
+        output_dir=tmp_path / "output"
     )
     application = web_app.create_app(config, start_worker=False)
     with TestClient(application):

@@ -11,8 +11,8 @@ therefore uses `grpc.aio.server()` / `await server.start()` /
 
 CRON-watch's design (`cron_watch/service.py`'s "Design note -- enqueue
 target") points its own `JobStore` at the exact same Mongo database the
-monolith uses (Phase 8, Task 4 -- previously a shared `app.sqlite` file,
-now `RUNNER_MONGO_URI`/`MONGO_URI`), rather than calling RUNNER's
+monolith uses (Phase 8, Task 4 migrated this off a shared local database
+file onto `RUNNER_MONGO_URI`/`MONGO_URI`), rather than calling RUNNER's
 `EnqueueJob`. Per that module's "Handoff note for Task 5": this
 entrypoint must NOT call `store.recover_orphans()` on startup the way
 `web/app.py`'s `lifespan` does -- against a shared database, that would mark
@@ -83,7 +83,7 @@ def _build_client(region: str, web_config: WebConfig) -> RiotApiClient:
     `_require_riot_api_key`; this call re-fetches it per region since
     `load_config` needs it, not because it might be newly missing here.
 
-    Match/timeline storage moved from `MatchStore` (local SQLite) to
+    Match/timeline storage moved from `MatchStore` (a local on-disk store) to
     `RawMatchStore` (Mongo) in Phase 8, Task 1 -- `_build_client` never uses
     any of `MatchStore`'s peer-game methods, only the raw match/timeline
     surface `RawMatchStore` already implements identically.

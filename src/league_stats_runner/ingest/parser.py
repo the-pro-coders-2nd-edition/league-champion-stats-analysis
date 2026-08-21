@@ -321,7 +321,7 @@ def discover_build_pools(
     """Scan stored matches and return champion+lane pools with enough games.
 
     Args:
-        store: SQLite match store.
+        store: Mongo-backed match store.
         puuids: One or more tracked player PUUIDs (games are pooled).
         config: Application configuration (queue filter).
         min_games: Minimum ranked games required to include a build.

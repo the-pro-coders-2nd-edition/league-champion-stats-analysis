@@ -8,8 +8,8 @@ Sync vs async
 (`analysis/peer/cache.py`, `analysis/peer/benchmark_fetcher.py`,
 `analysis/peer/benchmark_cache.py`), `RiotApiClient` (`infra/riot_api.py`) and
 `PeerSampleStore` (`infra/peer_sample_store.py`) are all plain synchronous
-Python -- no `async def`/`await` anywhere in that call graph, matching
-`MatchStore`'s own synchronous `sqlite3` design. `peers_pb2_grpc.py` (Phase 0)
+Python -- no `async def`/`await` anywhere in that call graph.
+`peers_pb2_grpc.py` (Phase 0)
 also declares a plain, non-`async` `PeersServiceServicer` base class. So
 `PeersServicer` below is a plain `grpc.server(...)` servicer, exactly like
 RUNNER's `RunnerServicer` -- NOT `grpc.aio`, which CRON-watch uses because it
@@ -127,9 +127,9 @@ static `PEERS_REGION` env var that would route match-v5 calls to the wrong
 regional cluster for any platform outside that one region. Each pooled
 instance is built once and never mutated afterward (`set_platform` is never
 called post-construction), so concurrent requests for different platforms
-each get their own client and never race over shared state; `HttpCache`/
-`MatchStore`/API key are shared across the pool (cheap to share, expensive-ish
-to rebuild per platform -- disk-backed `diskcache`/`sqlite3` opens), while
+each get their own client and never race over shared state; `HttpCache`/API
+key are shared across the pool (cheap to share, expensive-ish to rebuild per
+platform -- disk-backed `diskcache` opens), while
 `RateLimiter` instances come from `riot_api.shared_rate_limiter`, matching
 this codebase's own existing process-wide-limiter convention.
 

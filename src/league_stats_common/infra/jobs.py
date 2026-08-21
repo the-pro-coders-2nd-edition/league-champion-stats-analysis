@@ -6,26 +6,27 @@ processes (both point at the same Mongo database). Jobs survive restarts:
 queued jobs are picked up again, while jobs that were mid-run are marked
 failed by :meth:`JobStore.recover_orphans`.
 
-Backed by ``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in tests)
-instead of SQLite, following the same pattern as ``CareerStore``/
-``DerivedStore``. Reproduces the 2 SQL tables' semantics as 2 collections
-plus one id-allocation collection:
+Backed by ``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in tests),
+following the same pattern as ``CareerStore``/``DerivedStore``. Reproduces
+the 2 SQL tables' semantics as 2 collections plus one id-allocation
+collection:
 
 - ``jobs``: one document per job. ``_id`` is an ``int``, allocated from the
   ``counters`` collection (see below) rather than a Mongo ``ObjectId`` --
   ``job_id`` is a public HTTP/SPA contract (``GET /api/jobs/{job_id}``,
   ``POST /api/jobs/{job_id}/cancel`` type it as ``int``), and keeping it a
   real, total-ordered integer keeps ``queue_position``'s ``id < ?`` and
-  ``average_duration_s``'s ``ORDER BY id DESC`` meaningful the same way
-  SQLite's ``AUTOINCREMENT`` did. Every other SQL column becomes a document
-  field 1:1. Every read path restores an ``"id"`` key from ``_id`` so the
-  returned dict shape matches the old ``dict(sqlite3.Row)`` exactly.
+  ``average_duration_s``'s ``ORDER BY id DESC`` meaningful the same way the
+  old auto-incrementing primary key did. Every other SQL column becomes a
+  document field 1:1. Every read path restores an ``"id"`` key from ``_id``
+  so the returned dict shape matches the old row-mapping's dict shape
+  exactly.
 - ``players``: one document per group/player, ``_id = slug``. Every read
   path restores a ``"slug"`` key from ``_id``.
 - ``counters``: a single ``{_id: "jobs", value: <last-issued-id>}`` document,
   incremented via ``find_one_and_update(..., {"$inc": {"value": 1}},
   upsert=True, return_document=ReturnDocument.AFTER)`` -- the direct
-  Mongo-native equivalent of SQLite's ``AUTOINCREMENT``.
+  Mongo-native equivalent of the old auto-incrementing primary key.
 
 **``enqueue``'s atomicity (replaces the old ``BEGIN IMMEDIATE`` transaction):**
 the real invariant is "at most one active job per ``player_slug``, enforced

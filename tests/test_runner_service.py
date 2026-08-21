@@ -1,5 +1,5 @@
 """RUNNER's gRPC service: wraps execute_job verbatim via a duck-typed
-store adapter that streams progress instead of writing to SQLite."""
+store adapter that streams progress instead of writing to the shared job store."""
 
 import queue
 
@@ -88,14 +88,12 @@ def test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode(
     StreamJobProgress yields at least one STAGE_A progress update and a
     final message, and the real report artifact lands on disk.
 
-    `MatchStore` (local SQLite) was deleted in Phase 8, Task 1 --
-    `_build_job_services` now unconditionally constructs `RawMatchStore`
-    regardless of `runner_storage_mode`'s value (this test pins
-    `runner_storage_mode="mongo"` anyway, for clarity, since that's the
-    class-level default as of this same task). Uses this repo's existing
-    offline-pipeline pattern (tests/fixtures.py's synthetic match/timeline
-    builders, as used by tests/test_incremental_regen_end_to_end.py) instead
-    of inventing new fixture infrastructure.
+    `MatchStore` (the local on-disk store this replaced) was deleted in
+    Phase 8, Task 1 -- `_build_job_services` now unconditionally constructs
+    `RawMatchStore`. Uses this repo's existing offline-pipeline pattern
+    (tests/fixtures.py's synthetic match/timeline builders, as used by
+    tests/test_incremental_regen_end_to_end.py) instead of inventing new
+    fixture infrastructure.
 
     The job uses kind=REGENERATE, which makes `execute_job` call
     `resolve_player_contexts` (PUUID/profile-icon/rank lookups only) instead
@@ -119,8 +117,8 @@ def test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode(
     mongo_client = mongomock.MongoClient()
     monkeypatch.setattr(web_worker, "_build_mongo_client", lambda uri: mongo_client)
 
-    # Seed the RawMatchStore directly -- in this mode no SQLite MatchStore is
-    # ever constructed, so there's no ".cache/matches.sqlite" to seed instead.
+    # Seed the RawMatchStore directly -- `MatchStore` no longer exists, so
+    # there's no local on-disk match cache to seed instead.
     # db_name matches WebConfig.runner_mongo_uri's default database
     # ("league_stats"), the same one `_build_job_services` will resolve via
     # `_db_name_from_uri`.
@@ -135,7 +133,6 @@ def test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode(
     web_config = WebConfig(
         output_dir=tmp_path / "output",
         peers_mode="grpc",
-        runner_storage_mode="mongo",
     )
     servicer = RunnerServicer(web_config=web_config)
     server, port = _start_runner_server(servicer)
@@ -172,10 +169,6 @@ def test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode(
         tmp_path / "output" / "reports" / player_slug / "viktor_middle" / "report.json"
     )
     assert report_path.exists(), f"expected report artifact at {report_path}"
-
-    # The decisive proof: no SQLite MatchStore file was ever created for this
-    # job -- everything ran against the mongomock-backed RawMatchStore.
-    assert not (tmp_path / ".cache" / "matches.sqlite").exists()
 
 
 def test_runner_servicer_never_delegates_even_with_grpc_mode_in_env(

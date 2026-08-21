@@ -296,8 +296,8 @@ def test_finish_peer_comparison_reads_user_history_via_raw_match_store() -> None
     `discover_build_pools`/`load_all_records`): RUNNER's `peers_mode="grpc"`
     path (`web/worker.py`'s `_build_peer_for_pool_via_grpc`) calls
     `finish_peer_comparison(..., store=services.store, ...)`, and
-    `services.store` is a `RawMatchStore` whenever `runner_storage_mode=
-    "mongo"`. The end-to-end test in `test_runner_service.py`
+    `services.store` is always a `RawMatchStore`. The end-to-end test in
+    `test_runner_service.py`
     (`test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode`)
     short-circuits on `ranked is None` before ever reaching this code, so it
     doesn't cover this path -- this test closes that gap directly and

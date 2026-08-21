@@ -222,10 +222,6 @@ def test_serve_fails_fast_when_the_riot_api_key_is_missing(
     from league_stats_cron_watch.__main__ import serve
 
     monkeypatch.delenv("CRON_WATCH_RIOT_API_KEY", raising=False)
-    # Matches docker-compose.yml's real cron-watch pin (ANALYZER_RUNNER_STORAGE_MODE=sqlite):
-    # without it, load_web_config()'s new mongo default would raise its own
-    # runner_storage_mode/peers_mode ValueError before ever reaching the API-key check.
-    monkeypatch.setenv("ANALYZER_RUNNER_STORAGE_MODE", "sqlite")
     with pytest.raises(RuntimeError, match="CRON_WATCH_RIOT_API_KEY"):
         asyncio.run(serve())
 
@@ -255,8 +251,6 @@ def test_serve_accepts_a_riot_api_key_supplied_only_via_dotenv(
     import league_stats_cron_watch.__main__ as main_module
 
     monkeypatch.delenv("CRON_WATCH_RIOT_API_KEY", raising=False)
-    # Matches docker-compose.yml's real cron-watch pin -- see the sibling test above.
-    monkeypatch.setenv("ANALYZER_RUNNER_STORAGE_MODE", "sqlite")
     (tmp_path / ".env").write_text(
         "CRON_WATCH_RIOT_API_KEY=dotenv-only-key\n", encoding="utf-8"
     )
@@ -340,7 +334,7 @@ def test_a_cron_watch_enqueued_job_surfaces_through_the_monolith_job_api(
 ) -> None:
     """Task 4's decision, proven end to end: CRON-watch and the monolith open
     *separate* `JobStore` connections onto the *same* Mongo database (Phase 8,
-    Task 4 -- previously the same `app.sqlite` file via a docker-compose
+    Task 4 -- previously the same on-disk file via a docker-compose
     mounted volume, now the same `RUNNER_MONGO_URI`/`MONGO_URI`), and a job
     `CronWatchServicer` enqueues on its connection is immediately visible,
     with a real queue position and ETA, through the monolith's own
@@ -358,7 +352,7 @@ def test_a_cron_watch_enqueued_job_surfaces_through_the_monolith_job_api(
     """
     # The monolith side: a real FastAPI app, worker disabled (no network),
     # backed by its own JobStore connection onto the shared Mongo database.
-    web_config = WebConfig(output_dir=tmp_path / "out", runner_storage_mode="sqlite")
+    web_config = WebConfig(output_dir=tmp_path / "out")
     app = create_app(web_config, start_worker=False)
 
     # The CRON-watch side: a second, independent JobStore connection onto the
