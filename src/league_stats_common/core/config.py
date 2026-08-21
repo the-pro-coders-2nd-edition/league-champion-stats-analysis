@@ -499,24 +499,25 @@ class WebConfig(BaseModel):
     # behind is swept up together) but no longer selects a different
     # implementation anywhere.
     #
-    # CRITICAL KNOWN GAP surfaced by this same deletion, not fixed by this
-    # task (out of scope -- flagged for the next phase to decide): every
-    # `_build_job_services` caller's `RawMatchStore` does not implement any
-    # of `MatchStore`'s former peer-game methods (`iter_unverified_puuids`,
+    # KNOWN GAP surfaced by this same deletion, FIXED (see below, do not
+    # reopen): `RawMatchStore` never implemented `MatchStore`'s former
+    # peer-game methods (`iter_unverified_puuids`,
     # `iter_unverified_puuids_for_build`, `set_puuid_rank`,
     # `upsert_peer_game`, `load_peer_games`, `count_peer_games`), which the
     # in-process peer path (`build_peer_for_pool`, `peers_mode="in_process"`)
-    # calls on that exact same store object. Since `peers_mode`'s
+    # calls on that exact same store object -- since `peers_mode`'s
     # class-level default is deliberately still "in_process" (this phase's
-    # Step 1 decision), any real job whose peer comparison reaches
-    # `build_peer_for_pool` -- e.g. `api-ui`'s current docker-compose
-    # topology, which pins `peers_mode="in_process"` and runs jobs
-    # in-process by default -- now crashes with an `AttributeError` the
-    # first time a ranked build needs a peer baseline. Fixing this requires
-    # either flipping that topology's `peers_mode` to "grpc" (which needs
-    # `PEERS_GRPC_TARGET` wired for `api-ui`, itself flagged elsewhere in
-    # `docker-compose.yml` as an undecided follow-up) or giving
-    # `RawMatchStore` a peer-game-capable sibling for the in-process path.
+    # Step 1 decision), any real job whose peer comparison reached
+    # `build_peer_for_pool` in-process would have crashed with an
+    # `AttributeError` the first time a ranked build needed a peer baseline.
+    # Fixed by pinning `api-ui` to `ANALYZER_PEERS_MODE=grpc` +
+    # `PEERS_GRPC_TARGET=peers:50053` in `docker-compose.yml`, routing that
+    # path through PEERS' real gRPC service instead (`_build_peer_for_pool_via_grpc`
+    # only touches `iter_match_ids`/`load_match`, both of which
+    # `RawMatchStore` implements). `cron-watch` never reaches
+    # `build_peer_for_pool` at all (it only enqueues into `JobStore`), so it
+    # needed no pin. Regression test:
+    # `tests/test_web_worker.py::test_raw_match_store_backed_services_crashes_in_process_but_not_via_grpc`.
     #
     # HARD PRECONDITION, validated below (unlike `peers_mode="grpc"`'s own
     # topology precondition above, which this object cannot verify and only
