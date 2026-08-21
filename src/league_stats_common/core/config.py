@@ -259,21 +259,6 @@ class AppConfig(BaseModel):
         return value
 
     @property
-    def db_path(self) -> Path:
-        """Path of the SQLite match store."""
-        return self.cache_dir / "matches.sqlite"
-
-    @property
-    def career_db_path(self) -> Path:
-        """Path of the SQLite Career mode store."""
-        return self.cache_dir / "career.sqlite"
-
-    @property
-    def derived_db_path(self) -> Path:
-        """Path of the SQLite cache of derived analysis artifacts."""
-        return self.cache_dir / "derived.sqlite"
-
-    @property
     def http_cache_dir(self) -> Path:
         """Directory of the diskcache HTTP cache."""
         return self.cache_dir / "http"
@@ -425,12 +410,6 @@ class WebConfig(BaseModel):
     # jobs share one rate limit, so parallelism only helps with a production key.
     worker_concurrency: int = Field(default=1, ge=1, le=8)
     worker_poll_interval_s: float = Field(default=1.0, gt=0)
-    # Dead as of Phase 8, Task 4: `JobStore` moved to Mongo
-    # (`open_jobs_store()`, resolving `runner_mongo_uri`/`MONGO_URI`) and no
-    # longer reads this field. Left in place (same as `career_db_path`/
-    # `derived_db_path` after Tasks 2/3) since ~15 test files still pass it
-    # harmlessly; Task 5 sweeps up dead config fields like this one together.
-    app_db_path: Path = Path("data") / "app.sqlite"
     output_dir: Path = Path("output")
     gemini_api_key: str | None = None
     # Opt-in delegation of job execution to RUNNER over gRPC (Phase 1 of the
@@ -499,10 +478,15 @@ class WebConfig(BaseModel):
     # outright and flipped this field's default to "mongo" --
     # `worker.py`'s `_build_job_services` now constructs `RawMatchStore`
     # unconditionally, regardless of this field's value. "sqlite" remains a
-    # valid literal (removing it is Task 5's call, once every other
-    # `runner_storage_mode`/`app_db_path`-style dead field this phase leaves
-    # behind is swept up together) but no longer selects a different
-    # implementation anywhere.
+    # valid literal -- `docker-compose.yml`'s `api-ui`/`cron-watch` pin
+    # `ANALYZER_RUNNER_STORAGE_MODE=sqlite` and many test fixtures still set
+    # it explicitly -- but it no longer selects a different implementation
+    # anywhere. Phase 8, Task 5 removed the other now-dead path-shaped config
+    # fields this phase left behind (`AppConfig.db_path`/`career_db_path`/
+    # `derived_db_path`, `WebConfig.app_db_path`); it deliberately left this
+    # `Literal`'s "sqlite" value in place since real compose/test call sites
+    # still pass it and removing it would be a real (if inert) behavior
+    # change, not pure dead-code cleanup.
     #
     # KNOWN GAP surfaced by this same deletion, FIXED (see below, do not
     # reopen): `RawMatchStore` never implemented `MatchStore`'s former

@@ -63,19 +63,13 @@ services:
       # match cron-watch's CRON_WATCH_GRPC_PORT below.
       - CRON_WATCH_GRPC_TARGET=cron-watch:50052
     volumes:
-      # Shared with `cron-watch`: both open their own `JobStore` connection
-      # onto the same `data/app.sqlite` file (see
-      # `league_stats_cron_watch/service.py`'s "shared SQLite volume" design
-      # note). Without this mount each container would see its own, empty
-      # `data/` directory and CRON-watch's enqueued jobs would never surface
-      # through this service's job-status API.
-      - app-data:/app/data
-      # Report artifacts (HTML/CSV/JSON) referenced by job rows in the now-
-      # persistent `app-data` volume above. Without this, recreating this
-      # container wipes `/app/output` while the DB still says jobs completed,
-      # so a "done" job's report link 404s. `/app/.cache` (match/HTTP caches)
-      # is deliberately left ephemeral: losing it only costs slower re-fetches
-      # on next start, not a broken link, so it's not worth a volume here.
+      # Report artifacts (HTML/CSV/JSON) referenced by job rows, now stored in
+      # Mongo (`JobStore`, Phase 8 Task 4) rather than the deleted `app-data`
+      # SQLite volume. Without this, recreating this container wipes
+      # `/app/output` while the DB still says jobs completed, so a "done"
+      # job's report link 404s. `/app/.cache` (match/HTTP caches) is
+      # deliberately left ephemeral: losing it only costs slower re-fetches on
+      # next start, not a broken link, so it's not worth a volume here.
       - app-output:/app/output
     depends_on:
       - mongo
@@ -188,12 +182,6 @@ services:
       - ANALYZER_RUNNER_STORAGE_MODE=sqlite
     env_file:
       - .env
-    volumes:
-      # Shared with `api-ui` -- see the comment on `api-ui`'s volume above.
-      # This is the whole mechanism Task 4's "option (b)" design depends on:
-      # CRON-watch enqueues jobs by writing directly into this file, not by
-      # calling RUNNER.
-      - app-data:/app/data
     # No `ports:` here on purpose, same reasoning as `runner`: nothing outside
     # the compose network dials CRON-watch directly today.
     depends_on:
@@ -233,6 +221,5 @@ services:
 
 volumes:
   mongo-data:
-  app-data:
   app-output:
   grafana-data:
