@@ -54,10 +54,10 @@
   },
   "rule7_generated_css": {
     "components_css_present": true,
-    "stale_hash_count": 38
+    "stale_hash_count": 28
   },
   "rule8_underused_components": {
-    "count": 24,
+    "count": 23,
     "names": [
       "ChampionIconStack",
       "FormWrBridge",
@@ -77,7 +77,6 @@
       "RecCard",
       "RecCardHead",
       "RecEvidenceSummary",
-      "ReportPlayerChip",
       "ReportSkeleton",
       "ScoreDisclosure",
       "SectionPulseHint",
