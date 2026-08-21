@@ -10,7 +10,6 @@ from league_stats_runner.analysis.career.window import (
     newest_game_ms,
     player_mean,
     player_median,
-    player_quantile,
     recent_window,
 )
 

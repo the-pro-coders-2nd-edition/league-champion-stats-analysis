@@ -9,7 +9,6 @@ import json
 import threading
 import time
 from concurrent import futures
-from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock
 
 import grpc

@@ -11,7 +11,6 @@ carry it.
 
 from __future__ import annotations
 
-import pandas as pd
 import pytest
 
 from league_stats_runner.presentation.career import career_scope_view, empty_career_view

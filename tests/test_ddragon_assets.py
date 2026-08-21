@@ -253,7 +253,6 @@ def test_objective_href(tmp_path: Path) -> None:
 
 
 def test_crop_minion_icon(tmp_path: Path) -> None:
-    import matplotlib.image as mpimg
     import matplotlib.pyplot as plt
     import numpy as np
 
@@ -437,7 +436,7 @@ def test_ensure_downloaded_refreshes_when_patch_advances(
         "_fetch_champions",
         lambda version: {"Ahri": {"id": "Ahri", "name": "Ahri"}},
     )
-    monkeypatch.setattr(assets, "_fetch_keystone_icons", lambda version: {8112: "perk-images/Styles/Domination/Electrocute/Electrocute.png"})
+    monkeypatch.setattr(assets, "_fetch_rune_icons", lambda version: {8112: "perk-images/Styles/Domination/Electrocute/Electrocute.png"})
     monkeypatch.setattr(
         assets,
         "_fetch_items",

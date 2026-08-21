@@ -13,7 +13,6 @@ from league_stats_runner.analysis.timeline import (
     build_death_intervals,
     build_position_tracks,
     is_participant_dead_at_ms,
-    participant_states_at_ms,
     participant_team_id,
     positions_at_ms,
     team_gold_series,
@@ -138,7 +137,6 @@ def test_detect_key_moments_from_fixture():
 
 
 def test_gold_spike_creates_standalone_moment():
-    parser = MatchParser(ItemCatalog(FAKE_ITEMS))
     match = make_match()
     timeline = make_timeline()
     frames = timeline["info"]["frames"]
@@ -153,7 +151,6 @@ def test_gold_spike_creates_standalone_moment():
 
 
 def test_dragon_soul_detection():
-    parser = MatchParser(ItemCatalog(FAKE_ITEMS))
     match = make_match()
     timeline = make_timeline()
     frames = timeline["info"]["frames"]

@@ -15,7 +15,6 @@ import league_stats_runner.worker as worker
 from league_stats_common.core.config import AppConfig
 from league_stats_common.infra.jobs import JobStore
 from league_stats_common.infra.riot_api import RiotApiClient
-from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_runner.ingest.parser import ItemCatalog, MatchParser, discover_build_pools
 from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.fetch import group_records

@@ -103,7 +103,6 @@ def test_same_combo_overwrites_report(tmp_path: Path) -> None:
     peer = _peer(_make_records(10))
 
     first_path = run_analysis(config, _make_records(10), peer_comparison=peer, ranked=ranked)
-    first_meta = (config.report_dir / "meta.json").read_text(encoding="utf-8")
 
     second_path = run_analysis(config, _make_records(20), peer_comparison=peer, ranked=ranked)
     second_meta = (config.report_dir / "meta.json").read_text(encoding="utf-8")
