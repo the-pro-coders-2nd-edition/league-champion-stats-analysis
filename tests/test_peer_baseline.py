@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from league_stats_peers.analysis.peer import baseline as peer_baseline_module
 from league_stats_peers.analysis.peer.baseline import resolve_peer_baseline
 from league_stats_peers.analysis.peer.ingest import ingest_match
 from league_stats_common.core.models import RankedEntry
@@ -36,6 +37,39 @@ def test_resolve_peer_baseline_uses_static_fallback(tmp_path, ranked: RankedEntr
     assert baseline.fallback_level in {4, 5}
     assert baseline.confidence == "low"
     assert baseline.metrics["dpm"] > 0
+
+
+def test_resolve_peer_baseline_records_resolutions_by_level_counter(
+    tmp_path, ranked: RankedEntry
+) -> None:
+    """`PEERS_BASELINE_RESOLUTIONS_BY_LEVEL_TOTAL` must be incremented, labeled
+    by whichever fallback_level actually answered the request -- this is the
+    resolution-mix visibility metric the RFC calls for, distinct from the
+    duration histogram's `source` label."""
+    store = CombinedMatchAndPeerStore()
+    client = MagicMock()
+    client.configure_mock(platform="euw1")
+
+    before = (
+        peer_baseline_module.PEERS_BASELINE_RESOLUTIONS_BY_LEVEL_TOTAL.labels(
+            fallback_level="4"
+        )._value.get()
+    )
+
+    baseline = resolve_peer_baseline(
+        client, store, ranked, "Ornn", "TOP", exclude_puuid="puuid-me"
+    )
+    assert baseline is not None
+
+    after = (
+        peer_baseline_module.PEERS_BASELINE_RESOLUTIONS_BY_LEVEL_TOTAL.labels(
+            fallback_level=str(baseline.fallback_level)
+        )._value.get()
+    )
+    if baseline.fallback_level == 4:
+        assert after == before + 1
+    else:
+        assert after >= 1
 
 
 def test_resolve_peer_baseline_uses_role_only_when_champion_missing(

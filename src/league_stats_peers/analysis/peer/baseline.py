@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Final
 
+from prometheus_client import Counter
+
 from league_stats_peers.analysis.peer.benchmark_cache import read_live_cache, write_live_cache
 from league_stats_peers.analysis.peer.benchmark_fetcher import BenchmarkSnapshot, fetch_benchmark_from_api
 from league_stats_peers.analysis.peer.benchmarks import try_role_benchmark, try_static_benchmark
@@ -27,6 +29,19 @@ MIN_WIDENED_GAMES: Final[int] = 50
 MIN_LIVE_GAMES: Final[int] = 50
 # Exact-rank store confidence is "high" once we have this many games.
 HIGH_CONFIDENCE_GAMES: Final[int] = 100
+
+# Resolution mix visibility: which rung of the fallback ladder (0/1/3/4/5 all
+# local reads, cost-equivalent; 2 is live Riot sampling -- see `source` on
+# PEERS_BASELINE_RESOLUTION_DURATION for that timing-relevant split instead)
+# actually answered each request. A fixed, closed 6-value enum
+# (`fallback_level`, see `resolve_peer_baseline`'s docstring) -- safe to label
+# by, and lets a store-coverage regression (more requests falling through to
+# higher levels) show up before it becomes a user-visible latency spike.
+PEERS_BASELINE_RESOLUTIONS_BY_LEVEL_TOTAL = Counter(
+    "peers_baseline_resolutions_by_level_total",
+    "Resolved peer baselines, labeled by which fallback_level answered the request.",
+    ["fallback_level"],
+)
 
 
 @dataclass(frozen=True)
@@ -253,6 +268,7 @@ def resolve_peer_baseline(
         ),
     )
     if baseline is not None:
+        PEERS_BASELINE_RESOLUTIONS_BY_LEVEL_TOTAL.labels(fallback_level="0").inc()
         log.info(
             "Resolved peer baseline: level=0, games=%d, source=store, took=%.1fs",
             baseline.games,
@@ -281,6 +297,7 @@ def resolve_peer_baseline(
         source_label=f"Peer store (widened rank): {label}.",
     )
     if baseline is not None:
+        PEERS_BASELINE_RESOLUTIONS_BY_LEVEL_TOTAL.labels(fallback_level="1").inc()
         log.info(
             "Resolved peer baseline: level=1, games=%d, source=store (widened), took=%.1fs",
             baseline.games,
@@ -309,6 +326,7 @@ def resolve_peer_baseline(
         log.warning("Live peer sampling failed: %s", exc)
         baseline = None
     if baseline is not None:
+        PEERS_BASELINE_RESOLUTIONS_BY_LEVEL_TOTAL.labels(fallback_level="2").inc()
         log.info(
             "Resolved peer baseline: level=2, games=%d, source=live/cache, took=%.1fs",
             baseline.games,
@@ -333,6 +351,7 @@ def resolve_peer_baseline(
         source_label=f"Peer store (wider rank ±2 tiers): {label}.",
     )
     if baseline is not None:
+        PEERS_BASELINE_RESOLUTIONS_BY_LEVEL_TOTAL.labels(fallback_level="3").inc()
         log.info(
             "Resolved peer baseline: level=3, games=%d, source=store (wider ±2), took=%.1fs",
             baseline.games,
@@ -348,6 +367,7 @@ def resolve_peer_baseline(
 
     static = try_static_benchmark(ranked.tier, champion, role)
     if static is not None:
+        PEERS_BASELINE_RESOLUTIONS_BY_LEVEL_TOTAL.labels(fallback_level="4").inc()
         log.info(
             "Resolved peer baseline: level=4, source=static champion JSON, took=%.1fs",
             time.monotonic() - t0,
@@ -363,6 +383,7 @@ def resolve_peer_baseline(
 
     role_static = try_role_benchmark(ranked.tier, role)
     if role_static is not None:
+        PEERS_BASELINE_RESOLUTIONS_BY_LEVEL_TOTAL.labels(fallback_level="5").inc()
         log.info(
             "Resolved peer baseline: level=5, source=static role JSON, took=%.1fs",
             time.monotonic() - t0,

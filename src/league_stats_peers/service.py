@@ -261,8 +261,11 @@ PEERS_DEDUPED_REQUESTS_TOTAL = Counter(
 PEERS_BASELINE_RESOLUTION_DURATION = Histogram(
     "peers_baseline_resolution_duration_seconds",
     "Time resolve_peer_baseline took to run one baseline resolution, from worker "
-    "thread start to completion (covers both fast local reads -- store hits and "
-    "static fallback, levels 0/1/3/4/5 -- and level 2's live Riot sampling).",
+    "thread start to completion, labeled by source -- cached (levels 0/1/3/4/5, "
+    "all local reads, sub-millisecond) vs. live_sample (level 2, live Riot "
+    "sampling, seconds to minutes) vs. error, so a live-sampling latency "
+    "regression is no longer averaged away by the fast local-read levels.",
+    ["source"],  # cached | live_sample | error
 )
 PEERS_BASELINE_RESOLUTIONS_TOTAL = Counter(
     "peers_baseline_resolutions_total",
@@ -270,6 +273,24 @@ PEERS_BASELINE_RESOLUTIONS_TOTAL = Counter(
     "local data (cached: store hits or static benchmark fallback) or required a live "
     "Riot sampling fetch (live_sample: fallback_level 2).",
     ["source"],
+)
+# Queued (submitted but not yet running) baseline resolutions -- the
+# complement to PEERS_INFLIGHT_BASELINES (which only counts work a worker
+# thread has actually started). Without this, an operator watching
+# PEERS_INFLIGHT_BASELINES during a timeout spike can't tell "all workers
+# busy, N queued behind them" from "workers idle, something else is wrong."
+PEERS_QUEUED_BASELINES = Gauge(
+    "peers_queued_baselines",
+    "In-flight resolutions submitted to the executor but not yet running "
+    "(len(self._inflight) - running).",
+)
+# Denominator for PEERS_FAST_PATH_TIMEOUTS_TOTAL -- every RequestBaseline call
+# that waits on the fast-path timeout at all (whether it times out or not),
+# so the timeout counter can be turned into a real rate.
+PEERS_FAST_PATH_ATTEMPTS_TOTAL = Counter(
+    "peers_fast_path_attempts_total",
+    "RequestBaseline calls that waited on the fast-path timeout (denominator "
+    "for PEERS_FAST_PATH_TIMEOUTS_TOTAL).",
 )
 
 
@@ -557,6 +578,7 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
 
             def _run() -> PeerBaseline | None:
                 started.set()
+                self._update_queued_gauge()
                 PEERS_INFLIGHT_BASELINES.inc()
                 resolution_start = time.perf_counter()
                 # Both the success and failure paths must record the duration/counter
@@ -574,27 +596,46 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
                         patch=patch,
                     )
                 except Exception:
-                    PEERS_BASELINE_RESOLUTION_DURATION.observe(time.perf_counter() - resolution_start)
+                    PEERS_BASELINE_RESOLUTION_DURATION.labels(source="error").observe(
+                        time.perf_counter() - resolution_start
+                    )
                     PEERS_BASELINE_RESOLUTIONS_TOTAL.labels(source="error").inc()
                     raise
                 finally:
                     PEERS_INFLIGHT_BASELINES.dec()
-                PEERS_BASELINE_RESOLUTION_DURATION.observe(time.perf_counter() - resolution_start)
                 source = "live_sample" if baseline is not None and baseline.fallback_level == 2 else "cached"
+                PEERS_BASELINE_RESOLUTION_DURATION.labels(source=source).observe(
+                    time.perf_counter() - resolution_start
+                )
                 PEERS_BASELINE_RESOLUTIONS_TOTAL.labels(source=source).inc()
                 return baseline
 
             future = self._executor.submit(_run)
             record = _InFlightResolution(future=future, started=started)
             self._inflight[key] = record
+            self._update_queued_gauge()
 
             def _cleanup(_future: "Future[PeerBaseline | None]") -> None:
                 with self._inflight_lock:
                     if self._inflight.get(key) is record:
                         del self._inflight[key]
+                self._update_queued_gauge()
 
             future.add_done_callback(_cleanup)
             return record
+
+    def _update_queued_gauge(self) -> None:
+        """Recompute `PEERS_QUEUED_BASELINES` from the current `_inflight` snapshot.
+
+        Called (under `_inflight_lock`, reentrant since it's an `RLock`) right
+        after `_inflight` gains or loses an entry, and right after a worker
+        thread actually starts running one (`started.set()` in `_run` above) --
+        the three moments that can change how many entries are queued vs.
+        running.
+        """
+        with self._inflight_lock:
+            queued = sum(1 for record in self._inflight.values() if not record.started.is_set())
+            PEERS_QUEUED_BASELINES.set(queued)
 
     def RequestBaseline(self, request, context):
         champion = request.champion
@@ -640,6 +681,7 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
             dedup_key, client, adapter, ranked, champion, role, exclude_puuid, patch
         )
 
+        PEERS_FAST_PATH_ATTEMPTS_TOTAL.inc()
         try:
             baseline = record.future.result(timeout=self._fast_path_timeout_s)
         except FutureTimeoutError:
