@@ -305,7 +305,7 @@ original monolith):
 | RPC | Description |
 | --- | --- |
 | `EnqueueJob` | Start the pipeline for a job (called by `api-ui`'s `AnalysisWorker` today; the proto documents CronWatch as a caller too, but CronWatch does not call it in practice — see the architecture note above) |
-| `StreamJobProgress` | Server-streamed pipeline stage results (summary → performance → deep-dive → champion), subscribed to by `api-ui` |
+| `StreamJobProgress` | Server-streamed pipeline stage results (fetch → analyze → peer, i.e. `job_states.FETCHING` → `ANALYZING`/`REPORT_READY` → `PEER_RUNNING`), subscribed to by `api-ui` |
 | `NotifyPeerBaselineReady` | Callback `peers` uses to deliver a previously-requested baseline once ready |
 
 ### cron-watch — gRPC `CronWatchService` (`protos/league_stats_rpc/v1/cron_watch.proto`)

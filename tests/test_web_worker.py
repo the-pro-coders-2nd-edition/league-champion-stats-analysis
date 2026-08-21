@@ -1708,3 +1708,161 @@ def test_via_grpc_peer_resolution_works_against_raw_match_store(
     assert result is not None
     assert result.champion == "Ahri"
     assert result.role == "MIDDLE"
+
+
+# ---------------------------------------------------------- new observability metrics
+
+
+def _sample_value(metric_name: str, labels: dict[str, str] | None = None) -> float | None:
+    from prometheus_client import generate_latest, REGISTRY
+    from prometheus_client.parser import text_string_to_metric_families
+
+    labels = labels or {}
+    text = generate_latest(REGISTRY).decode("utf-8")
+    for family in text_string_to_metric_families(text):
+        for sample in family.samples:
+            if sample.name == metric_name and all(
+                sample.labels.get(k) == v for k, v in labels.items()
+            ):
+                return sample.value
+    return None
+
+
+def test_execute_job_records_stage_durations(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`RUNNER_STAGE_DURATION` must be observed once per stage (fetch/analyze/
+    peer) on every job run, so a slow stage is distinguishable from the
+    others -- previously all stages were folded into one unlabeled
+    `runner_job_duration_seconds` histogram."""
+    job = _claimed_job(store)
+    _patch_pipeline(monkeypatch)
+
+    before_fetch = _sample_value(
+        "runner_stage_duration_seconds_count", {"stage": "fetch"}
+    ) or 0.0
+    before_analyze = _sample_value(
+        "runner_stage_duration_seconds_count", {"stage": "analyze"}
+    ) or 0.0
+    before_peer = _sample_value(
+        "runner_stage_duration_seconds_count", {"stage": "peer"}
+    ) or 0.0
+
+    worker.execute_job(job, store, web_config)
+
+    assert _sample_value("runner_stage_duration_seconds_count", {"stage": "fetch"}) == before_fetch + 1
+    assert _sample_value("runner_stage_duration_seconds_count", {"stage": "analyze"}) == before_analyze + 1
+    assert _sample_value("runner_stage_duration_seconds_count", {"stage": "peer"}) == before_peer + 1
+
+
+def test_build_peer_for_pool_via_grpc_records_cached_hit_request_duration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `cached=True` `RequestBaseline` response must be observed under
+    `RUNNER_PEERS_REQUEST_DURATION{outcome="cached_hit"}` and
+    `api_ui_outbound_call_duration_seconds{target="peers",operation="RequestBaseline",outcome="ok"}`."""
+    import json as _json
+    from dataclasses import asdict
+
+    from league_stats_peers.analysis.peer.baseline import PeerBaseline
+    from league_stats_common.core.models import RankedEntry
+    from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
+
+    baseline = PeerBaseline(
+        metrics={"kda": 3.0}, games=60, players=10, source="peer store",
+        confidence="high", fallback_level=0,
+    )
+
+    class _CachedPeersServicer(peers_pb2_grpc.PeersServiceServicer):
+        def RequestBaseline(self, request, context):
+            return peers_pb2.RequestBaselineResponse(
+                request_id="req-metric-1", cached=True, baseline_json=_json.dumps(asdict(baseline))
+            )
+
+    server, port = _start_peers_server(_CachedPeersServicer())
+    try:
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        services = _fake_services_for_grpc_peer()
+        monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
+        batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
+        pool = BuildPool(champion="Ahri", role="MIDDLE", games=25)
+        ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+        before = _sample_value(
+            "runner_peers_request_duration_seconds_count", {"outcome": "cached_hit"}
+        ) or 0.0
+        before_outbound = _sample_value(
+            "api_ui_outbound_call_duration_seconds_count",
+            {"target": "peers", "operation": "RequestBaseline", "outcome": "ok"},
+        ) or 0.0
+
+        result = worker._build_peer_for_pool_via_grpc(services, batch, pool, ranked, web_config)
+    finally:
+        server.stop(grace=None)
+
+    assert result is not None
+    after = _sample_value(
+        "runner_peers_request_duration_seconds_count", {"outcome": "cached_hit"}
+    )
+    after_outbound = _sample_value(
+        "api_ui_outbound_call_duration_seconds_count",
+        {"target": "peers", "operation": "RequestBaseline", "outcome": "ok"},
+    )
+    assert after == before + 1
+    assert after_outbound == before_outbound + 1
+
+
+def test_build_peer_for_pool_via_grpc_records_async_wait_delivered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `cached=False` response followed by a real `NotifyPeerBaselineReady`
+    delivery must be observed under `RUNNER_PEERS_ASYNC_WAIT_DURATION{outcome="delivered"}`."""
+    import json as _json
+    import threading as _threading
+    import time as _time
+    from dataclasses import asdict
+
+    from league_stats_peers.analysis.peer.baseline import PeerBaseline
+    from league_stats_common.core.models import RankedEntry
+    from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
+
+    baseline = PeerBaseline(
+        metrics={"kda": 5.0}, games=80, players=15, source="live sample",
+        confidence="medium", fallback_level=2,
+    )
+
+    class _SlowPeersServicer(peers_pb2_grpc.PeersServiceServicer):
+        def RequestBaseline(self, request, context):
+            return peers_pb2.RequestBaselineResponse(request_id="req-metric-async-1", cached=False)
+
+    server, port = _start_peers_server(_SlowPeersServicer())
+
+    def _deliver_later() -> None:
+        _time.sleep(0.1)
+        worker.resolve_peer_baseline_notification(
+            "req-metric-async-1", baseline_json=_json.dumps(asdict(baseline)), error=""
+        )
+
+    _threading.Thread(target=_deliver_later, daemon=True).start()
+
+    try:
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        services = _fake_services_for_grpc_peer()
+        monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
+        batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
+        pool = BuildPool(champion="Ahri", role="MIDDLE", games=25)
+        ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+        before = _sample_value(
+            "runner_peers_async_wait_duration_seconds_count", {"outcome": "delivered"}
+        ) or 0.0
+
+        result = worker._build_peer_for_pool_via_grpc(services, batch, pool, ranked, web_config)
+    finally:
+        server.stop(grace=None)
+
+    assert result is not None
+    after = _sample_value(
+        "runner_peers_async_wait_duration_seconds_count", {"outcome": "delivered"}
+    )
+    assert after == before + 1
