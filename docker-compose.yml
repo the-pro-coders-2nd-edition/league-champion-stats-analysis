@@ -19,25 +19,42 @@ services:
       - MONGO_URI=mongodb://mongo:27017/league_stats
       - RUNNER_GRPC_TARGET=runner:50051
       - ANALYZER_WATCH_MODE=grpc
-      # Pinned explicitly (opposite of ANALYZER_WATCH_MODE above, which is
-      # pinned to grpc here) -- `api-ui` never hosts a RunnerServiceServicer,
-      # so PEERS' async callback (NotifyPeerBaselineReady) could never reach
-      # it if peers_mode=grpc were set here (see WebConfig's own validator/
-      # warning). The natural way to enable PEERS grpc mode elsewhere is to
-      # add ANALYZER_PEERS_MODE=grpc to the shared .env file below -- without
-      # this explicit pin, that would silently also flip it on here, stalling
-      # every slow-path pool for the full baseline-wait timeout. See the
-      # `peers` service's own comment below for the topology this is meant
-      # to be enabled on instead.
-      - ANALYZER_PEERS_MODE=in_process
-      # Pinned explicitly for the same reason as ANALYZER_PEERS_MODE above:
-      # runner_storage_mode=mongo REQUIRES peers_mode=grpc (WebConfig raises
-      # otherwise). Since api-ui pins peers_mode=in_process here, inheriting
-      # ANALYZER_RUNNER_STORAGE_MODE=mongo from the shared .env (the natural
-      # way to enable it for `runner` below) would trip that validator and
-      # crash api-ui at startup the moment it built a WebConfig -- api-ui runs
-      # execute_job itself whenever runner_mode is in_process (its own
-      # default), so this isn't a hypothetical.
+      # Phase 8, Task 1 fix (was `in_process` until then): `RawMatchStore`
+      # (the only `_build_job_services` backing store since Task 1 deleted
+      # `MatchStore`) does not implement any of the peer-game methods the
+      # in-process peer path (`build_peer_for_pool`) calls directly on
+      # `services.store` -- `api-ui` runs `execute_job` itself whenever
+      # `runner_mode` is `in_process` (its own default), so this was a real
+      # `AttributeError` crash on the first ranked build needing a peer
+      # baseline, not a hypothetical. `peers_mode=grpc` routes stage B's peer
+      # comparison through `_build_peer_for_pool_via_grpc` instead (PEERS'
+      # `RequestBaseline` RPC), which never touches `services.store`'s
+      # peer-game surface -- `finish_peer_comparison`'s own store use
+      # (`collect_user_history_peers`) only calls `iter_match_ids`/
+      # `load_match`, which `RawMatchStore` does implement.
+      #
+      # This does NOT contradict the comment this replaced: `api-ui` still
+      # never hosts a `RunnerServiceServicer`, so PEERS' async
+      # `NotifyPeerBaselineReady` callback still can never reach it -- see
+      # `_warn_on_peers_grpc_topology_precondition`'s own warning, which
+      # fires here on purpose. The accepted tradeoff is `_run_stage_b`'s
+      # documented behavior when a PEERS baseline falls to the slow path from
+      # this process: `_build_peer_for_pool_via_grpc` polls
+      # `_peer_baseline_waiters` for the callback that will never come, until
+      # `_PEERS_BASELINE_WAIT_TIMEOUT_S` elapses, then logs and skips that
+      # one build's peer comparison (soft failure -- the base report is
+      # already served). Degraded-but-correct beats an `AttributeError`
+      # crash on every ranked build.
+      - ANALYZER_PEERS_MODE=grpc
+      # PEERS_GRPC_TARGET defaults to localhost:50053 (wrong from inside this
+      # container) -- must point at the compose network's `peers` host, same
+      # as `runner`'s own pin below. Port matches `peers`' `PEERS_GRPC_PORT`.
+      - PEERS_GRPC_TARGET=peers:50053
+      # `runner_storage_mode`'s "sqlite" value no longer selects a different
+      # implementation (Phase 8, Task 1 deleted `MatchStore`) -- kept here
+      # only so this pin's history is legible; "mongo" would now also pass
+      # WebConfig's validator since peers_mode=grpc is pinned above, but
+      # changing it is Task 5's call (dead-field sweep), not this fix's.
       - ANALYZER_RUNNER_STORAGE_MODE=sqlite
       # Without this, api-ui's WelcomeBackSubscriber is never constructed (it's
       # gated on this var being set -- see WebConfig.cron_watch_grpc_target), so
@@ -133,12 +150,16 @@ services:
     env_file:
       - .env
     # No `ports:` here on purpose, same reasoning as `runner`/`cron-watch`:
-    # nothing outside the compose network dials PEERS directly today. Note
-    # `api-ui`'s `peers_mode` still defaults to `in_process` (unchanged by
-    # this task) -- wiring `ANALYZER_PEERS_MODE=grpc` /
-    # `PEERS_GRPC_TARGET=peers:50053` into `api-ui`/`runner` so they actually
-    # dial this service remains a follow-up for the controller, not decided
-    # here.
+    # nothing outside the compose network dials PEERS directly today.
+    # `api-ui` now also pins `ANALYZER_PEERS_MODE=grpc` /
+    # `PEERS_GRPC_TARGET=peers:50053` (Phase 8, Task 1 fix -- see its own
+    # comment: `RawMatchStore` doesn't support the in-process peer path's
+    # peer-game methods), so `runner`, `peers` and `api-ui` all dial this
+    # service today. `cron-watch` deliberately does not: it never calls
+    # `execute_job`/`build_peer_for_pool` at all (its `CronWatchServicer`
+    # only enqueues into the shared `JobStore` file -- see
+    # `cron_watch/service.py`'s "shared SQLite volume" design note), so it
+    # has no peer-comparison code path to route through PEERS.
     depends_on:
       - mongo
 

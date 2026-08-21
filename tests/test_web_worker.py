@@ -1663,3 +1663,111 @@ def test_trace_id_survives_jobstore_handoff_through_a_real_runner_server(
         server.stop(grace=None)
 
     assert observed == ["originating-http-trace-xyz"]
+
+
+# --------------------------- Phase 8, Task 1 fix regression (api-ui compose pin)
+
+
+def test_raw_match_store_backed_services_crashes_in_process_but_not_via_grpc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test for the Task 1 CRITICAL concern (see
+    `.superpowers/sdd/2026-08-20-microservices-phase8/task-1-report.md`):
+    `RawMatchStore` (the only store `_build_job_services` has constructed
+    since Task 1 deleted `MatchStore`) does not implement any of
+    `MatchStore`'s former peer-game methods. `docker-compose.yml`'s `api-ui`
+    service now pins `ANALYZER_PEERS_MODE=grpc` instead of `in_process`
+    specifically because of this.
+
+    Proves both halves of that fix, against the exact real call path Task 1's
+    report traced (`build_peer_for_pool` -> `build_peer_comparison` ->
+    `resolve_peer_baseline` -> `collect_peer_games_from_store`, called with
+    `services.store` directly), not merely a config field assertion:
+
+    1. The regression is real: calling the in-process path
+       (`build_peer_for_pool`) with a real `RawMatchStore`-backed `Services`
+       object really does raise `AttributeError` on a missing peer-game
+       method, exactly as the report describes.
+    2. The fix works: routing the identical `Services` object through the
+       gRPC path (`_build_peer_for_pool_via_grpc`, what `peers_mode="grpc"`
+       makes `_run_stage_b` call instead) against a real, in-process
+       `PeersServicer` server resolves a peer comparison successfully --
+       `finish_peer_comparison`'s own store use
+       (`collect_user_history_peers` -> `store.iter_match_ids`/`load_match`)
+       is exactly the raw-match surface `RawMatchStore` *does* implement, so
+       nothing here needs a mocked-out store.
+    """
+    from concurrent import futures
+    from unittest.mock import MagicMock
+
+    import grpc
+    import mongomock
+
+    from league_stats_common.core.config import AppConfig
+    from league_stats_common.core.models import RankedEntry
+    from league_stats_peers import service as peers_service
+    from league_stats_peers.analysis.peer.ingest import ingest_match
+    from league_stats_peers.infra.peer_sample_store import PeerSampleStore
+    from league_stats_runner.infra.raw_match_store import RawMatchStore
+    import league_stats_runner.pipeline.orchestrator as orchestrator
+    from league_stats_runner.pipeline.orchestrator import build_peer_for_pool
+    from league_stats_rpc.v1 import peers_pb2_grpc
+    from tests.fixtures import make_match
+
+    raw_match_store = RawMatchStore(mongomock.MongoClient(), db_name="league_stats_test")
+    app_config = AppConfig(
+        riot_id="Test", tagline="EUW", api_key="RGAPI-test", min_games=1, platform="euw1"
+    )
+    services = SimpleNamespace(config=app_config, store=raw_match_store, client=MagicMock())
+    # `build_peer_for_pool` (in-process path) calls its own module's
+    # `group_records`, not `worker.group_records` -- patch the orchestrator's
+    # own binding so step 1 below actually reaches `resolve_peer_baseline`
+    # instead of short-circuiting on an empty `records` list.
+    monkeypatch.setattr(orchestrator, "group_records", lambda records, champ, role: _peer_records())
+    monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
+    batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
+    pool = BuildPool(champion="Ahri", role="MIDDLE", games=25)
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+    # 1. The regression, reproduced directly: the in-process path really does
+    # crash against a real RawMatchStore -- confirming the report's claim,
+    # not just asserting it from the code without executing it.
+    with pytest.raises(AttributeError):
+        build_peer_for_pool(services, batch, pool, ranked)
+
+    # 2. The fix: the same Services object, routed through the grpc path
+    # instead, against a real PEERS gRPC server backed by a real
+    # (mongomock) PeerSampleStore.
+    peer_store = PeerSampleStore(mongomock.MongoClient(), db_name="league_stats_peer_test")
+    for index in range(60):
+        match = make_match()
+        match["info"]["participants"][1]["puuid"] = f"peer-{index}"
+        ingest_match(
+            peers_service._PeerStoreAdapter(peer_store), f"EUW1_{index}", match, "euw1"
+        )
+        peer_store.set_puuid_rank(f"peer-{index}", "GOLD", "II")
+
+    servicer = peers_service.PeersServicer(
+        peer_store=peer_store,
+        riot_client_factory=lambda platform: MagicMock(),
+        fast_path_timeout_s=3.0,
+    )
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
+    peers_pb2_grpc.add_PeersServiceServicer_to_server(servicer, server)
+    port = server.add_insecure_port("127.0.0.1:0")
+    server.start()
+    try:
+        grpc_web_config = WebConfig(
+            peers_grpc_target=f"127.0.0.1:{port}",
+            peers_mode="grpc",
+            runner_storage_mode="mongo",
+        )
+        result = worker._build_peer_for_pool_via_grpc(
+            services, batch, pool, ranked, grpc_web_config
+        )
+    finally:
+        server.stop(grace=None)
+
+    assert result is not None
+    assert result.champion == "Ahri"
+    assert result.role == "MIDDLE"
