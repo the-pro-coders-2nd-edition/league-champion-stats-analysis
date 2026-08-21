@@ -10,8 +10,6 @@ const MET = 'met';
 const MISSED = 'missed';
 const UNTRACKED = 'untracked';
 
-export const GOAL_OUTCOMES = { MET, MISSED, UNTRACKED };
-
 function liveGoals(ladder) {
   if (!ladder || !ladder.has_career) return [];
   const live = (ladder.blocks || []).find((block) => block.is_active);

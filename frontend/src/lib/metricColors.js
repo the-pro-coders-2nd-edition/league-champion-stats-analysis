@@ -63,9 +63,3 @@ export function gameReviewScoreColor(pct) {
   const width = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
   return interpolateMetricColor((width - 50) / 50);
 }
-
-/** Inline style for a score bar fill: width + flat ramp color. */
-export function gameReviewBarStyle(pct) {
-  const width = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
-  return `width:${width}%;background:${gameReviewScoreColor(width)}`;
-}
