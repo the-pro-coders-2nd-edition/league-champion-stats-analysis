@@ -6,19 +6,41 @@ import mongomock
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+import league_stats_common.infra.jobs as jobs
+import league_stats_runner.worker as worker
 from league_stats_common.core.config import AppConfig
+from league_stats_common.infra.jobs import JobStore
 from league_stats_common.infra.riot_api import RiotApiClient
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_runner.ingest.parser import ItemCatalog, MatchParser, discover_build_pools
 from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.fetch import group_records
-from league_stats_runner.pipeline.orchestrator import run_all_builds
 from league_stats_runner.pipeline.services import PlayerContext, Services
 from league_stats_runner.presentation.report import discover_player_builds
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_player_match, make_timeline
+
+
+def _job_store(slug: str) -> JobStore:
+    js = JobStore(mongomock.MongoClient())
+    js.upsert_player(slug=slug, riot_id="Test", tagline="EUW", region="euw1")
+    return js
+
+
+def _claimed_job(store: JobStore, slug: str) -> dict[str, Any]:
+    store.enqueue(
+        kind=jobs.JOB_KIND_ANALYZE,
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        player_slug=slug,
+    )
+    job = store.claim_next()
+    assert job is not None
+    return job
 
 
 def _config(tmp_path: Path) -> AppConfig:
@@ -108,7 +130,15 @@ def test_group_records_filters_by_champion_and_lane() -> None:
 
 
 def test_run_all_builds_generates_player_hub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Batch analysis writes every eligible report and a player hub."""
+    """Batch analysis (via RUNNER's real stage-A pipeline) writes every eligible
+    report and a player hub.
+
+    Drives this through `worker.prepare_builds` + `worker._run_stage_a` rather
+    than `orchestrator.run_all_builds`, which Phase 9's dead-code sweep
+    confirmed is orphaned (no production caller since commit `33bd81b`
+    deleted the CLI shim that used to invoke it). The hub/manifest refresh
+    tested here is a side effect of `analyze_build` itself, called by both.
+    """
     from league_stats_common.infra.cache import HttpCache
     from league_stats_common.core.models import RankedEntry
     from league_stats_common.infra.ddragon_assets import DDragonAssets
@@ -139,19 +169,19 @@ def test_run_all_builds_generates_player_hub(tmp_path: Path, monkeypatch: pytest
         client=client,
         assets=DDragonAssets(config),
     )
+    job_store = _job_store("test_euw")
     try:
-        hub_path = run_all_builds(
-            services,
-            [PlayerContext(riot_id="Test", tagline="EUW", puuid=MY_PUUID)],
-            fetch=False,
-            skip_peer=True,
-        )
+        job = _claimed_job(job_store, "test_euw")
+        contexts = [PlayerContext(riot_id="Test", tagline="EUW", puuid=MY_PUUID)]
+        batch = worker.prepare_builds(services, contexts)
+        worker._run_stage_a(services, job_store, job, batch, None)
     finally:
         store.close()
         http_cache.close()
+        job_store.close()
 
+    hub_path = config.player_reports_dir / "manifest.json"
     assert hub_path.exists()
-    assert hub_path == config.player_reports_dir / "manifest.json"
     builds = discover_player_builds(config.player_reports_dir)
     champions = {build["champion"] for build in builds}
     assert "Viktor" in champions

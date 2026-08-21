@@ -89,8 +89,8 @@ _PEERS_REQUEST_TIMEOUT_S = 10.0
 # per-job/per-pool interaction is a known, not-yet-solved limit of this design
 # (see task-3-report.md), not something this constant alone can fix. A build
 # whose baseline never arrives in time skips its peer comparison (soft
-# failure, same as any other `build_peer_for_pool` exception) rather than
-# hanging stage B forever.
+# failure, same as any other peer-resolution exception) rather than hanging
+# stage B forever.
 _PEERS_BASELINE_WAIT_TIMEOUT_S = 900.0
 
 # How often the grpc-mode wait below re-checks for cancellation instead of
@@ -378,11 +378,12 @@ def _build_job_services(
     http_cache = HttpCache(config.http_cache_dir)
     # `MatchStore` (the local on-disk store this replaced) was deleted in
     # Phase 8, Task 1 -- `RawMatchStore` is now the only backing
-    # implementation. It does not implement the peer-game methods the
-    # in-process peer path (`build_peer_for_pool`) needs -- fine here since
-    # `_run_stage_b` always resolves peers via PEERS over gRPC
-    # (`_build_peer_for_pool_via_grpc`), which never touches those methods
-    # (see `core/config.py`'s `WebConfig` docstring).
+    # implementation. It never implemented the peer-game methods the
+    # now-deleted in-process peer path (`build_peer_for_pool`, removed Phase
+    # 9 Task 4) used to need -- moot now since `_run_stage_b` always resolves
+    # peers via PEERS over gRPC (`_build_peer_for_pool_via_grpc`), which
+    # never touches those methods (see `core/config.py`'s `WebConfig`
+    # docstring).
     mongo_client = _build_mongo_client(web_config.runner_mongo_uri)
     store: RawMatchStore = RawMatchStore(
         mongo_client, db_name=_db_name_from_uri(web_config.runner_mongo_uri)
@@ -502,9 +503,14 @@ def _build_peer_for_pool_via_grpc(
     """`_run_stage_b`'s sole peer-comparison path (since Phase 9 removed the
     `peers_mode` flag and its in-process fallback): resolves the peer
     baseline by calling PEERS' `RequestBaseline` over gRPC instead of running
-    `resolve_peer_baseline` in this process, unlike `build_peer_for_pool`
-    (`league_stats_runner.pipeline.orchestrator`, still used by that module's
-    own `run_all_builds` CLI/batch pipeline, unrelated to this path).
+    `resolve_peer_baseline` in this process, the way the now-deleted
+    `build_peer_for_pool` (`league_stats_runner.pipeline.orchestrator`) used
+    to. `build_peer_for_pool` was itself deleted in this same phase's final
+    dead-code sweep: its apparent second caller, `orchestrator.run_all_builds`,
+    was confirmed to have zero production callers of its own (the CLI shim
+    that used to invoke it was deleted in commit `33bd81b`, predating this
+    migration), so `build_peer_for_pool` had exactly one real call site all
+    along -- this function's predecessor in `_run_stage_b`.
 
     HARD PRECONDITION (relocated here from `WebConfig`'s removed
     `_warn_on_peers_grpc_topology_precondition` validator, Phase 9): this
@@ -540,9 +546,9 @@ def _build_peer_for_pool_via_grpc(
 
     A `None` return (unreachable PEERS, a PEERS-side error, or a timed-out
     wait for the async callback) is a soft failure for this one build -- it is
-    caught by `_run_stage_b`'s caller the same way `build_peer_for_pool`
-    raising or returning `None` already is, and stage B moves on to the next
-    build.
+    caught by `_run_stage_b`'s caller the same way the now-deleted
+    `build_peer_for_pool` raising or returning `None` used to be, and stage B
+    moves on to the next build.
 
     Cancellation and progress (finding 2 of the final whole-branch review):
     in-process, `services.progress` (a `JobProgressReporter`) is threaded into
@@ -700,8 +706,9 @@ def _run_stage_b(
     gRPC (`_build_peer_for_pool_via_grpc`, added in Phase 3 of the
     microservices migration). Phase 9 removed the `peers_mode` flag that
     used to let this fall back to resolving the baseline in-process
-    (`build_peer_for_pool`) -- see that function's docstring for the
-    topology precondition this gRPC-only path carries.
+    (`build_peer_for_pool`, itself deleted as fully dead code in Phase 9's
+    final sweep) -- see `_build_peer_for_pool_via_grpc`'s own docstring for
+    the topology precondition this gRPC-only path carries.
     """
     log = get_logger("worker")
     job_id = int(job["id"])

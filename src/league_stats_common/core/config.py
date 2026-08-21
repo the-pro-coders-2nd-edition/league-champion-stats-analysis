@@ -420,12 +420,14 @@ class WebConfig(BaseModel):
     # the hard topology precondition this field's removed validator used to
     # warn about (PEERS' async callback only reaches the process that issued
     # the original request; that knowledge lives there now, not in a config
-    # field check). `build_peer_for_pool`
-    # (`league_stats_runner.pipeline.orchestrator`), the in-process
-    # implementation this field used to gate, is NOT dead: it's still called,
-    # unconditionally, by `orchestrator.run_all_builds` -- a separate,
-    # `peers_mode`-unrelated CLI/batch pipeline path this phase does not
-    # touch.
+    # field check). `build_peer_for_pool` (`league_stats_runner.pipeline.orchestrator`),
+    # the in-process implementation this field used to gate, was deleted in
+    # this same phase's final dead-code sweep: its only other apparent caller,
+    # `orchestrator.run_all_builds`, was itself confirmed to have zero
+    # production callers (the CLI shim that used to invoke it was deleted in
+    # commit `33bd81b`, predating this migration) -- so `build_peer_for_pool`
+    # had exactly one real (production) call site all along, the `_run_stage_b`
+    # branch this phase already removed.
     peers_grpc_target: str = "localhost:50053"
     # Opt-in subscription to CronWatch's WatchUpdates push stream (Phase 4 of the
     # microservices migration). This gates only the gRPC SUBSCRIBER, which is
@@ -454,12 +456,12 @@ class WebConfig(BaseModel):
     # `tests/test_web_worker.py::test_raw_match_store_backed_services_crashes_in_process_but_not_via_grpc`
     # for the peer-game-method gap this store still carries (below).
     #
-    # KNOWN GAP, FIXED (see below, do not reopen): `RawMatchStore` never
+    # KNOWN GAP, FIXED AND NOW FULLY MOOT (see below): `RawMatchStore` never
     # implemented `MatchStore`'s former peer-game methods
     # (`iter_unverified_puuids`, `iter_unverified_puuids_for_build`,
     # `set_puuid_rank`, `upsert_peer_game`, `load_peer_games`,
     # `count_peer_games`), which the in-process peer path
-    # (`build_peer_for_pool`) calls on that exact same store object -- back
+    # (`build_peer_for_pool`) called on that exact same store object -- back
     # when `peers_mode`'s class-level default was still "in_process", any
     # real job whose peer comparison reached `build_peer_for_pool` in-process
     # would have crashed with an `AttributeError` the first time a ranked
@@ -471,12 +473,15 @@ class WebConfig(BaseModel):
     # implements). `cron-watch` never reaches `build_peer_for_pool` at all
     # (it only enqueues into `JobStore`), so it needed no pin. Phase 9 then
     # deleted `peers_mode` and its branch entirely, making the gRPC path the
-    # only one `_run_stage_b` ever takes -- `build_peer_for_pool` itself
-    # survives (still called by `orchestrator.run_all_builds`, unrelated to
-    # `peers_mode`), so this gap is still real for any caller that reaches
-    # it against a `RawMatchStore`-backed `Services` object; it's just no
-    # longer reachable through `_run_stage_b`. Regression test:
-    # `tests/test_web_worker.py::test_raw_match_store_backed_services_crashes_in_process_but_not_via_grpc`.
+    # only one `_run_stage_b` ever takes. `build_peer_for_pool` itself was
+    # then deleted too, in this same phase's final dead-code sweep: its
+    # apparent second caller, `orchestrator.run_all_builds`, was confirmed to
+    # have zero production callers of its own (the CLI shim that invoked it
+    # was deleted in commit `33bd81b`, predating this migration), so this gap
+    # is now fully moot -- there is no in-process peer path left anywhere to
+    # hit it. Historical regression test (now updated to drop its
+    # `build_peer_for_pool` half, since that function no longer exists):
+    # `tests/test_web_worker.py::test_via_grpc_still_works_against_raw_match_store`.
     #
     # This class-level default is only used when neither RUNNER_MONGO_URI nor
     # the shared MONGO_URI is set in the environment -- `load_web_config`

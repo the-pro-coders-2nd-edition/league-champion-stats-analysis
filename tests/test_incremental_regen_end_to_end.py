@@ -6,6 +6,12 @@ decision is exercised (with the skip function monkeypatched) by
 tests/test_web_worker.py. Neither proves that, given a real multi-build
 player and a real `new_match_ids` set touching only one build, the *other*
 build's on-disk report is actually left alone. This closes that gap.
+
+Drives this through `worker.prepare_builds` + `worker._run_stage_a` directly
+(RUNNER's own real stage-A pipeline, reached via `execute_job`) rather than
+through `orchestrator.run_all_builds`, which Phase 9's dead-code sweep
+confirmed has been orphaned (no production caller) since commit `33bd81b`
+deleted the CLI shim that used to invoke it.
 """
 
 from __future__ import annotations
@@ -14,15 +20,18 @@ import mongomock
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+import league_stats_common.infra.jobs as jobs
+import league_stats_runner.worker as worker
 from league_stats_common.core.config import AppConfig
 from league_stats_common.core.models import RankedEntry
 from league_stats_common.infra.cache import HttpCache
 from league_stats_common.infra.ddragon_assets import DDragonAssets
+from league_stats_common.infra.jobs import JobStore
 from league_stats_common.infra.riot_api import RiotApiClient
-from league_stats_runner.pipeline.orchestrator import run_all_builds
 from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.services import PlayerContext, Services
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_player_match, make_timeline
@@ -77,6 +86,37 @@ def _services(config: AppConfig, store: RawMatchStore, monkeypatch: pytest.Monke
     )
 
 
+def _job_store() -> JobStore:
+    js = JobStore(mongomock.MongoClient())
+    js.upsert_player(slug="test_euw", riot_id="Test", tagline="EUW", region="euw1")
+    return js
+
+
+def _claimed_job(store: JobStore) -> dict[str, Any]:
+    store.enqueue(
+        kind=jobs.JOB_KIND_ANALYZE,
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        player_slug="test_euw",
+    )
+    job = store.claim_next()
+    assert job is not None
+    return job
+
+
+def _run_stage_a(
+    services: Services, job_store: JobStore, contexts: list[PlayerContext], new_match_ids: frozenset[str] | None
+) -> None:
+    """Drive RUNNER's real stage-A pipeline (`execute_job`'s own building blocks)."""
+    job = _claimed_job(job_store)
+    batch = worker.prepare_builds(services, contexts)
+    worker._run_stage_a(services, job_store, job, batch, new_match_ids)
+    # `enqueue` dedupes against an active job for this player; finish this one
+    # so the next `_run_stage_a` call's `enqueue` creates a fresh job to claim.
+    job_store.set_state(int(job["id"]), jobs.DONE)
+
+
 def test_refresh_with_one_new_game_only_touches_the_affected_build(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -85,11 +125,12 @@ def test_refresh_with_one_new_game_only_touches_the_affected_build(
     _seed(store, viktor=25, ahri=25)
     services = _services(config, store, monkeypatch)
     contexts = [PlayerContext(riot_id="Test", tagline="EUW", puuid=MY_PUUID)]
+    job_store = _job_store()
 
     try:
         # First pass: no new_match_ids -> should_skip_unchanged_build never
         # skips (mirrors a fresh `analyze`), so both builds get a real report.
-        run_all_builds(services, contexts, fetch=False, skip_peer=True, new_match_ids=None)
+        _run_stage_a(services, job_store, contexts, None)
 
         viktor_path = config.player_reports_dir / "viktor_middle" / "report.json"
         ahri_path = config.player_reports_dir / "ahri_middle" / "report.json"
@@ -107,19 +148,14 @@ def test_refresh_with_one_new_game_only_touches_the_affected_build(
         )
         store.save_timeline(new_match_id, make_timeline())
 
-        run_all_builds(
-            services,
-            contexts,
-            fetch=False,
-            skip_peer=True,
-            new_match_ids=frozenset({new_match_id}),
-        )
+        _run_stage_a(services, job_store, contexts, frozenset({new_match_id}))
 
         ahri_after = ahri_path.read_bytes()
         viktor_after = viktor_path.read_bytes()
     finally:
         store.close()
         services.http_cache.close()
+        job_store.close()
 
     assert ahri_after == ahri_before, (
         "Ahri build has no new games; its report.json must be byte-identical"

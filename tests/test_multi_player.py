@@ -9,15 +9,15 @@ from pathlib import Path
 
 import pytest
 
+import league_stats_runner.worker as worker
 from league_stats_common.core.config import PlayerIdentity, load_config
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_runner.ingest.parser import ItemCatalog, MatchParser, discover_build_pools
 from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.fetch import group_records
-from league_stats_runner.pipeline.orchestrator import run_all_builds
 from league_stats_runner.pipeline.services import PlayerContext, Services
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_player_match, make_timeline
-from tests.test_build_pools import _config, _seed_store
+from tests.test_build_pools import _claimed_job, _config, _job_store, _seed_store
 
 ALT_PUUID = "alt-puuid-22222222-2222-2222-2222-222222222222"
 
@@ -81,7 +81,14 @@ def test_multi_player_config_uses_group_slug(tmp_path: Path) -> None:
 def test_run_all_builds_pools_multi_player_reports(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Batch analysis pools qualifying games from multiple players."""
+    """Batch analysis (via RUNNER's real stage-A pipeline) pools qualifying
+    games from multiple players.
+
+    Drives this through `worker.prepare_builds` + `worker._run_stage_a`
+    rather than `orchestrator.run_all_builds`, which Phase 9's dead-code
+    sweep confirmed is orphaned (no production caller since commit
+    `33bd81b` deleted the CLI shim that used to invoke it).
+    """
     from league_stats_common.infra.cache import HttpCache
     from league_stats_common.core.models import RankedEntry
     from league_stats_common.infra.riot_api import RiotApiClient
@@ -133,12 +140,17 @@ def test_run_all_builds_pools_multi_player_reports(
         PlayerContext(riot_id="Alice", tagline="EUW", puuid=MY_PUUID),
         PlayerContext(riot_id="Bob", tagline="NA1", puuid=ALT_PUUID),
     ]
+    job_store = _job_store("alice_euw__bob_na1")
     try:
-        hub_path = run_all_builds(services, contexts, fetch=False, skip_peer=True)
+        job = _claimed_job(job_store, "alice_euw__bob_na1")
+        batch = worker.prepare_builds(services, contexts)
+        worker._run_stage_a(services, job_store, job, batch, None)
     finally:
         store.close()
         http_cache.close()
+        job_store.close()
 
+    hub_path = config.player_reports_dir / "manifest.json"
     report_payload = json.loads(
         (config.player_reports_dir / "viktor_middle" / "report.json").read_text(encoding="utf-8")
     )

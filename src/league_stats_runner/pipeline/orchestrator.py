@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from tqdm import tqdm
 
 from league_stats_runner.analysis.coach.engine import VISIBLE_RECOMMENDATIONS
 from league_stats_runner.analysis.deaths import deaths_dataframe
@@ -26,7 +25,6 @@ from league_stats_common.core.config import (
     RANKED_SOLO_QUEUE_ID,
     AppConfig,
 )
-from league_stats_common.core.progress import STAGE_ANALYZING
 from league_stats_common.core.models import (
     MatchRecord,
     PeerComparisonResult,
@@ -55,8 +53,6 @@ from league_stats_runner.pipeline.bundles import (
     slice_records,
 )
 from league_stats_runner.pipeline.fetch import (
-    FetchResult,
-    fetch_matches,
     group_records,
     load_all_records,
 )
@@ -1055,109 +1051,3 @@ def analyze_build(
     return BuildAnalysisResult(path=path, full_frames=full_frames, report_stats=report_stats)
 
 
-def build_peer_for_pool(
-    services: Services,
-    batch: BuildBatch,
-    pool: BuildPool,
-    ranked: RankedEntry | None,
-) -> PeerComparisonResult | None:
-    """Build the rank-peer comparison for one champion+lane build."""
-    records = group_records(batch.records, pool.champion, pool.role)
-    if len(records) < services.config.min_games:
-        return None
-    matches_df = pd.DataFrame([r.to_row() for r in records])
-    return build_peer_comparison(
-        services.client,
-        services.store,
-        matches_df,
-        records,
-        batch.primary_puuid,
-        ranked,
-        champion=pool.champion,
-        role=pool.role,
-        progress=services.progress,
-    )
-
-
-def run_all_builds(
-    services: Services,
-    player_contexts: list[PlayerContext],
-    *,
-    fetch: bool = False,
-    skip_peer: bool = False,
-    new_match_ids: frozenset[str] | set[str] | None = None,
-) -> Path:
-    """Discover, parse once and analyse every eligible champion+lane build.
-
-    When ``new_match_ids`` is provided (or ``fetch=True``), builds whose existing
-    report has no intersection with those ids skip analysis and peer work.
-    """
-    log = get_logger("pipeline")
-    fresh_ids = new_match_ids
-    if fetch:
-        result: FetchResult = fetch_matches(services)
-        player_contexts = result.contexts
-        fresh_ids = result.new_match_ids
-
-    batch = prepare_builds(services, player_contexts)
-
-    player_label = services.config.players_label
-    player_dir = services.config.player_reports_dir
-
-    ranked: RankedEntry | None = None
-    ranked_resolved = False
-    last_report: Path | None = None
-    analysed_or_kept = False
-    total = len(batch.pools)
-    for index, pool in enumerate(
-        tqdm(batch.pools, desc="Analyzing builds", unit="build"), start=1
-    ):
-        records = group_records(batch.records, pool.champion, pool.role)
-        if len(records) < services.config.min_games:
-            log.warning("Skipping %s: only %d games after parse", pool.build_label, len(records))
-            continue
-        if should_skip_unchanged_build(services.config, pool, records, fresh_ids):
-            log.info("Skipping %s: no new games since last report", pool.build_label)
-            analysed_or_kept = True
-            continue
-        services.progress.update(
-            STAGE_ANALYZING,
-            current=index,
-            total=total,
-            detail=f"Analyzing {pool.build_label} ({index}/{total})",
-        )
-        if not ranked_resolved:
-            ranked = resolve_ranked(services, batch, records)
-            ranked_resolved = True
-        peer = None
-        if not skip_peer:
-            peer = build_peer_for_pool(services, batch, pool, ranked)
-        report = analyze_build(
-            services, batch, pool, ranked=ranked, peer_comparison=peer
-        ).path
-        if report is not None:
-            last_report = report
-            analysed_or_kept = True
-
-    if last_report is None and not analysed_or_kept:
-        log.error("No reports could be analysed.")
-        raise NoEligibleBuildsError("No reports could be analysed.")
-    if last_report is None:
-        # Every eligible build was already up to date; refresh hubs so nav stays valid.
-        last_report = player_dir / "manifest.json"
-
-    hub_path = refresh_report_indexes(
-        services.config.output_dir,
-        services.config.template_dir,
-        player_dir=player_dir,
-        player_label=player_label,
-        assets=services.assets,
-    )
-    hub_path = hub_path or player_dir / "manifest.json"
-    log.info(
-        "Generated %d report(s) (≥%d games). Open %s",
-        len(batch.manifest_builds),
-        services.config.min_games,
-        hub_path,
-    )
-    return hub_path

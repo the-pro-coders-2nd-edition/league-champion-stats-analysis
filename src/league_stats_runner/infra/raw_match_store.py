@@ -13,14 +13,19 @@ Phase 5 Task 1 of the microservices migration added ``iter_match_ids``/
 (stage A, called on every job unconditionally). Deliberately still NOT
 implemented: ``iter_unverified_puuids``, ``iter_unverified_puuids_for_build``,
 ``set_puuid_rank``, ``upsert_peer_game``, ``load_peer_games``,
-``count_peer_games`` -- those are only reachable through the in-process peer
-path (``build_peer_for_pool``), which ``_run_stage_b`` (the only place a
-``RawMatchStore``-backed ``Services`` object's peer comparison is resolved
-in a real deployment) never calls: Phase 9 removed the ``peers_mode`` flag
-that used to make this configurable, so ``_run_stage_b`` now always
-resolves peers via PEERS over gRPC instead (``_build_peer_for_pool_via_grpc``,
-which only touches ``iter_match_ids``/``load_match``, both implemented
-below).
+``count_peer_games`` -- those were only ever reachable through the
+in-process peer path (``build_peer_for_pool``, deleted entirely in Phase 9
+Task 4's final dead-code sweep: its apparent second caller,
+``orchestrator.run_all_builds``, was confirmed to have zero production
+callers of its own, the CLI shim that used to invoke it having been deleted
+in commit ``33bd81b``, predating this migration). ``_run_stage_b`` (the only
+place a ``RawMatchStore``-backed ``Services`` object's peer comparison is
+resolved in a real deployment) never called that path either way: Phase 9
+Task 3 removed the ``peers_mode`` flag that used to make this configurable,
+so ``_run_stage_b`` now always resolves peers via PEERS over gRPC instead
+(``_build_peer_for_pool_via_grpc``, which only touches
+``iter_match_ids``/``load_match``, both implemented below). The gap is now
+fully moot -- there is no in-process peer path left anywhere to hit it.
 
 Reproduces ``MatchStore``'s real semantics:
 
