@@ -750,7 +750,7 @@ def test_get_or_submit_updates_queued_gauge_while_a_second_key_waits_behind_the_
 
     mongo_client = mongomock.MongoClient()
     peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
-    executor = ThreadPoolExecutor(max_workers=1)
+    executor = futures.ThreadPoolExecutor(max_workers=1)
     servicer = PeersServicer(
         peer_store=peer_store,
         riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()),
