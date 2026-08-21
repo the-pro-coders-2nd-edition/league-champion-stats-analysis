@@ -10,7 +10,6 @@ import pandas as pd
 from league_stats_peers.analysis.peer.ingest import ingest_match
 from league_stats_peers.analysis.peer.metrics import BENCHMARK_METRIC_KEYS
 from league_stats_peers.analysis.peer.rank_scope import RankScope, rank_matches
-from league_stats_common.infra.cache import MatchStore
 from league_stats_common.core.models import RankedEntry
 from league_stats_common.infra.riot_api import RiotApiClient
 from league_stats_common.utils import get_logger
@@ -71,7 +70,7 @@ def peer_metric_quantiles(rows: list[dict[str, Any]], q: float) -> dict[str, flo
 
 
 def _backfill_ranks(
-    store: MatchStore,
+    store: Any,
     client: RiotApiClient | None,
     *,
     champion: str = "",
@@ -159,7 +158,7 @@ def _filter_rows(
 
 
 def collect_peer_games_from_store(
-    store: MatchStore,
+    store: Any,
     *,
     champion: str,
     role: str,
@@ -215,7 +214,7 @@ def collect_peer_games_from_store(
 
 
 def collect_user_history_peers(
-    store: MatchStore,
+    store: Any,
     exclude_puuid: str,
     champion: str,
     role: str,

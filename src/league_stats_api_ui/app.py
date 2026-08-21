@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
 
+import pymongo
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -39,9 +40,11 @@ from league_stats_common.core.config import (
     load_config,
     load_web_config,
 )
-from league_stats_common.infra.cache import HttpCache, MatchStore
+from league_stats_common.infra.cache import HttpCache
 from league_stats_common.infra.ddragon_assets import DDragonAssets
+from league_stats_common.infra.mongo import db_name_from_uri
 from league_stats_common.infra.riot_api import RiotApiClient, RiotApiError, shared_rate_limiter
+from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.fetch import group_records, load_all_records, resolve_player_contexts
 from league_stats_runner.pipeline.orchestrator import (
     _account_icon_hrefs,
@@ -214,8 +217,27 @@ def _resolve_players(body: AnalysisRequest) -> list[dict[str, str]]:
     return entries
 
 
-def _build_precheck_client(region: str, output_dir: Path) -> RiotApiClient:
-    """Build a Riot client sharing cache + rate limiter with analysis jobs."""
+def _build_mongo_client(mongo_uri: str) -> pymongo.MongoClient:
+    """Build the Mongo client backing this module's `RawMatchStore` sites.
+
+    A separate seam (rather than calling `pymongo.MongoClient` directly) so
+    tests can monkeypatch this one function to return a `mongomock.MongoClient`
+    instead of dialing a real Mongo -- matching the pattern
+    `league_stats_runner/worker.py`'s own `_build_mongo_client` already uses.
+    """
+    return pymongo.MongoClient(mongo_uri)
+
+
+def _build_precheck_client(
+    region: str, output_dir: Path, web_config: WebConfig
+) -> RiotApiClient:
+    """Build a Riot client sharing cache + rate limiter with analysis jobs.
+
+    Match/timeline storage moved from `MatchStore` (local SQLite) to
+    `RawMatchStore` (Mongo) in Phase 8, Task 1 -- this client never uses any
+    of `MatchStore`'s peer-game methods, only the raw match/timeline surface
+    `RawMatchStore` already implements identically.
+    """
     config = load_config(
         riot_id="precheck",
         tagline="PRE",
@@ -223,10 +245,14 @@ def _build_precheck_client(region: str, output_dir: Path) -> RiotApiClient:
         output_dir=output_dir,
     )
     config.ensure_directories()
+    mongo_client = _build_mongo_client(web_config.runner_mongo_uri)
+    store = RawMatchStore(
+        mongo_client, db_name=db_name_from_uri(web_config.runner_mongo_uri)
+    )
     return RiotApiClient(
         config,
         HttpCache(config.http_cache_dir),
-        MatchStore(config.db_path),
+        store,
         limiter=shared_rate_limiter(
             config.requests_per_second, config.requests_per_two_minutes
         ),
@@ -237,6 +263,7 @@ def _verify_players_exist(
     players: list[dict[str, str]],
     region: str,
     output_dir: Path,
+    web_config: WebConfig,
 ) -> None:
     """Resolve each Riot ID via account-v1 before enqueueing.
 
@@ -244,7 +271,7 @@ def _verify_players_exist(
         ValueError: When one or more Riot IDs are unknown for the region.
         RiotApiError: When the Riot API fails for a non-404 reason.
     """
-    client = _build_precheck_client(region, output_dir)
+    client = _build_precheck_client(region, output_dir, web_config)
     missing: list[str] = []
     for player in players:
         label = f"{player['riot_id']}#{player['tagline']}"
@@ -759,7 +786,7 @@ def create_app(
     welcome_back_cache = WelcomeBackCache()
     watcher = WatchPoller(
         store,
-        lambda region: _build_precheck_client(region, config.output_dir),
+        lambda region: _build_precheck_client(region, config.output_dir, config),
         on_new_game=lambda slug, job_id, new_match_id, summary: _record_welcome_back(
             welcome_back_cache, slug, job_id, new_match_id, summary
         ),
@@ -892,7 +919,7 @@ def create_app(
             )
 
         try:
-            _verify_players_exist(tracked, region, config.output_dir)
+            _verify_players_exist(tracked, region, config.output_dir, config)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RiotApiError as exc:
@@ -1325,7 +1352,10 @@ def create_app(
         )
         build_config = run_config.model_copy(update={"champion": champion, "role": role})
         http_cache = HttpCache(build_config.http_cache_dir)
-        match_store = MatchStore(build_config.db_path)
+        mongo_client = _build_mongo_client(config.runner_mongo_uri)
+        match_store = RawMatchStore(
+            mongo_client, db_name=db_name_from_uri(config.runner_mongo_uri)
+        )
         client = RiotApiClient(
             build_config,
             http_cache,

@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 
-from league_stats_common.core.config import AppConfig, PlayerIdentity, load_config
+from league_stats_common.core.config import AppConfig
 from league_stats_common.core.progress import ProgressReporter
 from league_stats_common.infra.cache import HttpCache, MatchStore
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_common.infra.riot_api import RiotApiClient
-from league_stats_common.utils import setup_logging
 
 
 @dataclass
@@ -58,40 +56,3 @@ class PlayerContext:
         return payload
 
 
-def build_services(
-    riot_id: str | None,
-    tagline: str | None,
-    region: str | None,
-    platform: str | None,
-    api_key: str | None,
-    count: int | None,
-    min_games: int | None,
-    verbose: bool,
-    *,
-    players: list[PlayerIdentity] | None = None,
-) -> Services:
-    """Load configuration and construct every service."""
-    setup_logging(service="cli", version=os.environ.get("GIT_COMMIT", "dev"), verbose=verbose)
-    config = load_config(
-        riot_id=riot_id,
-        tagline=tagline,
-        region=region,
-        platform=platform,
-        api_key=api_key,
-        match_count=count,
-        min_games=min_games,
-        verbose=verbose,
-        players=players,
-    )
-    config.ensure_directories()
-    http_cache = HttpCache(config.http_cache_dir)
-    store = MatchStore(config.db_path)
-    client = RiotApiClient(config, http_cache, store)
-    assets = DDragonAssets(config)
-    return Services(
-        config=config,
-        http_cache=http_cache,
-        store=store,
-        client=client,
-        assets=assets,
-    )

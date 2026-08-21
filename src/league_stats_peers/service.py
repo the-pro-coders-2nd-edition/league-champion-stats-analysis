@@ -218,10 +218,11 @@ from prometheus_client import Counter, Gauge, Histogram
 from league_stats_peers.analysis.peer.baseline import PeerBaseline, resolve_peer_baseline
 from league_stats_common.core.config import AppConfig, PLATFORM_TO_REGION, REGION_DEFAULT_PLATFORM, VALID_PLATFORMS
 from league_stats_common.core.models import RankedEntry
-from league_stats_common.infra.cache import HttpCache, MatchStore
+from league_stats_common.infra.cache import HttpCache
 from league_stats_common.infra.mongo import db_name_from_uri as _db_name_from_uri
 from league_stats_peers.infra.peer_sample_store import PeerSampleStore
 from league_stats_common.infra.riot_api import RiotApiClient, shared_rate_limiter
+from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_common.infra.trace_context import TraceClientInterceptor
 from league_stats_common.utils import get_logger
 from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc, runner_pb2, runner_pb2_grpc
@@ -338,14 +339,22 @@ def _encode_baseline(baseline: PeerBaseline | None) -> str:
     return json.dumps(asdict(baseline))
 
 
-def _build_default_peer_store() -> PeerSampleStore:
+def _build_default_mongo_client() -> pymongo.MongoClient:
     mongo_uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017/league_stats")
     # No short serverSelectionTimeoutMS here (unlike benchmark_cache.py's
-    # best-effort live cache): PeerSampleStore backs the peer-baseline sample
-    # pipeline itself, not an optional cache layer, so a slow/starting-up
-    # Mongo should be waited out (pymongo's ~30s default) rather than treated
-    # as an immediate fallback -- there is no fallback path for peer samples.
-    client: pymongo.MongoClient = pymongo.MongoClient(mongo_uri)
+    # best-effort live cache): this client backs the peer-baseline sample
+    # pipeline itself (PeerSampleStore) and, since Phase 8 Task 1, PEERS' own
+    # raw-match cache (RawMatchStore) -- neither is an optional cache layer,
+    # so a slow/starting-up Mongo should be waited out (pymongo's ~30s
+    # default) rather than treated as an immediate fallback.
+    return pymongo.MongoClient(mongo_uri)
+
+
+def _build_default_peer_store(
+    client: pymongo.MongoClient | None = None,
+) -> PeerSampleStore:
+    mongo_uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017/league_stats")
+    client = client or _build_default_mongo_client()
     return PeerSampleStore(client, db_name=_db_name_from_uri(mongo_uri))
 
 
@@ -364,7 +373,7 @@ def _build_riot_client_for_platform(
     *,
     api_key: str,
     http_cache: HttpCache,
-    match_store: MatchStore,
+    match_store: RawMatchStore,
     session: requests.Session | None = None,
 ) -> RiotApiClient:
     """Build a `RiotApiClient` fully and correctly scoped to one platform.
@@ -380,9 +389,10 @@ def _build_riot_client_for_platform(
     and reuse it, never call this per request, and never share one instance
     across code that might mutate it.
 
-    The `MatchStore` passed here is required by `RiotApiClient.__init__`'s type
-    hint, but none of the methods `resolve_peer_baseline`/`fetch_benchmark_from_api`
-    call on a `RiotApiClient` (`fetch_league_entries_pages`, `fetch_match_ids`,
+    The `RawMatchStore` passed here (Phase 8, Task 1 -- was `MatchStore`) is
+    required by `RiotApiClient.__init__`'s type hint, but none of the methods
+    `resolve_peer_baseline`/`fetch_benchmark_from_api` call on a
+    `RiotApiClient` (`fetch_league_entries_pages`, `fetch_match_ids`,
     `fetch_match`, `fetch_solo_rank`) ever touch `self._store` -- only
     `download_matches` does, which is not part of this call graph.
     """
@@ -429,10 +439,24 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         executor: ThreadPoolExecutor | None = None,
         default_platform: str | None = None,
     ) -> None:
-        self._peer_store = peer_store if peer_store is not None else _build_default_peer_store()
+        # Built once and reused for both defaults below (Phase 8, Task 1) --
+        # avoids opening a second Mongo client purely for the raw-match store
+        # when both `peer_store` and `riot_client_factory` fall back to their
+        # production defaults.
+        default_mongo_client = (
+            _build_default_mongo_client()
+            if peer_store is None or riot_client_factory is None
+            else None
+        )
+        self._peer_store = (
+            peer_store
+            if peer_store is not None
+            else _build_default_peer_store(default_mongo_client)
+        )
         self._default_platform = (default_platform or _resolve_default_platform()).strip().lower()
         self._riot_client_factory: "Callable[[str], Any]" = (
-            riot_client_factory or self._build_default_riot_client_factory()
+            riot_client_factory
+            or self._build_default_riot_client_factory(default_mongo_client)
         )
         # Pool of per-platform clients, built lazily and never mutated after
         # creation -- see module docstring, "Platform routing".
@@ -458,13 +482,24 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         self._inflight_lock = threading.RLock()
 
     @staticmethod
-    def _build_default_riot_client_factory() -> "Callable[[str], RiotApiClient]":
+    def _build_default_riot_client_factory(
+        mongo_client: "pymongo.MongoClient | None" = None,
+    ) -> "Callable[[str], RiotApiClient]":
         """Build the production per-platform client factory.
 
         Raises eagerly (before any request) when `PEERS_RIOT_API_KEY` is unset,
         with a message naming the correct env var -- `AppConfig`'s own
         validator would raise here too, but its message names `RIOT_API_KEY`,
-        the wrong variable for PEERS.
+        the wrong variable for PEERS. The API-key check runs BEFORE touching
+        `mongo_client`/building one, so a zero-arg call (as
+        `PeersServicer.__init__` makes when `riot_client_factory` isn't
+        overridden, and as this method's own dedicated test calls it) still
+        fails fast on a missing key with no Mongo connection attempted.
+
+        `mongo_client`: reuse `PeersServicer`'s existing Mongo client (built
+        for `PeerSampleStore`, see `__init__`) rather than opening a second
+        one -- Phase 8, Task 1. Falls back to building its own when called
+        standalone (e.g. the dedicated unit test above).
         """
         api_key = os.environ.get("PEERS_RIOT_API_KEY", "")
         if not api_key:
@@ -474,8 +509,10 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
             )
         cache_dir = Path(os.environ.get("PEERS_CACHE_DIR", ".cache/peers"))
         http_cache = HttpCache(cache_dir / "http")
+        mongo_uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017/league_stats")
+        client = mongo_client or pymongo.MongoClient(mongo_uri)
         # Shared across the whole platform pool -- see _build_riot_client_for_platform.
-        match_store = MatchStore(cache_dir / "matches.sqlite")
+        match_store = RawMatchStore(client, db_name=_db_name_from_uri(mongo_uri))
 
         def factory(platform: str) -> RiotApiClient:
             return _build_riot_client_for_platform(

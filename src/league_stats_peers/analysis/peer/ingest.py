@@ -12,7 +12,6 @@ from league_stats_peers.analysis.peer.metrics import (
     participant_row,
     team_damage_totals,
 )
-from league_stats_common.infra.cache import MatchStore
 from league_stats_common.utils import get_logger, safe_div
 
 
@@ -66,7 +65,7 @@ def extract_peer_rows(
 
 
 def ingest_match(
-    store: MatchStore,
+    store: Any,
     match_id: str,
     match: dict[str, Any],
     platform: str,
@@ -83,7 +82,7 @@ def ingest_match(
     return inserted
 
 
-def backfill_all_matches(store: MatchStore, platform: str) -> int:
+def backfill_all_matches(store: Any, platform: str) -> int:
     """Scan every stored match and ingest peer rows."""
     total = 0
     for match_id in store.iter_all_match_ids():

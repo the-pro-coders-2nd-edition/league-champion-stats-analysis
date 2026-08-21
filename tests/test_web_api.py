@@ -236,7 +236,7 @@ def test_submit_rejects_unknown_riot_id(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def boom(
-        players: list[dict[str, str]], region: str, output_dir: Path
+        players: list[dict[str, str]], region: str, output_dir: Path, web_config: WebConfig
     ) -> None:
         raise ValueError(
             f"Player {players[0]['riot_id']}#{players[0]['tagline']} was not found "
@@ -259,7 +259,7 @@ def test_submit_rejects_riot_api_outage(
     from league_stats_common.infra.riot_api import RiotApiError
 
     def boom(
-        players: list[dict[str, str]], region: str, output_dir: Path
+        players: list[dict[str, str]], region: str, output_dir: Path, web_config: WebConfig
     ) -> None:
         raise RiotApiError("GET failed: HTTP 503")
 
@@ -285,7 +285,9 @@ def test_verify_players_exist_raises_for_404(
                 )
             return "puuid-ok"
 
-    monkeypatch.setattr(web_app, "_build_precheck_client", lambda region, output_dir: FakeClient())
+    monkeypatch.setattr(
+        web_app, "_build_precheck_client", lambda region, output_dir, web_config: FakeClient()
+    )
     with pytest.raises(ValueError, match="Missing#EUW"):
         web_app._verify_players_exist(
             [
@@ -294,6 +296,7 @@ def test_verify_players_exist_raises_for_404(
             ],
             "euw1",
             tmp_path,
+            WebConfig(runner_storage_mode="sqlite"),
         )
 
 
@@ -304,11 +307,14 @@ def test_verify_players_exist_passes(
         def resolve_puuid(self, riot_id: str, tagline: str) -> str:
             return f"puuid-{riot_id}"
 
-    monkeypatch.setattr(web_app, "_build_precheck_client", lambda region, output_dir: FakeClient())
+    monkeypatch.setattr(
+        web_app, "_build_precheck_client", lambda region, output_dir, web_config: FakeClient()
+    )
     web_app._verify_players_exist(
         [{"riot_id": "Alice", "tagline": "EUW"}],
         "euw1",
         tmp_path,
+        WebConfig(runner_storage_mode="sqlite"),
     )
 
 

@@ -20,7 +20,6 @@ from league_stats_peers.analysis.peer.metrics import (
     team_damage_totals,
 )
 from league_stats_peers.analysis.peer.rank_scope import RankScope, build_widened_scope, league_lookup_pairs, rank_matches
-from league_stats_common.infra.cache import MatchStore
 from league_stats_common.core.config import RANKED_SOLO_QUEUE_ID
 from league_stats_common.core.models import RankedEntry
 from league_stats_common.core.progress import STAGE_PEER, NULL_REPORTER, ProgressReporter
@@ -168,7 +167,7 @@ def _gather_seeds(
 
 def _load_or_fetch_match(
     client: RiotApiClient,
-    store: MatchStore,
+    store: Any,
     match_id: str,
     owner_puuid: str,
 ) -> dict[str, Any] | None:
@@ -190,7 +189,7 @@ def _resolve_rank(
     puuid: str,
     rank_cache: dict[str, tuple[str, str]],
     client: RiotApiClient,
-    store: MatchStore,
+    store: Any,
 ) -> tuple[str, str] | None:
     """Return (tier, rank) for a PUUID using cache before falling back to the API.
 
@@ -214,7 +213,7 @@ def _resolve_rank(
 
 def _collect_sample_rows(
     client: RiotApiClient,
-    store: MatchStore,
+    store: Any,
     *,
     champion: str,
     role: str,
@@ -323,7 +322,7 @@ def _collect_sample_rows(
 
 def fetch_benchmark_from_api(
     client: RiotApiClient,
-    store: MatchStore,
+    store: Any,
     ranked: RankedEntry,
     champion: str,
     role: str,

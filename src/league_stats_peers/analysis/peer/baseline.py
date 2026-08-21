@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Final
+from typing import Any, Final
 
 from league_stats_peers.analysis.peer.benchmark_cache import read_live_cache, write_live_cache
 from league_stats_peers.analysis.peer.benchmark_fetcher import BenchmarkSnapshot, fetch_benchmark_from_api
@@ -15,7 +15,6 @@ from league_stats_peers.analysis.peer.cache import (
     peer_metric_quantiles,
 )
 from league_stats_peers.analysis.peer.rank_scope import RankScope, build_exact_scope, build_wider_scope, build_widened_scope
-from league_stats_common.infra.cache import MatchStore
 from league_stats_common.core.champions import build_label
 from league_stats_common.core.models import RankedEntry
 from league_stats_common.core.progress import NULL_REPORTER, ProgressReporter
@@ -62,7 +61,7 @@ def _baseline_from_sample(sample: PeerSample, *, level: int, confidence: str) ->
 
 
 def _try_store_baseline(
-    store: MatchStore,
+    store: Any,
     client: RiotApiClient,
     ranked: RankedEntry,
     champion: str,
@@ -132,7 +131,7 @@ def _baseline_from_snapshot(
 
 def _try_live_baseline(
     client: RiotApiClient,
-    store: MatchStore,
+    store: Any,
     ranked: RankedEntry,
     champion: str,
     role: str,
@@ -208,7 +207,7 @@ def _try_live_baseline(
 
 def resolve_peer_baseline(
     client: RiotApiClient,
-    store: MatchStore,
+    store: Any,
     ranked: RankedEntry,
     champion: str,
     role: str,

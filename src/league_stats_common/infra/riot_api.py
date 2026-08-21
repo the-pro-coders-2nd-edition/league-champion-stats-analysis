@@ -5,8 +5,8 @@ Features:
 * sliding-window rate limiting tuned for development keys,
 * automatic retry with ``Retry-After`` support on 429 and backoff on 5xx,
 * transparent response caching via :class:`cache.HttpCache`,
-* permanent match storage via :class:`cache.MatchStore` so a match is never
-  fetched twice,
+* permanent match storage via a duck-typed store (``cache.MatchStore`` or
+  ``RawMatchStore``) so a match is never fetched twice,
 * progress bars for bulk downloads.
 """
 
@@ -20,7 +20,7 @@ from typing import Any, Final
 import requests
 from tqdm import tqdm
 
-from league_stats_common.infra.cache import HttpCache, MatchStore
+from league_stats_common.infra.cache import HttpCache
 from league_stats_common.core.config import AppConfig, PLATFORM_TO_REGION, RANKED_FLEX_QUEUE_ID, RANKED_SOLO_QUEUE_ID
 from league_stats_common.core.models import RankedEntry
 from league_stats_common.core.progress import STAGE_FETCHING, NULL_REPORTER, ProgressReporter
@@ -96,7 +96,7 @@ class RiotApiClient:
         self,
         config: AppConfig,
         http_cache: HttpCache,
-        store: MatchStore,
+        store: Any,
         session: requests.Session | None = None,
         *,
         limiter: RateLimiter | None = None,

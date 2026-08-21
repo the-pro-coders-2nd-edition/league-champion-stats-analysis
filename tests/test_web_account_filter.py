@@ -6,11 +6,13 @@ import json
 from pathlib import Path
 from typing import Any, Iterator
 
+import mongomock
 import pytest
 from fastapi.testclient import TestClient
 
 from league_stats_common.core.config import WebConfig
-from league_stats_common.infra.cache import MatchStore
+from league_stats_common.infra.mongo import db_name_from_uri
+from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.services import PlayerContext
 import league_stats_api_ui.app as web_app
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_player_match, make_timeline
@@ -19,7 +21,6 @@ ALT_PUUID = "alt-puuid-22222222-2222-2222-2222-222222222222"
 GROUP_SLUG = "alice_euw__bob_na1"
 BUILD_SLUG = "viktor_middle"
 ENDPOINT = f"/api/players/{GROUP_SLUG}/builds/{BUILD_SLUG}/account-views"
-
 
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
@@ -36,6 +37,12 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
         return real_load_config(**kwargs)
 
     monkeypatch.setattr(web_app, "load_config", _load_config)
+    # The refresh route builds its own RawMatchStore against
+    # `config.runner_mongo_uri` (Phase 8, Task 1) -- fresh per test, and
+    # exposed on the TestClient so `_seed_group_report` can seed the exact
+    # same client/db the route will read from.
+    mongo_client = mongomock.MongoClient()
+    monkeypatch.setattr(web_app, "_build_mongo_client", lambda uri: mongo_client)
     monkeypatch.setattr(
         web_app,
         "resolve_player_contexts",
@@ -49,10 +56,19 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     )
     application = web_app.create_app(config, start_worker=False)
     with TestClient(application) as test_client:
+        test_client.mongo_client = mongo_client  # type: ignore[attr-defined]
+        test_client.web_config = config  # type: ignore[attr-defined]
         yield test_client
 
 
-def _seed_group_report(tmp_path: Path, *, alice_games: int = 6, bob_games: int = 4) -> None:
+def _seed_group_report(
+    tmp_path: Path,
+    mongo_client: mongomock.MongoClient,
+    web_config: WebConfig,
+    *,
+    alice_games: int = 6,
+    bob_games: int = 4,
+) -> None:
     report_dir = tmp_path / "output" / "reports" / GROUP_SLUG / BUILD_SLUG
     report_dir.mkdir(parents=True, exist_ok=True)
     (report_dir / "meta.json").write_text(
@@ -76,29 +92,26 @@ def _seed_group_report(tmp_path: Path, *, alice_games: int = 6, bob_games: int =
     )
     (report_dir / "report.json").write_text("{}", encoding="utf-8")
 
-    cache_dir = tmp_path / "cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    store = MatchStore(cache_dir / "matches.sqlite")
-    try:
-        for index in range(alice_games):
-            match_id = f"EUW1_alice_{index}"
-            store.save_match(
-                match_id, MY_PUUID, make_player_match(match_id, puuid=MY_PUUID)
-            )
-            store.save_timeline(match_id, make_timeline())
-        for index in range(bob_games):
-            match_id = f"EUW1_bob_{index}"
-            store.save_match(
-                match_id, ALT_PUUID, make_player_match(match_id, puuid=ALT_PUUID)
-            )
-            store.save_timeline(match_id, make_timeline())
-    finally:
-        store.close()
+    store = RawMatchStore(
+        mongo_client, db_name=db_name_from_uri(web_config.runner_mongo_uri)
+    )
+    for index in range(alice_games):
+        match_id = f"EUW1_alice_{index}"
+        store.save_match(
+            match_id, MY_PUUID, make_player_match(match_id, puuid=MY_PUUID)
+        )
+        store.save_timeline(match_id, make_timeline())
+    for index in range(bob_games):
+        match_id = f"EUW1_bob_{index}"
+        store.save_match(
+            match_id, ALT_PUUID, make_player_match(match_id, puuid=ALT_PUUID)
+        )
+        store.save_timeline(match_id, make_timeline())
 
 
 def test_account_views_builds_subset(client: TestClient, tmp_path: Path) -> None:
     """A single-account subset is rebuilt from cached matches and cached to disk."""
-    _seed_group_report(tmp_path)
+    _seed_group_report(tmp_path, client.mongo_client, client.web_config)
     response = client.post(ENDPOINT, json={"accounts": ["Alice#EUW"]})
     assert response.status_code == 200
     payload = response.json()
@@ -116,7 +129,7 @@ def test_account_views_serves_disk_cache(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A repeated request is answered from the on-disk cache without re-parsing."""
-    _seed_group_report(tmp_path)
+    _seed_group_report(tmp_path, client.mongo_client, client.web_config)
     first = client.post(ENDPOINT, json={"accounts": ["Bob#NA1"]})
     assert first.status_code == 200
 
@@ -132,7 +145,7 @@ def test_account_views_serves_disk_cache(
 def test_account_views_rejects_unknown_account(
     client: TestClient, tmp_path: Path
 ) -> None:
-    _seed_group_report(tmp_path)
+    _seed_group_report(tmp_path, client.mongo_client, client.web_config)
     response = client.post(ENDPOINT, json={"accounts": ["Mallory#EUW"]})
     assert response.status_code == 400
 

@@ -26,15 +26,18 @@ import asyncio
 import os
 
 import grpc
+import pymongo
 from prometheus_client import start_http_server
 
-from league_stats_common.core.config import load_config, load_web_config
-from league_stats_common.infra.cache import HttpCache, MatchStore
+from league_stats_common.core.config import WebConfig, load_config, load_web_config
+from league_stats_common.infra.cache import HttpCache
 from league_stats_common.infra.jobs import JobStore
+from league_stats_common.infra.mongo import db_name_from_uri
 from league_stats_common.infra.riot_api import RiotApiClient, shared_rate_limiter
 from league_stats_common.infra.trace_context import AsyncTraceServerInterceptor
 from league_stats_common.utils import get_logger, setup_logging
 from league_stats_cron_watch.service import CronWatchServicer
+from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_rpc.v1 import cron_watch_pb2_grpc
 
 log = get_logger("cron_watch")
@@ -60,7 +63,18 @@ def _require_riot_api_key() -> str:
     return api_key
 
 
-def _build_client(region: str) -> RiotApiClient:
+def _build_mongo_client(mongo_uri: str) -> pymongo.MongoClient:
+    """Build the Mongo client backing `_build_client`'s `RawMatchStore`.
+
+    A separate seam (rather than calling `pymongo.MongoClient` directly) so
+    tests can monkeypatch this one function to return a `mongomock.MongoClient`
+    instead of dialing a real Mongo -- matching the pattern
+    `league_stats_runner/worker.py`'s own `_build_mongo_client` already uses.
+    """
+    return pymongo.MongoClient(mongo_uri)
+
+
+def _build_client(region: str, web_config: WebConfig) -> RiotApiClient:
     """Build a Riot client for `WatchPoller`'s detection calls.
 
     Uses `CRON_WATCH_RIOT_API_KEY` -- this service's own key, per the spec's
@@ -68,6 +82,11 @@ def _build_client(region: str) -> RiotApiClient:
     Validity is already checked fail-fast in `serve()` via
     `_require_riot_api_key`; this call re-fetches it per region since
     `load_config` needs it, not because it might be newly missing here.
+
+    Match/timeline storage moved from `MatchStore` (local SQLite) to
+    `RawMatchStore` (Mongo) in Phase 8, Task 1 -- `_build_client` never uses
+    any of `MatchStore`'s peer-game methods, only the raw match/timeline
+    surface `RawMatchStore` already implements identically.
     """
     api_key = _require_riot_api_key()
     config = load_config(
@@ -77,10 +96,14 @@ def _build_client(region: str) -> RiotApiClient:
         api_key=api_key,
     )
     config.ensure_directories()
+    mongo_client = _build_mongo_client(web_config.runner_mongo_uri)
+    store = RawMatchStore(
+        mongo_client, db_name=db_name_from_uri(web_config.runner_mongo_uri)
+    )
     return RiotApiClient(
         config,
         HttpCache(config.http_cache_dir),
-        MatchStore(config.db_path),
+        store,
         limiter=shared_rate_limiter(
             config.requests_per_second, config.requests_per_two_minutes
         ),
@@ -105,7 +128,9 @@ async def serve() -> None:
     # Shared file with the monolith's `api-ui` service -- a docker-compose volume
     # mount, not a per-service path. See this module's docstring.
     store = JobStore(web_config.app_db_path)
-    servicer = CronWatchServicer(store, _build_client)
+    servicer = CronWatchServicer(
+        store, lambda region: _build_client(region, web_config)
+    )
 
     server = grpc.aio.server(interceptors=[AsyncTraceServerInterceptor()])
     cron_watch_pb2_grpc.add_CronWatchServiceServicer_to_server(servicer, server)

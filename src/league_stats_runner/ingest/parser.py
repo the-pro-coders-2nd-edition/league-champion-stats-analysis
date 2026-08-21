@@ -22,7 +22,6 @@ from league_stats_runner.analysis.jungle import extract_jungle_metrics
 from league_stats_runner.analysis.support import extract_support_metrics
 from league_stats_runner.analysis.timeline import TimelineContext, build_context, extract_timeline_stats
 from league_stats_runner.analysis.vision import extract_control_ward_lifetime
-from league_stats_common.infra.cache import MatchStore
 from league_stats_common.core.champions import VALID_ROLES, build_label, role_display
 from league_stats_runner.core.skills import build_skill_sequence_from_events
 from league_stats_common.core.config import (
@@ -313,7 +312,7 @@ MatchFilter = BuildMatchFilter
 
 
 def discover_build_pools(
-    store: MatchStore,
+    store: Any,
     puuids: str | Iterable[str],
     config: AppConfig,
     *,

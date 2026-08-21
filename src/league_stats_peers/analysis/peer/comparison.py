@@ -15,7 +15,6 @@ from league_stats_common.core.role_metrics import compare_metrics_for_profile, r
 from league_stats_peers.analysis.peer.baseline import resolve_peer_baseline
 from league_stats_peers.analysis.peer.cache import collect_user_history_peers
 from league_stats_peers.analysis.peer.metrics import extract_champion_role_rows
-from league_stats_common.infra.cache import MatchStore
 from league_stats_common.core.champions import build_label
 from league_stats_common.core.models import MatchRecord, MetricComparison, PeerComparisonResult, RankedEntry, Recommendation
 from league_stats_common.core.progress import NULL_REPORTER, ProgressReporter
@@ -462,7 +461,7 @@ def finish_peer_comparison(
     *,
     matches_df: pd.DataFrame,
     records: list[MatchRecord],
-    store: MatchStore,
+    store: Any,
     user_puuid: str,
     ranked: RankedEntry,
     champion: str,
@@ -558,7 +557,7 @@ def finish_peer_comparison(
 
 def build_peer_comparison(
     client: RiotApiClient,
-    store: MatchStore,
+    store: Any,
     matches_df: pd.DataFrame,
     records: list[MatchRecord],
     user_puuid: str,
