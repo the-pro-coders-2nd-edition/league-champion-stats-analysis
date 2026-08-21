@@ -491,6 +491,13 @@ def _shortfall(ctx, column: str, norm: float) -> float:
     return max(0.0, (norm - p50) / norm)
 
 
+def _offers_cc_goals(ctx) -> bool:
+    """Whether this build's games suggest CC is worth coaching on."""
+    from league_stats.analysis.combat import build_uses_cc
+
+    return build_uses_cc(avg_ccpm=player_mean(ctx.matches_df, "ccpm"))
+
+
 def _below_zero_share(ctx, column: str) -> float:
     """Share of games where a diff column is negative. The lead-loss signal."""
     if column not in ctx.matches_df.columns:
@@ -759,8 +766,13 @@ STEP_BANK: Final[tuple[StepSpec, ...]] = (
     ),
     StepSpec(
         key="cc_per_minute", category=CATEGORY_FIGHT, specificity=2,
-        build=lambda c: _stepped(
-            c, column="ccpm", template="{target} CC score per minute in 15 of 20 games", precision=1
+        build=lambda c: (
+            _stepped(
+                c, column="ccpm", template="{target} CC score per minute in 15 of 20 games",
+                precision=1,
+            )
+            if _offers_cc_goals(c)
+            else None
         ),
         severity=lambda c: _shortfall(c, "ccpm", c.peer_p75.get("ccpm", 10.0)),
     ),
@@ -800,8 +812,13 @@ STEP_BANK: Final[tuple[StepSpec, ...]] = (
     # --- Utility (support) --------------------------------------------------
     StepSpec(
         key="utility_cc", category=CATEGORY_UTILITY, specificity=2, roles=("UTILITY",),
-        build=lambda c: _stepped(
-            c, column="ccpm", template="{target} CC score per minute in 15 of 20 games", precision=1
+        build=lambda c: (
+            _stepped(
+                c, column="ccpm", template="{target} CC score per minute in 15 of 20 games",
+                precision=1,
+            )
+            if _offers_cc_goals(c)
+            else None
         ),
         severity=lambda c: _shortfall(c, "ccpm", c.peer_p75.get("ccpm", 10.0)),
     ),

@@ -378,6 +378,29 @@ def test_a_role_restricted_step_is_flagged_but_still_resolved_off_role() -> None
     assert jungle_gold["text"]
 
 
+def test_cc_goal_declines_when_champion_averages_under_one_cc_per_minute() -> None:
+    """Viktor-style mages should not get a CC career goal."""
+    step = next(item for item in STEP_BANK if item.key == "cc_per_minute")
+    rung = step.build(_ctx(_matches(ccpm=0.6)))
+
+    assert rung is None
+
+
+def test_cc_goal_still_builds_for_cc_heavy_champions() -> None:
+    step = next(item for item in STEP_BANK if item.key == "cc_per_minute")
+    rung = step.build(_ctx(_matches(ccpm=3.0)))
+
+    assert rung is not None
+    assert "CC score per minute" in rung.text
+
+
+def test_support_cc_goal_declines_on_low_cc_enchanter() -> None:
+    step = next(item for item in STEP_BANK if item.key == "utility_cc")
+    rung = step.build(_ctx(_matches(ccpm=0.5), role="UTILITY"))
+
+    assert rung is None
+
+
 def test_a_step_offered_to_this_role_is_not_flagged() -> None:
     catalog = build_step_catalog(_ctx(role="JUNGLE"))
 
