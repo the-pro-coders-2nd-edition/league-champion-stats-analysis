@@ -5,6 +5,7 @@
   import MetricCard from '../components/MetricCard.svelte';
   import CareerNode from '../components/CareerNode.svelte';
   import AccountsPanel from '../components/AccountsPanel.svelte';
+  import { scoreTone } from '../lib/format.js';
 
   export let data;
   // Career follows neither the queue nor the game-window filter, so the widget
@@ -27,13 +28,8 @@
     return resolved === 'flat' ? 'var(--color-text)' : `var(--tone-${resolved}-fg)`;
   }
 
-  // `score_color` already encodes the Strength/Solid/Focus verdict decided in Python;
-  // this just maps that string back to a tone name for the Meter fill.
-  function heroScoreTone(colorVar) {
-    if (colorVar === 'var(--tone-good-fg)') return 'good';
-    if (colorVar === 'var(--tone-bad-fg)') return 'bad';
-    return 'flat';
-  }
+  // `score_color` already encodes the verdict tone decided in Python;
+  // scoreTone maps that CSS var back to a Meter fill tone.
 
   $: heroChips = (data.overview_cards || []).slice(0, 4);
   $: topTips = data.top_tips || [];
@@ -42,7 +38,7 @@
   $: scoreColor = data.score_color || 'var(--color-text)';
   $: scoreVerdictLabel = data.score_verdict_label || 'Solid';
   $: scorePct = scorePercent(data.score);
-  $: heroTone = heroScoreTone(scoreColor);
+  $: heroTone = scoreTone(scoreColor);
 </script>
 
 <section id="overview" class="report-section report-section--summary">

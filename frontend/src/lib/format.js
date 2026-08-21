@@ -33,6 +33,8 @@ export function formatUpdated(value) {
 export function scoreTone(scoreColor) {
   if (scoreColor === 'var(--tone-good-fg)') return 'good';
   if (scoreColor === 'var(--tone-bad-fg)') return 'bad';
+  if (scoreColor === 'var(--tone-solid-fg)') return 'solid';
+  if (scoreColor === 'var(--tone-warn-fg)') return 'warn';
   return 'flat';
 }
 

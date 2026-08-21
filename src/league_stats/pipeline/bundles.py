@@ -216,6 +216,7 @@ _TONE_COLORS: dict[str, str] = {
     "warn": "var(--tone-warn-fg)",
     "flat": "var(--color-text)",
     "bad": "var(--tone-bad-fg)",
+    "solid": "var(--tone-solid-fg)",
 }
 
 
@@ -228,7 +229,7 @@ def _overall_score_verdict(score: float) -> tuple[str, str]:
 def _annotate_score_components(
     score_components: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Attach the Strength / Solid / Watch / Focus tone + label to each score card."""
+    """Attach the Strength / Solid / Steady / Watch / Focus tone + label to each score card."""
     for comp in score_components:
         raw_score = float(comp.get("score", 0.0))
         score = raw_score if math.isfinite(raw_score) else 0.0
@@ -262,9 +263,14 @@ _REC_CATEGORY_SECTIONS: dict[str, str] = {
 }
 
 
-# band_verdict's Tone -> SectionPulse's pulse tone (frontend/src/components/SectionPulse.svelte
-# only special-cases "strong" and "focus"; anything else renders as neutral "solid").
-_PULSE_TONE_BY_TONE: dict[str, str] = {"good": "strong", "bad": "focus"}
+# band_verdict's Tone -> SectionPulse pulse class (SectionPulse.svelte).
+_PULSE_TONE_BY_TONE: dict[str, str] = {
+    "good": "strong",
+    "bad": "focus",
+    "solid": "solid",
+    "warn": "watch",
+    "flat": "steady",
+}
 
 
 def _score_verdict_sentence(
@@ -272,11 +278,15 @@ def _score_verdict_sentence(
 ) -> tuple[str, str, str]:
     """Base verdict sentence, tone, and short label for one section score."""
     label, tone = band_verdict(score)
-    pulse_tone = _PULSE_TONE_BY_TONE.get(tone, "solid")
+    pulse_tone = _PULSE_TONE_BY_TONE.get(tone, "steady")
     if label == "Strength":
         return f"{name} is a clear strength.", pulse_tone, label
     if label == "Solid":
         return f"{name} is solid.", pulse_tone, label
+    if label == "Steady":
+        return f"{name} is steady.", pulse_tone, label
+    if label == "Watch":
+        return f"{name} needs watching.", pulse_tone, label
     if is_biggest_gap:
         return f"{name} is your biggest room to improve.", pulse_tone, label
     return f"{name} needs work.", pulse_tone, label
@@ -501,6 +511,53 @@ def build_career_bundle(
     except Exception as exc:  # noqa: BLE001 - a broken ladder must not break the report
         get_logger("career").warning("Career mode skipped: %s", exc)
         return empty_career_view()
+
+
+def refresh_score_verdicts_in_bundle(bundle: dict[str, Any]) -> None:
+    """Recompute verdict labels and colors from numeric scores.
+
+    Saved ``report.json`` files bake these fields at generation time; refresh
+    them at serve time so band-threshold changes apply without a full re-run.
+    """
+    score = bundle.get("score")
+    if score is not None:
+        try:
+            numeric = float(score)
+        except (TypeError, ValueError):
+            numeric = float("nan")
+        if math.isfinite(numeric):
+            color, label = _overall_score_verdict(numeric)
+            bundle["score_color"] = color
+            bundle["score_verdict_label"] = label
+    components = bundle.get("score_components")
+    if isinstance(components, list) and components:
+        _annotate_score_components(components)
+        bundle["section_verdicts"] = _build_section_verdicts(bundle)
+
+
+def refresh_score_verdicts_in_report(payload: dict[str, Any]) -> None:
+    """Refresh score verdict fields on a report payload and nested view bundles."""
+    if not isinstance(payload, dict):
+        return
+    refresh_score_verdicts_in_bundle(payload)
+    report_views = payload.get("report_views")
+    if isinstance(report_views, dict):
+        for queue_view in report_views.values():
+            if not isinstance(queue_view, dict):
+                continue
+            windows = queue_view.get("windows")
+            if not isinstance(windows, dict):
+                continue
+            for window_bundle in windows.values():
+                if isinstance(window_bundle, dict):
+                    refresh_score_verdicts_in_bundle(window_bundle)
+    account_filter = payload.get("account_filter")
+    if isinstance(account_filter, dict):
+        views = account_filter.get("views")
+        if isinstance(views, dict):
+            for subset in views.values():
+                if isinstance(subset, dict):
+                    refresh_score_verdicts_in_report(subset)
 
 
 def bundle_to_template_context(

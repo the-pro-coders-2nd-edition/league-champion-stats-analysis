@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -38,6 +39,7 @@ from league_stats.core.config import (
 from league_stats.infra.cache import HttpCache, MatchStore
 from league_stats.infra.ddragon_assets import DDragonAssets
 from league_stats.infra.riot_api import RiotApiClient, RiotApiError, shared_rate_limiter
+from league_stats.pipeline.bundles import _overall_score_verdict
 from league_stats.pipeline.fetch import group_records, load_all_records, resolve_player_contexts
 from league_stats.pipeline.orchestrator import (
     _account_icon_hrefs,
@@ -55,7 +57,7 @@ from league_stats.presentation.report import (
     game_creation_ms_to_iso,
     is_group_player_label,
 )
-from league_stats.presentation.report_json import rewrite_web_asset_hrefs
+from league_stats.presentation.report_json import prepare_web_report_payload
 from league_stats.utils import setup_logging
 from league_stats.analysis.career.models import BLOCK_SLOTS
 from league_stats.infra.career_store import CareerStore, build_key as career_build_key
@@ -677,6 +679,13 @@ def _hub_build_fields(meta: dict[str, Any], report_dir: Path) -> dict[str, Any]:
                 last_game_at = _last_game_at_from_report(report)
     if not last_game_at:
         last_game_at = str(meta.get("generated_at") or "")
+    if score is not None:
+        try:
+            numeric = float(score)
+            if math.isfinite(numeric):
+                score_color, score_verdict_label = _overall_score_verdict(numeric)
+        except (TypeError, ValueError):
+            pass
     return {
         "score": score,
         "score_color": score_color,
@@ -1206,7 +1215,7 @@ def create_app(
         if not report_json_path.is_file():
             raise HTTPException(status_code=404, detail="Unknown build")
         payload = json.loads(report_json_path.read_text(encoding="utf-8"))
-        return rewrite_web_asset_hrefs(payload)
+        return prepare_web_report_payload(payload)
 
     def _resolve_build_filter(
         slug: str,
@@ -1392,7 +1401,7 @@ def create_app(
         if cache_path.is_file():
             try:
                 cached = json.loads(cache_path.read_text(encoding="utf-8"))
-                return rewrite_web_asset_hrefs(cached)
+                return prepare_web_report_payload(cached)
             except (OSError, json.JSONDecodeError):
                 pass
 
@@ -1463,7 +1472,7 @@ def create_app(
 
         # Same encoding as the embedded report JSON (stringifies numpy scalars).
         payload: dict[str, Any] = json.loads(json.dumps(views, default=str))
-        payload = rewrite_web_asset_hrefs(payload)
+        payload = prepare_web_report_payload(payload)
         try:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache_path.write_text(json.dumps(payload), encoding="utf-8")
