@@ -170,6 +170,18 @@ def empty_career_view() -> dict[str, Any]:
     }
 
 
+def awaiting_peers_career_view() -> dict[str, Any]:
+    """The view a report renders before Career is even attempted.
+
+    Stage A (base stats, no peer comparison yet) never calls ``advance_career``
+    at all now -- this is the same loading-skeleton shape the frontend already
+    renders for ``awaiting_peers``, produced without touching the ladder store,
+    so the reader sees "waiting for rank comparison" instead of "no career yet"
+    while Stage B is still pending.
+    """
+    return {**empty_career_view(), "awaiting_peers": True}
+
+
 def career_scope_view() -> dict[str, Any]:
     """The view a queue-filtered slice renders instead of the ladder.
 

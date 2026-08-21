@@ -74,6 +74,7 @@ from league_stats_runner.pipeline.summaries import (
     generate_recommendations,
 )
 from league_stats_runner.presentation.brand_assets import brand_context
+from league_stats_runner.presentation.career import awaiting_peers_career_view
 from league_stats_runner.presentation.export import Exporter
 from league_stats_runner.presentation.graphs import ChartIconResolver, GraphFactory
 from league_stats_runner.presentation.report import (
@@ -382,7 +383,17 @@ def build_report_views(
     # One ladder for the whole report, spanning both ranked queues. Injected into
     # every slice below rather than rebuilt per slice, and only the all-ranked
     # views actually render it.
-    career_ladder = build_all_ranked_ladder(config, records, peer_comparison)
+    #
+    # Career is never attempted without a resolved peer comparison: Stage A
+    # (base stats) always passes ``peer_comparison=None`` here, and advancing
+    # the ladder against an empty peer baseline used to just get told "not
+    # ready" and return an awaiting_peers snapshot -- now Stage A skips calling
+    # advance_career at all and renders the same loading shape directly.
+    career_ladder = (
+        build_all_ranked_ladder(config, records, peer_comparison)
+        if peer_comparison is not None
+        else awaiting_peers_career_view()
+    )
     with open_derived_store() as derived:
         for queue_key in QUEUE_FILTER_OPTIONS:
             queue_records = filter_records_by_queue(records, queue_key)
