@@ -9,8 +9,8 @@ that wait, the retarget of any leftover unseeded blocks, and the manual drop.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
+import mongomock
 import pandas as pd
 import pytest
 
@@ -101,8 +101,8 @@ def _ctx(matches: pd.DataFrame, peer_p75: dict[str, float]) -> TrackContext:
 
 
 @pytest.fixture()
-def store(tmp_path: Path):
-    with CareerStore(tmp_path / "career.sqlite") as opened:
+def store():
+    with CareerStore(mongomock.MongoClient(), db_name="career") as opened:
         yield opened
 
 
@@ -132,13 +132,16 @@ def test_stage_a_does_not_seed_a_ladder_before_peers_land(store: CareerStore) ->
 
 
 def test_a_blind_then_peer_run_matches_a_ladder_seeded_with_peers(
-    store: CareerStore, tmp_path: Path
+    store: CareerStore,
 ) -> None:
     matches = _matches()
     advance_career(store, KEY, _ctx(matches, {}), WEAK_LANING)
     advance_career(store, KEY, _ctx(matches, PEERS), WEAK_LANING)
 
-    with CareerStore(tmp_path / "fresh.sqlite") as fresh:
+    # A separate mongomock client, not just a different db_name on the same
+    # one -- proves the two ladders are genuinely independent stores, the
+    # same isolation the old "fresh.sqlite" path gave.
+    with CareerStore(mongomock.MongoClient(), db_name="career") as fresh:
         advance_career(fresh, KEY, _ctx(matches, PEERS), WEAK_LANING)
         assert _ladder(store) == _ladder(fresh)
 
@@ -282,17 +285,20 @@ def test_goals_are_not_written_until_peers_land(store: CareerStore) -> None:
     assert store.load_goals(KEY) == []
 
 
-def test_since_ms_migration_keeps_older_rows_unseeded(tmp_path: Path) -> None:
-    """A ladder on disk from before the column existed must not read as seeded."""
-    path = tmp_path / "career.sqlite"
-    with CareerStore(path) as first:
+def test_since_ms_migration_keeps_older_rows_unseeded() -> None:
+    """A ladder written before the field existed must not read as seeded.
+
+    Mongo has no `ALTER TABLE`/migration step -- the equivalent of the old
+    SQLite test's "drop the column with a raw connection" is unsetting the
+    field directly on the raw mongomock collection, bypassing the store's
+    own write methods.
+    """
+    client = mongomock.MongoClient()
+    with CareerStore(client, db_name="career") as first:
         advance_career(first, KEY, _ctx(_matches(), PEERS), WEAK_LANING)
-    import sqlite3
+        first._goals.update_many({}, {"$unset": {"peer_seeded": ""}})
 
-    with sqlite3.connect(path) as raw:
-        raw.execute("ALTER TABLE career_goals DROP COLUMN peer_seeded")
-
-    with CareerStore(path) as reopened:
+    with CareerStore(client, db_name="career") as reopened:
         assert all(not goal.peer_seeded for goal in reopened.load_goals(KEY))
 
 

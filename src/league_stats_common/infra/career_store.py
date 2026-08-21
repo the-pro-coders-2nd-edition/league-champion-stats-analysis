@@ -1,21 +1,70 @@
-"""SQLite persistence for Career mode ladders.
+"""MongoDB persistence for Career mode ladders.
 
 Career state cannot be re-derived from match data alone: ``hit=12, need=15`` is
 ``In progress`` for a goal that never cleared and ``At risk`` for one that did,
 and rung targets are frozen at generation time so they never move under a player
 who is closing in on them. Both live here, keyed by champion + role + the
 primary account slug.
+
+Backed by ``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in tests)
+instead of SQLite. Reproduces the 3 SQL tables' semantics as 3 collections:
+
+- ``career_goals``: one document per ``(build_key, slot, goal_index)``,
+  ``_id = f"{build_key}\\x1f{slot}\\x1f{goal_index}"`` (same separator
+  convention as ``PeerSampleStore``/``DerivedStore``). Indexed on
+  ``build_key``, since every read/delete/move filters on it.
+- ``career_used_tracks``: the SQL primary key is the *full 3-tuple*
+  ``(build_key, track_key, cleared_at)``, not just ``(build_key,
+  track_key)`` -- a track cleared, un-cleared and re-cleared gets a second
+  row because ``cleared_at`` differs. ``_id =
+  f"{build_key}\\x1f{track_key}\\x1f{cleared_at}"`` preserves this exactly;
+  collapsing to a 2-field key would silently change behavior on that
+  clear/un-clear/re-clear sequence.
+- ``career_flags``: one document per ``build_key`` (``_id = build_key``),
+  a straightforward single-row-per-key table.
+
+``peek_pending_drop``'s SQL `-1` sentinel ("nothing queued", since the SQL
+column is `NOT NULL`) is replaced with a Mongo-native "field absent" check:
+``request_drop`` sets ``pending_drop_slot``, ``clear_pending_drop`` `$unset`s
+it, and ``peek_pending_drop`` returns ``None`` when the field (or the whole
+document) is missing. Verified safe: ``CareerDropRequest.slot`` is
+``Field(ge=0, lt=BLOCK_SLOTS)`` at the FastAPI layer (the only real caller of
+``request_drop``), so no real caller can ever pass a negative slot -- the old
+`-1`-means-nothing behavior and the new absence-means-nothing behavior are
+observably identical for every real caller.
+
+``write_slot``'s "delete then insert" (SQL: ``DELETE`` + ``executemany``
+INSERT inside one implicit transaction) becomes ``delete_many`` +
+``insert_many`` -- verified directly that ``insert_many`` (unlike
+``bulk_write(UpdateOne(...))``, see the module-level note below) works fine
+under this repo's pinned ``pymongo``/``mongomock`` versions, since it never
+sends the `sort` kwarg that broke ``bulk_write``'s update path. This drops
+the old single-transaction atomicity (a crash between the two calls could
+leave a slot with no goals), judged harmless the same way Task 2 judged
+``DerivedStore``: every reader already treats a slot with no goals as "not
+seeded yet," not as corruption, so a mid-write crash degrades to a state
+every caller already handles.
+
+This repo's pinned ``pymongo`` 4.17.0 + ``mongomock`` 4.3.0 combination is
+incompatible with `bulk_write(UpdateOne(...))` (`TypeError: ...
+add_update() got an unexpected keyword argument 'sort'`, reproduced
+directly). Every batch *update* in this module therefore uses a loop of
+individual ``update_one`` calls instead of ``bulk_write`` (``save_goal_states``,
+``move_slot``).
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
+import os
+import threading
 from datetime import datetime, timezone
-from pathlib import Path
 from types import TracebackType
-from typing import Sequence
+from typing import Any, Sequence
 
+import pymongo
+
+from league_stats_common.infra.mongo import db_name_from_uri
 from league_stats_runner.analysis.career.models import Comparator, Rung, StoredGoal
 from league_stats_common.utils import get_logger
 
@@ -28,40 +77,6 @@ def _load_comparator(value: object) -> Comparator:
         return text  # type: ignore[return-value]
     return "at_least"
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS career_goals (
-    build_key   TEXT NOT NULL,
-    slot        INTEGER NOT NULL,
-    goal_index  INTEGER NOT NULL,
-    track_key   TEXT NOT NULL,
-    text        TEXT NOT NULL,
-    column_name TEXT NOT NULL,
-    comparator  TEXT NOT NULL,
-    target      REAL NOT NULL,
-    need        INTEGER NOT NULL,
-    state       TEXT NOT NULL,
-    since_ms    INTEGER NOT NULL DEFAULT 0,
-    peer_seeded INTEGER NOT NULL DEFAULT 0,
-    why         TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (build_key, slot, goal_index)
-);
-CREATE TABLE IF NOT EXISTS career_used_tracks (
-    build_key  TEXT NOT NULL,
-    track_key  TEXT NOT NULL,
-    cleared_at TEXT NOT NULL,
-    PRIMARY KEY (build_key, track_key, cleared_at)
-);
-CREATE TABLE IF NOT EXISTS career_flags (
-    build_key TEXT PRIMARY KEY,
-    pending_congrats_track TEXT NOT NULL DEFAULT '',
-    pending_drop_slot INTEGER NOT NULL DEFAULT -1,
-    recap_acked_match_id TEXT NOT NULL DEFAULT '',
-    recap_acked_game_ms INTEGER NOT NULL DEFAULT 0,
-    recap_acked_hits_json TEXT NOT NULL DEFAULT '',
-    recap_acked_track_key TEXT NOT NULL DEFAULT ''
-);
-"""
-
 
 def build_key(player_slug: str, champion: str, role: str) -> str:
     """Ladder identity: one ladder per champion + role per tracked player."""
@@ -73,65 +88,27 @@ def _now() -> str:
 
 
 class CareerStore:
-    """Persistent store of Career goals, retired tracks and pending banners."""
+    """MongoDB store of Career goals, retired tracks and pending banners."""
 
-    def __init__(self, db_path: Path) -> None:
-        """Open (or create) the store and apply the schema."""
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(db_path), timeout=30.0)
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA busy_timeout=30000")
-        self._conn.executescript(_SCHEMA)
+    def __init__(self, client: pymongo.MongoClient, db_name: str = "league_stats") -> None:
+        """Open the store against an existing Mongo client.
+
+        Args:
+            client: A ``pymongo.MongoClient``-compatible client (real or
+                ``mongomock.MongoClient`` in tests).
+            db_name: Name of the database to use within the client.
+        """
+        db = client[db_name]
+        self._goals = db["career_goals"]
+        self._used_tracks = db["career_used_tracks"]
+        self._flags = db["career_flags"]
+        # Mirrors the SQL implicit index on the primary key's leading column --
+        # every load_goals/delete_slot/move_slot query filters on build_key.
+        # create_index is idempotent and mongomock supports it, so this is
+        # safe on every construction, including in tests.
+        self._goals.create_index("build_key")
+        self._used_tracks.create_index("build_key")
         self._log = get_logger("career_store")
-        self._migrate_schema()
-
-    def _migrate_schema(self) -> None:
-        """Add columns that post-date a ladder already on disk."""
-        columns = {row[1] for row in self._conn.execute("PRAGMA table_info(career_goals)")}
-        if "since_ms" not in columns:
-            self._log.info("Adding career_goals.since_ms")
-            self._conn.execute(
-                "ALTER TABLE career_goals ADD COLUMN since_ms INTEGER NOT NULL DEFAULT 0"
-            )
-            self._conn.commit()
-        # Defaults to 0, so every block already on disk reads as peer-blind and
-        # gets retargeted on the next run that has peer percentiles.
-        if "peer_seeded" not in columns:
-            self._log.info("Adding career_goals.peer_seeded")
-            self._conn.execute(
-                "ALTER TABLE career_goals ADD COLUMN peer_seeded INTEGER NOT NULL DEFAULT 0"
-            )
-            self._conn.commit()
-        # Defaults to empty, so a goal written before the column existed simply has no
-        # explanation until its block next regenerates.
-        if "why" not in columns:
-            self._log.info("Adding career_goals.why")
-            self._conn.execute(
-                "ALTER TABLE career_goals ADD COLUMN why TEXT NOT NULL DEFAULT ''"
-            )
-            self._conn.commit()
-        flag_columns = {row[1] for row in self._conn.execute("PRAGMA table_info(career_flags)")}
-        if "pending_drop_slot" not in flag_columns:
-            self._log.info("Adding career_flags.pending_drop_slot")
-            self._conn.execute(
-                "ALTER TABLE career_flags ADD COLUMN pending_drop_slot INTEGER NOT NULL DEFAULT -1"
-            )
-            self._conn.commit()
-        if "recap_acked_match_id" not in flag_columns:
-            self._log.info("Adding career_flags recap columns")
-            self._conn.execute(
-                "ALTER TABLE career_flags ADD COLUMN recap_acked_match_id TEXT NOT NULL DEFAULT ''"
-            )
-            self._conn.execute(
-                "ALTER TABLE career_flags ADD COLUMN recap_acked_game_ms INTEGER NOT NULL DEFAULT 0"
-            )
-            self._conn.execute(
-                "ALTER TABLE career_flags ADD COLUMN recap_acked_hits_json TEXT NOT NULL DEFAULT ''"
-            )
-            self._conn.execute(
-                "ALTER TABLE career_flags ADD COLUMN recap_acked_track_key TEXT NOT NULL DEFAULT ''"
-            )
-            self._conn.commit()
 
     def __enter__(self) -> "CareerStore":
         """Enter a context manager scope."""
@@ -147,36 +124,43 @@ class CareerStore:
         self.close()
 
     def close(self) -> None:
-        """Close the underlying connection."""
-        self._conn.close()
+        """No-op: this store never owns its ``pymongo.MongoClient``.
+
+        The client is handed in from outside (see ``open_career_store``
+        below), mirroring ``RawMatchStore``/``DerivedStore``'s reasoning --
+        closing a shared client here would break every other user of it.
+        """
+        return None
+
+    @staticmethod
+    def _goal_id(key: str, slot: int, goal_index: int) -> str:
+        return f"{key}\x1f{slot}\x1f{goal_index}"
+
+    @staticmethod
+    def _used_track_id(key: str, track_key: str, cleared_at: str) -> str:
+        return f"{key}\x1f{track_key}\x1f{cleared_at}"
 
     def load_goals(self, key: str) -> list[StoredGoal]:
         """Every persisted goal for a ladder, ordered by slot then goal index."""
-        rows = self._conn.execute(
-            "SELECT slot, goal_index, track_key, text, column_name, comparator, "
-            "target, need, state, since_ms, peer_seeded, why FROM career_goals "
-            "WHERE build_key = ? "
-            "ORDER BY slot, goal_index",
-            (key,),
-        ).fetchall()
+        docs = self._goals.find({"build_key": key}).sort([("slot", 1), ("goal_index", 1)])
         return [
             StoredGoal(
-                slot=int(row[0]),
-                goal_index=int(row[1]),
-                track_key=str(row[2]),
+                slot=int(doc["slot"]),
+                goal_index=int(doc["goal_index"]),
+                track_key=str(doc["track_key"]),
                 rung=Rung(
-                    text=str(row[3]),
-                    column=str(row[4]),
-                    comparator=_load_comparator(row[5]),
-                    target=float(row[6]),
-                    need=int(row[7]),
-                    why=str(row[11] or ""),
+                    text=str(doc["text"]),
+                    column=str(doc["column_name"]),
+                    comparator=_load_comparator(doc["comparator"]),
+                    target=float(doc["target"]),
+                    need=int(doc["need"]),
+                    why=str(doc.get("why") or ""),
                 ),
-                state=str(row[8]),
-                since_ms=int(row[9]),
-                peer_seeded=bool(row[10]),
+                state=str(doc["state"]),
+                since_ms=int(doc.get("since_ms") or 0),
+                peer_seeded=bool(doc.get("peer_seeded") or False),
             )
-            for row in rows
+            for doc in docs
         ]
 
     def write_slot(
@@ -196,48 +180,42 @@ class CareerStore:
         run that has peers rebuilds it, unless the player has already started it.
         """
         self.delete_slot(key, slot)
-        self._conn.executemany(
-            "INSERT INTO career_goals (build_key, slot, goal_index, track_key, text, "
-            "column_name, comparator, target, need, state, since_ms, peer_seeded, why) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        if not rungs:
+            return
+        self._goals.insert_many(
             [
-                (
-                    key,
-                    slot,
-                    index,
-                    track_key,
-                    rung.text,
-                    rung.column,
-                    rung.comparator,
-                    float(rung.target),
-                    int(rung.need),
-                    states[index],
-                    int(since_ms),
-                    1 if peer_seeded else 0,
-                    rung.why,
-                )
+                {
+                    "_id": self._goal_id(key, slot, index),
+                    "build_key": key,
+                    "slot": slot,
+                    "goal_index": index,
+                    "track_key": track_key,
+                    "text": rung.text,
+                    "column_name": rung.column,
+                    "comparator": rung.comparator,
+                    "target": float(rung.target),
+                    "need": int(rung.need),
+                    "state": states[index],
+                    "since_ms": int(since_ms),
+                    "peer_seeded": bool(peer_seeded),
+                    "why": rung.why,
+                }
                 for index, rung in enumerate(rungs)
-            ],
+            ]
         )
-        self._conn.commit()
 
     def save_goal_states(self, key: str, states: dict[tuple[int, int], str]) -> None:
         """Persist recomputed states for ``(slot, goal_index)`` pairs."""
         if not states:
             return
-        self._conn.executemany(
-            "UPDATE career_goals SET state = ? "
-            "WHERE build_key = ? AND slot = ? AND goal_index = ?",
-            [(state, key, slot, index) for (slot, index), state in states.items()],
-        )
-        self._conn.commit()
+        for (slot, index), state in states.items():
+            self._goals.update_one(
+                {"_id": self._goal_id(key, slot, index)}, {"$set": {"state": state}}
+            )
 
     def delete_slot(self, key: str, slot: int) -> None:
         """Drop every goal in a slot."""
-        self._conn.execute(
-            "DELETE FROM career_goals WHERE build_key = ? AND slot = ?", (key, slot)
-        )
-        self._conn.commit()
+        self._goals.delete_many({"build_key": key, "slot": slot})
 
     def move_slot(self, key: str, src: int, dst: int, *, since_ms: int | None = None) -> None:
         """Shift a slot's goals left, replacing whatever sat at the destination.
@@ -247,43 +225,49 @@ class CareerStore:
         cleared the block ahead of it.
         """
         self.delete_slot(key, dst)
-        if since_ms is None:
-            self._conn.execute(
-                "UPDATE career_goals SET slot = ? WHERE build_key = ? AND slot = ?",
-                (dst, key, src),
-            )
-        else:
-            self._conn.execute(
-                "UPDATE career_goals SET slot = ?, since_ms = ? "
-                "WHERE build_key = ? AND slot = ?",
-                (dst, int(since_ms), key, src),
-            )
-        self._conn.commit()
+        docs = list(self._goals.find({"build_key": key, "slot": src}))
+        if not docs:
+            return
+        # `_id` embeds `slot`, so a moved goal must be re-keyed, not updated
+        # in place -- `_id` cannot be changed via `update_one` on a real
+        # MongoDB (mongomock matches that restriction). Delete the old-`_id`
+        # document and re-insert it under the new one, carrying every other
+        # field forward untouched.
+        self._goals.delete_many({"build_key": key, "slot": src})
+        new_docs = []
+        for doc in docs:
+            new_doc = dict(doc)
+            new_doc["_id"] = self._goal_id(key, dst, int(doc["goal_index"]))
+            new_doc["slot"] = dst
+            if since_ms is not None:
+                new_doc["since_ms"] = int(since_ms)
+            new_docs.append(new_doc)
+        self._goals.insert_many(new_docs)
 
     def record_used_track(self, key: str, track_key: str) -> None:
         """Mark a track as retired so fresh tracks are preferred over recycling."""
-        self._conn.execute(
-            "INSERT OR IGNORE INTO career_used_tracks (build_key, track_key, cleared_at) "
-            "VALUES (?, ?, ?)",
-            (key, track_key, _now()),
+        cleared_at = _now()
+        self._used_tracks.update_one(
+            {"_id": self._used_track_id(key, track_key, cleared_at)},
+            {
+                "$setOnInsert": {
+                    "build_key": key,
+                    "track_key": track_key,
+                    "cleared_at": cleared_at,
+                }
+            },
+            upsert=True,
         )
-        self._conn.commit()
 
     def used_track_keys(self, key: str) -> set[str]:
         """Track keys this ladder has already retired at least once."""
-        rows = self._conn.execute(
-            "SELECT DISTINCT track_key FROM career_used_tracks WHERE build_key = ?", (key,)
-        ).fetchall()
-        return {str(row[0]) for row in rows}
+        return {str(value) for value in self._used_tracks.distinct("track_key", {"build_key": key})}
 
     def set_pending_congrats(self, key: str, track_key: str) -> None:
         """Queue the block-complete banner for the next render."""
-        self._conn.execute(
-            "INSERT INTO career_flags (build_key, pending_congrats_track) VALUES (?, ?) "
-            "ON CONFLICT(build_key) DO UPDATE SET pending_congrats_track = excluded.pending_congrats_track",
-            (key, track_key),
+        self._flags.update_one(
+            {"_id": key}, {"$set": {"pending_congrats_track": track_key}}, upsert=True
         )
-        self._conn.commit()
 
     def peek_pending_congrats(self, key: str) -> str:
         """Read the pending banner without consuming it.
@@ -293,37 +277,29 @@ class CareerStore:
         swallow the banner, so the flag now survives until a reader acknowledges
         it via :meth:`clear_pending_congrats`.
         """
-        row = self._conn.execute(
-            "SELECT pending_congrats_track FROM career_flags WHERE build_key = ?", (key,)
-        ).fetchone()
-        return str(row[0]) if row and row[0] else ""
+        doc = self._flags.find_one({"_id": key})
+        if doc is None:
+            return ""
+        return str(doc.get("pending_congrats_track") or "")
 
     def clear_pending_congrats(self, key: str) -> None:
         """Mark the block-complete banner as seen."""
-        self._conn.execute(
-            "UPDATE career_flags SET pending_congrats_track = '' WHERE build_key = ?",
-            (key,),
+        self._flags.update_one(
+            {"_id": key}, {"$set": {"pending_congrats_track": ""}}, upsert=True
         )
-        self._conn.commit()
 
     def peek_recap_ack(self, key: str) -> tuple[str, int, dict[str, int], str]:
         """Last acknowledged recap: match id, its game_creation_ms, goal hit counts, track key.
 
         Empty/zero/empty-dict/empty when this ladder has never acknowledged a recap.
         """
-        row = self._conn.execute(
-            "SELECT recap_acked_match_id, recap_acked_game_ms, recap_acked_hits_json, "
-            "recap_acked_track_key FROM career_flags WHERE build_key = ?",
-            (key,),
-        ).fetchone()
-        if row is None:
+        doc = self._flags.find_one({"_id": key})
+        if doc is None:
             return "", 0, {}, ""
-        match_id, game_ms, hits_json, track_key = (
-            str(row[0] or ""),
-            int(row[1] or 0),
-            str(row[2] or ""),
-            str(row[3] or ""),
-        )
+        match_id = str(doc.get("recap_acked_match_id") or "")
+        game_ms = int(doc.get("recap_acked_game_ms") or 0)
+        hits_json = str(doc.get("recap_acked_hits_json") or "")
+        track_key = str(doc.get("recap_acked_track_key") or "")
         hits: dict[str, int] = {}
         if hits_json:
             try:
@@ -342,16 +318,18 @@ class CareerStore:
         track_key: str,
     ) -> None:
         """Record the newest game, goal-hit counts and track a reader has seen recapped."""
-        self._conn.execute(
-            "INSERT INTO career_flags (build_key, recap_acked_match_id, recap_acked_game_ms, "
-            "recap_acked_hits_json, recap_acked_track_key) VALUES (?, ?, ?, ?, ?) "
-            "ON CONFLICT(build_key) DO UPDATE SET recap_acked_match_id = excluded.recap_acked_match_id, "
-            "recap_acked_game_ms = excluded.recap_acked_game_ms, "
-            "recap_acked_hits_json = excluded.recap_acked_hits_json, "
-            "recap_acked_track_key = excluded.recap_acked_track_key",
-            (key, match_id, int(game_ms), json.dumps(hits), track_key),
+        self._flags.update_one(
+            {"_id": key},
+            {
+                "$set": {
+                    "recap_acked_match_id": match_id,
+                    "recap_acked_game_ms": int(game_ms),
+                    "recap_acked_hits_json": json.dumps(hits),
+                    "recap_acked_track_key": track_key,
+                }
+            },
+            upsert=True,
         )
-        self._conn.commit()
 
     def request_drop(self, key: str, slot: int) -> None:
         """Queue a manual block drop for the next analysis run.
@@ -361,28 +339,20 @@ class CareerStore:
         Recording the intent here lets :func:`advance_career` perform the drop
         with the real ``TrackContext`` on the run the request kicks off.
         """
-        self._conn.execute(
-            "INSERT INTO career_flags (build_key, pending_drop_slot) VALUES (?, ?) "
-            "ON CONFLICT(build_key) DO UPDATE SET pending_drop_slot = excluded.pending_drop_slot",
-            (key, int(slot)),
+        self._flags.update_one(
+            {"_id": key}, {"$set": {"pending_drop_slot": int(slot)}}, upsert=True
         )
-        self._conn.commit()
 
     def peek_pending_drop(self, key: str) -> int | None:
         """The slot a reader asked to drop, or ``None`` when nothing is queued."""
-        row = self._conn.execute(
-            "SELECT pending_drop_slot FROM career_flags WHERE build_key = ?", (key,)
-        ).fetchone()
-        if row is None or int(row[0]) < 0:
+        doc = self._flags.find_one({"_id": key})
+        if doc is None or "pending_drop_slot" not in doc:
             return None
-        return int(row[0])
+        return int(doc["pending_drop_slot"])
 
     def clear_pending_drop(self, key: str) -> None:
         """Mark a queued drop as performed."""
-        self._conn.execute(
-            "UPDATE career_flags SET pending_drop_slot = -1 WHERE build_key = ?", (key,)
-        )
-        self._conn.commit()
+        self._flags.update_one({"_id": key}, {"$unset": {"pending_drop_slot": ""}})
 
     def clear_all(self) -> dict[str, int]:
         """Delete every ladder, retired track and pending flag.
@@ -390,18 +360,67 @@ class CareerStore:
         Returns row counts per table before deletion. Safe on an empty store.
         """
         counts = self.row_counts()
-        self._conn.executescript(
-            "DELETE FROM career_goals;"
-            "DELETE FROM career_used_tracks;"
-            "DELETE FROM career_flags;"
-        )
-        self._conn.commit()
+        self._goals.delete_many({})
+        self._used_tracks.delete_many({})
+        self._flags.delete_many({})
         return counts
 
     def row_counts(self) -> dict[str, int]:
         """Row counts for each Career table."""
-        counts: dict[str, int] = {}
-        for table in ("career_goals", "career_used_tracks", "career_flags"):
-            row = self._conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
-            counts[table] = int(row[0]) if row else 0
-        return counts
+        return {
+            "career_goals": self._goals.count_documents({}),
+            "career_used_tracks": self._used_tracks.count_documents({}),
+            "career_flags": self._flags.count_documents({}),
+        }
+
+
+# Process-wide Mongo clients keyed by URI, mirroring `derived.py`'s own
+# `_SHARED_MONGO_CLIENTS`: neither `AppConfig` (RUNNER's job pipeline,
+# `pipeline/bundles.py::build_career_bundle`) nor `api_ui/app.py`'s
+# `_career_ladder_ref` helper carries a Mongo URI field -- both only ever
+# resolved a `career_db_path: Path` off `AppConfig`. Threading a Mongo client
+# through either call path would ripple this task well outside its file
+# list, the same situation Task 2 hit with `DerivedStore`'s 3 real callers.
+# Resolving the URI from the same environment variables
+# `WebConfig.runner_mongo_uri` already uses, and sharing one client per URI
+# per process here, is the same deliberate scope-narrowing choice Task 2
+# made for `open_derived_store`.
+_SHARED_MONGO_CLIENTS: dict[str, pymongo.MongoClient] = {}
+_SHARED_MONGO_CLIENTS_LOCK = threading.Lock()
+
+
+def _resolve_mongo_uri() -> str:
+    return (
+        os.environ.get("RUNNER_MONGO_URI")
+        or os.environ.get("MONGO_URI")
+        or "mongodb://localhost:27017/league_stats"
+    )
+
+
+def _build_mongo_client(mongo_uri: str) -> pymongo.MongoClient:
+    """Return the process-wide Mongo client for this URI, creating it once.
+
+    A separate seam (rather than calling `pymongo.MongoClient` directly from
+    `open_career_store`) so tests can monkeypatch this one function to
+    return a `mongomock.MongoClient` instead of dialing a real Mongo --
+    matching `derived.py`'s own `_build_mongo_client`.
+    """
+    with _SHARED_MONGO_CLIENTS_LOCK:
+        client = _SHARED_MONGO_CLIENTS.get(mongo_uri)
+        if client is None:
+            client = pymongo.MongoClient(mongo_uri)
+            _SHARED_MONGO_CLIENTS[mongo_uri] = client
+        return client
+
+
+def open_career_store() -> CareerStore:
+    """Open the Career store against the process-wide Mongo client.
+
+    The single production entry point for `pipeline/bundles.py` and
+    `api_ui/app.py` -- see the module comment above `_SHARED_MONGO_CLIENTS`
+    for why this resolves its own client rather than receiving one from a
+    caller.
+    """
+    uri = _resolve_mongo_uri()
+    client = _build_mongo_client(uri)
+    return CareerStore(client, db_name=db_name_from_uri(uri))

@@ -6,6 +6,7 @@ import mongomock
 import pytest
 
 from league_stats_peers.analysis.peer import benchmark_cache as _benchmark_cache
+from league_stats_common.infra import career_store as _career_store
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
 from league_stats_runner.infra import derived as _derived
@@ -67,3 +68,26 @@ def _derived_store_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     client = mongomock.MongoClient()
     monkeypatch.setattr(_derived, "_build_mongo_client", lambda uri: client)
+
+
+@pytest.fixture(autouse=True)
+def _career_store_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default every test's Career store (Phase 8, Task 3) to an in-memory
+    mongomock store instead of a real Mongo connection.
+
+    `career_store.open_career_store` lazily builds a real `pymongo.MongoClient`
+    against `RUNNER_MONGO_URI`/`MONGO_URI` (falling back to
+    `localhost:27017`) on first use via `_build_mongo_client`, the same seam
+    `derived.py` uses. Without this fixture, any test that exercises a real
+    HTTP route touching Career (`career/ack`, `career/recap/ack`,
+    `career/drop`) or `pipeline/bundles.py::build_career_bundle` would try a
+    real network connection and hang. One fresh client per test
+    (function-scoped fixture) mirrors the old per-test `tmp_path` SQLite file
+    isolation -- tests that need a specific client (e.g. to seed data the
+    real route must also see, or to prove two different stores are isolated)
+    construct their own `CareerStore`/`mongomock.MongoClient()` directly and
+    either reuse this fixture's client (via `open_career_store()`) or build a
+    separate one, same as `_derived_store_uses_mongomock` above.
+    """
+    client = mongomock.MongoClient()
+    monkeypatch.setattr(_career_store, "_build_mongo_client", lambda uri: client)

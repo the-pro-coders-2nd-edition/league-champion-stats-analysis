@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
+import mongomock
 import pandas as pd
 import pytest
 
@@ -97,8 +97,8 @@ def _ctx(matches: pd.DataFrame | None = None) -> TrackContext:
 
 
 @pytest.fixture()
-def view(tmp_path: Path) -> dict:
-    with CareerStore(tmp_path / "career.sqlite") as store:
+def view() -> dict:
+    with CareerStore(mongomock.MongoClient(), db_name="career") as store:
         snapshot = advance_career(store, KEY, _ctx(), COMPONENTS)
     return build_career_view(snapshot, ctx=_ctx())
 
@@ -151,8 +151,8 @@ def test_view_carries_a_step_catalog_grouped_by_category(view: dict) -> None:
     assert any(step["text"] for step in laning["steps"])
 
 
-def test_build_career_view_without_ctx_omits_the_catalog(tmp_path: Path) -> None:
-    with CareerStore(tmp_path / "career.sqlite") as store:
+def test_build_career_view_without_ctx_omits_the_catalog() -> None:
+    with CareerStore(mongomock.MongoClient(), db_name="career") as store:
         snapshot = advance_career(store, KEY, _ctx(), COMPONENTS)
     assert build_career_view(snapshot)["step_catalog"] == []
 
@@ -206,9 +206,9 @@ def test_widget_notes_name_the_live_track(view: dict) -> None:
     assert view["widget"][1]["note"] == "Lane and early game · 0 of 20"
 
 
-def test_cleared_goals_get_a_check_mark(tmp_path: Path) -> None:
+def test_cleared_goals_get_a_check_mark() -> None:
     history = _batch(20, start=0, cspm=6.0)
-    with CareerStore(tmp_path / "career.sqlite") as store:
+    with CareerStore(mongomock.MongoClient(), db_name="career") as store:
         advance_career(store, KEY, _ctx(history), COMPONENTS)
         # A block's goals are three different metrics from its category bank, so
         # satisfy the first one specifically rather than nudging a named column.
@@ -233,9 +233,9 @@ def test_cleared_goals_get_a_check_mark(tmp_path: Path) -> None:
     assert view["blocks"][0]["state_label"] == f"Live · {cleared_count} of 3 cleared"
 
 
-def test_congrats_banner_names_the_retired_and_next_block(tmp_path: Path) -> None:
+def test_congrats_banner_names_the_retired_and_next_block() -> None:
     history = _batch(20, start=0, cspm=6.0)
-    with CareerStore(tmp_path / "career.sqlite") as store:
+    with CareerStore(mongomock.MongoClient(), db_name="career") as store:
         advance_career(store, KEY, _ctx(history), COMPONENTS)
         live = [goal for goal in store.load_goals(KEY) if goal.slot == 0]
         queued_name = _track_name(

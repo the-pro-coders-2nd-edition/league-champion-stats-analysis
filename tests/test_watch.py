@@ -592,8 +592,10 @@ def test_career_banner_ack_route(tmp_path: Path) -> None:
     import json
 
     from league_stats_common.core.champions import player_slug
-    from league_stats_common.core.config import load_config
-    from league_stats_common.infra.career_store import CareerStore, build_key as career_build_key
+    from league_stats_common.infra.career_store import (
+        build_key as career_build_key,
+        open_career_store,
+    )
 
     config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite", runner_storage_mode="sqlite")
     build_dir = config.reports_dir / SLUG / "viktor_middle"
@@ -611,15 +613,12 @@ def test_career_banner_ack_route(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    app_config = load_config(
-        require_api_key=False,
-        riot_id="Hugros",
-        tagline="EUW",
-        region="europe",
-        output_dir=config.output_dir,
-    )
     key = career_build_key(player_slug("Hugros", "EUW"), "Viktor", "MIDDLE")
-    with CareerStore(app_config.career_db_path) as career:
+    # `open_career_store()` (not a fresh `CareerStore(...)`) so this seed lands
+    # in the same mongomock client the real ack route reaches via
+    # `open_career_store()` -- the autouse `_career_store_uses_mongomock`
+    # fixture gives every call in this test the same in-memory client.
+    with open_career_store() as career:
         career.set_pending_congrats(key, "laning_income")
 
     app = create_app(config, start_worker=False)
@@ -628,7 +627,7 @@ def test_career_banner_ack_route(tmp_path: Path) -> None:
         assert response.status_code == 200
         assert response.json() == {"acknowledged": True}
 
-    with CareerStore(app_config.career_db_path) as career:
+    with open_career_store() as career:
         assert career.peek_pending_congrats(key) == ""
 
 

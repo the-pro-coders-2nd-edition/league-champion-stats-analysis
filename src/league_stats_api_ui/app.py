@@ -61,7 +61,10 @@ from league_stats_runner.presentation.report import discover_player_builds, is_g
 from league_stats_runner.presentation.report_json import rewrite_web_asset_hrefs
 from league_stats_common.utils import current_trace_id, set_trace_id, setup_logging
 from league_stats_runner.analysis.career.models import BLOCK_SLOTS
-from league_stats_common.infra.career_store import CareerStore, build_key as career_build_key
+from league_stats_common.infra.career_store import (
+    build_key as career_build_key,
+    open_career_store,
+)
 from league_stats_cron_watch.watch import WatchPoller
 from league_stats_common.watch_fields import watch_public_fields
 from league_stats_api_ui.chat import (
@@ -1048,10 +1051,10 @@ def create_app(
             **watch_public_fields(player or {}),
         }
 
-    def _career_ladder_ref(slug: str, build_slug: str) -> tuple[Path, str, str, str]:
-        """The career database path and ladder key behind a report URL.
+    def _career_ladder_ref(slug: str, build_slug: str) -> tuple[str, str, str]:
+        """The ladder key (plus champion/role) behind a report URL.
 
-        Only the career database is touched, so no Riot key is required -- these
+        Only the Career store is touched, so no Riot key is required -- these
         routes never talk to the Riot API.
         """
         if not (_is_report_slug(slug) and _is_report_slug(build_slug)):
@@ -1066,15 +1069,8 @@ def create_app(
         tagline = str(meta.get("tagline", ""))
         if not (champion and role and riot_id and tagline):
             raise HTTPException(status_code=409, detail="Build metadata is incomplete.")
-        app_config = load_config(
-            require_api_key=False,
-            riot_id=riot_id,
-            tagline=tagline,
-            region=str(meta.get("region", "europe")) or "europe",
-            output_dir=config.output_dir,
-        )
         ladder_key = career_build_key(player_slug(riot_id, tagline), champion, role)
-        return app_config.career_db_path, ladder_key, champion, role
+        return ladder_key, champion, role
 
     @app.post("/api/players/{slug}/builds/{build_slug}/career/ack")
     def acknowledge_career_banner(slug: str, build_slug: str) -> dict[str, Any]:
@@ -1083,8 +1079,8 @@ def create_app(
         The flag survives report builds so a background watch refresh cannot
         swallow the milestone; this is how a reader retires it.
         """
-        db_path, ladder_key, _champion, _role = _career_ladder_ref(slug, build_slug)
-        with CareerStore(db_path) as career:
+        ladder_key, _champion, _role = _career_ladder_ref(slug, build_slug)
+        with open_career_store() as career:
             career.clear_pending_congrats(ladder_key)
         return {"acknowledged": True}
 
@@ -1097,8 +1093,8 @@ def create_app(
         Recorded by match id/timestamp rather than cleared outright, so a game
         played while the modal is open is not swallowed by the ack.
         """
-        db_path, ladder_key, _champion, _role = _career_ladder_ref(slug, build_slug)
-        with CareerStore(db_path) as career:
+        ladder_key, _champion, _role = _career_ladder_ref(slug, build_slug)
+        with open_career_store() as career:
             career.ack_recap(
                 ladder_key,
                 match_id=body.match_id,
@@ -1125,8 +1121,8 @@ def create_app(
         False for every build, so an unscoped one would re-analyse the player's
         whole report set to act on one champion's ladder.
         """
-        db_path, ladder_key, champion, role = _career_ladder_ref(slug, build_slug)
-        with CareerStore(db_path) as career:
+        ladder_key, champion, role = _career_ladder_ref(slug, build_slug)
+        with open_career_store() as career:
             if not any(goal.slot == body.slot for goal in career.load_goals(ladder_key)):
                 raise HTTPException(status_code=404, detail="No block in that slot.")
             career.request_drop(ladder_key, body.slot)

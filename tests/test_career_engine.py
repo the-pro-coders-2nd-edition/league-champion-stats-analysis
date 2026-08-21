@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
+import mongomock
 import pandas as pd
 import pytest
 
@@ -153,8 +153,8 @@ def _ctx(matches: pd.DataFrame) -> TrackContext:
 
 
 @pytest.fixture()
-def store(tmp_path: Path):
-    with CareerStore(tmp_path / "career.sqlite") as handle:
+def store():
+    with CareerStore(mongomock.MongoClient(), db_name="career") as handle:
         yield handle
 
 

@@ -33,7 +33,7 @@ from league_stats_common.core.config import (
     AppConfig,
 )
 from league_stats_common.core.models import MatchRecord, PeerComparisonResult
-from league_stats_common.infra.career_store import CareerStore, build_key
+from league_stats_common.infra.career_store import build_key, open_career_store
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_runner.presentation.career import (
     build_career_view,
@@ -495,7 +495,7 @@ def build_career_bundle(
             peers_ready=peer_comparison is not None,
         )
         key = build_key(player_slug(config.riot_id, config.tagline), config.champion, config.role)
-        with CareerStore(config.career_db_path) as store:
+        with open_career_store() as store:
             snapshot = advance_career(store, key, ctx, components)
         return build_career_view(snapshot, ctx=ctx)
     except Exception as exc:  # noqa: BLE001 - a broken ladder must not break the report
