@@ -162,7 +162,7 @@ def build_summoner_icon_files(spells: dict[str, dict[str, Any]]) -> dict[str, st
 
 
 class DDragonAssets:
-    """Local cache of champion and keystone icons under ``output/assets/``."""
+    """Local cache of champion and keystone icons under ``config.assets_dir``."""
 
     def __init__(
         self,
@@ -170,7 +170,7 @@ class DDragonAssets:
         session: requests.Session | None = None,
     ) -> None:
         self._config = config
-        self._assets_root = config.output_dir / "assets"
+        self._assets_root = config.assets_dir
         self._champions_dir = self._assets_root / "champions"
         self._runes_dir = self._assets_root / "runes"
         self._rune_trees_dir = self._assets_root / "rune_trees"
