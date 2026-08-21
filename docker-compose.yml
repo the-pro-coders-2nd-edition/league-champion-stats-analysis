@@ -41,10 +41,17 @@ services:
       # and tied to a job's lifecycle, while this cache is shared,
       # patch-versioned, and read-mostly -- it has nothing to do with any
       # individual job, so it does not belong in the same volume just because
-      # both used to incidentally nest under `output/`. api-ui only ever
-      # serves these files to the browser (via `/ddragon`), never writes
-      # them -- mounted `:ro` here; `runner` (below) is the only writer.
-      - ddragon-assets:/app/assets:ro
+      # both used to incidentally nest under `output/`. Mounted read-write:
+      # api-ui is NOT purely a reader -- `fetch_rank_emblem` (called from
+      # `_shaped_players`, on the landing page's `/api/groups` request path)
+      # lazily downloads+writes a rank emblem PNG the first time any request
+      # needs a tier nothing has fetched yet. A `:ro` mount here made every
+      # such request 500 with `OSError: [Errno 30] Read-only file system`
+      # the moment a not-yet-cached tier was hit in production -- confirmed
+      # live via Loki. `runner` is still the primary writer for champion/
+      # rune/item/summoner icons; api-ui only ever writes this one lazily-
+      # fetched, small, idempotent file.
+      - ddragon-assets:/app/assets
     depends_on:
       - mongo
 
