@@ -18,6 +18,7 @@ from collections import deque
 from typing import Any, Final
 
 import requests
+from prometheus_client import Counter, Histogram
 from tqdm import tqdm
 
 from league_stats_common.infra.cache import HttpCache
@@ -30,6 +31,53 @@ MATCH_ID_PAGE_SIZE: Final[int] = 100
 MATCH_IDS_TTL_S: Final[float] = 15 * 60
 STATIC_TTL_S: Final[float] = 24 * 3600
 DDRAGON_BASE: Final[str] = "https://ddragon.leagueoflegends.com"
+
+# Cross-cutting Riot API metrics, module-level so every process that imports
+# this file (api-ui, runner, peers, cron-watch) shares one set of Prometheus
+# collectors -- Prometheus's own scrape config attaches the distinguishing
+# `job` label per process, so these metrics never need a per-service label of
+# their own. `endpoint` is a fixed, closed lookup keyed on URL-path
+# substrings (see `_endpoint_label` below) -- never the raw URL, a match id or
+# a puuid, to keep cardinality bounded.
+RIOT_API_REQUEST_DURATION = Histogram(
+    "riot_api_request_duration_seconds",
+    "Latency of one Riot API HTTP call (successful or not), from RiotApiClient._get.",
+    ["endpoint"],
+)
+RIOT_API_REQUESTS_TOTAL = Counter(
+    "riot_api_requests_total",
+    "Riot API HTTP responses by endpoint and outcome.",
+    ["endpoint", "outcome"],  # ok | rate_limited | server_error | network_error | client_error
+)
+RIOT_API_RATE_LIMIT_WAIT_SECONDS = Histogram(
+    "riot_api_rate_limit_wait_seconds",
+    "Time RateLimiter.acquire() blocked before releasing a request slot (proactive throttling, not 429s).",
+    buckets=(0, .01, .05, .1, .5, 1, 2, 5, 10, 30),
+)
+
+_ENDPOINT_MARKERS: Final[tuple[tuple[str, str], ...]] = (
+    ("/riot/account/v1/", "account_v1"),
+    ("/lol/match/v5/matches/by-puuid/", "match_ids"),
+    ("/timeline", "match_timeline"),
+    ("/lol/match/v5/", "match_v5"),
+    ("/lol/league/v4/", "league_v4"),
+    ("/lol/summoner/v4/", "summoner_v4"),
+)
+
+
+def _endpoint_label(url: str) -> str:
+    """Map a request URL to one of a fixed ~8-value endpoint label.
+
+    Substring-matched against the URL path, never the raw URL itself --
+    keeps cardinality bounded regardless of match id/puuid content embedded
+    in the path.
+    """
+    if url.startswith(DDRAGON_BASE):
+        return "ddragon"
+    for marker, label in _ENDPOINT_MARKERS:
+        if marker in url:
+            return label
+    return "other"
 
 
 class RiotApiError(RuntimeError):
@@ -54,20 +102,24 @@ class RateLimiter:
 
     def acquire(self) -> None:
         """Block until a request slot is available, then consume it."""
-        while True:
-            with self._lock:
-                now = time.monotonic()
-                wait = 0.0
-                for window, limit, stamps in self._limits:
-                    while stamps and now - stamps[0] > window:
-                        stamps.popleft()
-                    if len(stamps) >= limit:
-                        wait = max(wait, window - (now - stamps[0]) + 0.01)
-                if wait <= 0:
-                    for _, _, stamps in self._limits:
-                        stamps.append(now)
-                    return
-            time.sleep(wait)
+        acquire_start = time.monotonic()
+        try:
+            while True:
+                with self._lock:
+                    now = time.monotonic()
+                    wait = 0.0
+                    for window, limit, stamps in self._limits:
+                        while stamps and now - stamps[0] > window:
+                            stamps.popleft()
+                        if len(stamps) >= limit:
+                            wait = max(wait, window - (now - stamps[0]) + 0.01)
+                    if wait <= 0:
+                        for _, _, stamps in self._limits:
+                            stamps.append(now)
+                        return
+                time.sleep(wait)
+        finally:
+            RIOT_API_RATE_LIMIT_WAIT_SECONDS.observe(time.monotonic() - acquire_start)
 
 
 # Process-wide limiters keyed by their window limits. Sharing one limiter
@@ -191,33 +243,46 @@ class RiotApiClient:
 
         headers = {"X-Riot-Token": self._config.api_key} if authenticated else {}
         last_error: str = "unknown"
+        endpoint = _endpoint_label(url)
         for attempt in range(self._config.max_retries + 1):
             if authenticated:
                 self._limiter.acquire()
+            attempt_start = time.perf_counter()
             try:
                 response = self._session.get(
                     url, params=params, headers=headers, timeout=self._config.request_timeout_s
                 )
             except requests.RequestException as exc:
+                RIOT_API_REQUEST_DURATION.labels(endpoint=endpoint).observe(
+                    time.perf_counter() - attempt_start
+                )
+                RIOT_API_REQUESTS_TOTAL.labels(endpoint=endpoint, outcome="network_error").inc()
                 last_error = f"network error: {exc}"
                 self._log.warning("Request failed (%s), attempt %d", exc, attempt + 1)
                 time.sleep(min(2**attempt, 30))
                 continue
 
+            RIOT_API_REQUEST_DURATION.labels(endpoint=endpoint).observe(
+                time.perf_counter() - attempt_start
+            )
             if response.status_code == 200:
+                RIOT_API_REQUESTS_TOTAL.labels(endpoint=endpoint, outcome="ok").inc()
                 payload = response.json()
                 if use_cache:
                     self._cache.set(cache_key, payload, ttl_s)
                 return payload
             if response.status_code == 429:
+                RIOT_API_REQUESTS_TOTAL.labels(endpoint=endpoint, outcome="rate_limited").inc()
                 retry_after = float(response.headers.get("Retry-After", 2 ** (attempt + 1)))
                 self._log.warning("Rate limited; sleeping %.1fs", retry_after)
                 time.sleep(retry_after)
                 continue
             if response.status_code >= 500:
+                RIOT_API_REQUESTS_TOTAL.labels(endpoint=endpoint, outcome="server_error").inc()
                 last_error = f"HTTP {response.status_code}"
                 time.sleep(min(2**attempt, 30))
                 continue
+            RIOT_API_REQUESTS_TOTAL.labels(endpoint=endpoint, outcome="client_error").inc()
             raise RiotApiError(f"GET {url} failed: HTTP {response.status_code} {response.text[:200]}")
         raise RiotApiError(f"GET {url} failed after retries ({last_error})")
 
