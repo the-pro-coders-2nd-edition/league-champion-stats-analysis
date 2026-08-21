@@ -5,11 +5,14 @@ from __future__ import annotations
 import mongomock
 import pytest
 
+from league_stats_peers import service as _peers_service
+from league_stats_peers.analysis.peer import baseline as _peer_baseline
 from league_stats_peers.analysis.peer import benchmark_cache as _benchmark_cache
 from league_stats_common.infra import career_store as _career_store
 from league_stats_common.infra import jobs as _jobs
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
+from league_stats_peers.infra.peer_match_sample_store import PeerMatchSampleStore
 from league_stats_runner.infra import derived as _derived
 
 
@@ -48,6 +51,43 @@ def _peer_live_cache_uses_mongomock(tmp_path, monkeypatch: pytest.MonkeyPatch) -
         LiveBenchmarkCacheStore(mongomock.MongoClient(), db_name="test_default_live_cache"),
     )
     monkeypatch.setattr(_benchmark_cache, "_LIVE_CACHE_DIR", tmp_path / "live_cache")
+
+
+@pytest.fixture(autouse=True)
+def _peer_match_sample_store_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default every test's Phase 2 shared match cache (`peer_match_samples`,
+    RFC "Batched, Round-Robin Live Sampling for PEERS") to an in-memory
+    mongomock store instead of a real Mongo connection.
+
+    `service._build_default_match_sample_store` lazily builds a real
+    `pymongo.MongoClient` against `MONGO_URI` (falling back to
+    `localhost:27017`) the first time any `SamplingTask` actually reaches
+    level-2 live sampling (`service._LazyMatchSampleStore`). Without this
+    fixture, any such test would try a real network connection -- several
+    seconds per attempt with nothing listening, easily blowing past
+    `RequestBaseline`'s fast-path timeout in tests that expect a fast
+    synchronous static-fallback result. Mirrors `_peer_live_cache_uses_mongomock`
+    above, one level down the fallback ladder.
+
+    Also force-resets `baseline._default_scheduler` (the process-wide
+    `SamplingScheduler` singleton) to `None` on a *plain* assignment, not via
+    `monkeypatch.setattr`: production code (`_get_default_scheduler`)
+    reassigns that same global directly the first time any test reaches
+    level 2, and `monkeypatch`'s revert-at-teardown restores whatever value
+    it recorded *before this fixture ran* -- i.e. whatever a still-earlier
+    test's `_get_default_scheduler()` call left behind, not `None`. Using
+    `monkeypatch.setattr` here silently leaked a stale scheduler (and its
+    already-running background batch-worker threads, and the state of
+    whatever `SamplingTask`s they were still processing) into unrelated
+    later tests, causing order-dependent flakiness across test files
+    (`resolve_peer_baseline` intermittently reusing a scheduler instance
+    left over from a previous test's `PeersServicer` instead of building a
+    fresh one). A plain assignment forces every test to start with a clean
+    slate regardless of what earlier tests' production code did.
+    """
+    store = PeerMatchSampleStore(mongomock.MongoClient(), db_name="test_default_match_samples")
+    monkeypatch.setattr(_peers_service, "_build_default_match_sample_store", lambda *a, **k: store)
+    _peer_baseline._default_scheduler = None
 
 
 @pytest.fixture(autouse=True)
