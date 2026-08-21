@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from league_stats_common.core.config import RANKED_FLEX_QUEUE_ID, RANKED_SOLO_QUEUE_ID, WebConfig
 from league_stats_api_ui.app import create_app
 from league_stats_common.infra.jobs import JOB_KIND_REFRESH, JobStore
+import league_stats_cron_watch.watch as watch_module
 from league_stats_cron_watch.watch import _Budget, WatchPoller, _backoff_for
 from tests.fixtures import make_player_match
 
@@ -578,3 +579,97 @@ def test_player_status_exposes_watch_state(client: TestClient) -> None:
     after = client.get(f"/api/players/{SLUG}").json()
     assert after["watch_enabled"] is True
     assert after["watch_interval_s"] == 600
+
+
+# --------------------------------------------------------- new observability metrics
+
+
+def test_tick_sets_watched_groups_and_accounts_gauges(store: JobStore) -> None:
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    clock = Clock()
+    poller = _poller(store, client, clock)
+
+    _tick(poller)
+
+    assert watch_module.CRON_WATCH_WATCHED_GROUPS._value.get() == 1
+    assert watch_module.CRON_WATCH_WATCHED_ACCOUNTS._value.get() == 1
+
+
+def test_tick_sets_last_tick_timestamp_to_the_pollers_clock(store: JobStore) -> None:
+    client = FakeClient()
+    clock = Clock()
+    poller = _poller(store, client, clock)
+
+    _tick(poller)
+
+    assert watch_module.CRON_WATCH_LAST_TICK_TIMESTAMP._value.get() == clock.t
+
+
+def test_api_failure_records_match_fetch_check_failure(store: JobStore) -> None:
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    clock = Clock()
+    poller = _poller(store, client, clock)
+    _tick(poller)
+
+    before = watch_module.CRON_WATCH_CHECK_FAILURES_TOTAL.labels(
+        stage="match_fetch"
+    )._value.get()
+
+    client.fail = True
+    clock.advance(120)
+    _tick(poller)
+
+    after = watch_module.CRON_WATCH_CHECK_FAILURES_TOTAL.labels(stage="match_fetch")._value.get()
+    assert after == before + 1
+
+
+def test_client_factory_failure_records_client_unavailable_check_failure(store: JobStore) -> None:
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    clock = Clock()
+
+    def _boom(region: str) -> FakeClient:
+        raise RuntimeError("no client for region")
+
+    poller = WatchPoller(store, _boom, now=clock)
+
+    before = watch_module.CRON_WATCH_CHECK_FAILURES_TOTAL.labels(
+        stage="client_unavailable"
+    )._value.get()
+
+    _tick(poller)
+
+    after = watch_module.CRON_WATCH_CHECK_FAILURES_TOTAL.labels(
+        stage="client_unavailable"
+    )._value.get()
+    assert after == before + 1
+
+
+def test_check_group_increments_accounts_checked_total(store: JobStore) -> None:
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    clock = Clock()
+    poller = _poller(store, client, clock)
+
+    before = watch_module.CRON_WATCH_ACCOUNTS_CHECKED_TOTAL._value.get()
+
+    _tick(poller)
+
+    after = watch_module.CRON_WATCH_ACCOUNTS_CHECKED_TOTAL._value.get()
+    assert after == before + 1
+
+
+def test_budget_exhaustion_increments_budget_exhausted_total(store: JobStore) -> None:
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    clock = Clock()
+    budget = _Budget(limit=0)
+    poller = WatchPoller(store, lambda region: client, now=clock, budget=budget)
+
+    before = watch_module.CRON_WATCH_BUDGET_EXHAUSTED_TOTAL._value.get()
+
+    _tick(poller)
+
+    after = watch_module.CRON_WATCH_BUDGET_EXHAUSTED_TOTAL._value.get()
+    assert after > before
