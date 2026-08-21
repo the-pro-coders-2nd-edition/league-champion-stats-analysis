@@ -102,23 +102,6 @@ def test_web_config_runner_grpc_target_defaults_to_localhost() -> None:
     assert WebConfig(peers_mode="grpc").runner_grpc_target == "localhost:50051"
 
 
-def test_web_config_watch_mode_defaults_to_in_process() -> None:
-    """watch_mode defaults off — the monolith runs its own WatchPoller unless opted in."""
-    assert WebConfig(peers_mode="grpc").watch_mode == "in_process"
-
-
-def test_load_web_config_reads_watch_mode_from_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """ANALYZER_WATCH_MODE overrides the default, matching ANALYZER_RUNNER_MODE."""
-    monkeypatch.setenv("ANALYZER_WATCH_MODE", "grpc")
-    monkeypatch.setenv("ANALYZER_PEERS_MODE", "grpc")
-    monkeypatch.chdir(tmp_path)
-
-    config = load_web_config()
-    assert config.watch_mode == "grpc"
-
-
 def test_web_config_runner_mongo_uri_defaults_to_localhost() -> None:
     assert WebConfig(peers_mode="grpc").runner_mongo_uri == "mongodb://localhost:27017/league_stats"
 

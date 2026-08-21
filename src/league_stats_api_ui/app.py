@@ -66,7 +66,6 @@ from league_stats_common.infra.career_store import (
     build_key as career_build_key,
     open_career_store,
 )
-from league_stats_cron_watch.watch import WatchPoller
 from league_stats_common.watch_fields import watch_public_fields
 from league_stats_api_ui.chat import (
     ChatError,
@@ -758,38 +757,6 @@ def _report_groups(
     return busy + idle
 
 
-def _record_welcome_back(
-    cache: WelcomeBackCache,
-    slug: str,
-    job_id: str,  # noqa: ARG001 - part of WatchPoller's on_new_game signature, unused here
-    new_match_id: str,
-    summary: dict[str, Any],
-) -> None:
-    """Feed a freshly detected in-process game straight into the welcome-back cache.
-
-    This is `WatchPoller`'s (`web/watch.py`) in-process counterpart to
-    `WelcomeBackSubscriber._handle` (`web/welcome_back_cache.py`): both ultimately
-    record the same `compute_welcome_back_summary` payload into the same
-    `WelcomeBackCache`, so this path works on every deployment topology (including
-    the VPS single-monolith `watch_mode="in_process"` one, which never runs a
-    separate CronWatch process) regardless of whether `CRON_WATCH_GRPC_TARGET` is
-    set -- see `WebConfig.cron_watch_grpc_target`'s comment. An empty/degraded
-    summary (missing the real `"win"` field) is dropped rather than recorded, to
-    match `_handle`'s guard against CronWatch's documented failure-degradation
-    path (`cron_watch/service.py`) rendering a fabricated "Defeat 0/0/0" toast.
-    """
-    if "win" not in summary:
-        return
-    cache.record(
-        slug,
-        {
-            "new_match_id": new_match_id,
-            "match_summary": summary,
-            "detected_at_unix": int(time.time()),
-        },
-    )
-
-
 def create_app(
     web_config: WebConfig | None = None, *, start_worker: bool = True
 ) -> FastAPI:
@@ -806,13 +773,6 @@ def create_app(
     # Always created (cheap, gRPC-free) so a later task can read from it
     # unconditionally; only the subscriber below is gated on the env var.
     welcome_back_cache = WelcomeBackCache()
-    watcher = WatchPoller(
-        store,
-        lambda region: _build_precheck_client(region, config.output_dir, config),
-        on_new_game=lambda slug, job_id, new_match_id, summary: _record_welcome_back(
-            welcome_back_cache, slug, job_id, new_match_id, summary
-        ),
-    )
     welcome_back_subscriber = (
         WelcomeBackSubscriber(welcome_back_cache, config.cron_watch_grpc_target)
         if config.cron_watch_grpc_target
@@ -824,11 +784,6 @@ def create_app(
         store.recover_orphans()
         if start_worker:
             worker.start()
-            # watch_mode == "grpc" means CRON-watch polls the same shared
-            # database externally; starting this poller too would race it over
-            # watch_seen_json (see league_stats.cron_watch.service's docstring).
-            if config.watch_mode == "in_process":
-                watcher.start()
             # No-op unless CRON_WATCH_GRPC_TARGET is set (see WebConfig's field
             # comment): welcome_back_subscriber is None by default, so nothing
             # opens a gRPC channel and this whole subsystem stays inert.
@@ -838,8 +793,6 @@ def create_app(
         if start_worker:
             if welcome_back_subscriber is not None:
                 await welcome_back_subscriber.stop()
-            if config.watch_mode == "in_process":
-                await watcher.stop()
             worker.stop()
         store.close()
 

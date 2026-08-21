@@ -413,16 +413,6 @@ class WebConfig(BaseModel):
     output_dir: Path = Path("output")
     gemini_api_key: str | None = None
     runner_grpc_target: str = "localhost:50051"
-    # Opt-in delegation of new-game detection to CRON-watch running as its own
-    # process against the same shared database (Phase 2 of the microservices
-    # migration). Default "in_process" keeps today's behavior unchanged — the
-    # monolith starts its own WatchPoller in `create_app`'s lifespan, exactly as
-    # before. Setting "grpc" skips starting that in-process poller: it MUST be
-    # set once CRON-watch is deployed against the shared DB, otherwise both
-    # pollers race over the same `watch_seen_json` state (see
-    # `league_stats.cron_watch.service`'s module docstring for the full
-    # correctness argument).
-    watch_mode: Literal["in_process", "grpc"] = "in_process"
     # Opt-in delegation of rank-peer baseline resolution to PEERS over gRPC
     # (Phase 3 of the microservices migration). Default "in_process" keeps
     # today's behavior unchanged -- stage B calls `build_peer_for_pool`
@@ -545,7 +535,7 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
 
     Environment variables: ``ANALYZER_WEB_HOST``, ``ANALYZER_WEB_PORT``,
     ``ANALYZER_WORKER_CONCURRENCY``, ``GEMINI_API_KEY``,
-    ``RUNNER_GRPC_TARGET``, ``ANALYZER_WATCH_MODE``, ``ANALYZER_PEERS_MODE``,
+    ``RUNNER_GRPC_TARGET``, ``ANALYZER_PEERS_MODE``,
     ``PEERS_GRPC_TARGET``, ``CRON_WATCH_GRPC_TARGET``,
     ``RUNNER_MONGO_URI`` (falls back to ``MONGO_URI`` when unset).
     """
@@ -560,7 +550,6 @@ def load_web_config(config_file: Path | None = None, **overrides: Any) -> WebCon
         "worker_concurrency": os.environ.get("ANALYZER_WORKER_CONCURRENCY"),
         "gemini_api_key": os.environ.get("GEMINI_API_KEY"),
         "runner_grpc_target": os.environ.get("RUNNER_GRPC_TARGET"),
-        "watch_mode": os.environ.get("ANALYZER_WATCH_MODE"),
         "peers_mode": os.environ.get("ANALYZER_PEERS_MODE"),
         "peers_grpc_target": os.environ.get("PEERS_GRPC_TARGET"),
         "cron_watch_grpc_target": os.environ.get("CRON_WATCH_GRPC_TARGET"),

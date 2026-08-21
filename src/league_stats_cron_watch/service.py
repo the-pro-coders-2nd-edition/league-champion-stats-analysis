@@ -138,6 +138,13 @@ Task 6 made `execute_job`'s in-process path conditional on `runner_mode`
 -- this is not optional polish, it is a correctness requirement for this
 task's own chosen design to work as intended.
 
+Resolved (Phase 9, Task 2): `watch_mode` and the monolith's own in-process
+`WatchPoller`/`watcher.start()` call described above are deleted from
+`web/app.py` entirely -- CronWatch is now unconditionally the only poller
+against the shared database, so the race this precondition warned about is
+now structurally impossible rather than flag-gated. Left the paragraph above
+as-is for the historical record of why the flag existed.
+
 Handoff note for Task 5 (CRON-watch's entrypoint): `JobStore.recover_orphans()`
 (`web/jobs.py`) marks every job in `RUNNING_STATES` as failed, and runs
 unconditionally on every `JobStore`-backed startup path in this codebase
