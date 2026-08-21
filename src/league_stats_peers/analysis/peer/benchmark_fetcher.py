@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 import pandas as pd
+from prometheus_client import Counter, Histogram
 
 from league_stats_peers.analysis.peer.ingest import ingest_match
 from league_stats_peers.analysis.peer.metrics import (
@@ -37,6 +38,30 @@ MAX_LEAGUE_CANDIDATES: Final[int] = 500
 # MAX_MATCH_DOWNLOADS at 400, this yields at most 8 log lines per sample
 # instead of one line per match, avoiding log-volume blowup on the inner loop.
 LIVE_SAMPLING_LOG_EVERY_N_DOWNLOADS: Final[int] = 50
+
+# Live-sampling-scoped Riot API call volume -- distinct from the cross-cutting
+# `riot_api_requests_total` (every RiotApiClient call, every service): this
+# counter is intentionally narrow, only the calls this module's own live
+# snowball-sampling makes, so a spike here specifically means "a live sample
+# is running," not any of PEERS' other Riot traffic. Deliberately excludes
+# `_backfill_ranks` (`analysis/peer/cache.py`), a different call site that
+# runs on every store-hit request, not just live sampling -- folding it in
+# here would blur exactly the distinction this metric exists to draw.
+PEERS_RIOT_API_CALLS_TOTAL = Counter(
+    "peers_riot_api_calls_total",
+    "Riot API calls made by PEERS' live-sampling path, labeled by endpoint.",
+    ["endpoint"],  # league_entries | match_ids | match | solo_rank
+)
+# Unlabeled: one observation per completed live sample, regardless of outcome
+# (min-games threshold met or not) -- the existing `downloads` counter
+# (`_collect_sample_rows`) was previously only used for a local loop bound and
+# a progress bar, never emitted anywhere.
+PEERS_LIVE_SAMPLE_MATCH_DOWNLOADS = Histogram(
+    "peers_live_sample_match_downloads",
+    "Matches downloaded by one live-sampling run (_collect_sample_rows), "
+    "regardless of whether it eventually met the minimum benchmark games.",
+    buckets=(0, 10, 25, 50, 100, 150, 200, 300, 400),
+)
 
 
 @dataclass(frozen=True)
@@ -148,6 +173,7 @@ def _gather_seeds(
     puuids: list[str] = []
     rank_cache: dict[str, tuple[str, str]] = {}
     for tier, division in league_lookup_pairs(scope):
+        PEERS_RIOT_API_CALLS_TOTAL.labels(endpoint="league_entries").inc()
         try:
             entries = client.fetch_league_entries_pages(tier, division, max_pages=LEAGUE_PAGES)
         except RiotApiError:
@@ -179,6 +205,7 @@ def _load_or_fetch_match(
     cached = store.load_match(match_id)
     if cached is not None:
         return cached
+    PEERS_RIOT_API_CALLS_TOTAL.labels(endpoint="match").inc()
     try:
         match = client.fetch_match(match_id)
     except RiotApiError as exc:
@@ -204,6 +231,7 @@ def _resolve_rank(
         tier, rank = rank_cache[puuid]
         return None if tier == "UNRANKED" else (tier, rank)
 
+    PEERS_RIOT_API_CALLS_TOTAL.labels(endpoint="solo_rank").inc()
     peer_rank = client.fetch_solo_rank(puuid)
     if peer_rank is None:
         rank_cache[puuid] = ("UNRANKED", "")
@@ -250,6 +278,7 @@ def _collect_sample_rows(
             continue
         seen_for_snowball.add(puuid)
 
+        PEERS_RIOT_API_CALLS_TOTAL.labels(endpoint="match_ids").inc()
         try:
             match_ids = client.fetch_match_ids(
                 puuid, MATCH_IDS_PER_PLAYER, queue_id=RANKED_SOLO_QUEUE_ID
@@ -329,6 +358,7 @@ def _collect_sample_rows(
                 if len(rows) >= TARGET_PEER_GAMES:
                     break
 
+    PEERS_LIVE_SAMPLE_MATCH_DOWNLOADS.observe(downloads)
     return rows, len(rows), len(players_used)
 
 

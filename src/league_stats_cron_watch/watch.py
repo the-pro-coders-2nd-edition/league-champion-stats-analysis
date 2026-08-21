@@ -17,6 +17,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
+from prometheus_client import Counter, Gauge
+
 from league_stats_common.core.config import RANKED_QUEUE_IDS
 from league_stats_common.infra.jobs import JOB_KIND_REFRESH, JobStore
 from league_stats_common.utils import current_trace_id, get_logger, set_trace_id
@@ -41,6 +43,40 @@ TICK_PROGRESS_INTERVAL_S: float = 30.0
 # Consecutive-failure backoff, capped so a recovered API is picked up promptly.
 BACKOFF_BASE_S: float = 60.0
 BACKOFF_MAX_S: float = 1800.0
+
+# CRON-watch's registry/failure/budget metrics. Defined here (rather than
+# `cron_watch/service.py`, which already owns CRON_WATCH_TICK_DURATION/
+# CRON_WATCH_NEW_GAMES_TOTAL) because they're recorded from `WatchPoller`
+# itself, not from a wrapper `service.py` installs around it -- `service.py`
+# already imports this module, so defining them the other way around would
+# create a circular import.
+CRON_WATCH_WATCHED_GROUPS = Gauge(
+    "cron_watch_watched_groups",
+    "Number of watched groups (JobStore rows with watch_enabled=True).",
+)
+CRON_WATCH_WATCHED_ACCOUNTS = Gauge(
+    "cron_watch_watched_accounts",
+    "Number of watched accounts across all groups (raw player entries, no "
+    "cross-group puuid dedup).",
+)
+CRON_WATCH_CHECK_FAILURES_TOTAL = Counter(
+    "cron_watch_check_failures_total",
+    "Per-account check failures, labeled by the call site that failed.",
+    ["stage"],  # client_unavailable | puuid_resolution | match_fetch
+)
+CRON_WATCH_ACCOUNTS_CHECKED_TOTAL = Counter(
+    "cron_watch_accounts_checked_total",
+    "Accounts whose puuid was successfully resolved during a group check.",
+)
+CRON_WATCH_BUDGET_EXHAUSTED_TOTAL = Counter(
+    "cron_watch_budget_exhausted_total",
+    "Detection calls deferred because the sliding-window rate budget was spent.",
+)
+CRON_WATCH_LAST_TICK_TIMESTAMP = Gauge(
+    "cron_watch_last_tick_timestamp_seconds",
+    "Unix timestamp of the most recently started tick() sweep -- staleness "
+    "(time() - this) is the signal for a stalled/dead polling loop.",
+)
 
 
 class MatchIdSource(Protocol):
@@ -157,8 +193,17 @@ class WatchPoller:
 
     async def tick(self) -> list[str]:
         """Check every group that is due, returning the slugs that were refreshed."""
+        # Set at the START of the sweep (not the end), so `CRON_WATCH_LAST_TICK_TIMESTAMP`
+        # reflects "a tick attempted a sweep" even if it takes a long time --
+        # and, more importantly, so a `_loop` that stops calling `tick()` at
+        # all (the genuine stalled-loop blind spot this metric exists to
+        # close) shows up as a growing staleness gap immediately, not after
+        # whatever the sweep's own duration happens to be.
         start = self._now()
+        CRON_WATCH_LAST_TICK_TIMESTAMP.set(start)
         rows = self._store.list_watched_players()
+        CRON_WATCH_WATCHED_GROUPS.set(len(rows))
+        CRON_WATCH_WATCHED_ACCOUNTS.set(sum(len(row.get("players") or []) for row in rows))
         self._log.info("Watch tick starting; %d group(s) to consider", len(rows))
         refreshed: list[str] = []
         checked = 0
@@ -231,7 +276,7 @@ class WatchPoller:
         try:
             client = self._client_factory(region)
         except Exception as exc:  # noqa: BLE001
-            self._note_failure(slug, f"client unavailable: {exc}")
+            self._note_failure(slug, f"client unavailable: {exc}", stage="client_unavailable")
             return False
 
         found_new = False
@@ -253,11 +298,15 @@ class WatchPoller:
             try:
                 puuid = await self._puuid_for(client, label, player)
             except Exception as exc:  # noqa: BLE001 - any API failure backs off
-                self._note_failure(slug, f"puuid resolution failed for {label}: {exc}")
+                self._note_failure(
+                    slug, f"puuid resolution failed for {label}: {exc}", stage="puuid_resolution"
+                )
                 return False
+            CRON_WATCH_ACCOUNTS_CHECKED_TOTAL.inc()
             queues_seen = seen.setdefault(puuid, {})
             for queue_id in RANKED_QUEUE_IDS:
                 if not self._budget.take(self._now()):
+                    CRON_WATCH_BUDGET_EXHAUSTED_TOTAL.inc()
                     self._log.debug("Watch budget spent; deferring %s", slug)
                     return False
                 try:
@@ -270,7 +319,9 @@ class WatchPoller:
                     )
                 except Exception as exc:  # noqa: BLE001 - any API failure backs off
                     self._note_failure(
-                        slug, f"match id fetch failed for {label} (queue {queue_id}): {exc}"
+                        slug,
+                        f"match id fetch failed for {label} (queue {queue_id}): {exc}",
+                        stage="match_fetch",
                     )
                     return False
                 if not newest:
@@ -312,6 +363,7 @@ class WatchPoller:
         if not match_id or not puuid:
             return {}
         if not self._budget.take(self._now()):
+            CRON_WATCH_BUDGET_EXHAUSTED_TOTAL.inc()
             self._log.debug("Watch budget spent; skipping welcome-back summary for %s", slug)
             return {}
         try:
@@ -369,7 +421,15 @@ class WatchPoller:
                 self._on_new_game(slug, str(job.get("id", "")), new_match_id, summary or {})
         return created
 
-    def _note_failure(self, slug: str, message: str) -> None:
+    def _note_failure(self, slug: str, message: str, *, stage: str) -> None:
+        """Record a per-account check failure, labeled by which of the three
+        (bare `except Exception`) call sites failed -- `stage` is a fixed,
+        closed 3-value enum (`client_unavailable`/`puuid_resolution`/
+        `match_fetch`), matching exactly what today's exception handling can
+        already distinguish; narrowing those blocks to separate
+        `RiotApiError` from other failures is a behavior change out of scope
+        here (metrics-only)."""
         self._failures[slug] = self._failures.get(slug, 0) + 1
+        CRON_WATCH_CHECK_FAILURES_TOTAL.labels(stage=stage).inc()
         self._log.warning("Watch check failed for %s: %s", slug, message)
         self._store.record_watch_tick(slug, error=message[:200], at=self._now())

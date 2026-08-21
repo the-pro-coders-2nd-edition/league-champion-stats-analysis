@@ -27,8 +27,9 @@ import pymongo
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from starlette.middleware.gzip import GZipMiddleware
+from starlette.routing import Match
 from pydantic import BaseModel, Field
 
 from league_stats_common.core.champions import (
@@ -79,6 +80,7 @@ from league_stats_common.infra.career_store import (
 )
 from league_stats_common.watch_fields import watch_public_fields
 from league_stats_api_ui.chat import (
+    OUTBOUND_RPC_DURATION,
     ChatError,
     gemini_reply,
     load_report_summary,
@@ -127,6 +129,11 @@ HTTP_REQUESTS_TOTAL = Counter(
     "api_ui_http_requests_total",
     "API-UI HTTP requests that completed, labeled by method, route and status code.",
     ["method", "route", "status_code"],
+)
+HTTP_REQUESTS_IN_FLIGHT = Gauge(
+    "api_ui_http_requests_in_flight",
+    "HTTP requests API-UI is currently handling, labeled by route.",
+    ["route"],
 )
 
 
@@ -311,15 +318,23 @@ def _verify_players_exist(
     t0 = time.monotonic()
     for index, player in enumerate(players, start=1):
         label = f"{player['riot_id']}#{player['tagline']}"
+        start = time.perf_counter()
         log.info("Verifying player %d of %d: %s (%s)", index, len(players), label, region)
         try:
             client.resolve_puuid(player["riot_id"], player["tagline"])
         except RiotApiError as exc:
+            OUTBOUND_RPC_DURATION.labels(
+                target="riot_api", operation="resolve_puuid", outcome="error"
+            ).observe(time.perf_counter() - start)
             message = str(exc)
             if "404" in message and "by-riot-id" in message:
                 missing.append(label)
                 continue
             raise
+        else:
+            OUTBOUND_RPC_DURATION.labels(
+                target="riot_api", operation="resolve_puuid", outcome="ok"
+            ).observe(time.perf_counter() - start)
     log.info(
         "Verified %d player(s) in %.1fs (%d missing)",
         len(players),
@@ -773,6 +788,23 @@ def _report_groups(
     return busy + idle
 
 
+def _route_template_for(request: Request) -> str:
+    """Return the matched route's path template, resolved independently of
+    Starlette's own dispatch (see `record_http_metrics`'s docstring for why
+    this can't just wait for `request.scope["route"]`).
+
+    Falls back to the raw path when nothing matches (e.g. a genuine 404) --
+    that path is at most one of the SPA catch-all's non-matches, not an
+    arbitrary user-controlled value repeated across many distinct labels, so
+    it does not reintroduce the cardinality risk this exists to avoid.
+    """
+    for route in request.app.router.routes:
+        match, _ = route.matches(request.scope)
+        if match == Match.FULL:
+            return getattr(route, "path", request.url.path)
+    return request.url.path
+
+
 def create_app(
     web_config: WebConfig | None = None, *, start_worker: bool = True
 ) -> FastAPI:
@@ -870,7 +902,8 @@ def create_app(
 
     @app.middleware("http")
     async def record_http_metrics(request: Request, call_next):  # type: ignore[no-untyped-def]
-        """Record HTTP_REQUEST_DURATION/HTTP_REQUESTS_TOTAL around every request.
+        """Record HTTP_REQUEST_DURATION/HTTP_REQUESTS_TOTAL/HTTP_REQUESTS_IN_FLIGHT
+        around every request.
 
         Registered after `originate_trace_id`, making this the new outermost
         middleware (Starlette: last registered = outermost). Deliberate: a
@@ -879,20 +912,28 @@ def create_app(
         inner handler chain -- there is no dependency in the other direction
         (this middleware never reads trace_id), so ordering here is purely
         about duration scope, not correctness.
+
+        The route template (not the raw interpolated path) must be known
+        *before* `call_next` returns for `HTTP_REQUESTS_IN_FLIGHT` to be safe
+        to label by -- `request.scope["route"]` is only populated by
+        Starlette's router as a side effect of dispatching the request, which
+        happens inside `call_next`, too late to label the increment without
+        risking an unbounded raw path (e.g. `/api/players/{slug}` with a real
+        slug) as a gauge label. `_route_template_for` resolves the match
+        itself, against the same fixed ~19-route table, before `call_next`
+        runs, so both the increment and the eventual decrement/duration/count
+        use one consistent, bounded route template.
         """
+        route_path = _route_template_for(request)
         start = time.perf_counter()
         status_code = 500
+        HTTP_REQUESTS_IN_FLIGHT.labels(route=route_path).inc()
         try:
             response = await call_next(request)
             status_code = response.status_code
             return response
         finally:
-            route = request.scope.get("route")
-            # Route template (e.g. "/api/jobs/{job_id}"), not the raw interpolated
-            # path -- avoids unbounded label cardinality on job ids/slugs. Falls
-            # back to the raw path only when no route matched (e.g. a 404 before
-            # routing, though the catch-all SPA route means that rarely happens).
-            route_path = route.path if route is not None else request.url.path
+            HTTP_REQUESTS_IN_FLIGHT.labels(route=route_path).dec()
             HTTP_REQUEST_DURATION.labels(
                 method=request.method, route=route_path
             ).observe(time.perf_counter() - start)

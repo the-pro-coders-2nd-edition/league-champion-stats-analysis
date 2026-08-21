@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Final
 
 import requests
+from prometheus_client import Histogram
 
 from league_stats_common.utils import get_logger
 
@@ -21,6 +22,21 @@ log = get_logger("chat")
 GEMINI_MODEL: Final[str] = "gemini-3.5-flash"
 GEMINI_FALLBACK_MODEL: Final[str] = "gemini-3.1-flash-lite"
 REQUEST_TIMEOUT_S: Final[float] = 60.0
+
+# API-UI's outbound-dependency latency metric. Defined here (a leaf module
+# with no imports back into `app.py`/`worker.py`) rather than in `app.py`
+# itself, so both `app.py` (`resolve_puuid`, a synchronous in-request Riot
+# call) and `league_stats_runner.worker` (RUNNER's `EnqueueJob`/
+# `StreamJobProgress`/`RequestBaseline` gRPC calls, made from API-UI's/
+# CronWatch's background `AnalysisWorker` thread) can import one shared
+# collector without either direction creating an import cycle -- `app.py`
+# already imports from `worker.py`, so `worker.py` importing back from
+# `app.py` would cycle; importing from this leaf module instead does not.
+OUTBOUND_RPC_DURATION = Histogram(
+    "api_ui_outbound_call_duration_seconds",
+    "Time API-UI (or its background worker) waited on one outbound dependency call.",
+    ["target", "operation", "outcome"],
+)
 
 MAX_HISTORY_MESSAGES: Final[int] = 40
 MAX_MESSAGE_CHARS: Final[int] = 4000
@@ -130,43 +146,55 @@ def _call_gemini(
     api_key: str, model: str, system_instruction: str, history: list[dict[str, Any]]
 ) -> str:
     log.info("Calling Gemini: model=%s, history=%d message(s)", model, len(history))
-    t0 = time.monotonic()
+    start = time.perf_counter()
+    outcome = "error"
     try:
-        response = requests.post(
-            _gemini_url(model),
-            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
-            json={
-                "systemInstruction": {"parts": [{"text": system_instruction}]},
-                "contents": history,
-                "generationConfig": {"temperature": 0.4, "maxOutputTokens": 800},
-            },
-            timeout=REQUEST_TIMEOUT_S,
-        )
-    except requests.RequestException:
-        log.warning(
-            "Gemini call failed: model=%s, took=%.1fs", model, time.monotonic() - t0
-        )
-        raise
-    if response.status_code != 200:
-        log.warning(
-            "Gemini call returned HTTP %d: model=%s, took=%.1fs",
-            response.status_code,
-            model,
-            time.monotonic() - t0,
-        )
         try:
-            detail = response.json().get("error", {}).get("message", "")
-        except ValueError:
-            detail = ""
-        raise ChatError(detail or f"Gemini returned HTTP {response.status_code}")
-    log.info("Gemini call succeeded: model=%s, took=%.1fs", model, time.monotonic() - t0)
-    payload = response.json()
-    candidates = payload.get("candidates") or []
-    parts = ((candidates[0] if candidates else {}).get("content") or {}).get("parts") or []
-    text = "".join(str(part.get("text", "")) for part in parts)
-    if not text:
-        raise ChatError("Gemini returned an empty response")
-    return text
+            response = requests.post(
+                _gemini_url(model),
+                headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+                json={
+                    "systemInstruction": {"parts": [{"text": system_instruction}]},
+                    "contents": history,
+                    "generationConfig": {"temperature": 0.4, "maxOutputTokens": 800},
+                },
+                timeout=REQUEST_TIMEOUT_S,
+            )
+        except requests.Timeout:
+            outcome = "timeout"
+            raise
+        except requests.RequestException:
+            log.warning(
+                "Gemini call failed: model=%s, took=%.1fs", model, time.perf_counter() - start
+            )
+            raise
+        if response.status_code != 200:
+            log.warning(
+                "Gemini call returned HTTP %d: model=%s, took=%.1fs",
+                response.status_code,
+                model,
+                time.perf_counter() - start,
+            )
+            try:
+                detail = response.json().get("error", {}).get("message", "")
+            except ValueError:
+                detail = ""
+            raise ChatError(detail or f"Gemini returned HTTP {response.status_code}")
+        payload = response.json()
+        candidates = payload.get("candidates") or []
+        parts = ((candidates[0] if candidates else {}).get("content") or {}).get("parts") or []
+        text = "".join(str(part.get("text", "")) for part in parts)
+        if not text:
+            raise ChatError("Gemini returned an empty response")
+        outcome = "ok"
+        log.info(
+            "Gemini call succeeded: model=%s, took=%.1fs", model, time.perf_counter() - start
+        )
+        return text
+    finally:
+        OUTBOUND_RPC_DURATION.labels(
+            target="gemini", operation="generateContent", outcome=outcome
+        ).observe(time.perf_counter() - start)
 
 
 def gemini_reply(

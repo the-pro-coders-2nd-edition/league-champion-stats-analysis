@@ -55,7 +55,7 @@ import time
 from typing import Any
 
 import grpc
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 from league_stats_common.core.config import load_web_config
 from league_stats_runner.adapter import RunnerJobAdapter
@@ -70,14 +70,30 @@ log = get_logger("runner_service")
 # First of RUNNER's Prometheus metrics -- the pattern (`start_http_server` +
 # `Histogram` + `Counter`) other services will replicate as they get their own
 # observability step; this is deliberately scoped to RUNNER only for now.
+#
+# `kind` was added to both below (job kinds are a fixed, server-enforced
+# 3-value enum -- analyze/refresh/regenerate, see `_KIND_TO_STR` -- safe to
+# label by) so a duration/count regression on one kind is no longer averaged
+# away by the other two.
 RUNNER_JOB_DURATION = Histogram(
     "runner_job_duration_seconds",
     "Time execute_job took to run one job on RUNNER, from thread start to terminal event.",
+    ["kind"],
 )
 RUNNER_JOBS_TOTAL = Counter(
     "runner_jobs_total",
-    "RUNNER jobs that reached a terminal state, labeled by status.",
-    ["status"],
+    "RUNNER jobs that reached a terminal state, labeled by kind and status.",
+    ["kind", "status"],
+)
+# Jobs currently running on their own `threading.Thread` (see `EnqueueJob`
+# below). NOTE: this only makes the existing unbounded-thread-per-job design
+# gap *visible* -- `EnqueueJob` still spawns a brand-new, unbounded
+# `threading.Thread` per job with no pool/queue/backpressure. Bounding that
+# concurrency is a real follow-up (flagged for Brice), deliberately out of
+# scope for this observability-only change.
+RUNNER_JOBS_IN_FLIGHT = Gauge(
+    "runner_jobs_in_flight",
+    "Jobs currently running on RUNNER's own worker threads.",
 )
 
 # REGION_UNSPECIFIED silently defaults to "europe" -- low risk, since a wrong
@@ -216,6 +232,7 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
             self._queues[job_id_str] = events
         job = _job_from_request(request, job_id)
         adapter = RunnerJobAdapter(job_id=job_id, events=events)
+        RUNNER_JOBS_IN_FLIGHT.inc()
         thread = threading.Thread(
             target=self._run_job,
             args=(job, adapter, events, job_id_str, trace_id),
@@ -259,14 +276,15 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
         would hang forever, pinning a `ThreadPoolExecutor` worker with no
         deadline. `except BaseException` closes that gap unconditionally.
 
-        Also records `RUNNER_JOB_DURATION`/`RUNNER_JOBS_TOTAL`. "success" here
-        means `execute_job` returned without raising out to this method -- it
-        does not inspect whether the terminal event it queued carries a soft
-        peer-stage `error` (that distinction lives in `job_states`/`store`,
-        which RUNNER doesn't have); a soft peer failure still counts as a
-        RUNNER-level success.
+        Also records `RUNNER_JOB_DURATION`/`RUNNER_JOBS_TOTAL`, both labeled by
+        `kind` (analyze/refresh/regenerate). "success" here means `execute_job`
+        returned without raising out to this method -- it does not inspect
+        whether the terminal event it queued carries a soft peer-stage `error`
+        (that distinction lives in `job_states`/`store`, which RUNNER doesn't
+        have); a soft peer failure still counts as a RUNNER-level success.
         """
         set_trace_id(trace_id)
+        kind = str(job.get("kind", job_states.JOB_KIND_ANALYZE))
         start = time.perf_counter()
         try:
             execute_job(job, adapter, self._web_config)
@@ -286,11 +304,13 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
                     "completed_at_unix": int(time.time()),
                 }
             )
-            RUNNER_JOB_DURATION.observe(time.perf_counter() - start)
-            RUNNER_JOBS_TOTAL.labels(status="failed").inc()
+            RUNNER_JOB_DURATION.labels(kind=kind).observe(time.perf_counter() - start)
+            RUNNER_JOBS_TOTAL.labels(kind=kind, status="failed").inc()
+            RUNNER_JOBS_IN_FLIGHT.dec()
             return
-        RUNNER_JOB_DURATION.observe(time.perf_counter() - start)
-        RUNNER_JOBS_TOTAL.labels(status="success").inc()
+        RUNNER_JOB_DURATION.labels(kind=kind).observe(time.perf_counter() - start)
+        RUNNER_JOBS_TOTAL.labels(kind=kind, status="success").inc()
+        RUNNER_JOBS_IN_FLIGHT.dec()
 
     def StreamJobProgress(self, request, context):
         """Yield StageResult messages for one job until a final=True message lands.

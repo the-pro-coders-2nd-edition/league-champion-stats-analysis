@@ -18,7 +18,9 @@ from typing import Any
 
 import pandas as pd
 import pymongo
+from prometheus_client import Histogram
 
+from league_stats_api_ui.chat import OUTBOUND_RPC_DURATION
 from league_stats_peers.analysis.peer import current_patch, finish_peer_comparison
 from league_stats_peers.analysis.peer.baseline import PeerBaseline
 from league_stats_common.core.champions import players_group_slug
@@ -49,6 +51,28 @@ from league_stats_runner.progress import JobCancelled, JobProgressReporter
 from league_stats_common.utils import get_logger, set_trace_id
 
 CHAT_ENDPOINT = "/api/chat"
+
+# RUNNER's own pipeline-stage/PEERS-call metrics. Module-level, following the
+# same pattern `runner/service.py`'s `RUNNER_JOB_DURATION`/`RUNNER_JOBS_TOTAL`
+# already established, so re-importing this module (as every test importing
+# `league_stats_runner.worker` does) never re-registers the same collector.
+RUNNER_STAGE_DURATION = Histogram(
+    "runner_stage_duration_seconds",
+    "Time one pipeline stage took within execute_job, labeled by stage.",
+    ["stage"],  # fetch | analyze | peer
+)
+RUNNER_PEERS_REQUEST_DURATION = Histogram(
+    "runner_peers_request_duration_seconds",
+    "Time RUNNER's synchronous RequestBaseline call to PEERS took to return.",
+    ["outcome"],  # cached_hit | cached_miss | rpc_error | peers_error
+)
+RUNNER_PEERS_ASYNC_WAIT_DURATION = Histogram(
+    "runner_peers_async_wait_duration_seconds",
+    "Time RUNNER waited on PEERS' async NotifyPeerBaselineReady callback after "
+    "a cached=False RequestBaseline response, per pool.",
+    ["outcome"],  # delivered | timed_out | cancelled
+    buckets=(0, .5, 1, 2, 5, 10, 30, 60, 120, 300, 600, 900),
+)
 
 # Deadlines for the gRPC RPCs to RUNNER (see `_execute_job_via_runner`), so a
 # RUNNER that's reachable but hung doesn't block the worker thread forever.
@@ -590,17 +614,28 @@ def _build_peer_for_pool_via_grpc(
     )
     try:
         stub = peers_pb2_grpc.PeersServiceStub(channel)
+        request_start = time.perf_counter()
         try:
             response = stub.RequestBaseline(request, timeout=_PEERS_REQUEST_TIMEOUT_S)
         except grpc.RpcError as exc:
+            request_elapsed = time.perf_counter() - request_start
+            RUNNER_PEERS_REQUEST_DURATION.labels(outcome="rpc_error").observe(request_elapsed)
+            OUTBOUND_RPC_DURATION.labels(
+                target="peers", operation="RequestBaseline", outcome="error"
+            ).observe(request_elapsed)
             log.warning(
                 "Skipping peer comparison for %s: could not reach PEERS: %s",
                 pool.build_label,
                 exc,
             )
             return None
+        request_elapsed = time.perf_counter() - request_start
 
         if response.error:
+            RUNNER_PEERS_REQUEST_DURATION.labels(outcome="peers_error").observe(request_elapsed)
+            OUTBOUND_RPC_DURATION.labels(
+                target="peers", operation="RequestBaseline", outcome="error"
+            ).observe(request_elapsed)
             log.warning(
                 "Skipping peer comparison for %s: PEERS could not resolve a baseline: %s",
                 pool.build_label,
@@ -609,8 +644,17 @@ def _build_peer_for_pool_via_grpc(
             return None
 
         if response.cached:
+            RUNNER_PEERS_REQUEST_DURATION.labels(outcome="cached_hit").observe(request_elapsed)
+            OUTBOUND_RPC_DURATION.labels(
+                target="peers", operation="RequestBaseline", outcome="ok"
+            ).observe(request_elapsed)
             baseline_json = response.baseline_json
         else:
+            RUNNER_PEERS_REQUEST_DURATION.labels(outcome="cached_miss").observe(request_elapsed)
+            OUTBOUND_RPC_DURATION.labels(
+                target="peers", operation="RequestBaseline", outcome="ok"
+            ).observe(request_elapsed)
+            wait_start = time.perf_counter()
             waiter = _register_peer_baseline_waiter(response.request_id)
             deadline = time.monotonic() + _PEERS_BASELINE_WAIT_TIMEOUT_S
             notification: dict[str, str] | None = None
@@ -629,6 +673,9 @@ def _build_peer_for_pool_via_grpc(
                         except JobCancelled:
                             with _peer_baseline_waiters_lock:
                                 _peer_baseline_waiters.pop(response.request_id, None)
+                            RUNNER_PEERS_ASYNC_WAIT_DURATION.labels(outcome="cancelled").observe(
+                                time.perf_counter() - wait_start
+                            )
                             log.info(
                                 "Job %d cancelled while waiting on PEERS for %s "
                                 "(request_id=%s)",
@@ -648,6 +695,9 @@ def _build_peer_for_pool_via_grpc(
             if notification is None:
                 with _peer_baseline_waiters_lock:
                     _peer_baseline_waiters.pop(response.request_id, None)
+                RUNNER_PEERS_ASYNC_WAIT_DURATION.labels(outcome="timed_out").observe(
+                    time.perf_counter() - wait_start
+                )
                 log.warning(
                     "Skipping peer comparison for %s: PEERS never called back within "
                     "%ss for request_id=%s",
@@ -656,6 +706,9 @@ def _build_peer_for_pool_via_grpc(
                     response.request_id,
                 )
                 return None
+            RUNNER_PEERS_ASYNC_WAIT_DURATION.labels(outcome="delivered").observe(
+                time.perf_counter() - wait_start
+            )
             if notification["error"]:
                 log.warning(
                     "Skipping peer comparison for %s: PEERS reported %s",
@@ -983,9 +1036,13 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
     )
     try:
         stub = runner_pb2_grpc.RunnerServiceStub(channel)
+        enqueue_start = time.perf_counter()
         try:
             response = stub.EnqueueJob(request, timeout=_RUNNER_ENQUEUE_TIMEOUT_S)
         except grpc.RpcError as exc:
+            OUTBOUND_RPC_DURATION.labels(
+                target="runner", operation="EnqueueJob", outcome="error"
+            ).observe(time.perf_counter() - enqueue_start)
             # RUNNER down, connection refused/reset, or the deadline above hit
             # (a reachable-but-hung RUNNER). Without this, the exception would
             # propagate out of execute_job into AnalysisWorker._loop, which has
@@ -996,10 +1053,15 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
                 job_id, job_states.FAILED, error=f"Could not reach RUNNER: {exc}"
             )
             return
+        OUTBOUND_RPC_DURATION.labels(
+            target="runner", operation="EnqueueJob", outcome="ok"
+        ).observe(time.perf_counter() - enqueue_start)
         log.info("Job %d handed to RUNNER as %s", job_id, response.job_id)
 
         seen_stage_b = False
         resolved_players: list[dict[str, Any]] | None = None
+        stream_start = time.perf_counter()
+        stream_outcome = "error"
         try:
             for result in stub.StreamJobProgress(
                 runner_pb2.StreamJobProgressRequest(job_id=response.job_id),
@@ -1066,6 +1128,7 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
                         job_id,
                         "with error" if result.error else "clean",
                     )
+                    stream_outcome = "ok"
                     return
                 store.update_progress(
                     job_id,
@@ -1082,11 +1145,18 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
             # worker_concurrency=1, silently stopping the whole queue from
             # draining, while this job stays stuck in a non-terminal state
             # forever.
+            stream_outcome = (
+                "timeout" if exc.code() == grpc.StatusCode.DEADLINE_EXCEEDED else "error"
+            )
             log.exception("Job %d: lost connection to RUNNER mid-stream", job_id)
             store.set_state(
                 job_id, job_states.FAILED, error=f"Lost connection to RUNNER: {exc}"
             )
             return
+        finally:
+            OUTBOUND_RPC_DURATION.labels(
+                target="runner", operation="StreamJobProgress", outcome=stream_outcome
+            ).observe(time.perf_counter() - stream_start)
         # RunnerServicer guarantees a final=True message even when execute_job
         # crashes outside its own try/finally (see RunnerServicer._run_job) --
         # but if the stream still ends without one (e.g. a dropped connection),
@@ -1149,20 +1219,24 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
         contexts: list[PlayerContext]
         new_match_ids: frozenset[str] | None
         _ensure_not_cancelled(store, job_id)
-        if job["kind"] == JOB_KIND_REGENERATE:
-            # Re-analyse from the local match store; do not download newer games.
-            store.set_state(
-                job_id, job_states.FETCHING, detail="Loading cached matches…"
-            )
-            contexts = resolve_player_contexts(services)
-            new_match_ids = None
-        else:
-            store.set_state(
-                job_id, job_states.FETCHING, detail="Looking up match history…"
-            )
-            fetch_result = fetch_matches(services)
-            contexts = fetch_result.contexts
-            new_match_ids = fetch_result.new_match_ids
+        fetch_start = time.perf_counter()
+        try:
+            if job["kind"] == JOB_KIND_REGENERATE:
+                # Re-analyse from the local match store; do not download newer games.
+                store.set_state(
+                    job_id, job_states.FETCHING, detail="Loading cached matches…"
+                )
+                contexts = resolve_player_contexts(services)
+                new_match_ids = None
+            else:
+                store.set_state(
+                    job_id, job_states.FETCHING, detail="Looking up match history…"
+                )
+                fetch_result = fetch_matches(services)
+                contexts = fetch_result.contexts
+                new_match_ids = fetch_result.new_match_ids
+        finally:
+            RUNNER_STAGE_DURATION.labels(stage="fetch").observe(time.perf_counter() - fetch_start)
 
         _ensure_not_cancelled(store, job_id)
         store.upsert_player(
@@ -1174,10 +1248,16 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
         )
 
         store.set_state(job_id, job_states.ANALYZING, detail="Discovering reports…")
-        batch = prepare_builds(services, contexts)
-        ranked, available_any, analysed = _run_stage_a(
-            services, store, job, batch, new_match_ids
-        )
+        analyze_start = time.perf_counter()
+        try:
+            batch = prepare_builds(services, contexts)
+            ranked, available_any, analysed = _run_stage_a(
+                services, store, job, batch, new_match_ids
+            )
+        finally:
+            RUNNER_STAGE_DURATION.labels(stage="analyze").observe(
+                time.perf_counter() - analyze_start
+            )
         _ensure_not_cancelled(store, job_id)
         if not available_any:
             raise NoEligibleBuildsError("No reports could be analysed.")
@@ -1190,6 +1270,7 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
         )
 
         peer_error: str | None = None
+        peer_start = time.perf_counter()
         try:
             _ensure_not_cancelled(store, job_id)
             store.set_state(
@@ -1206,6 +1287,8 @@ def execute_job(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> 
             peer_error = f"Rank comparison failed: {exc}"
             store.mark_player_peer_failed(slug)
             log.exception("Job %d: peer stage failed (base report kept)", job_id)
+        finally:
+            RUNNER_STAGE_DURATION.labels(stage="peer").observe(time.perf_counter() - peer_start)
         if peer_error is None:
             store.mark_player_peer_complete(slug)
 

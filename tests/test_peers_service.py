@@ -708,7 +708,7 @@ def test_get_or_submit_records_error_metric_on_failure(monkeypatch: pytest.Monke
 
     before_count = peers_service.PEERS_BASELINE_RESOLUTIONS_TOTAL.labels(source="error")._value.get()
     before_observations = (
-        peers_service.PEERS_BASELINE_RESOLUTION_DURATION._sum.get()
+        peers_service.PEERS_BASELINE_RESOLUTION_DURATION.labels(source="error")._sum.get()
     )
 
     record = servicer._get_or_submit(
@@ -725,9 +725,101 @@ def test_get_or_submit_records_error_metric_on_failure(monkeypatch: pytest.Monke
         record.future.result(timeout=5.0)
 
     after_count = peers_service.PEERS_BASELINE_RESOLUTIONS_TOTAL.labels(source="error")._value.get()
-    after_observations = peers_service.PEERS_BASELINE_RESOLUTION_DURATION._sum.get()
+    after_observations = peers_service.PEERS_BASELINE_RESOLUTION_DURATION.labels(source="error")._sum.get()
     assert after_count == before_count + 1
     assert after_observations > before_observations
+
+
+def test_get_or_submit_updates_queued_gauge_while_a_second_key_waits_behind_the_first(
+    monkeypatch: pytest.MonkeyPatch, fake_runner
+):
+    """`PEERS_QUEUED_BASELINES` must reflect submitted-but-not-yet-running
+    resolutions -- the complement `PEERS_INFLIGHT_BASELINES` (running only)
+    can't express. A single-worker executor forces a second, distinct key to
+    queue behind the first."""
+    _, runner_target = fake_runner
+    release = threading.Event()
+    started_first = threading.Event()
+
+    def _slow(client, store, ranked, champion, role, **kwargs):
+        started_first.set()
+        release.wait(timeout=5.0)
+        return None
+
+    monkeypatch.setattr(peers_service, "resolve_peer_baseline", _slow)
+
+    mongo_client = mongomock.MongoClient()
+    peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
+    executor = ThreadPoolExecutor(max_workers=1)
+    servicer = PeersServicer(
+        peer_store=peer_store,
+        riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()),
+        runner_target=runner_target,
+        fast_path_timeout_s=0.1,
+        executor=executor,
+    )
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=0, wins=0, losses=0)
+
+    try:
+        record1 = servicer._get_or_submit(
+            ("ahri", "MIDDLE", "euw1", "GOLD", "14.3"),
+            _fake_riot_client(),
+            _PeerStoreAdapter(peer_store),
+            ranked,
+            "Ahri",
+            "MIDDLE",
+            None,
+            "14.3",
+        )
+        assert started_first.wait(timeout=5.0), "first resolution never started"
+
+        record2 = servicer._get_or_submit(
+            ("zed", "MIDDLE", "euw1", "GOLD", "14.3"),
+            _fake_riot_client(),
+            _PeerStoreAdapter(peer_store),
+            ranked,
+            "Zed",
+            "MIDDLE",
+            None,
+            "14.3",
+        )
+
+        assert peers_service.PEERS_QUEUED_BASELINES._value.get() >= 1
+
+        release.set()
+        record1.future.result(timeout=5.0)
+        record2.future.result(timeout=5.0)
+    finally:
+        release.set()
+        executor.shutdown(wait=True)
+
+    assert peers_service.PEERS_QUEUED_BASELINES._value.get() == 0
+
+
+def test_request_baseline_records_fast_path_attempt(
+    monkeypatch: pytest.MonkeyPatch, fake_runner
+):
+    """`PEERS_FAST_PATH_ATTEMPTS_TOTAL` must be incremented for every
+    `RequestBaseline` call that waits on the fast-path timeout -- the
+    denominator `PEERS_FAST_PATH_TIMEOUTS_TOTAL` needs to compute a real
+    timeout rate rather than just a raw count."""
+    _, runner_target = fake_runner
+    mongo_client = mongomock.MongoClient()
+    peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
+    servicer = PeersServicer(
+        peer_store=peer_store,
+        riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()),
+        runner_target=runner_target,
+        fast_path_timeout_s=3.0,
+    )
+
+    before = peers_service.PEERS_FAST_PATH_ATTEMPTS_TOTAL._value.get()
+
+    request = peers_pb2.RequestBaselineRequest(champion="Ahri", lane="MIDDLE", rank="GOLD II")
+    servicer.RequestBaseline(request, MagicMock())
+
+    after = peers_service.PEERS_FAST_PATH_ATTEMPTS_TOTAL._value.get()
+    assert after == before + 1
 
 
 def test_notify_runner_swallows_non_grpc_exceptions(monkeypatch: pytest.MonkeyPatch, fake_runner):
