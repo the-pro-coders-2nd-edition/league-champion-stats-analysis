@@ -1,14 +1,13 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { link } from 'svelte-spa-router';
   import {
-    fetchPlayerStatus,
+    subscribePlayerStatus,
     refreshPlayer,
     regeneratePlayer,
     cancelJob,
     setPlayerWatch,
   } from '../lib/api.js';
-  import { createPoller } from '../lib/poller.js';
   import Button from '../components/Button.svelte';
   import Panel from '../components/Panel.svelte';
   import Chip from '../components/Chip.svelte';
@@ -31,7 +30,7 @@
 
   let status = null;
   let subtitle = 'Loading…';
-  const poller = createPoller();
+  let unsubscribeStatus = null;
   let cancelling = false;
   let retrying = false;
   let busy = false;
@@ -39,7 +38,7 @@
   let watching = false;
   let watchBusy = false;
   let watchHint = '';
-  // The poller overwrites `watching` from the server on every tick, which would
+  // Every SSE message overwrites `watching` from the server, which would
   // snap the toggle back while a click is still in flight.
   let watchPending = false;
   // Consume-on-read: the server only ever hands back a given payload once
@@ -75,48 +74,44 @@
     return pct == null ? '' : (pct >= 50 ? 'win' : 'loss');
   }
 
-  async function poll() {
-    try {
-      const data = await fetchPlayerStatus(params.slug);
-      status = data;
-      if (data.welcome_back) welcomeBack = data.welcome_back;
-      if (!watchPending) watching = !!data.watch_enabled;
-      const job = data.active_job;
-      const active = !!(job && ACTIVE_STATES.includes(job.state));
-      const builds = data.builds || [];
-      const peersPending = active
-        && (job.state === 'report_ready' || job.state === 'peer_running')
-        && builds.length > 0;
-      const anyPeersPending = peersPending && builds.some((build) => !build.peers_ready);
-      if (data.has_report) {
-        subtitle = active
-          ? (anyPeersPending
-            ? 'Reports are ready — the comparison to players at your rank is still loading.'
-            : 'Reports below update as the analysis progresses.')
-          : data.peer_failed
-            ? 'Reports ready (rank comparison failed — refresh to retry).'
-            : 'Pick a champion + lane report below.';
-      } else {
-        subtitle = active
-          ? 'Your report is being prepared — this page updates automatically.'
-          : (job && job.state === 'failed')
-            ? 'Analysis failed.'
-            : 'No reports yet.';
-      }
-      if (!active) {
-        poller.reschedule(30000);
-      }
-    } catch {
-      subtitle = 'Could not reach the server — retrying…';
+  function applyStatus(data) {
+    status = data;
+    if (data.welcome_back) welcomeBack = data.welcome_back;
+    if (!watchPending) watching = !!data.watch_enabled;
+    const job = data.active_job;
+    const active = !!(job && ACTIVE_STATES.includes(job.state));
+    const builds = data.builds || [];
+    const peersPending = active
+      && (job.state === 'report_ready' || job.state === 'peer_running')
+      && builds.length > 0;
+    const anyPeersPending = peersPending && builds.some((build) => !build.peers_ready);
+    if (data.has_report) {
+      subtitle = active
+        ? (anyPeersPending
+          ? 'Reports are ready — the comparison to players at your rank is still loading.'
+          : 'Reports below update as the analysis progresses.')
+        : data.peer_failed
+          ? 'Reports ready (rank comparison failed — refresh to retry).'
+          : 'Pick a champion + lane report below.';
+    } else {
+      subtitle = active
+        ? 'Your report is being prepared — this page updates automatically.'
+        : (job && job.state === 'failed')
+          ? 'Analysis failed.'
+          : 'No reports yet.';
     }
   }
 
-  function restartFastPoll() {
-    return poller.start(poll, 3000);
-  }
-
   onMount(() => {
-    poller.start(poll, 3000);
+    unsubscribeStatus = subscribePlayerStatus(
+      params.slug,
+      applyStatus,
+      () => { subtitle = 'Could not reach the server — retrying…'; },
+    );
+  });
+
+  onDestroy(() => {
+    if (unsubscribeStatus) unsubscribeStatus();
   });
 
   async function handleRefresh() {
@@ -124,7 +119,6 @@
     actionHint = '';
     try {
       await refreshPlayer(params.slug);
-      await restartFastPoll();
     } catch (err) {
       actionHint = err.message || 'Refresh failed.';
     } finally {
@@ -162,7 +156,6 @@
     actionHint = '';
     try {
       await regeneratePlayer(params.slug);
-      await restartFastPoll();
     } catch (err) {
       actionHint = err.message || 'Regenerate failed.';
     } finally {
@@ -174,7 +167,6 @@
     retrying = true;
     try {
       await refreshPlayer(params.slug);
-      await restartFastPoll();
     } catch (err) {
       jobErrorText = err.message || 'Retry failed.';
     } finally {
@@ -187,7 +179,6 @@
     cancelling = true;
     try {
       await cancelJob(activeJobId);
-      await restartFastPoll();
     } catch (err) {
       jobErrorText = err.message || 'Cancel failed.';
     } finally {
