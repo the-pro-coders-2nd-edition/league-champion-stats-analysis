@@ -430,21 +430,15 @@ class WebConfig(BaseModel):
     # branch this phase already removed.
     peers_grpc_target: str = "localhost:50053"
     # Opt-in subscription to CronWatch's WatchUpdates push stream (Phase 4 of the
-    # microservices migration). This gates only the gRPC SUBSCRIBER, which is
-    # only useful when a separate CronWatch process is watching the same
-    # shared database (i.e. `watch_mode="grpc"` deployments, such as docker-compose).
-    # The welcome-back feature itself is NOT gated on this var: `create_app`
-    # always wires `WatchPoller`'s own `on_new_game` hook (`web/watch.py`,
-    # already carrying the same `compute_welcome_back_summary` payload
-    # CronWatch computes) straight into the always-constructed
-    # `WelcomeBackCache`, so a plain in-process deployment (e.g. the VPS
-    # single-monolith `watch_mode="in_process"` topology) gets welcome-back
-    # notifications with no CronWatch process and no gRPC involved at all.
-    # Setting this var additionally starts `WelcomeBackSubscriber`, which feeds
-    # the same cache from a separate CronWatch deployment's push stream --
-    # useful when THAT process is the one detecting games (`watch_mode="grpc"`),
-    # since in that topology this process's own `WatchPoller` is not started
-    # and cannot fire `on_new_game` itself.
+    # microservices migration). Since Phase 9 deleted `watch_mode` and api-ui's
+    # own in-process `WatchPoller`/`on_new_game` wiring entirely (`create_app`
+    # no longer constructs a watcher at all), CronWatch is now the ONLY source
+    # of watch detection in every real deployment, and welcome-back
+    # notifications are entirely gated on this var: leaving it unset means
+    # `WelcomeBackSubscriber` never starts, `WelcomeBackCache` never gets fed,
+    # and users never see a welcome-back toast -- there is no in-process
+    # fallback path left to fall back to. Set this to CronWatch's real gRPC
+    # target whenever the welcome-back feature is wanted.
     cron_watch_grpc_target: str | None = None
     # RUNNER's raw match/timeline store is Mongo-backed (`RawMatchStore`,
     # `infra/raw_match_store.py`) unconditionally -- Phase 8 deleted the local
