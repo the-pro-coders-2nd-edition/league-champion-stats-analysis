@@ -133,13 +133,14 @@ services:
     volumes:
       - ./deploy/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - grafana-data:/var/lib/grafana
-    # Loopback-only publish (not `3000:3000` like api-ui's `8000:8000`):
-    # `deploy/run.sh` runs Caddy directly on the VPS host (not in this
-    # compose network), so it needs a host-reachable port to reverse-proxy
-    # `grafana.<DOMAIN>` to -- but grafana holds admin credentials, so unlike
-    # api-ui this must never be reachable from outside the host itself.
+    # TEMPORARY, for pre-DNS testing only: published on all interfaces so
+    # Grafana is reachable at <vps-ip-or-domain>:3000 without Caddy/DNS/TLS
+    # in front of it. This means the admin login goes over plain HTTP,
+    # unencrypted, protected only by the admin password -- revert to
+    # `127.0.0.1:3000:3000` (loopback-only, reached via Caddy's
+    # `grafana.<DOMAIN>` reverse proxy instead) once DNS is set up.
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
     depends_on:
       - prometheus
 

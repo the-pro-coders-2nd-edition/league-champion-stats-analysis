@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
-# Install/start the app behind Caddy (systemd). Run on the VPS as root:
+# Install/start Caddy (systemd) as the public HTTPS front door for the
+# docker-compose stack (api-ui + grafana). This script does NOT start the
+# app itself -- run `docker compose up -d` (from the repo root, on the VPS)
+# separately; this script only manages Caddy's TLS routing in front of it.
 #
-#   ./deploy/run.sh                     # uses DOMAIN from .env
+#   ./deploy/run.sh                        # uses DOMAIN from .env
 #   ./deploy/run.sh --domain example.com
-#   ./deploy/run.sh --http-only          # no TLS; reverse-proxy :80 → app
-#   ./deploy/run.sh --status             # show service status
-#   ./deploy/run.sh --stop
+#   ./deploy/run.sh --app-port 7999        # api-ui's published host port,
+#                                           # if docker-compose.yml's default
+#                                           # (8000) is already taken
+#   ./deploy/run.sh --http-only            # no TLS; reverse-proxy :80 → app
+#   ./deploy/run.sh --status               # show caddy's status
+#   ./deploy/run.sh --stop                 # stop caddy
 #
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SERVICE_NAME="league-stats"
-SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 CADDYFILE="/etc/caddy/Caddyfile"
 APP_HOST="127.0.0.1"
+# api-ui's published host port (docker-compose.yml's `ports: - "8000:8000"`
+# by default). Override with --app-port if that mapping's host side has been
+# changed (e.g. because something else on the VPS already held 8000).
 APP_PORT="8000"
 # Grafana (docker-compose service `grafana`) publishes only to host loopback
 # (`127.0.0.1:3000:3000` in docker-compose.yml) -- never a public port -- so
@@ -48,16 +55,19 @@ usage() {
   cat <<EOF
 Usage: deploy/run.sh [options]
 
-  --domain NAME   Domain for HTTPS (Caddy + Let's Encrypt). Also: DOMAIN=...
-                  Default: ${DEFAULT_DOMAIN} (or DOMAIN in .env)
-  --http-only     Serve HTTP on :80 only (no domain / no TLS)
-  --status        Show league-stats + caddy status
-  --stop          Stop both services
-  -h, --help      Show this help
+  --domain NAME    Domain for HTTPS (Caddy + Let's Encrypt). Also: DOMAIN=...
+                    Default: ${DEFAULT_DOMAIN} (or DOMAIN in .env)
+  --app-port PORT  api-ui's published host port from docker-compose.yml.
+                    Default: ${APP_PORT}
+  --http-only      Serve HTTP on :80 only (no domain / no TLS)
+  --status         Show caddy status
+  --stop           Stop caddy
+  -h, --help       Show this help
 
 Examples:
   ./deploy/run.sh
   ./deploy/run.sh --domain myapp.example.com
+  ./deploy/run.sh --app-port 7999
   ./deploy/run.sh --http-only
 EOF
 }
@@ -66,24 +76,6 @@ die() { echo "error: $*" >&2; exit 1; }
 
 need_root() {
   [[ "$(id -u)" -eq 0 ]] || die "run as root (ssh into the VPS first)"
-}
-
-find_uv() {
-  if [[ -n "${UV_BIN:-}" && -x "$UV_BIN" ]]; then
-    echo "$UV_BIN"
-    return
-  fi
-  if command -v uv >/dev/null 2>&1; then
-    command -v uv
-    return
-  fi
-  for candidate in "$HOME/.local/bin/uv" /root/.local/bin/uv; do
-    if [[ -x "$candidate" ]]; then
-      echo "$candidate"
-      return
-    fi
-  done
-  die "uv not found — install with: curl -LsSf https://astral.sh/uv/install.sh | sh"
 }
 
 ensure_caddy() {
@@ -141,12 +133,23 @@ EOF
     if [[ "$grafana_domain" != www.* ]]; then
       grafana_sites="${grafana_domain}, www.${grafana_domain}"
     fi
+    local microservice_domain="microservice.${DOMAIN}"
+    local microservice_sites="$microservice_domain"
+    if [[ "$microservice_domain" != www.* ]]; then
+      microservice_sites="${microservice_domain}, www.${microservice_domain}"
+    fi
     # NOTE (external, manual, one-time precondition): a DNS A record for
-    # grafana.${DOMAIN} (and its www. alias above) must already point at
-    # this server before Let's Encrypt can issue a cert for it -- Caddy's
-    # automatic TLS will fail/retry indefinitely for this site block until
-    # that DNS record exists. This is not something to fake or work around
-    # here; it's an out-of-band DNS change the operator makes once.
+    # grafana.${DOMAIN} and microservice.${DOMAIN} (and each one's www. alias
+    # above) must already point at this server before Let's Encrypt can issue
+    # a cert for them -- Caddy's automatic TLS will fail/retry indefinitely
+    # for a site block until its DNS record exists. This is not something to
+    # fake or work around here; it's an out-of-band DNS change the operator
+    # makes once. microservice.${DOMAIN} is a transitional site block for
+    # running the docker-compose stack side by side with the site at
+    # ${DOMAIN} during cutover testing -- both currently proxy to the same
+    # APP_HOST:APP_PORT, so this only matters while ${DOMAIN} still points
+    # somewhere else (e.g. an old deployment); remove this block once
+    # ${DOMAIN} itself is cut over to the docker-compose stack.
     cat >"$CADDYFILE" <<EOF
 ${sites} {
 ${metrics_gate}	reverse_proxy ${APP_HOST}:${APP_PORT}
@@ -155,57 +158,31 @@ ${metrics_gate}	reverse_proxy ${APP_HOST}:${APP_PORT}
 ${grafana_sites} {
 	reverse_proxy ${GRAFANA_HOST}:${GRAFANA_PORT}
 }
-EOF
-  fi
-  echo "→ wrote $CADDYFILE"
+
+${microservice_sites} {
+${metrics_gate}	reverse_proxy ${APP_HOST}:${APP_PORT}
 }
-
-write_systemd_unit() {
-  local uv_bin="$1"
-  local env_line=""
-  if [[ -f "$APP_DIR/.env" ]]; then
-    env_line="EnvironmentFile=${APP_DIR}/.env"
-  fi
-
-  cat >"$SERVICE_FILE" <<EOF
-[Unit]
-Description=League Champion Stats Analyzer
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=${APP_DIR}
-${env_line}
-ExecStart=${uv_bin} run python main.py --host ${APP_HOST} --port ${APP_PORT}
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
 EOF
-  echo "→ wrote $SERVICE_FILE"
+  fi
+  echo "→ wrote $CADDYFILE (app: ${APP_HOST}:${APP_PORT}, grafana: ${GRAFANA_HOST}:${GRAFANA_PORT})"
 }
 
 show_status() {
-  systemctl status "$SERVICE_NAME" --no-pager || true
-  echo
   systemctl status caddy --no-pager || true
 }
 
 stop_all() {
   need_root
-  systemctl stop "$SERVICE_NAME" 2>/dev/null || true
   systemctl stop caddy 2>/dev/null || true
-  echo "stopped ${SERVICE_NAME} and caddy"
+  echo "stopped caddy"
 }
 
 install_and_start() {
   need_root
 
-  [[ -f "$APP_DIR/main.py" ]] || die "main.py not found in $APP_DIR"
+  [[ -f "$APP_DIR/docker-compose.yml" ]] || die "docker-compose.yml not found in $APP_DIR"
   if [[ ! -f "$APP_DIR/.env" ]]; then
-    echo "warning: ${APP_DIR}/.env missing — set RIOT_API_KEY (and optional GEMINI_API_KEY)" >&2
+    echo "warning: ${APP_DIR}/.env missing — set RIOT_API_KEY etc. for docker-compose" >&2
   elif ! grep -qE '^[[:space:]]*DOMAIN=' "$APP_DIR/.env"; then
     printf '\n# Public site domain (used by deploy/run.sh for Caddy + HTTPS)\nDOMAIN=%s\n' "$DOMAIN" >>"$APP_DIR/.env"
     echo "→ added DOMAIN=${DOMAIN} to ${APP_DIR}/.env"
@@ -215,27 +192,19 @@ install_and_start() {
     die "pass --domain example.com (HTTPS) or --http-only (plain :80)"
   fi
 
-  local uv_bin
-  uv_bin="$(find_uv)"
-
-  echo "→ syncing dependencies"
-  (cd "$APP_DIR" && "$uv_bin" sync)
-
-  "$APP_DIR/deploy/build_spa.sh"
-
   ensure_caddy
   write_caddyfile
-  write_systemd_unit "$uv_bin"
 
   systemctl daemon-reload
-  systemctl enable "$SERVICE_NAME"
   systemctl enable caddy
-  # Always restart so a fresh pull / config rewrite is picked up.
-  systemctl restart "$SERVICE_NAME"
+  # Always restart so a fresh Caddyfile is picked up.
   systemctl restart caddy
 
   echo
   show_status
+  echo
+  echo "This script only manages Caddy. Start/update the app itself with:"
+  echo "  docker compose up -d --build"
   echo
   if [[ "$HTTP_ONLY" -eq 1 ]]; then
     echo "App is up: http://$(hostname -I | awk '{print $1}')/"
@@ -244,8 +213,11 @@ install_and_start() {
     echo "(DNS A records for ${DOMAIN} / www must point at this server for TLS to work.)"
     echo "Grafana: https://grafana.${DOMAIN}/"
     echo "(DNS A record for grafana.${DOMAIN} / www must also point at this server for its TLS cert.)"
+    echo "Microservices stack (transitional, cutover testing): https://microservice.${DOMAIN}/"
+    echo "(DNS A record for microservice.${DOMAIN} / www must also point at this server for its TLS cert.)"
   fi
-  echo "Logs: journalctl -u ${SERVICE_NAME} -f"
+  echo "Caddy logs: journalctl -u caddy -f"
+  echo "App logs:   docker compose logs -f api-ui runner peers cron-watch"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -253,6 +225,11 @@ while [[ $# -gt 0 ]]; do
     --domain)
       DOMAIN="${2:-}"
       [[ -n "$DOMAIN" ]] || die "--domain needs a value"
+      shift 2
+      ;;
+    --app-port)
+      APP_PORT="${2:-}"
+      [[ -n "$APP_PORT" ]] || die "--app-port needs a value"
       shift 2
       ;;
     --http-only)
