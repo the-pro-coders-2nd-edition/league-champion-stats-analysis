@@ -33,8 +33,10 @@ from league_stats_common.core.models import (
     RankedEntry,
     GameReviewPayload,
     GameReviewQueueBundle,
+    format_rank_division,
     format_solo_rank_label,
-    solo_rank_fields,
+    player_rank_fields,
+    queue_rank_fields,
 )
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_common.infra.riot_api import RiotApiClient
@@ -81,6 +83,7 @@ from league_stats_runner.presentation.report import (
     build_manifest_entry,
     build_player_builds_nav,
     discover_player_builds,
+    game_creation_ms_to_iso,
     refresh_report_indexes,
     utc_now_iso,
     write_report_meta,
@@ -130,7 +133,7 @@ def _meta_players(
     config: AppConfig, profile_players: list[dict[str, Any]] | None
 ) -> list[dict[str, Any]]:
     """Build the ``players`` list for report meta, preserving icon/rank fields."""
-    from league_stats_common.core.models import solo_rank_fields
+    from league_stats_common.core.models import player_rank_fields
 
     if profile_players:
         shaped: list[dict[str, Any]] = []
@@ -147,7 +150,7 @@ def _meta_players(
                     entry["profile_icon_id"] = int(raw_icon)
                 except (TypeError, ValueError):
                     pass
-            entry.update(solo_rank_fields(player))
+            entry.update(player_rank_fields(player))
             shaped.append(entry)
         if shaped:
             return shaped
@@ -702,20 +705,22 @@ def run_analysis(
             "is_main": index == 0,
             "region": region_display,
         }
-        rank = solo_rank_fields(player)
-        if rank:
-            tier = str(rank["solo_tier"])
-            division = str(rank.get("solo_rank") or "")
-            lp = rank.get("solo_lp")
-            entry["solo_rank_label"] = format_solo_rank_label(tier, division, lp)
-            entry["solo_rank_division"] = (
-                tier.title() if tier in _APEX_TIERS else f"{tier.title()} {division}".strip()
+        for queue in ("solo", "flex"):
+            rank = queue_rank_fields(player, queue)
+            if not rank:
+                continue
+            tier = str(rank[f"{queue}_tier"])
+            division = str(rank.get(f"{queue}_rank") or "")
+            lp = rank.get(f"{queue}_lp")
+            entry[f"{queue}_rank_label"] = format_solo_rank_label(tier, division, lp)
+            entry[f"{queue}_rank_division"] = format_rank_division(
+                tier, division, apex_tiers=_APEX_TIERS
             )
-            entry["solo_lp"] = lp
+            entry[f"{queue}_lp"] = lp
             asset_catalog.ensure_rank_emblem(tier)
             rank_icon = asset_catalog.rank_emblem_href(tier, from_dir=run_dir)
             if rank_icon:
-                entry["solo_rank_icon"] = rank_icon
+                entry[f"{queue}_rank_icon"] = rank_icon
         report_players.append(entry)
 
     account_filter_json = "{}"
@@ -861,6 +866,14 @@ def run_analysis(
             "games": total_games,
             "winrate": default_bundle["overview"]["winrate"],
             "generated_at": generated_at,
+            "last_game_at": (
+                game_creation_ms_to_iso(max(record.game_creation_ms for record in records))
+                if records
+                else ""
+            ),
+            "score": default_bundle.get("score", 0),
+            "score_color": default_bundle.get("score_color", ""),
+            "score_verdict_label": default_bundle.get("score_verdict_label", ""),
             "has_peer_comparison": peer_comparison is not None,
         },
     )

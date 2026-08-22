@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-Tone = Literal["good", "warn", "bad", "flat", "accent"]
+Tone = Literal["good", "warn", "bad", "flat", "solid", "accent"]
 
 WINDOW = 20
 
@@ -56,11 +56,13 @@ def band_verdict(score: float) -> tuple[str, Tone]:
     a position inside a Gold benchmark band) -- use ``baseline_tier`` there instead.
     Cross-use between the two axes is forbidden: 50 means something different on each.
     """
-    if score >= 70:
+    if score >= 65:
         return ("Strength", "good")
+    if score >= 55:
+        return ("Solid", "solid")
     if score >= 45:
-        return ("Solid", "flat")
-    if score >= 40:
+        return ("Steady", "flat")
+    if score >= 35:
         return ("Watch", "warn")
     return ("Focus", "bad")
 

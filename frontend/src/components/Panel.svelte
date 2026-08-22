@@ -25,6 +25,14 @@
     padding: 16px 18px 18px;
     box-shadow: var(--shadow-md);
   }
+  .panel:global(.panel-form) {
+    padding: 14px 16px;
+    border-radius: var(--radius-md);
+    box-shadow: none;
+  }
+  .panel:global(.panel-form--compact) {
+    padding: 12px 14px;
+  }
   .panel-stage { margin-bottom: 14px; }
   .panel-stage-inner {
     display: grid;

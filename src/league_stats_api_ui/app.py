@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import os
 import threading
 import time
@@ -53,6 +54,7 @@ from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_common.infra.mongo import db_name_from_uri
 from league_stats_common.infra.riot_api import RiotApiClient, RiotApiError, shared_rate_limiter
 from league_stats_runner.infra.raw_match_store import RawMatchStore
+from league_stats_runner.pipeline.bundles import _overall_score_verdict
 from league_stats_runner.pipeline.fetch import group_records, load_all_records, resolve_player_contexts
 from league_stats_runner.pipeline.orchestrator import (
     _account_icon_hrefs,
@@ -65,8 +67,12 @@ from league_stats_runner.presentation.brand_assets import (
     ensure_brand_assets,
     refresh_saved_report_branding,
 )
-from league_stats_runner.presentation.report import discover_player_builds, is_group_player_label
-from league_stats_runner.presentation.report_json import rewrite_web_asset_hrefs
+from league_stats_runner.presentation.report import (
+    discover_player_builds,
+    game_creation_ms_to_iso,
+    is_group_player_label,
+)
+from league_stats_runner.presentation.report_json import prepare_web_report_payload
 from league_stats_common.utils import (
     current_trace_id,
     get_logger,
@@ -384,8 +390,8 @@ def _slug_for_players(players: list[dict[str, Any]]) -> str:
 def _merge_player_icons(
     primary: list[dict[str, Any]], *sources: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Copy profile icon + solo rank onto ``primary`` from matching sources."""
-    from league_stats_common.core.models import solo_rank_fields
+    """Copy profile icon + ranked queues onto ``primary`` from matching sources."""
+    from league_stats_common.core.models import queue_rank_fields
 
     icons: dict[tuple[str, str], int] = {}
     ranks: dict[tuple[str, str], dict[str, Any]] = {}
@@ -401,34 +407,33 @@ def _merge_player_icons(
                     icons[key] = int(raw)
                 except (TypeError, ValueError):
                     pass
-            rank = solo_rank_fields(player)
-            if rank:
-                ranks[key] = rank
+            for queue in ("solo", "flex"):
+                queue_rank = queue_rank_fields(player, queue)
+                if queue_rank:
+                    stored = ranks.setdefault(key, {})
+                    stored.update(queue_rank)
     merged: list[dict[str, Any]] = []
     for player in primary:
         entry: dict[str, Any] = {
             "riot_id": str(player["riot_id"]),
             "tagline": str(player["tagline"]),
         }
+        key = (entry["riot_id"].casefold(), entry["tagline"].casefold())
         raw = player.get("profile_icon_id")
         if raw is not None:
             try:
                 entry["profile_icon_id"] = int(raw)
             except (TypeError, ValueError):
                 pass
-        elif (
-            icon := icons.get(
-                (entry["riot_id"].casefold(), entry["tagline"].casefold())
-            )
-        ) is not None:
+        elif (icon := icons.get(key)) is not None:
             entry["profile_icon_id"] = icon
-        own_rank = solo_rank_fields(player)
-        if own_rank:
-            entry.update(own_rank)
-        elif rank := ranks.get(
-            (entry["riot_id"].casefold(), entry["tagline"].casefold())
-        ):
-            entry.update(rank)
+        stored_rank = ranks.get(key, {})
+        for queue in ("solo", "flex"):
+            own_queue = queue_rank_fields(player, queue)
+            if own_queue:
+                entry.update(own_queue)
+            elif stored_queue := queue_rank_fields(stored_rank, queue):
+                entry.update(stored_queue)
         merged.append(entry)
     return merged
 
@@ -440,7 +445,7 @@ def _players_from_meta(meta: dict[str, Any]) -> list[dict[str, Any]]:
     a comma-separated ``player`` label plus the primary ``riot_id``/``tagline``;
     parse the label so refresh/regenerate keep every account in the group.
     """
-    from league_stats_common.core.models import solo_rank_fields
+    from league_stats_common.core.models import player_rank_fields
 
     raw_players = meta.get("players")
     if isinstance(raw_players, list) and raw_players:
@@ -459,7 +464,7 @@ def _players_from_meta(meta: dict[str, Any]) -> list[dict[str, Any]]:
                     entry["profile_icon_id"] = int(raw_icon)
                 except (TypeError, ValueError):
                     pass
-            entry.update(solo_rank_fields(item))
+            entry.update(player_rank_fields(item))
             recovered.append(entry)
         if recovered:
             return recovered
@@ -482,6 +487,7 @@ def _resolve_tracked_players(
     *,
     store_players: list[dict[str, Any]] | None = None,
     meta: dict[str, Any] | None = None,
+    metas: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Pick the best tracked-player list for a report slug.
 
@@ -489,8 +495,9 @@ def _resolve_tracked_players(
     single-player registry row cannot override a multi-player on-disk group).
     """
     candidates: list[list[dict[str, Any]]] = []
-    if meta is not None:
-        from_meta = _players_from_meta(meta)
+    meta_list = metas if metas is not None else ([meta] if meta is not None else [])
+    for meta_item in meta_list:
+        from_meta = _players_from_meta(meta_item)
         if from_meta:
             candidates.append(from_meta)
     if store_players:
@@ -507,6 +514,81 @@ def _resolve_tracked_players(
     pool = matching or candidates
     best = max(pool, key=len)
     return _merge_player_icons(best, *candidates)
+
+
+def _tracked_region(
+    *,
+    player: dict[str, Any] | None,
+    builds: list[dict[str, Any]],
+) -> str:
+    if player and player.get("region"):
+        return str(player["region"])
+    for build in builds:
+        region = build.get("region")
+        if region:
+            return str(region)
+    return ""
+
+
+def _hydrate_tracked_ranks(
+    tracked: list[dict[str, Any]],
+    *,
+    region: str,
+    output_dir: Path,
+    web_config: WebConfig,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Fill missing flex ranks from Riot when the local cache is stale."""
+    from league_stats_common.core.models import queue_rank_fields
+    from league_stats_runner.pipeline.fetch import _ranked_context_fields
+
+    log = get_logger("web.ranks")
+
+    if not tracked or not region.strip():
+        return tracked, False
+    if not any(not queue_rank_fields(player, "flex") for player in tracked):
+        return tracked, False
+
+    try:
+        client = _build_precheck_client(region, output_dir, web_config)
+    except ValueError as exc:
+        log.info("Skipping flex rank refresh (no Riot API key): %s", exc)
+        return tracked, False
+    except Exception:
+        log.exception("Could not build Riot client for flex rank refresh")
+        return tracked, False
+
+    changed = False
+    hydrated: list[dict[str, Any]] = []
+    for player in tracked:
+        entry = dict(player)
+        if queue_rank_fields(player, "flex"):
+            hydrated.append(entry)
+            continue
+        label = f"{player.get('riot_id')}#{player.get('tagline')}"
+        try:
+            puuid = client.resolve_puuid(str(player["riot_id"]), str(player["tagline"]))
+            queues = client.fetch_ranked_queues(puuid)
+        except RiotApiError as exc:
+            log.warning("Could not refresh flex rank for %s: %s", label, exc)
+            hydrated.append(entry)
+            continue
+        flex = queues.get("flex")
+        if flex is None:
+            log.info("No flex rank entry for %s", label)
+            hydrated.append(entry)
+            continue
+        tier, division, lp = _ranked_context_fields(flex)
+        if not tier:
+            hydrated.append(entry)
+            continue
+        entry["flex_tier"] = tier
+        if division:
+            entry["flex_rank"] = division
+        if lp is not None:
+            entry["flex_lp"] = lp
+        changed = True
+        hydrated.append(entry)
+    return hydrated, changed
 
 
 def _player_label_from_tracked(tracked: list[dict[str, Any]], slug: str) -> str:
@@ -552,13 +634,58 @@ def _ddragon_asset_href(assets_dir: Path, *parts: str) -> str | None:
     return "/ddragon/" + "/".join(parts)
 
 
-def _shaped_players(
-    assets_dir: Path, tracked: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    """API/template shape for group members (label + optional icon/rank)."""
-    from league_stats_common.core.models import format_solo_rank_label, solo_rank_fields
+def _web_asset_href(output_dir: Path, *parts: str) -> str | None:
+    """Absolute ``/out/...`` URL when the asset exists on disk."""
+    path = output_dir.joinpath(*parts)
+    if not path.is_file():
+        return None
+    return "/out/" + "/".join(parts)
+
+
+def _shape_queue_rank(
+    entry: dict[str, Any],
+    player: dict[str, Any],
+    queue: str,
+    output_dir: Path,
+    *,
+    apex_tiers: frozenset[str],
+) -> None:
+    """Attach shaped rank fields for one queue onto an API player entry."""
+    from league_stats_common.core.models import (
+        format_rank_division,
+        format_solo_rank_label,
+        queue_rank_fields,
+    )
     from league_stats_common.infra.ddragon_assets import fetch_rank_emblem
 
+    rank = queue_rank_fields(player, queue)
+    if not rank:
+        return
+    tier = str(rank[f"{queue}_tier"])
+    division = str(rank.get(f"{queue}_rank") or "")
+    lp = rank.get(f"{queue}_lp")
+    entry[f"{queue}_rank_label"] = format_solo_rank_label(tier, division, lp)
+    entry[f"{queue}_rank_division"] = format_rank_division(
+        tier, division, apex_tiers=apex_tiers
+    )
+    entry[f"{queue}_lp"] = lp
+    emblem = fetch_rank_emblem(output_dir / "assets" / "ranks", tier)
+    if emblem is not None:
+        entry[f"{queue}_rank_icon"] = _web_asset_href(
+            output_dir, "assets", "ranks", emblem.name
+        )
+
+
+def _shaped_players(
+    assets_dir: Path,
+    output_dir: Path,
+    tracked: list[dict[str, Any]],
+    *,
+    region: str = "",
+) -> list[dict[str, Any]]:
+    """API/template shape for group members (label + optional icon/rank)."""
+    apex_tiers = frozenset({"MASTER", "GRANDMASTER", "CHALLENGER"})
+    region_label = str(region or "").upper()
     shaped: list[dict[str, Any]] = []
     for player in tracked:
         riot_id = str(player["riot_id"])
@@ -578,19 +705,12 @@ def _shaped_players(
             "label": f"{riot_id}#{tagline}",
             "profile_icon": icon_href,
         }
-        rank = solo_rank_fields(player)
-        if rank:
-            tier = str(rank["solo_tier"])
-            entry["solo_rank_label"] = format_solo_rank_label(
-                tier,
-                str(rank.get("solo_rank") or ""),
-                rank.get("solo_lp"),
+        if region_label:
+            entry["region"] = region_label
+        for queue in ("solo", "flex"):
+            _shape_queue_rank(
+                entry, player, queue, output_dir, apex_tiers=apex_tiers
             )
-            emblem = fetch_rank_emblem(assets_dir / "ranks", tier)
-            if emblem is not None:
-                entry["solo_rank_icon"] = _ddragon_asset_href(
-                    assets_dir, "ranks", emblem.name
-                )
         shaped.append(entry)
     return shaped
 
@@ -627,6 +747,69 @@ def _profile_icon_hrefs(
     return hrefs
 
 
+def _last_game_at_from_report(report: dict[str, Any]) -> str:
+    """Newest match timestamp embedded in a saved report payload."""
+    latest_ms = 0
+    review = report.get("game_review") or {}
+    if isinstance(review, dict):
+        for bundle in review.values():
+            if not isinstance(bundle, dict):
+                continue
+            for game in bundle.get("games") or []:
+                if not isinstance(game, dict):
+                    continue
+                ms = int(game.get("game_creation_ms") or 0)
+                if ms > latest_ms:
+                    latest_ms = ms
+    if latest_ms > 0:
+        return game_creation_ms_to_iso(latest_ms)
+    return str(report.get("generated_at") or "")
+
+
+def _hub_build_fields(meta: dict[str, Any], report_dir: Path) -> dict[str, Any]:
+    """Score and last-played fields for player-hub build cards."""
+    score = meta.get("score")
+    score_color = str(meta.get("score_color") or "")
+    score_verdict_label = str(meta.get("score_verdict_label") or "")
+    last_game_at = str(meta.get("last_game_at") or "")
+    needs_report = (
+        score is None
+        or not score_color
+        or not score_verdict_label
+        or not last_game_at
+    )
+    if needs_report:
+        report_path = report_dir / "report.json"
+        if report_path.is_file():
+            try:
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                report = {}
+            if score is None:
+                score = report.get("score")
+            if not score_color:
+                score_color = str(report.get("score_color") or "")
+            if not score_verdict_label:
+                score_verdict_label = str(report.get("score_verdict_label") or "")
+            if not last_game_at:
+                last_game_at = _last_game_at_from_report(report)
+    if not last_game_at:
+        last_game_at = str(meta.get("generated_at") or "")
+    if score is not None:
+        try:
+            numeric = float(score)
+            if math.isfinite(numeric):
+                score_color, score_verdict_label = _overall_score_verdict(numeric)
+        except (TypeError, ValueError):
+            pass
+    return {
+        "score": score,
+        "score_color": score_color,
+        "score_verdict_label": score_verdict_label,
+        "last_game_at": last_game_at,
+    }
+
+
 def _player_builds(output_dir: Path, assets_dir: Path, slug: str) -> list[dict[str, Any]]:
     """On-disk builds for one player, with web hrefs and icon URLs."""
     builds = discover_player_builds(output_dir / "reports" / slug)
@@ -636,6 +819,7 @@ def _player_builds(output_dir: Path, assets_dir: Path, slug: str) -> list[dict[s
         champion_id = str(build.get("champion", ""))
         role = str(build.get("role", ""))
         report_dir = output_dir / "reports" / slug / build_slug
+        hub = _hub_build_fields(build, report_dir)
         shaped.append(
             {
                 "slug": build_slug,
@@ -647,6 +831,10 @@ def _player_builds(output_dir: Path, assets_dir: Path, slug: str) -> list[dict[s
                 "games": build.get("games", 0),
                 "winrate": build.get("winrate"),
                 "generated_at": build.get("generated_at", ""),
+                "last_game_at": hub["last_game_at"],
+                "score": hub["score"],
+                "score_color": hub["score_color"],
+                "score_verdict_label": hub["score_verdict_label"],
                 "peers_ready": _build_peers_ready(build, report_dir),
                 "href": f"/out/reports/{slug}/{build.get('href', '')}",
                 "champion_icon": _ddragon_asset_href(
@@ -655,6 +843,46 @@ def _player_builds(output_dir: Path, assets_dir: Path, slug: str) -> list[dict[s
                     f"{champion_icon_id(champion_id)}.png",
                 ),
                 "role_icon": _ddragon_asset_href(assets_dir, "roles", f"{role}.png"),
+            }
+        )
+    return shaped
+
+
+def _preview_builds(
+    output_dir: Path,
+    assets_dir: Path,
+    slug: str,
+    builds: list[dict[str, Any]],
+    *,
+    limit: int = 6,
+) -> list[dict[str, Any]]:
+    """Most recently played builds first, for home-library champion portraits."""
+    ranked: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
+    for build in builds:
+        build_slug = str(build.get("href", "")).split("/", 1)[0]
+        report_dir = output_dir / "reports" / slug / build_slug
+        hub = _hub_build_fields(build, report_dir)
+        sort_at = str(hub.get("last_game_at") or build.get("generated_at") or "")
+        ranked.append((sort_at, build, hub))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+
+    shaped: list[dict[str, Any]] = []
+    for _, build, hub in ranked[:limit]:
+        build_slug = str(build.get("href", "")).split("/", 1)[0]
+        champion_id = str(build.get("champion", ""))
+        shaped.append(
+            {
+                "slug": build_slug,
+                "champion": champion_display_name(champion_id),
+                "role": str(build.get("role", "")),
+                "games": build.get("games", 0),
+                "winrate": build.get("winrate"),
+                "last_game_at": hub["last_game_at"],
+                "champion_icon": _ddragon_asset_href(
+                    assets_dir,
+                    "champions",
+                    f"{champion_icon_id(champion_id)}.png",
+                ),
             }
         )
     return shaped
@@ -682,6 +910,7 @@ def _report_groups(
     active (queued/running) job, and players with an active job but no report
     yet are included so queued first-time analyses appear on the home page.
     """
+    output_dir = reports_dir.parent
     groups: list[dict[str, Any]] = []
     seen: set[str] = set()
     if reports_dir.is_dir():
@@ -708,7 +937,7 @@ def _report_groups(
                 primary_icon_id = int(primary_icon) if primary_icon is not None else None
             except (TypeError, ValueError):
                 primary_icon_id = None
-            shaped = _shaped_players(assets_dir, tracked)
+            shaped = _shaped_players(assets_dir, output_dir, tracked)
             if not shaped and label:
                 shaped = [{"label": label, "profile_icon": None}]
             elif not shaped and primary_icon_id is not None:
@@ -730,6 +959,9 @@ def _report_groups(
                     "is_group": len(tracked) > 1 or is_group_player_label(label),
                     "build_count": len(builds),
                     "total_games": sum(int(build.get("games", 0)) for build in builds),
+                    "preview_builds": _preview_builds(
+                        output_dir, assets_dir, player_dir.name, builds
+                    ),
                     "last_updated": max(
                         (str(build.get("generated_at", "")) for build in builds),
                         default="",
@@ -764,7 +996,7 @@ def _report_groups(
                 if tracked
                 else f"{job['riot_id']}#{job['tagline']}"
             )
-            shaped = _shaped_players(assets_dir, tracked)
+            shaped = _shaped_players(assets_dir, output_dir, tracked)
             if not shaped:
                 shaped = [{"label": label, "profile_icon": None}]
             groups.append(
@@ -775,6 +1007,7 @@ def _report_groups(
                     "is_group": len(tracked) > 1 or is_group_player_label(label),
                     "build_count": 0,
                     "total_games": 0,
+                    "preview_builds": [],
                     "last_updated": "",
                     "busy": True,
                     "job_state": job.get("state"),
@@ -1054,7 +1287,7 @@ def create_app(
                 if tracked
                 else f"{job['riot_id']}#{job['tagline']}"
             )
-            shaped = _shaped_players(config.assets_dir, tracked)
+            shaped = _shaped_players(config.assets_dir, config.output_dir, tracked)
             if not shaped:
                 shaped = [{"label": label, "profile_icon": None}]
             items.append(
@@ -1101,15 +1334,35 @@ def create_app(
         tracked = _resolve_tracked_players(
             slug,
             store_players=(player.get("players") if player else None),
-            meta=meta_builds[0] if meta_builds else None,
+            metas=meta_builds or None,
         )
         label = _player_label_from_tracked(tracked, slug)
         if not tracked and builds:
             label = str(builds[0].get("player") or slug)
+        region = _tracked_region(player=player, builds=builds)
+        if region and tracked:
+            tracked, ranks_updated = _hydrate_tracked_ranks(
+                tracked,
+                region=region,
+                output_dir=config.output_dir,
+                web_config=config,
+            )
+            if ranks_updated and player is not None:
+                primary = tracked[0]
+                store.upsert_player(
+                    slug=slug,
+                    riot_id=str(primary["riot_id"]),
+                    tagline=str(primary["tagline"]),
+                    region=str(player["region"]),
+                    players=tracked,
+                )
+        region_label = region.upper() if region else ""
         return {
             "slug": slug,
             "player_label": label,
-            "players": _shaped_players(config.assets_dir, tracked),
+            "players": _shaped_players(
+                config.assets_dir, config.output_dir, tracked, region=region_label
+            ),
             "active_job": _job_public(store, active),
             "builds": builds,
             "has_report": bool(builds),
@@ -1303,7 +1556,7 @@ def create_app(
         if not report_json_path.is_file():
             raise HTTPException(status_code=404, detail="Unknown build")
         payload = json.loads(report_json_path.read_text(encoding="utf-8"))
-        return rewrite_web_asset_hrefs(payload)
+        return prepare_web_report_payload(payload)
 
     def _resolve_build_filter(
         slug: str,
@@ -1490,7 +1743,7 @@ def create_app(
         if cache_path.is_file():
             try:
                 cached = json.loads(cache_path.read_text(encoding="utf-8"))
-                return rewrite_web_asset_hrefs(cached)
+                return prepare_web_report_payload(cached)
             except (OSError, json.JSONDecodeError):
                 pass
 
@@ -1579,7 +1832,7 @@ def create_app(
 
         # Same encoding as the embedded report JSON (stringifies numpy scalars).
         payload: dict[str, Any] = json.loads(json.dumps(views, default=str))
-        payload = rewrite_web_asset_hrefs(payload)
+        payload = prepare_web_report_payload(payload)
         try:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache_path.write_text(json.dumps(payload), encoding="utf-8")

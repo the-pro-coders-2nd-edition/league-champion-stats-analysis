@@ -66,6 +66,14 @@ def test_the_why_still_explains_what_the_metric_is() -> None:
     assert WHY_BY_COLUMN["cspm"].split(".")[0] in why
 
 
+def test_objective_trade_why_explains_how_trades_are_scored() -> None:
+    why = WHY_BY_COLUMN["objective_trade_success_rate"]
+
+    assert "points" in why
+    assert "split-pushing" in why
+    assert "not counted as a trade" in why
+
+
 def test_the_why_cites_the_peer_number_when_one_exists() -> None:
     ctx = _ctx([1.0] * 30, column="vspm", peers={"vspm": 1.4})
 

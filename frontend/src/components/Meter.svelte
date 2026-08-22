@@ -1,7 +1,7 @@
 <script>
   import { gameReviewScoreColor } from '../lib/metricColors.js';
 
-  // value: number, 0-100. size: 'sm' | 'md' | 'lg'. tone: 'good' | 'warn' | 'bad' | 'flat' | null.
+  // value: number, 0-100. size: 'sm' | 'md' | 'lg'. tone: 'good' | 'warn' | 'bad' | 'flat' | 'solid' | null.
   // ramp: boolean. reference: number | null.
   export let value;
   export let size = 'md';

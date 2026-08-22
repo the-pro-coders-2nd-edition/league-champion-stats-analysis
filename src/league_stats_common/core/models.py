@@ -637,22 +637,56 @@ class RankedEntry(BaseModel):
         return self.rank
 
 
-def solo_rank_fields(source: dict[str, Any]) -> dict[str, Any]:
-    """Extract optional solo/duo rank fields from a player dict."""
-    tier = str(source.get("solo_tier") or "").strip().upper()
+_APEX_TIERS = frozenset({"MASTER", "GRANDMASTER", "CHALLENGER"})
+_RANK_QUEUES = ("solo", "flex")
+
+
+def queue_rank_fields(source: dict[str, Any], queue: str) -> dict[str, Any]:
+    """Extract optional ranked fields for ``solo`` or ``flex`` queue."""
+    if queue not in _RANK_QUEUES:
+        raise ValueError(f"Unknown rank queue: {queue}")
+    tier = str(source.get(f"{queue}_tier") or "").strip().upper()
     if not tier:
         return {}
-    entry: dict[str, Any] = {"solo_tier": tier}
-    rank = str(source.get("solo_rank") or "").strip().upper()
+    entry: dict[str, Any] = {f"{queue}_tier": tier}
+    rank = str(source.get(f"{queue}_rank") or "").strip().upper()
     if rank:
-        entry["solo_rank"] = rank
-    raw_lp = source.get("solo_lp")
+        entry[f"{queue}_rank"] = rank
+    raw_lp = source.get(f"{queue}_lp")
     if raw_lp is not None:
         try:
-            entry["solo_lp"] = int(raw_lp)
+            entry[f"{queue}_lp"] = int(raw_lp)
         except (TypeError, ValueError):
             pass
     return entry
+
+
+def solo_rank_fields(source: dict[str, Any]) -> dict[str, Any]:
+    """Extract optional solo/duo rank fields from a player dict."""
+    return queue_rank_fields(source, "solo")
+
+
+def flex_rank_fields(source: dict[str, Any]) -> dict[str, Any]:
+    """Extract optional flex rank fields from a player dict."""
+    return queue_rank_fields(source, "flex")
+
+
+def player_rank_fields(source: dict[str, Any]) -> dict[str, Any]:
+    """Extract solo/duo and flex rank fields from a player dict."""
+    merged: dict[str, Any] = {}
+    for queue in _RANK_QUEUES:
+        merged.update(queue_rank_fields(source, queue))
+    return merged
+
+
+def format_rank_division(
+    tier: str, rank: str = "", *, apex_tiers: frozenset[str] = _APEX_TIERS
+) -> str:
+    """Human-readable division beside a tier emblem (e.g. ``Gold IV``)."""
+    tier_upper = tier.upper()
+    if tier_upper in apex_tiers:
+        return tier.title()
+    return f"{tier.title()} {rank}".strip()
 
 
 def format_solo_rank_label(

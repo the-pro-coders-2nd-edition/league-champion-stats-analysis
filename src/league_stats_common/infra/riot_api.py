@@ -329,18 +329,13 @@ class RiotApiClient:
         except (TypeError, ValueError):
             return None
 
-    def fetch_solo_rank(self, puuid: str) -> RankedEntry | None:
-        """Fetch the player's ranked solo queue entry via league-v4.
+    _LEAGUE_QUEUE_KEYS = {
+        "RANKED_SOLO_5x5": "solo",
+        "RANKED_FLEX_SR": "flex",
+    }
 
-        League-v4 is **platform-routed** (``euw1.api.riotgames.com``), not
-        regional. Set ``platform`` in config or pass ``--platform euw1``.
-
-        Args:
-            puuid: The player's PUUID.
-
-        Returns:
-            The solo queue :class:`~models.RankedEntry`, or ``None`` if unranked.
-        """
+    def _fetch_league_entries(self, puuid: str) -> list[dict[str, Any]]:
+        """Fetch all league-v4 entries for a player (solo + flex in one call)."""
         url = f"{self.platform_base}/lol/league/v4/entries/by-puuid/{puuid}"
         try:
             entries = self._get(url, ttl_s=15 * 60)
@@ -355,27 +350,58 @@ class RiotApiClient:
                 )
             elif "404" in message:
                 self._log.info("No ranked data for %s (404)", puuid[:12])
-                return None
+                return []
             else:
                 self._log.warning("Could not fetch rank for %s: %s", puuid[:12], exc)
-            return None
-        if not entries:
-            self._log.info("No ranked solo queue entry found for %s", puuid[:12])
-            return None
-        for entry in entries:
-            if entry.get("queueType") != "RANKED_SOLO_5x5":
+            return []
+        if not isinstance(entries, list):
+            return []
+        return entries
+
+    @staticmethod
+    def _ranked_entry_from_league(entry: dict[str, Any]) -> RankedEntry:
+        return RankedEntry(
+            tier=str(entry["tier"]),
+            rank=str(entry.get("rank", "")),
+            league_points=int(entry.get("leaguePoints", 0)),
+            wins=int(entry.get("wins", 0)),
+            losses=int(entry.get("losses", 0)),
+        )
+
+    def fetch_ranked_queues(self, puuid: str) -> dict[str, RankedEntry]:
+        """Fetch solo/duo and flex ranks from a single league-v4 call."""
+        queues: dict[str, RankedEntry] = {}
+        for entry in self._fetch_league_entries(puuid):
+            queue_key = self._LEAGUE_QUEUE_KEYS.get(str(entry.get("queueType", "")))
+            if queue_key is None or queue_key in queues:
                 continue
-            ranked = RankedEntry(
-                tier=str(entry["tier"]),
-                rank=str(entry.get("rank", "")),
-                league_points=int(entry.get("leaguePoints", 0)),
-                wins=int(entry.get("wins", 0)),
-                losses=int(entry.get("losses", 0)),
+            ranked = self._ranked_entry_from_league(entry)
+            queues[queue_key] = ranked
+            self._log.info(
+                "%s rank: %s (%dW-%dL)",
+                "Solo/Duo" if queue_key == "solo" else "Flex",
+                ranked.label,
+                ranked.wins,
+                ranked.losses,
             )
-            self._log.info("Rank: %s (%dW-%dL)", ranked.label, ranked.wins, ranked.losses)
-            return ranked
-        self._log.info("No ranked solo queue entry found for %s", puuid[:12])
-        return None
+        return queues
+
+    def fetch_solo_rank(self, puuid: str) -> RankedEntry | None:
+        """Fetch the player's ranked solo queue entry via league-v4.
+
+        League-v4 is **platform-routed** (``euw1.api.riotgames.com``), not
+        regional. Set ``platform`` in config or pass ``--platform euw1``.
+
+        Args:
+            puuid: The player's PUUID.
+
+        Returns:
+            The solo queue :class:`~models.RankedEntry`, or ``None`` if unranked.
+        """
+        ranked = self.fetch_ranked_queues(puuid).get("solo")
+        if ranked is None:
+            self._log.info("No ranked solo queue entry found for %s", puuid[:12])
+        return ranked
 
     def fetch_league_entries(
         self, tier: str, rank: str = "", *, page: int = 1
