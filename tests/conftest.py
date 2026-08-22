@@ -5,6 +5,7 @@ from __future__ import annotations
 import mongomock
 import pytest
 
+from league_stats_api_ui import app as _api_ui_app
 from league_stats_peers import service as _peers_service
 from league_stats_peers.analysis.peer import baseline as _peer_baseline
 from league_stats_peers.analysis.peer import benchmark_cache as _benchmark_cache
@@ -14,6 +15,7 @@ from league_stats_common.infra import report_store as _report_store
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
 from league_stats_peers.infra.peer_match_sample_store import PeerMatchSampleStore
+from league_stats_runner import worker as _worker
 from league_stats_runner.infra import derived as _derived
 
 
@@ -194,3 +196,62 @@ def _report_store_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     client = mongomock.MongoClient()
     monkeypatch.setattr(_report_store, "_build_mongo_client", lambda uri: client)
+
+
+_REAL_SEAM_TESTS = frozenset(
+    {
+        "test_build_mongo_client_reuses_the_same_client_for_the_same_uri",
+        "test_build_mongo_client_returns_a_different_client_for_a_different_uri",
+    }
+)
+
+
+@pytest.fixture(autouse=True)
+def _api_ui_raw_match_store_uses_mongomock(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Default every test's api-ui precheck client to an in-memory mongomock
+    store instead of a real Mongo connection.
+
+    `app.py`'s `_build_precheck_client` (reached from `_verify_players_exist`
+    on `POST /api/analyses` and from `_hydrate_tracked_ranks`'s flex-rank
+    refresh) builds a `RawMatchStore` off `app.py`'s own `_build_mongo_client`
+    seam, lazily dialing a real `pymongo.MongoClient` against
+    `RUNNER_MONGO_URI`/`MONGO_URI` (falling back to `localhost:27017`). This
+    was previously harmless in tests because `RawMatchStore.__init__` never
+    touched the client -- since the ObjectId migration added `create_index`
+    calls there, construction now forces an immediate real connection
+    attempt, hanging on pymongo's server-selection timeout with no real
+    Mongo instance running. Mirrors `_derived_store_uses_mongomock` above.
+
+    Skipped for the two tests that deliberately exercise this seam's own
+    caching behavior against the real (still-lazy, non-connecting)
+    `pymongo.MongoClient` -- same reasoning as `_skip_ddragon_downloads`'s
+    module-name bypass above.
+    """
+    if request.node.name in _REAL_SEAM_TESTS:
+        return
+    client = mongomock.MongoClient()
+    monkeypatch.setattr(_api_ui_app, "_build_mongo_client", lambda uri: client)
+
+
+@pytest.fixture(autouse=True)
+def _worker_raw_match_store_uses_mongomock(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Default every test's RUNNER worker Mongo client to an in-memory
+    mongomock store instead of a real Mongo connection.
+
+    `worker.py`'s `_build_job_services` builds a `RawMatchStore` off
+    `worker.py`'s own `_build_mongo_client` seam (separate from `app.py`'s),
+    lazily dialing a real `pymongo.MongoClient`. Same fix as
+    `_api_ui_raw_match_store_uses_mongomock` above, for the other call site.
+    Tests that need a specific client patch this seam themselves (e.g.
+    `test_web_worker.py`'s scenario tests), which simply overrides this
+    fixture's monkeypatch. Skipped for the test that deliberately exercises
+    this seam's own caching behavior against the real client, same as above.
+    """
+    if request.node.name in _REAL_SEAM_TESTS:
+        return
+    client = mongomock.MongoClient()
+    monkeypatch.setattr(_worker, "_build_mongo_client", lambda uri: client)

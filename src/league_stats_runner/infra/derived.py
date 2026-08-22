@@ -12,10 +12,9 @@ of artifact (see :func:`code_version`), so a code change cannot hit a stale
 entry -- it simply looks under a different key and recomputes.
 
 Backed by ``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in tests).
-One ``derived`` collection, one document per
-``(kind, key, code_version)``, keyed by ``_id = f"{kind}\\x1f{key}\\x1f
-{code_version}"`` (same separator convention as
-``PeerSampleStore._dedup_key``).
+One ``derived`` collection, one document per ``(kind, key, code_version)``,
+enforced by a compound unique index on those three fields; ``_id`` is a
+Mongo-assigned ``ObjectId``, never queried by.
 """
 
 from __future__ import annotations
@@ -152,6 +151,9 @@ class DerivedStore:
         # construction, including in tests (same pattern as
         # `PeerSampleStore.__init__`).
         self._derived.create_index("hit_at")
+        self._derived.create_index(
+            [("kind", 1), ("key", 1), ("code_version", 1)], unique=True
+        )
         self._max_bytes = max_bytes
         self._log = get_logger("derived")
 
@@ -177,13 +179,11 @@ class DerivedStore:
         """
         return None
 
-    @staticmethod
-    def _doc_id(kind: str, key: str, version: str) -> str:
-        return f"{kind}\x1f{key}\x1f{version}"
-
     def get(self, kind: str, key: str) -> Any | None:
         """Return a cached artifact, or ``None`` on a miss."""
-        doc = self._derived.find_one({"_id": self._doc_id(kind, key, code_version(kind))})
+        doc = self._derived.find_one(
+            {"kind": kind, "key": key, "code_version": code_version(kind)}
+        )
         if doc is None:
             return None
         self._touch(kind, key)
@@ -206,8 +206,9 @@ class DerivedStore:
         chunk = 500
         for start in range(0, len(keys), chunk):
             batch = list(keys[start : start + chunk])
-            ids = [self._doc_id(kind, key, version) for key in batch]
-            for doc in self._derived.find({"_id": {"$in": ids}}):
+            for doc in self._derived.find(
+                {"kind": kind, "key": {"$in": batch}, "code_version": version}
+            ):
                 found[doc["key"]] = doc["payload"]
         if found:
             self._touch_many(kind, list(found))
@@ -219,7 +220,7 @@ class DerivedStore:
         now = time.time()
         version = code_version(kind)
         self._derived.update_one(
-            {"_id": self._doc_id(kind, key, version)},
+            {"kind": kind, "key": key, "code_version": version},
             {
                 "$set": {
                     "kind": kind,
@@ -254,7 +255,7 @@ class DerivedStore:
         for key, payload in items.items():
             blob = json.dumps(payload, separators=(",", ":"), default=str)
             self._derived.update_one(
-                {"_id": self._doc_id(kind, key, version)},
+                {"kind": kind, "key": key, "code_version": version},
                 {
                     "$set": {
                         "kind": kind,
@@ -317,7 +318,7 @@ class DerivedStore:
 
     def _touch(self, kind: str, key: str) -> None:
         self._derived.update_one(
-            {"_id": self._doc_id(kind, key, code_version(kind))},
+            {"kind": kind, "key": key, "code_version": code_version(kind)},
             {"$set": {"hit_at": time.time()}},
         )
 
@@ -328,7 +329,7 @@ class DerivedStore:
         version = code_version(kind)
         for key in keys:
             self._derived.update_one(
-                {"_id": self._doc_id(kind, key, version)}, {"$set": {"hit_at": now}}
+                {"kind": kind, "key": key, "code_version": version}, {"$set": {"hit_at": now}}
             )
 
 

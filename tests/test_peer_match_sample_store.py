@@ -33,6 +33,17 @@ def test_extract_all_champion_role_rows_excludes_one_puuid() -> None:
     assert all(row["puuid"] != exclude_puuid for row in rows)
 
 
+def test_peer_match_sample_id_is_a_real_objectid(store: PeerMatchSampleStore) -> None:
+    from bson import ObjectId
+
+    match = make_match()
+    rows = extract_all_champion_role_rows(match)
+    store.upsert_rows("EUW1_1", "14.23", "euw1", rows)
+
+    doc = store._samples.find_one({"match_id": "EUW1_1"})
+    assert isinstance(doc["_id"], ObjectId)
+
+
 def test_upsert_and_find_candidates_round_trip(store: PeerMatchSampleStore) -> None:
     match = make_match()
     rows = extract_all_champion_role_rows(match)

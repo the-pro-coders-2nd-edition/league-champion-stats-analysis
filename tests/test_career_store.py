@@ -23,6 +23,36 @@ def test_build_key_normalises_role() -> None:
     assert build_key("hugros_euw", "Viktor", "middle") == "hugros_euw|Viktor|MIDDLE"
 
 
+def test_goal_id_is_a_real_objectid() -> None:
+    from bson import ObjectId
+
+    key = build_key("p", "Viktor", "MIDDLE")
+    with _store() as store:
+        store.write_slot(key, 0, "map_presence", _rungs("a"), ["In progress"] * 3)
+        doc = store._goals.find_one({"build_key": key, "slot": 0, "goal_index": 0})
+    assert isinstance(doc["_id"], ObjectId)
+
+
+def test_used_track_id_is_a_real_objectid() -> None:
+    from bson import ObjectId
+
+    key = build_key("p", "Viktor", "MIDDLE")
+    with _store() as store:
+        store.record_used_track(key, "map_presence")
+        doc = store._used_tracks.find_one({"build_key": key, "track_key": "map_presence"})
+    assert isinstance(doc["_id"], ObjectId)
+
+
+def test_career_flag_id_is_a_real_objectid() -> None:
+    from bson import ObjectId
+
+    key = build_key("p", "Viktor", "MIDDLE")
+    with _store() as store:
+        store.set_pending_congrats(key, "map_presence")
+        doc = store._flags.find_one({"build_key": key})
+    assert isinstance(doc["_id"], ObjectId)
+
+
 def test_write_and_load_slot_round_trip() -> None:
     key = build_key("p", "Viktor", "MIDDLE")
     with _store() as store:

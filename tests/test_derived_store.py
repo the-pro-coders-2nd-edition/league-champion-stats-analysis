@@ -26,6 +26,17 @@ def test_round_trip(store: DerivedStore) -> None:
     assert store.get(KIND_RECORD, "EUW1_1") == {"match_id": "EUW1_1", "cs": 188}
 
 
+def test_derived_id_is_a_real_objectid_not_the_composite_key() -> None:
+    """mongo-express crashes opening a document whose `_id` isn't a real
+    ObjectId. Every derived document's `_id` must be Mongo-assigned."""
+    from bson import ObjectId
+
+    store = DerivedStore(mongomock.MongoClient())
+    store.put(KIND_RECORD, "EUW1_1", {"cs": 188})
+    doc = store._derived.find_one({"kind": KIND_RECORD, "key": "EUW1_1"})
+    assert isinstance(doc["_id"], ObjectId)
+
+
 def test_miss_returns_none(store: DerivedStore) -> None:
     assert store.get(KIND_RECORD, "nope") is None
 
@@ -70,11 +81,11 @@ def test_put_overwrite_does_not_touch_created_at(store: DerivedStore) -> None:
     `created_at` -- only a Mongo port with `$setOnInsert` (not a naive
     `replace_one`) preserves this."""
     store.put(KIND_RECORD, "a", {"v": 1})
-    doc_id = DerivedStore._doc_id(KIND_RECORD, "a", code_version(KIND_RECORD))
-    first_created_at = store._derived.find_one({"_id": doc_id})["created_at"]
+    query = {"kind": KIND_RECORD, "key": "a", "code_version": code_version(KIND_RECORD)}
+    first_created_at = store._derived.find_one(query)["created_at"]
 
     store.put(KIND_RECORD, "a", {"v": 2})
-    second_created_at = store._derived.find_one({"_id": doc_id})["created_at"]
+    second_created_at = store._derived.find_one(query)["created_at"]
 
     assert second_created_at == first_created_at
 
@@ -113,7 +124,6 @@ def test_delete_spans_every_code_version(store: DerivedStore) -> None:
     just the currently active one."""
     store._derived.insert_one(
         {
-            "_id": DerivedStore._doc_id(KIND_RECORD, "a", "old-version"),
             "kind": KIND_RECORD,
             "key": "a",
             "code_version": "old-version",

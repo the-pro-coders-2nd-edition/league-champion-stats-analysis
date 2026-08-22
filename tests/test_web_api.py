@@ -1415,3 +1415,15 @@ def test_activity_events_pushes_on_a_newly_submitted_job(
             assert any(item["slug"] == "new_euw" for item in second["items"])
 
     _run_app_scenario(app, scenario)
+
+
+def test_objectid_is_json_serializable_via_fastapi_encoders() -> None:
+    """Defensive: any future route that accidentally forwards a raw Mongo
+    document (containing a real ObjectId `_id`, post-migration) must not
+    500 on JSON serialization. FastAPI's jsonable_encoder has no built-in
+    support for ObjectId; app.py must register one explicitly."""
+    from bson import ObjectId
+    from fastapi.encoders import jsonable_encoder
+
+    encoded = jsonable_encoder({"_id": ObjectId(), "name": "test"})
+    assert isinstance(encoded["_id"], str)
