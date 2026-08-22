@@ -329,6 +329,29 @@ def refresh_match_sample_coverage(peer_store: PeerSampleStore) -> dict[str, int]
     return counts
 
 
+def log_champion_coverage(peer_store: PeerSampleStore) -> dict[tuple[str, str], int]:
+    """Log verified peer-game coverage per (champion, role) for Grafana's Loki side.
+
+    Champion+role is the per-key granularity Brice actually wants ("games per
+    champion"), but champion has no fixed enum (~170 Data Dragon values and
+    growing every patch), so it can't be a Prometheus label -- see
+    `PeerSampleStore.count_by_champion_role`'s docstring and
+    `PEERS_MATCH_SAMPLE_COVERAGE_GAMES`'s tier-only rationale above. This
+    mirrors how `analysis.peer.scheduler` surfaces its own high-cardinality
+    (platform, tier, champion, role, patch) queue keys: a structured log
+    line per key, read via a Grafana Loki panel
+    (`deploy/grafana/dashboards/peers.json`), not a metric label.
+
+    Only keys with at least one verified row are logged -- there is no fixed
+    universe of (champion, role) pairs to log an explicit zero for, unlike
+    `refresh_match_sample_coverage`'s `VALID_TIERS` loop.
+    """
+    counts = peer_store.count_by_champion_role()
+    for (champion, role), games in counts.items():
+        log.info("peer_sample_champion_coverage champion=%s role=%s games=%d", champion, role, games)
+    return counts
+
+
 def start_match_sample_coverage_refresher(
     peer_store: PeerSampleStore, interval_s: float = _COVERAGE_REFRESH_INTERVAL_S
 ) -> threading.Thread:
@@ -337,7 +360,9 @@ def start_match_sample_coverage_refresher(
     Coverage is a slowly-changing signal (verified peer-game rows accumulate
     over hours/days), so a 5-minute default is more than fresh enough --
     deliberately not computed per-request, since `count_by_tier`'s
-    aggregation is a full-collection scan-and-group.
+    aggregation is a full-collection scan-and-group. The same cadence also
+    drives `log_champion_coverage`'s per-(champion, role) log lines, so both
+    signals stay in sync.
     """
 
     def _loop() -> None:
@@ -348,6 +373,10 @@ def start_match_sample_coverage_refresher(
                 # crash the process; the gauge simply keeps its last-known
                 # values until the next successful cycle.
                 log.exception("Failed to refresh peers_match_sample_coverage_games")
+            try:
+                log_champion_coverage(peer_store)
+            except Exception:  # noqa: BLE001 -- same rationale as above.
+                log.exception("Failed to log peer_sample_champion_coverage")
             time.sleep(interval_s)
 
     thread = threading.Thread(target=_loop, name="peers-coverage-refresher", daemon=True)
