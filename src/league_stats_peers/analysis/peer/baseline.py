@@ -157,6 +157,21 @@ def _get_default_scheduler() -> SamplingScheduler:
         )
     return _default_scheduler
 
+
+def configure_scheduler_idle_hook(on_idle: "Callable[[], None] | None") -> None:
+    """Wire (or clear) `on_idle` on the process-wide default `SamplingScheduler`.
+
+    RFC "PEERS priority scheduling...", §3.3/§4: `PeersServicer.__init__`
+    uses this to attach its idle-time coordinator (pre-warm + patch-
+    changeover checks) to whichever scheduler `resolve_peer_baseline`
+    actually uses by default. Goes through `_get_default_scheduler` (built
+    lazily, on first use) rather than `PeersServicer` owning its own
+    scheduler instance -- it doesn't; the scheduler is this module's
+    process-wide singleton -- so wiring order (servicer constructed before
+    vs. after the first live-sampling call) doesn't matter either way.
+    """
+    _get_default_scheduler().set_on_idle(on_idle)
+
 # Resolution mix visibility: which rung of the fallback ladder (0/1/3/4/5 all
 # local reads, cost-equivalent; 2 is live Riot sampling -- see `source` on
 # PEERS_BASELINE_RESOLUTION_DURATION for that timing-relevant split instead)

@@ -395,5 +395,8 @@ class CombinedMatchAndPeerStore:
     def set_puuid_rank(self, puuid: str, tier: str, rank: str) -> int:
         return self._peers.set_puuid_rank(puuid, tier, rank)
 
+    def count_by_tier(self) -> dict[str, int]:
+        return self._peers.count_by_tier()
+
     def close(self) -> None:
         """No-op, matching `RawMatchStore.close()`'s shared-client contract."""

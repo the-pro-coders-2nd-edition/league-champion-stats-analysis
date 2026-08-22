@@ -49,6 +49,39 @@ MATCH_IDS_PER_PLAYER: Final[int] = 30
 TaskKey = tuple[str, str, str, str, str]  # (platform, tier, champion, role, patch)
 
 
+def _download_and_share(
+    client: RiotApiClient,
+    store: Any,
+    match_id: str,
+    puuid: str,
+    *,
+    patch: str,
+    exclude_puuid: str | None,
+    match_sample_store: Any | None,
+) -> dict[str, Any] | None:
+    """Download (or read cached) one match, populate the shared cross-champion
+    cache, and return the raw match doc -- or None on a fetch failure.
+
+    Shared by `SamplingTask.run_batch` and `WarmupTask.run_batch` (RFC "PEERS
+    priority scheduling...", §3): both need exactly this -- download, ingest
+    into `peer_games` via `_load_or_fetch_match`'s own `ingest_match` call,
+    populate `peer_match_samples` -- regardless of whether the caller is
+    targeting one champion+role or none at all.
+    """
+    match = _load_or_fetch_match(client, store, match_id, puuid)
+    if match is None:
+        return None
+    if match_sample_store is not None:
+        all_rows = extract_all_champion_role_rows(match, exclude_puuid=exclude_puuid or "")
+        if all_rows:
+            try:
+                match_sample_store.upsert_rows(match_id, patch, client.platform, all_rows)
+            except Exception as exc:  # noqa: BLE001 -- see run_batch's own matching comment:
+                # a failed shared-cache write must never break the caller's own sample.
+                get_logger("sampling_task").warning("Shared match cache write failed: %s", exc)
+    return match
+
+
 @dataclass
 class SamplingTask:
     """Accumulated state for one live-sampling scan, advanced one batch at a time.
@@ -270,29 +303,19 @@ class SamplingTask:
                     continue
                 self.seen_matches.add(match_id)
 
-                match = _load_or_fetch_match(self.client, self.store, match_id, puuid)
+                match = _download_and_share(
+                    self.client,
+                    self.store,
+                    match_id,
+                    puuid,
+                    patch=self.patch,
+                    exclude_puuid=self.exclude_puuid,
+                    match_sample_store=self.match_sample_store,
+                )
                 if match is None:
                     continue
                 self.downloads += 1
                 batch_downloads += 1
-
-                # Phase 2 (RFC §5.2): every downloaded match pays for itself
-                # once -- extract rows for ALL champion+role pairs present,
-                # not just this task's own target, and share them.
-                if self.match_sample_store is not None:
-                    all_rows = extract_all_champion_role_rows(
-                        match, exclude_puuid=self.exclude_puuid or ""
-                    )
-                    if all_rows:
-                        try:
-                            self.match_sample_store.upsert_rows(
-                                match_id, self.patch, self.client.platform, all_rows
-                            )
-                        except Exception as exc:  # noqa: BLE001 -- best-effort,
-                            # mirrors `write_live_cache`'s fail-soft convention:
-                            # a failed shared-cache write must never break this
-                            # task's own live sample.
-                            log.warning("Shared match cache write failed: %s", exc)
 
                 if not _match_has_build(match, self.champion, self.role):
                     continue

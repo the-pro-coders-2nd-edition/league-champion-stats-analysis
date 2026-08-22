@@ -90,6 +90,7 @@ class SamplingScheduler:
         num_workers: int = 4,
         on_interim: "Callable[[SamplingTask], None] | None" = None,
         on_finalize: "Callable[[SamplingTask, str], None] | None" = None,
+        on_idle: "Callable[[], None] | None" = None,
     ) -> None:
         self._lock = threading.RLock()
         self._explicit_queue: "deque[SamplingTask]" = deque()
@@ -100,6 +101,11 @@ class SamplingScheduler:
         self._num_workers = num_workers
         self._on_interim = on_interim
         self._on_finalize = on_finalize
+        # RFC "PEERS priority scheduling...", §3.3/§4: called once per empty
+        # `step()` (i.e. every idle poll of `_worker_loop`) -- deliberately
+        # not rate-limited here (see `set_on_idle`'s docstring for why that's
+        # the caller's job, not this class's).
+        self._on_idle = on_idle
         self._threads: list[threading.Thread] = []
         self._stopped = False
         self._log = get_logger("peer_sampling_scheduler")
@@ -195,6 +201,22 @@ class SamplingScheduler:
     def is_active(self, key: TaskKey) -> bool:
         with self._lock:
             return key in self._tasks
+
+    def set_on_idle(self, on_idle: "Callable[[], None] | None") -> None:
+        """(Re-)wire the idle-time hook after construction.
+
+        `_get_default_scheduler` (`analysis.peer.baseline`) builds the
+        process-wide scheduler lazily, on first use, before `PeersServicer`
+        has a chance to hand it a pre-warm/patch-changeover coordinator --
+        this lets `PeersServicer.__init__` wire the hook in regardless of
+        which one happens first. Deliberately not rate-limited by
+        `SamplingScheduler` itself: `on_idle` fires on every empty `step()`
+        (as often as every `_IDLE_POLL_INTERVAL_S`), so a callback that wants
+        to do real work (a Mongo query, a Riot API call) must rate-limit
+        itself -- see `service.py`'s `_IdleCoordinator`.
+        """
+        with self._lock:
+            self._on_idle = on_idle
 
     # -- batch execution ------------------------------------------------------
 
@@ -350,6 +372,13 @@ class SamplingScheduler:
     def _worker_loop(self) -> None:
         while not self._stopped:
             if not self.step():
+                if self._on_idle is not None:
+                    try:
+                        self._on_idle()
+                    except Exception:  # noqa: BLE001 -- a broken idle hook must
+                        # never take down a batch-worker thread -- see
+                        # `_run_one_batch`'s matching on_interim/on_finalize guards.
+                        self._log.exception("on_idle hook failed")
                 time.sleep(_IDLE_POLL_INTERVAL_S)
 
     def stop(self) -> None:

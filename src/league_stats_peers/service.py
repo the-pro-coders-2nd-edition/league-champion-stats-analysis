@@ -218,6 +218,8 @@ from prometheus_client import Counter, Gauge, Histogram
 from league_stats_peers.analysis.peer.baseline import (
     PeerBaseline,
     _baseline_from_snapshot,
+    _get_default_scheduler,
+    configure_scheduler_idle_hook,
     register_progressive_listener,
     resolve_peer_baseline,
     task_key_for,
@@ -225,9 +227,16 @@ from league_stats_peers.analysis.peer.baseline import (
 from league_stats_peers.analysis.peer.benchmark_cache import read_live_cache
 from league_stats_peers.analysis.peer.benchmark_fetcher import BenchmarkSnapshot
 from league_stats_peers.analysis.peer.benchmarks import VALID_TIERS
+from league_stats_peers.analysis.peer.scheduler import SamplingScheduler
+from league_stats_peers.analysis.peer.warmup_task import (
+    PREWARM_CHAMPION_SENTINEL,
+    PREWARM_ROLE_SENTINEL,
+    WarmupTask,
+)
 from league_stats_common.core.config import AppConfig, PLATFORM_TO_REGION, REGION_DEFAULT_PLATFORM, VALID_PLATFORMS
 from league_stats_common.core.models import RankedEntry
 from league_stats_common.infra.cache import HttpCache
+from league_stats_common.infra.ddragon_assets import DDRAGON_BASE
 from league_stats_common.infra.mongo import db_name_from_uri as _db_name_from_uri
 from league_stats_peers.infra.peer_match_sample_store import PeerMatchSampleStore
 from league_stats_peers.infra.peer_sample_store import PeerSampleStore
@@ -392,6 +401,212 @@ def start_match_sample_coverage_refresher(
     return thread
 
 
+# RFC "PEERS priority scheduling, continued sampling, pre-warm, and patch
+# cleanup" §3/§4: idle-capacity pre-warm + automatic patch-changeover
+# cleanup, both piggybacking on SamplingScheduler's own idle-poll signal
+# (`on_idle`, see scheduler.py) instead of a standalone timer thread.
+#
+# Deliberately OFF by default (opt-in via this env var), not on by
+# construction: `PeersServicer.__init__` is exercised by a very large number
+# of existing unit tests, many of which already call `SamplingScheduler.start()`
+# indirectly (via a level-2 live-sampling path) with fake/mock Riot clients
+# and stores that were never built to support this hook's real work -- a
+# background WarmupTask silently erroring against a MagicMock is harmless
+# (the scheduler's own per-batch exception guard catches it), but
+# `check_and_apply_patch_changeover`'s outbound Data Dragon HTTP call is not:
+# unconditionally wiring it in would make ordinary test runs make real
+# network calls from background daemon threads, which is slow, flaky under a
+# sandboxed/offline CI runner, and not something any of those tests asked
+# for. Production enables it via `PEERS_ENABLE_PREWARM=true` (see
+# docker-compose.yml / the deploy runbook).
+PEERS_ENABLE_PREWARM_COORDINATOR: bool = (
+    os.environ.get("PEERS_ENABLE_PREWARM", "false").strip().lower() == "true"
+)
+PEERS_PREWARM_TARGET_GAMES_PER_TIER: int = 20_000
+PEERS_PREWARM_TIERS: tuple[str, ...] = ("GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER")
+# How often the idle hook actually does real work -- it's invoked on every
+# empty `SamplingScheduler.step()` (as often as every `_IDLE_POLL_INTERVAL_S`
+# = 0.05s), far too often to run a Mongo aggregate or an HTTP call on every
+# firing. Pre-warm is cheap (one `count_by_tier()` aggregate) and benefits
+# from a short interval so idle capacity gets used promptly; the patch/
+# Data-Dragon check is a real outbound HTTP call and patches ship roughly
+# every two weeks, so a coarse interval costs nothing in responsiveness.
+_PREWARM_TICK_INTERVAL_S: float = 5.0
+_PATCH_REFRESH_INTERVAL_S: float = 300.0
+
+
+def prewarm_tick(
+    scheduler: SamplingScheduler,
+    store: Any,
+    client_factory: "Callable[[str], Any]",
+    patch: str,
+    tier_cursor: list[int],
+    platform: str,
+) -> None:
+    """Enqueue one tier's `WarmupTask` if it's not already warm, advancing the
+    round-robin cursor by one tier per call regardless of outcome (so a
+    permanently-skipped tier doesn't starve the rest of the ring).
+
+    `tier_cursor` is a single-element list, not a plain int, so the caller
+    (`_IdleCoordinator`) can hold a persistent, mutable rotation position
+    across calls without this function needing to be a method/closure itself
+    -- keeps it a plain, easily-unit-testable function.
+    """
+    coverage = store.count_by_tier()
+    tier = PEERS_PREWARM_TIERS[tier_cursor[0] % len(PEERS_PREWARM_TIERS)]
+    tier_cursor[0] += 1
+    if coverage.get(tier, 0) >= PEERS_PREWARM_TARGET_GAMES_PER_TIER:
+        return
+    key = (platform, tier, PREWARM_CHAMPION_SENTINEL, PREWARM_ROLE_SENTINEL, patch)
+    if scheduler.is_active(key):
+        return
+    client = client_factory(platform)
+    scheduler.get_or_create(
+        key,
+        lambda: WarmupTask(
+            key=key, client=client, store=store, tier=tier, patch=patch,
+            target_games=PEERS_PREWARM_TARGET_GAMES_PER_TIER,
+        ),
+        priority="background",
+    )
+
+
+def _normalize_patch(version: str) -> str:
+    """Truncate a Data Dragon version (e.g. '14.3.1') to major.minor, matching
+    the patch format stored on peer_games rows (parser.py's own
+    `".".join(version.split(".")[:2])` truncation)."""
+    return ".".join(version.split(".")[:2])
+
+
+def _current_ddragon_patch() -> str:
+    """Fetch Data Dragon's current version, truncated to major.minor.
+
+    A lightweight, standalone HTTP call -- deliberately not routed through
+    `DDragonAssets` (that class manages a whole icon-cache directory PEERS
+    has no reason to touch); reuses the same `{DDRAGON_BASE}/api/versions.json`
+    endpoint `DDragonAssets._fetch_latest_version` already calls.
+    """
+    response = requests.get(f"{DDRAGON_BASE}/api/versions.json", timeout=15)
+    response.raise_for_status()
+    return _normalize_patch(str(response.json()[0]))
+
+
+def check_and_apply_patch_changeover(peer_store: Any) -> bool:
+    """Drop peer_games/peer_match_samples/live_benchmark_cache if the current
+    patch no longer matches the last-stored peer_games row's patch.
+
+    Returns True if a drop happened. Fail-soft on a Data-Dragon fetch error
+    (network blip) -- a missed check just means the drop happens on the next
+    periodic call instead, not a crash of the idle-time coordinator loop.
+
+    Deviates slightly from earlier drafts of this check: takes only
+    `peer_store`, not a separate `mongo_client`/`db_name` pair -- `PeerSampleStore`
+    already owns a `pymongo`/`mongomock` collection handle
+    (`peer_store._peer_games`), and every `pymongo`/`mongomock` `Collection`
+    exposes its parent `Database` via `.database`, so the three collections
+    to drop can be reached from that one handle without PEERS having to also
+    thread a raw Mongo client/db-name pair through every caller just for this.
+    """
+    try:
+        current = _current_ddragon_patch()
+    except Exception as exc:  # noqa: BLE001 -- fail-soft, see docstring
+        log.warning("Could not resolve current Data Dragon patch: %s", exc)
+        return False
+
+    last_doc = peer_store._peer_games.find_one(
+        {}, {"patch": 1}, sort=[("ingested_at", -1)]
+    )
+    last_patch = str(last_doc.get("patch", "")) if last_doc else ""
+    if not last_patch or last_patch == current:
+        return False
+
+    log.info("Patch changeover detected: %s -> %s, dropping peer collections", last_patch, current)
+    db = peer_store._peer_games.database
+    for name in ("peer_games", "peer_match_samples", "live_benchmark_cache"):
+        db.drop_collection(name)
+    return True
+
+
+class _IdleCoordinator:
+    """Rate-limited idle-time hook wired into `SamplingScheduler.set_on_idle`.
+
+    Owns both `prewarm_tick`'s round-robin cursor and the patch-changeover
+    check's cadence (RFC §3.3/§4: "one small background loop can own both
+    checks"). `on_idle` fires on every empty `step()` call -- as often as
+    every `_IDLE_POLL_INTERVAL_S` (0.05s) -- so everything here is
+    self-rate-limited by wall-clock timestamps; the scheduler itself applies
+    no rate limiting of its own (see `SamplingScheduler.set_on_idle`).
+
+    "Current patch" for `prewarm_tick` is resolved from Data Dragon (the same
+    source `check_and_apply_patch_changeover` already uses) rather than from
+    `peer_store`'s own most-recently-ingested row: the latter would be empty
+    or stale immediately after a patch-changeover drop (there is nothing to
+    read until pre-warm/real traffic re-populates it), creating a circular
+    dependency for the very thing pre-warm is trying to bootstrap. Cached
+    for `_PATCH_REFRESH_INTERVAL_S` between refreshes so `prewarm_tick`'s own
+    (much shorter) cadence doesn't also refetch it on every tick.
+    """
+
+    def __init__(
+        self,
+        *,
+        scheduler: SamplingScheduler,
+        peer_store: Any,
+        riot_client_for: "Callable[[str], Any]",
+        default_platform: str,
+    ) -> None:
+        self._scheduler = scheduler
+        self._peer_store = peer_store
+        self._riot_client_for = riot_client_for
+        self._default_platform = default_platform
+        self._tier_cursor = [0]
+        self._lock = threading.Lock()
+        self._last_prewarm_tick = 0.0
+        self._last_patch_refresh = 0.0
+        self._current_patch = ""
+
+    def __call__(self) -> None:
+        now = time.monotonic()
+        with self._lock:
+            do_patch_refresh = now - self._last_patch_refresh >= _PATCH_REFRESH_INTERVAL_S
+            if do_patch_refresh:
+                self._last_patch_refresh = now
+            do_prewarm = now - self._last_prewarm_tick >= _PREWARM_TICK_INTERVAL_S
+            if do_prewarm:
+                self._last_prewarm_tick = now
+            current_patch = self._current_patch
+
+        if do_patch_refresh:
+            current_patch = self._refresh_patch_and_check_changeover()
+
+        if do_prewarm and current_patch:
+            prewarm_tick(
+                self._scheduler,
+                self._peer_store,
+                self._riot_client_for,
+                current_patch,
+                self._tier_cursor,
+                self._default_platform,
+            )
+
+    def _refresh_patch_and_check_changeover(self) -> str:
+        try:
+            current = _current_ddragon_patch()
+        except Exception as exc:  # noqa: BLE001 -- fail-soft; keep the
+            # previously-cached patch (if any) rather than blocking pre-warm
+            # entirely on a transient Data Dragon outage.
+            log.warning("Idle coordinator could not resolve current Data Dragon patch: %s", exc)
+            with self._lock:
+                return self._current_patch
+        with self._lock:
+            self._current_patch = current
+        try:
+            check_and_apply_patch_changeover(self._peer_store)
+        except Exception:  # noqa: BLE001 -- must never take down a batch-worker thread.
+            log.exception("check_and_apply_patch_changeover failed")
+        return current
+
+
 class _PeerStoreAdapter:
     """`MatchStore`-shaped adapter around `PeerSampleStore` for `resolve_peer_baseline`.
 
@@ -421,6 +636,12 @@ class _PeerStoreAdapter:
 
     def set_puuid_rank(self, puuid: str, tier: str, rank: str) -> int:
         return self._store.set_puuid_rank(puuid, tier, rank)
+
+    def count_by_tier(self) -> dict[str, int]:
+        """Delegates to `PeerSampleStore.count_by_tier` -- `WarmupTask`'s own
+        "how close is this tier to its pre-warm target" check (RFC "PEERS
+        priority scheduling...", §3)."""
+        return self._store.count_by_tier()
 
     def iter_match_ids(self, puuid: str) -> Iterator[str]:
         """No-op: PEERS keeps no per-player raw match history (see module docstring)."""
@@ -683,6 +904,25 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         # (reliably reproduced under pytest-xdist's parallel workers, rare but
         # possible in production under load too).
         self._inflight_lock = threading.RLock()
+
+        # RFC "PEERS priority scheduling...", §3/§4: wire the idle-time
+        # pre-warm + patch-changeover coordinator onto whichever
+        # SamplingScheduler `resolve_peer_baseline` actually uses by default
+        # -- see `configure_scheduler_idle_hook`'s docstring for why this
+        # goes through that seam rather than PeersServicer owning its own
+        # scheduler instance (it doesn't; the scheduler is a process-wide
+        # singleton lazily built inside `analysis.peer.baseline`). Gated by
+        # `PEERS_ENABLE_PREWARM_COORDINATOR` -- see that flag's own docstring
+        # for why this is opt-in, not on by default.
+        self._idle_coordinator: "_IdleCoordinator | None" = None
+        if PEERS_ENABLE_PREWARM_COORDINATOR:
+            self._idle_coordinator = _IdleCoordinator(
+                scheduler=_get_default_scheduler(),
+                peer_store=self._peer_store,
+                riot_client_for=self._riot_client_for,
+                default_platform=self._default_platform,
+            )
+            configure_scheduler_idle_hook(self._idle_coordinator)
 
     @property
     def peer_store(self) -> PeerSampleStore:
