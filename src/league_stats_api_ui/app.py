@@ -30,6 +30,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
 
+import grpc
 import pymongo
 from bson import ObjectId
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -59,11 +60,13 @@ from league_stats_common.core.config import (
     load_config,
     load_web_config,
 )
+from league_stats_common.core.models import PeerComparisonResult
 from league_stats_common.infra.cache import HttpCache
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_common.infra.mongo import db_name_from_uri
 from league_stats_common.infra.report_store import open_report_store
 from league_stats_common.infra.riot_api import RiotApiClient, RiotApiError, shared_rate_limiter
+from league_stats_common.infra.trace_context import TraceClientInterceptor
 from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.bundles import _overall_score_verdict
 from league_stats_runner.pipeline.fetch import group_records, load_all_records, resolve_player_contexts
@@ -71,7 +74,9 @@ from league_stats_runner.pipeline.orchestrator import (
     _account_icon_hrefs,
     account_view_key,
     build_account_subset_views,
+    patch_report_peer_comparison,
 )
+from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
 from league_stats_runner.pipeline.services import Services
 from league_stats_runner.presentation.brand_assets import (
     APP_TITLE,
@@ -1045,6 +1050,90 @@ def _route_template_for(request: Request) -> str:
     return request.url.path
 
 
+# Lazy peer-comparison refresh on report read (design "peers-scheduling-and-
+# cleanup" RFC, lazy-refresh section). `_PEEK_RATE_LIMIT_S` is a per-build
+# rate limit on top of the fallback_level gate below, so a popular report
+# that gets viewed/polled frequently doesn't fire a `PeekBaseline` RPC on
+# every single read -- a plain in-process dict is enough since this doesn't
+# need to survive a restart or be shared across api-ui replicas.
+_PEEK_TIMEOUT_S = 5.0
+_PEEK_RATE_LIMIT_S = 90.0
+_last_peek_at: dict[tuple[str, str], float] = {}
+
+
+def _peers_stub() -> "peers_pb2_grpc.PeersServiceStub":
+    """Build a PEERS gRPC client, mirroring `worker.py`'s own
+    `_build_peer_for_pool_via_grpc` channel-construction pattern. Defined at
+    module level (not nested in `create_app`) so it stays a single, cheap,
+    monkeypatchable seam for tests -- `WebConfig` itself only exists inside
+    `create_app`'s closure, so this reads the same `PEERS_GRPC_TARGET` env
+    var it resolves from directly, with the same default.
+    """
+    target = os.environ.get("PEERS_GRPC_TARGET", "localhost:50053")
+    channel = grpc.intercept_channel(grpc.insecure_channel(target), TraceClientInterceptor())
+    return peers_pb2_grpc.PeersServiceStub(channel)
+
+
+def _maybe_refresh_peer_comparison(
+    player_slug: str, build_slug: str, report: dict[str, Any]
+) -> dict[str, Any]:
+    """Check PEERS for a better peer-comparison snapshot and patch in place if
+    one exists, before returning the (possibly updated) report.
+
+    Skipped entirely when `fallback_level < 2`: levels 0/1 come from the
+    persistent `peer_games` store, not from a `SamplingTask`/live cache at
+    all -- there is no `TaskKey`/live-cache entry to peek for those, ever, so
+    calling `PeekBaseline` for them would just be a wasted RPC every read.
+    Also rate-limited per (player_slug, build_slug) to `_PEEK_RATE_LIMIT_S`,
+    to avoid an RPC storm on a popular report that gets viewed/polled
+    frequently. See design "peers-scheduling-and-cleanup" RFC's lazy-refresh
+    section.
+    """
+    peer = report.get("peer_comparison")
+    if not isinstance(peer, dict):
+        return report
+    if int(peer.get("fallback_level", 0)) < 2:
+        return report
+
+    key = (player_slug, build_slug)
+    now = time.monotonic()
+    last_peek = _last_peek_at.get(key)
+    if last_peek is not None and now - last_peek < _PEEK_RATE_LIMIT_S:
+        return report
+    _last_peek_at[key] = now
+
+    champion = str(peer.get("champion", ""))
+    role = str(peer.get("role", ""))
+    platform = str(peer.get("platform", ""))
+    patch = str(peer.get("patch", ""))
+    tier = str(peer.get("tier", ""))
+    if not (champion and role and platform and tier):
+        return report
+    try:
+        response = _peers_stub().PeekBaseline(
+            peers_pb2.PeekBaselineRequest(
+                champion=champion, lane=role, rank=tier, platform=platform, patch=patch,
+            ),
+            timeout=_PEEK_TIMEOUT_S,
+        )
+    except grpc.RpcError:
+        return report
+    if not response.found:
+        return report
+    try:
+        parsed = json.loads(response.baseline_json)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return report
+    if int(parsed.get("peer_games", 0)) <= int(peer.get("peer_games", 0)):
+        return report
+    updated = PeerComparisonResult.model_validate(parsed)
+    if not patch_report_peer_comparison(player_slug, build_slug, updated):
+        return report
+    with open_report_store() as store:
+        refreshed = store.get_report(player_slug, build_slug)
+    return refreshed if refreshed is not None else report
+
+
 def create_app(
     web_config: WebConfig | None = None, *, start_worker: bool = True
 ) -> FastAPI:
@@ -1563,6 +1652,7 @@ def create_app(
             payload = report_store.get_report(slug, build_slug)
         if payload is None:
             raise HTTPException(status_code=404, detail="Unknown build")
+        payload = _maybe_refresh_peer_comparison(slug, build_slug, payload)
         return prepare_web_report_payload(payload)
 
     def _resolve_build_filter(
