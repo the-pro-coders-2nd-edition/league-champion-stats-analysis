@@ -66,6 +66,8 @@ class RawMatchStore:
         db = client[db_name]
         self._matches = db["matches"]
         self._timelines = db["timelines"]
+        self._matches.create_index("match_id", unique=True)
+        self._timelines.create_index("match_id", unique=True)
 
     def has_match(self, match_id: str) -> bool:
         """Whether both the match and its timeline have been saved.
@@ -77,9 +79,9 @@ class RawMatchStore:
             ``True`` when the match never needs to be downloaded again,
             i.e. both its match document and its timeline are stored.
         """
-        if self._matches.find_one({"_id": match_id}, {"_id": 1}) is None:
+        if self._matches.find_one({"match_id": match_id}, {"_id": 1}) is None:
             return False
-        return self._timelines.find_one({"_id": match_id}, {"_id": 1}) is not None
+        return self._timelines.find_one({"match_id": match_id}, {"_id": 1}) is not None
 
     def save_match(self, match_id: str, puuid: str, match: dict[str, Any]) -> None:
         """Persist a raw match document and associate it with ``puuid``.
@@ -92,7 +94,7 @@ class RawMatchStore:
             match: Raw match-v5 JSON document.
         """
         self._matches.update_one(
-            {"_id": match_id},
+            {"match_id": match_id},
             {"$set": {"payload": match}, "$addToSet": {"owners": puuid}},
             upsert=True,
         )
@@ -105,7 +107,7 @@ class RawMatchStore:
             timeline: Raw match-v5 timeline JSON document.
         """
         self._timelines.update_one(
-            {"_id": match_id},
+            {"match_id": match_id},
             {"$set": {"payload": timeline}},
             upsert=True,
         )
@@ -119,7 +121,7 @@ class RawMatchStore:
         Returns:
             The raw match JSON, or ``None`` if absent.
         """
-        doc = self._matches.find_one({"_id": match_id}, {"payload": 1})
+        doc = self._matches.find_one({"match_id": match_id}, {"payload": 1})
         return doc["payload"] if doc else None
 
     def load_timeline(self, match_id: str) -> dict[str, Any] | None:
@@ -131,7 +133,7 @@ class RawMatchStore:
         Returns:
             The raw timeline JSON, or ``None`` if absent.
         """
-        doc = self._timelines.find_one({"_id": match_id}, {"payload": 1})
+        doc = self._timelines.find_one({"match_id": match_id}, {"payload": 1})
         return doc["payload"] if doc else None
 
     def claim_ownership(self, puuid: str, match_ids: list[str]) -> list[str]:
@@ -157,7 +159,7 @@ class RawMatchStore:
             if not self.has_match(match_id):
                 continue
             result = self._matches.update_one(
-                {"_id": match_id}, {"$addToSet": {"owners": puuid}}
+                {"match_id": match_id}, {"$addToSet": {"owners": puuid}}
             )
             if result.modified_count:
                 claimed.append(match_id)
@@ -169,8 +171,8 @@ class RawMatchStore:
         Yields:
             All match ids in the store.
         """
-        for doc in self._matches.find({}, {"_id": 1}):
-            yield doc["_id"]
+        for doc in self._matches.find({}, {"match_id": 1}):
+            yield doc["match_id"]
 
     def count(self) -> int:
         """Number of fully stored matches (match + timeline).
@@ -178,8 +180,8 @@ class RawMatchStore:
         Returns:
             The count of matches with both documents present.
         """
-        match_ids = {doc["_id"] for doc in self._matches.find({}, {"_id": 1})}
-        timeline_ids = {doc["_id"] for doc in self._timelines.find({}, {"_id": 1})}
+        match_ids = {doc["match_id"] for doc in self._matches.find({}, {"match_id": 1})}
+        timeline_ids = {doc["match_id"] for doc in self._timelines.find({}, {"match_id": 1})}
         return len(match_ids & timeline_ids)
 
     def iter_match_ids(self, puuid: str) -> Iterator[str]:
@@ -197,8 +199,8 @@ class RawMatchStore:
         Yields:
             Match ids owned by that player.
         """
-        for doc in self._matches.find({"owners": puuid}, {"_id": 1}):
-            yield doc["_id"]
+        for doc in self._matches.find({"owners": puuid}, {"match_id": 1}):
+            yield doc["match_id"]
 
     def close(self) -> None:
         """No-op: this store never owns its ``pymongo.MongoClient``.

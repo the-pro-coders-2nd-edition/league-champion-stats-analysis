@@ -14,6 +14,17 @@ def store():
     return RawMatchStore(client, db_name="league_stats_test")
 
 
+def test_raw_match_id_is_a_real_objectid(store):
+    from bson import ObjectId
+
+    store.save_match("EUW1_1", "puuid-a", {"payload": "data"})
+    store.save_timeline("EUW1_1", {"frames": []})
+    match_doc = store._matches.find_one({"match_id": "EUW1_1"})
+    timeline_doc = store._timelines.find_one({"match_id": "EUW1_1"})
+    assert isinstance(match_doc["_id"], ObjectId)
+    assert isinstance(timeline_doc["_id"], ObjectId)
+
+
 def test_has_match_false_when_absent(store):
     assert store.has_match("EUW1_1") is False
 
