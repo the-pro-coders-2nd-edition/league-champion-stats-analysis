@@ -46,6 +46,14 @@ export async function fetchAccountViews(slug, buildSlug, accounts) {
   return rewriteWebAssetHrefs(await response.json());
 }
 
+export async function fetchViewSlice(slug, buildSlug, queueKey, windowKey) {
+  const response = await request(
+    `/api/players/${slug}/builds/${buildSlug}/report-views/${queueKey}/${windowKey}`
+  );
+  if (!response.ok) throw new Error(`Failed to load view: ${response.status}`);
+  return rewriteWebAssetHrefs(await response.json());
+}
+
 function detailMessage(body, fallback) {
   let detail = body.detail;
   if (Array.isArray(detail)) {

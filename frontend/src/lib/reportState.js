@@ -110,36 +110,22 @@ export function resolveWindowKey(queueView, windowKey) {
   return queueView ? queueView.default_window : windowKey;
 }
 
-const EMPTY_QUEUE_VIEW = { windows: {}, window_options: [], total_games: 0, default_window: null };
-
-export function buildEffectiveView(payload, source, queueKey, windowKey) {
-  const resolvedQueue = resolveQueueKey(source, queueKey);
-  const queueView = source.report_views[resolvedQueue] || EMPTY_QUEUE_VIEW;
-  const resolvedWindow = resolveWindowKey(queueView, windowKey);
-  const bundle = queueView.windows[resolvedWindow] || {};
-
-  const progressionView = source.progression_views[resolvedQueue];
-  const presetKey = progressionView && progressionView.default_preset;
-  const preset = progressionView && presetKey ? progressionView.presets[presetKey] : null;
-
-  return {
-    ...payload,
-    ...bundleFields(bundle),
-    ...progressionFields(preset),
-    game_review: source.game_review,
-    queue_filter_default: resolvedQueue,
-    game_window_default: resolvedWindow,
-    game_window_total: queueView.total_games,
-    game_window_options: queueView.window_options || [],
-  };
-}
+const EMPTY_QUEUE_VIEW = { windows: [], window_options: [], total_games: 0, default_window: null };
 
 /**
  * Shared reactive queue/window/account-filter state for one report payload.
  * `fetchAccountViews(accountKeys)` is called only for account subsets that
  * aren't already precomputed in `payload.account_filter.views`.
+ *
+ * The backend no longer sends every `report_views[queue].windows[window]`
+ * bundle up front -- only the default combination (flattened at the top
+ * level of `payload`, exactly as today) plus a scalar `report_views[queue]`
+ * manifest (`total_games`, `default_window`, `window_options`, `windows`: a
+ * list of window keys that exist, NOT the bundles). Non-default combinations
+ * are fetched via `fetchViewSlice` and cached, mirroring
+ * `accountViewsCache`/`selectAccountKey`.
  */
-export function createReportState(payload, { fetchAccountViews } = {}) {
+export function createReportState(payload, { fetchAccountViews, fetchViewSlice } = {}) {
   const baseSource = normalizeBaseSource(payload);
   const accountFilter = payload.account_filter || {};
 
@@ -155,22 +141,97 @@ export function createReportState(payload, { fetchAccountViews } = {}) {
   const accountLoading = writable(false);
   const accountError = writable('');
 
+  // The default (queue, window) combination for the CURRENT account source is
+  // already available without a fetch: it's flattened at the top level of
+  // `payload` (base source) or of the fetched account-views response (account
+  // source) -- see `bundleFields`'s callers below. Only a non-default
+  // combination needs `fetchViewSlice`.
+  const sliceCache = writable({});
+  const sliceLoading = writable(false);
+  const sliceError = writable('');
+
   const activeSource = derived(
     [accountKey, accountViewsCache],
     ([$accountKey, $cache]) => $cache[$accountKey] || $cache.all
   );
 
+  function defaultBundleFor(source, resolvedAccountKey) {
+    // The default combination's bundle is whatever was flattened into
+    // `payload` (base) or the account-views response (subset) -- both
+    // already went through `bundleFields`-shaped keys at the top level, so
+    // reconstructing here means reading those same top-level fields back
+    // out, not re-deriving them.
+    return resolvedAccountKey === (accountFilter.default_key || 'all')
+      ? payload
+      : get(accountViewsCache)[resolvedAccountKey] || payload;
+  }
+
   const view = derived(
-    [queue, gameWindow, activeSource],
-    ([$queue, $gameWindow, $source]) => buildEffectiveView(payload, $source, $queue, $gameWindow)
+    [queue, gameWindow, activeSource, sliceCache],
+    ([$queue, $gameWindow, $source, $slices]) => {
+      const resolvedQueue = resolveQueueKey($source, $queue);
+      const queueManifest = $source.report_views[resolvedQueue] || EMPTY_QUEUE_VIEW;
+      const resolvedWindow = resolveWindowKey(queueManifest, $gameWindow);
+      const resolvedAccountKey = get(accountKey);
+      const isDefaultCombo =
+        resolvedQueue === $source.queue_filter_default && resolvedWindow === queueManifest.default_window;
+      const cacheKey = `${resolvedAccountKey}|${resolvedQueue}|${resolvedWindow}`;
+      const bundle = isDefaultCombo
+        ? defaultBundleFor($source, resolvedAccountKey)
+        : $slices[cacheKey] || {};
+
+      const progressionView = $source.progression_views[resolvedQueue];
+      const presetKey = progressionView && progressionView.default_preset;
+      const preset = progressionView && presetKey ? progressionView.presets[presetKey] : null;
+
+      return {
+        ...payload,
+        ...bundleFields(bundle),
+        ...progressionFields(preset),
+        game_review: $source.game_review,
+        queue_filter_default: resolvedQueue,
+        game_window_default: resolvedWindow,
+        game_window_total: queueManifest.total_games,
+        game_window_options: queueManifest.window_options || [],
+      };
+    }
   );
 
-  function selectQueue(key) {
+  async function selectQueue(key) {
+    await ensureSliceLoaded(key, get(gameWindow));
     queue.set(key);
   }
 
-  function selectWindow(key) {
+  async function selectWindow(key) {
+    await ensureSliceLoaded(get(queue), key);
     gameWindow.set(key);
+  }
+
+  async function ensureSliceLoaded(queueKey, windowKey) {
+    const source = get(activeSource);
+    const resolvedQueue = resolveQueueKey(source, queueKey);
+    const queueManifest = source.report_views[resolvedQueue] || EMPTY_QUEUE_VIEW;
+    const resolvedWindow = resolveWindowKey(queueManifest, windowKey);
+    const isDefaultCombo =
+      resolvedQueue === source.queue_filter_default && resolvedWindow === queueManifest.default_window;
+    if (isDefaultCombo) return;
+    const resolvedAccountKey = get(accountKey);
+    const cacheKey = `${resolvedAccountKey}|${resolvedQueue}|${resolvedWindow}`;
+    if (get(sliceCache)[cacheKey]) return;
+    if (!fetchViewSlice) {
+      sliceError.set('This view is not available in this report.');
+      return;
+    }
+    sliceLoading.set(true);
+    sliceError.set('');
+    try {
+      const bundle = await fetchViewSlice(resolvedQueue, resolvedWindow);
+      sliceCache.update((cache) => ({ ...cache, [cacheKey]: bundle }));
+    } catch (err) {
+      sliceError.set('Could not load this view. Try again.');
+    } finally {
+      sliceLoading.set(false);
+    }
   }
 
   async function selectAccountKey(key) {
@@ -202,6 +263,8 @@ export function createReportState(payload, { fetchAccountViews } = {}) {
     accountViewsCache,
     accountLoading,
     accountError,
+    sliceLoading,
+    sliceError,
     activeSource,
     view,
     selectQueue,
