@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
@@ -41,19 +39,6 @@ class Exporter:
         self._log.debug("Wrote %s (%d rows)", path, len(frame))
         return path
 
-    def write_summary(self, summary: dict[str, Any]) -> Path:
-        """Write the aggregated summary as pretty-printed JSON.
-
-        Args:
-            summary: The nested summary dict.
-
-        Returns:
-            The written path.
-        """
-        path = self._dir / "summary.json"
-        path.write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
-        return path
-
     def write_recommendations(
         self, recommendations: list[Recommendation], *, build_label: str = "Viktor mid"
     ) -> Path:
@@ -76,16 +61,18 @@ class Exporter:
     def write_all(
         self,
         tables: dict[str, pd.DataFrame],
-        summary: dict[str, Any],
         recommendations: list[Recommendation],
         *,
         build_label: str = "Viktor mid",
     ) -> list[Path]:
-        """Write every export in one call.
+        """Write every file-based export in one call.
+
+        The aggregated summary (old ``summary.json``) is no longer written
+        here: it is persisted as part of the build's Mongo report body via
+        ``ReportStore.save_body`` in ``orchestrator.write_full_exports``.
 
         Args:
             tables: Mapping of file base name to dataframe.
-            summary: Aggregated summary for ``summary.json``.
             recommendations: Ranked recommendations for ``recommendations.md``.
             build_label: Champion + lane label for recommendations export.
 
@@ -93,6 +80,5 @@ class Exporter:
             Paths of every written file.
         """
         paths = [self.write_csv(name, frame) for name, frame in tables.items()]
-        paths.append(self.write_summary(summary))
         paths.append(self.write_recommendations(recommendations, build_label=build_label))
         return paths

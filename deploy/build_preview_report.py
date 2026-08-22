@@ -1,8 +1,11 @@
-"""Builds a synthetic multi-report set (report.json + manifest.json).
+"""Builds a synthetic multi-report set (report bodies + listing metadata).
 
 Reuses the same fixture helpers the test suite relies on (tests/fixtures.py)
 so this can generate real report structure without hitting the Riot API or
-needing any secrets in CI.
+needing any secrets in CI. Report bodies/metadata are saved to Mongo (see
+``league_stats_common.infra.report_store``), not written under ``output_dir``
+-- this script needs a reachable Mongo instance (``$MONGO_URI``/
+``$RUNNER_MONGO_URI``, same resolution as every other store in this repo).
 
 Not wired into the Netlify preview build: the preview now proxies /api and
 /out to the real deployed app (see netlify.toml) instead of serving fixture
@@ -24,6 +27,7 @@ import pandas as pd
 from league_stats_peers.analysis.peer import build_comparisons
 from league_stats_common.core.config import AppConfig
 from league_stats_common.core.models import MatchRecord, PeerComparisonResult, RankedEntry
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 from league_stats_runner.pipeline.orchestrator import run_analysis
 from league_stats_runner.presentation.report import build_manifest_entry, refresh_report_indexes
@@ -322,11 +326,11 @@ def _config(output_dir: Path, *, champion: str, role: str) -> AppConfig:
     return config
 
 
-def build_preview(output_dir: Path) -> Path:
-    """Write a full synthetic multi-report set (report.json + manifest.json) to ``output_dir``.
+def build_preview(output_dir: Path) -> str:
+    """Save a full synthetic multi-report set to Mongo, file exports to ``output_dir``.
 
     Returns:
-        Path to the generated player manifest (``manifest.json``).
+        The player slug the preview reports were saved under.
     """
     ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75)
 
@@ -355,17 +359,20 @@ def build_preview(output_dir: Path) -> Path:
             player_builds=manifest_builds,
         )
 
-    hub = refresh_report_indexes(
+    assert config is not None
+    refresh_report_indexes(
         config.output_dir,
         config.template_dir,
         player_dir=config.player_reports_dir,
         player_label="Preview#EUW",
     )
-    if hub is None:
-        raise RuntimeError("expected a player manifest after building preview reports")
-    return hub
+    with open_report_store() as report_store:
+        builds = report_store.list_builds(config.reports_group_slug)
+    if not builds:
+        raise RuntimeError("expected saved builds after building preview reports")
+    return config.reports_group_slug
 
 
 if __name__ == "__main__":
-    hub_path = build_preview(REPO_ROOT / "output")
-    print(f"Preview report built at {hub_path}")
+    player_slug = build_preview(REPO_ROOT / "output")
+    print(f"Preview reports saved to Mongo for player {player_slug!r}")

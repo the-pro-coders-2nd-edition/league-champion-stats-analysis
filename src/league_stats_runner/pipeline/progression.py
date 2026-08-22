@@ -193,19 +193,17 @@ def progression_to_template_context(preset_bundle: dict[str, Any]) -> dict[str, 
     }
 
 
-def write_progression_exports(
-    run_dir: Path,
+def build_progression_exports(
     comparison: ProgressionComparison | None,
-) -> None:
-    """Write progression.json and progression.md to the report directory."""
+) -> tuple[dict[str, Any] | None, str]:
+    """Build the progression export payload (old ``progression.json``/``.md``).
+
+    Nothing in the live app reads these back -- they were a debug/export
+    artifact only -- so they are stored as plain fields on the build's Mongo
+    report body (``ReportStore.save_body``) rather than given their own
+    collection.
+    """
     if comparison is None:
-        return
-    payload = comparison.model_dump()
-    (run_dir / "progression.json").write_text(
-        json.dumps(payload, indent=2, default=str),
-        encoding="utf-8",
-    )
-    (run_dir / "progression.md").write_text(
-        progression_to_markdown(comparison),
-        encoding="utf-8",
-    )
+        return None, ""
+    payload = json.loads(json.dumps(comparison.model_dump(), default=str))
+    return payload, progression_to_markdown(comparison)
