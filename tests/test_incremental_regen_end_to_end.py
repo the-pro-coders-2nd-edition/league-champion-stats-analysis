@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import mongomock
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +30,7 @@ from league_stats_common.core.models import RankedEntry
 from league_stats_common.infra.cache import HttpCache
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_common.infra.jobs import JobStore
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_common.infra.riot_api import RiotApiClient
 from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.services import PlayerContext, Services
@@ -128,17 +128,24 @@ def test_refresh_with_one_new_game_only_touches_the_affected_build(
     contexts = [PlayerContext(riot_id="Test", tagline="EUW", puuid=MY_PUUID)]
     job_store = _job_store()
 
+    player_slug = config.reports_group_slug
+
+    def _report(build_slug: str) -> dict:
+        with open_report_store() as report_store:
+            payload = report_store.get_report(player_slug, build_slug)
+        assert payload is not None
+        return payload
+
     try:
         # First pass: no new_match_ids -> should_skip_unchanged_build never
         # skips (mirrors a fresh `analyze`), so both builds get a real report.
         _run_stage_a(services, job_store, contexts, None)
 
-        viktor_path = config.player_reports_dir / "viktor_middle" / "report.json"
-        ahri_path = config.player_reports_dir / "ahri_middle" / "report.json"
-        assert viktor_path.is_file()
-        assert ahri_path.is_file()
-        ahri_before = ahri_path.read_bytes()
-        viktor_before = viktor_path.read_bytes()
+        with open_report_store() as report_store:
+            assert report_store.has_build(player_slug, "viktor_middle")
+            assert report_store.has_build(player_slug, "ahri_middle")
+        ahri_before = _report("ahri_middle")
+        viktor_before = _report("viktor_middle")
 
         # One new Viktor game arrives; nothing changed for Ahri.
         new_match_id = "EUW1_v25"
@@ -151,18 +158,18 @@ def test_refresh_with_one_new_game_only_touches_the_affected_build(
 
         _run_stage_a(services, job_store, contexts, frozenset({new_match_id}))
 
-        ahri_after = ahri_path.read_bytes()
-        viktor_after = viktor_path.read_bytes()
+        ahri_after = _report("ahri_middle")
+        viktor_after = _report("viktor_middle")
     finally:
         store.close()
         services.http_cache.close()
         job_store.close()
 
     assert ahri_after == ahri_before, (
-        "Ahri build has no new games; its report.json must be byte-identical"
+        "Ahri build has no new games; its saved report must be unchanged"
     )
     assert viktor_after != viktor_before, (
-        "Viktor build has a new game; its report.json must have been re-rendered"
+        "Viktor build has a new game; its saved report must have been re-rendered"
     )
-    assert json.loads(viktor_after)["total_games"] == 26
-    assert json.loads(ahri_after)["total_games"] == 25
+    assert viktor_after["total_games"] == 26
+    assert ahri_after["total_games"] == 25

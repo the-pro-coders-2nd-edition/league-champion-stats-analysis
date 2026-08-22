@@ -50,12 +50,12 @@ def test_run_analysis_discovers_reports(tmp_path: Path) -> None:
     run_analysis(viktor_config, _records())
 
     assert not (viktor_config.output_dir / "index.html").exists()
-    assert len(discover_reports(viktor_config.output_dir)) == 1
+    assert len(discover_reports()) == 1
 
     ahri_config = _config(tmp_path, champion="Ahri", role="MIDDLE")
     run_analysis(ahri_config, _records())
 
-    reports = discover_reports(viktor_config.output_dir)
+    reports = discover_reports()
     assert len(reports) == 2
     champions = {report["champion"] for report in reports}
     assert "Viktor" in champions
@@ -63,14 +63,12 @@ def test_run_analysis_discovers_reports(tmp_path: Path) -> None:
 
 
 def test_run_analysis_refreshes_player_hub(tmp_path: Path) -> None:
-    """The player hub lists every build as soon as its report is written."""
+    """The player hub lists every build as soon as its report is saved."""
     run_analysis(_config(tmp_path, champion="Viktor"), _records())
     run_analysis(_config(tmp_path, champion="Ahri"), _records())
 
-    player_dir = _config(tmp_path).player_reports_dir
-    hub = player_dir / "manifest.json"
-    assert hub.exists()
-    builds = discover_player_builds(player_dir)
+    player_slug = _config(tmp_path).reports_group_slug
+    builds = discover_player_builds(player_slug)
     assert len(builds) == 2
     champions = {build["champion"] for build in builds}
     assert "Viktor" in champions
@@ -78,17 +76,17 @@ def test_run_analysis_refreshes_player_hub(tmp_path: Path) -> None:
 
 
 def test_refresh_report_indexes_rebuilds_hub_from_disk(tmp_path: Path) -> None:
-    """Manual refresh rebuilds the player hub from reports already on disk."""
+    """Manual refresh leaves builds discoverable and touches no index.html."""
     config = _config(tmp_path, champion="Zac", role="JUNGLE")
     run_analysis(config, _records())
 
-    hub = refresh_report_indexes(
+    refresh_report_indexes(
         config.output_dir,
         config.template_dir,
         player_dir=config.player_reports_dir,
         player_label="Test#EUW",
     )
-    assert hub is not None
-    assert hub.exists()
-    assert hub == config.player_reports_dir / "manifest.json"
+    builds = discover_player_builds(config.reports_group_slug)
+    assert len(builds) == 1
+    assert builds[0]["champion"] == "Zac"
     assert not (config.output_dir / "index.html").exists()

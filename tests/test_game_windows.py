@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pandas as pd
 
 from league_stats_peers.analysis.peer import build_comparisons, peer_comparison_for_window
+from league_stats_common.core.champions import champion_slug
 from league_stats_common.core.config import DEFAULT_GAME_WINDOW
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_runner.pipeline.bundles import default_game_window_key as _default_game_window_key
 from league_stats_runner.pipeline.orchestrator import run_analysis
 from league_stats_common.core.models import MatchRecord, PeerComparisonResult, RankedEntry
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 from tests.test_reports import _config, _peer
 from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
+
+
+def _read_report(config) -> dict:
+    build_slug = champion_slug(config.champion, config.role)
+    with open_report_store() as store:
+        return store.get_report(config.reports_group_slug, build_slug)
 
 
 def _make_records(n: int, *, recent_wins: bool = False) -> list[MatchRecord]:
@@ -63,7 +70,7 @@ def test_report_contains_game_window_toggle(tmp_path: Path) -> None:
 
     run_analysis(config, records, peer_comparison=peer, ranked=ranked)
 
-    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    payload = _read_report(config)
     assert payload["game_window_default"] == "all"
 
     views = payload["report_views"]
@@ -82,7 +89,7 @@ def test_default_window_active_when_enough_games(tmp_path: Path) -> None:
 
     run_analysis(config, records, peer_comparison=peer, ranked=None)
 
-    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    payload = _read_report(config)
     assert payload["game_window_default"] == str(DEFAULT_GAME_WINDOW)
 
 
@@ -104,6 +111,6 @@ def test_window_snapshots_change_winrate(tmp_path: Path) -> None:
 
     run_analysis(config, records, peer_comparison=peer, ranked=None)
 
-    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    payload = _read_report(config)
     solo_windows = payload["report_views"]["solo"]["windows"]
     assert solo_windows["50"]["overview"]["winrate"] > solo_windows["all"]["overview"]["winrate"]
