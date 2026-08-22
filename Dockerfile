@@ -24,6 +24,10 @@ COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 COPY main.py ./
 COPY config.toml.example ./
+# Ops scripts (e.g. deploy/clear_mongodb.py) meant to be run via `docker compose exec
+# api-ui python deploy/<script>.py` against the running container's environment/network,
+# not just from the VPS host checkout.
+COPY deploy/ ./deploy/
 
 # vite.config.js sets build.outDir to ../src/league_stats_api_ui/spa_dist (relative to
 # frontend/), so the builder stage already writes to that path under /app.
