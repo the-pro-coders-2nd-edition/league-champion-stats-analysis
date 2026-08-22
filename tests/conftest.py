@@ -2,6 +2,20 @@
 
 from __future__ import annotations
 
+import os
+
+# Must run before `league_stats_peers.service` is ever imported (by this
+# file's own imports below, or transitively by anything else): that module
+# reads DISABLE_PREWARM_FOR_TESTS into a plain module-level constant at
+# import time, not lazily, so setting this any later (e.g. in a fixture)
+# would have no effect on an already-imported module. Tests are the ones
+# that opt out of the pre-warm/patch-cleanup coordinator -- it's on by
+# default in production specifically so a real deploy can't forget to
+# enable it. `setdefault`, not a plain assignment, so a real integration
+# test that deliberately wants the coordinator running can still override it
+# by setting the env var before pytest starts.
+os.environ.setdefault("DISABLE_PREWARM_FOR_TESTS", "true")
+
 import mongomock
 import pytest
 

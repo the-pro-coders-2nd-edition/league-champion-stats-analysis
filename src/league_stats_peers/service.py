@@ -417,10 +417,18 @@ def start_match_sample_coverage_refresher(
 # unconditionally wiring it in would make ordinary test runs make real
 # network calls from background daemon threads, which is slow, flaky under a
 # sandboxed/offline CI runner, and not something any of those tests asked
-# for. Production enables it via `PEERS_ENABLE_PREWARM=true` (see
-# docker-compose.yml / the deploy runbook).
+# for.
+#
+# Deliberately on-by-default in production (unlike a typical opt-in feature
+# flag): an env var a real deploy has to remember to set is a silent no-op
+# waiting to happen -- confirmed live, this exact flag shipped inverted once
+# already and nobody noticed pre-warm was inert. Instead, *tests* opt out via
+# `DISABLE_PREWARM_FOR_TESTS=true` (set unconditionally at the top of
+# `tests/conftest.py`, before this module is ever imported -- see that file),
+# so production gets the real behavior with zero action required, and test
+# runs are the ones carrying the exception.
 PEERS_ENABLE_PREWARM_COORDINATOR: bool = (
-    os.environ.get("PEERS_ENABLE_PREWARM", "false").strip().lower() == "true"
+    os.environ.get("DISABLE_PREWARM_FOR_TESTS", "false").strip().lower() != "true"
 )
 PEERS_PREWARM_TARGET_GAMES_PER_TIER: int = 20_000
 PEERS_PREWARM_TIERS: tuple[str, ...] = ("GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER")
@@ -912,8 +920,9 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         # goes through that seam rather than PeersServicer owning its own
         # scheduler instance (it doesn't; the scheduler is a process-wide
         # singleton lazily built inside `analysis.peer.baseline`). Gated by
-        # `PEERS_ENABLE_PREWARM_COORDINATOR` -- see that flag's own docstring
-        # for why this is opt-in, not on by default.
+        # `PEERS_ENABLE_PREWARM_COORDINATOR` -- on by default in production;
+        # see that flag's own docstring for why tests are the ones that opt
+        # out, not production that opts in.
         self._idle_coordinator: "_IdleCoordinator | None" = None
         if PEERS_ENABLE_PREWARM_COORDINATOR:
             self._idle_coordinator = _IdleCoordinator(
