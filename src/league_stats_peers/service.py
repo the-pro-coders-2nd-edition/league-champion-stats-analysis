@@ -469,10 +469,20 @@ def prewarm_tick(
     if scheduler.is_active(key):
         return
     client = client_factory(platform)
+    # `WarmupTask.run_batch` (via the shared `_download_and_share` helper)
+    # needs a `load_match`/`save_match`-shaped store, exactly like a real
+    # `SamplingTask` gets via `_PeerStoreAdapter` in `RequestBaseline`
+    # (`PeerSampleStore` itself has neither method at all -- confirmed live:
+    # a freshly deployed pre-warm coordinator crashed every single batch
+    # with `AttributeError: 'PeerSampleStore' object has no attribute
+    # 'load_match'` until this wrap was added). `count_by_tier` above still
+    # reads `store` directly -- `_PeerStoreAdapter` only needs to wrap the
+    # `WarmupTask` construction itself.
+    match_store = _PeerStoreAdapter(store) if isinstance(store, PeerSampleStore) else store
     scheduler.get_or_create(
         key,
         lambda: WarmupTask(
-            key=key, client=client, store=store, tier=tier, patch=patch,
+            key=key, client=client, store=match_store, tier=tier, patch=patch,
             target_games=PEERS_PREWARM_TARGET_GAMES_PER_TIER,
         ),
         priority="background",

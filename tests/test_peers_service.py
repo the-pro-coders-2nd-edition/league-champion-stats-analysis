@@ -17,6 +17,7 @@ import pytest
 
 from league_stats_peers.analysis.peer.baseline import PeerBaseline
 from league_stats_peers.analysis.peer.ingest import ingest_match
+from league_stats_peers.analysis.peer.scheduler import SamplingScheduler
 from league_stats_common.core.config import VALID_PLATFORMS
 from league_stats_common.core.models import RankedEntry
 from league_stats_common.infra.cache import HttpCache
@@ -29,6 +30,7 @@ from league_stats_peers.service import (
     _db_name_from_uri,
     _parse_rank,
     _PeerStoreAdapter,
+    prewarm_tick,
 )
 from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc, runner_pb2, runner_pb2_grpc
 from tests.fixtures import make_match
@@ -1325,3 +1327,47 @@ def test_patch_changeover_is_a_noop_when_patch_unchanged(
 
     assert dropped is False
     assert peer_store._peer_games.count_documents({}) == 1
+
+
+def test_prewarm_tick_runs_a_real_batch_against_a_real_peer_sample_store(peer_store) -> None:
+    """Regression: `prewarm_tick` is called with `PeersServicer`'s raw
+    `PeerSampleStore` in production, NOT the test-only `CombinedMatchAndPeerStore`
+    double `tests/test_peer_warmup_task.py` uses for `WarmupTask` in isolation.
+    That double happens to implement `load_match`/`save_match` (mirroring the
+    old, deleted `MatchStore`); the real `PeerSampleStore` does not -- only
+    `_PeerStoreAdapter` bridges that gap for a real `SamplingTask`. Confirmed
+    live in production: a freshly deployed pre-warm coordinator crashed every
+    single batch with `AttributeError: 'PeerSampleStore' object has no
+    attribute 'load_match'` because `prewarm_tick` passed the raw store
+    straight into `WarmupTask` instead of wrapping it. This test exercises
+    the real, unwrapped `PeerSampleStore` end to end through `prewarm_tick`,
+    not a fixture that happens to paper over the gap.
+    """
+    finalized = []
+    scheduler = SamplingScheduler(
+        num_workers=0, on_finalize=lambda task, status: finalized.append((task, status))
+    )
+    client = MagicMock()
+    client.configure_mock(platform="euw1")
+    client.fetch_league_entries_pages.return_value = [
+        {"puuid": "seed-1", "tier": "GOLD", "rank": "II"}
+    ]
+    client.fetch_match_ids.return_value = ["EUW1_1"]
+    client.fetch_match.return_value = make_match()
+
+    prewarm_tick(
+        scheduler, peer_store, lambda platform: client, "16.16", [0], "euw1",
+    )
+    assert scheduler.step() is True  # runs the WarmupTask's first real batch
+
+    # Whether the task finalizes in this one batch (small seed set) or stays
+    # active for another, the real regression signal is that a match was
+    # actually downloaded -- an AttributeError crash inside run_batch()
+    # would finalize with `downloads == 0` instead (caught by the
+    # scheduler's own per-batch exception guard, see _run_one_batch).
+    key = ("euw1", "GOLD", "__prewarm__", "__prewarm__", "16.16")
+    task = scheduler._tasks.get(key) or next(
+        (t for t, _status in finalized if t.key == key), None
+    )
+    assert task is not None
+    assert task.downloads >= 1
