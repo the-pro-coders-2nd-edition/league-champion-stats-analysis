@@ -12,13 +12,13 @@ groups, and responses are compressed.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from league_stats_common.core.config import WebConfig
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_runner.pipeline.orchestrator import (
     ACCOUNT_FULL_COMBINATION_LIMIT,
     account_subset_keys,
@@ -64,19 +64,17 @@ def test_an_explicit_limit_below_the_group_size_falls_back_to_singletons() -> No
 # --- response compression --------------------------------------------------
 
 
-def _write_report(reports: Path, payload: dict) -> None:
-    build_dir = reports / SLUG / BUILD
-    build_dir.mkdir(parents=True, exist_ok=True)
-    (build_dir / "report.json").write_text(json.dumps(payload), encoding="utf-8")
-    (build_dir / "meta.json").write_text(
-        json.dumps(
+def _write_report(payload: dict) -> None:
+    with open_report_store() as store:
+        store.save_build(
+            SLUG,
+            BUILD,
             {
                 "champion": "Aatrox", "role": "TOP", "riot_id": "A", "tagline": "EUW",
                 "region": "euw1", "games": 30,
-            }
-        ),
-        encoding="utf-8",
-    )
+            },
+        )
+        store.save_body(SLUG, BUILD, report=payload, summary={})
 
 
 @pytest.fixture()
@@ -87,7 +85,6 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     )
     # Compressible bulk, the shape a real report's figures have.
     _write_report(
-        tmp_path / "out" / "reports",
         {"figures": {f"fig_{i}": "<div>" + "0.123456," * 900 + "</div>" for i in range(12)}},
     )
     app = create_app(config, start_worker=False)

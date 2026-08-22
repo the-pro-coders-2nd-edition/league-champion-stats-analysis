@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pandas as pd
 
 from league_stats_runner.analysis.career.models import BLOCK_SLOTS
 from league_stats_peers.analysis.peer import build_comparisons
+from league_stats_common.core.champions import champion_slug
 from league_stats_common.core.models import MatchRecord, PeerComparisonResult, RankedEntry
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_runner.pipeline.orchestrator import run_analysis
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 from tests.test_reports import _config
@@ -66,7 +67,9 @@ def _career_payload(tmp_path: Path) -> dict:
         peer_comparison=_peer_with_percentiles(records),
         ranked=RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75),
     )
-    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    build_slug = champion_slug(config.champion, config.role)
+    with open_report_store() as store:
+        payload = store.get_report(config.reports_group_slug, build_slug)
     return _all_ranked_career(payload)
 
 
@@ -144,7 +147,9 @@ def test_every_queue_view_renders_the_same_ladder(tmp_path: Path) -> None:
         peer_comparison=_peer_with_percentiles(records),
         ranked=RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75),
     )
-    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    build_slug = champion_slug(config.champion, config.role)
+    with open_report_store() as store:
+        payload = store.get_report(config.reports_group_slug, build_slug)
 
     for queue_key in ("solo", "flex", "all"):
         windows = payload["report_views"][queue_key]["windows"]
