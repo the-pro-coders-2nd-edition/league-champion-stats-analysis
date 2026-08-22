@@ -60,12 +60,9 @@ class PeerMatchSampleStore:
         # on this platform+patch" (RFC §6) -- unscoped by tier, since rank is
         # resolved lazily on read, not at write time.
         self._samples.create_index([("platform", 1), ("patch", 1), ("champion", 1), ("role", 1)])
+        self._samples.create_index([("match_id", 1), ("puuid", 1)], unique=True)
         if ttl_seconds is not None:
             self._samples.create_index("stored_at_dt", expireAfterSeconds=int(ttl_seconds))
-
-    @staticmethod
-    def _doc_id(match_id: str, puuid: str) -> str:
-        return f"{match_id}\x1f{puuid}"
 
     def upsert_rows(
         self,
@@ -85,7 +82,6 @@ class PeerMatchSampleStore:
             if not puuid:
                 continue
             doc = {
-                "_id": self._doc_id(match_id, puuid),
                 "match_id": match_id,
                 "puuid": puuid,
                 "platform": platform.lower(),
@@ -95,7 +91,9 @@ class PeerMatchSampleStore:
                 "row": dict(row),
                 "stored_at_dt": now,
             }
-            self._samples.replace_one({"_id": doc["_id"]}, doc, upsert=True)
+            self._samples.replace_one(
+                {"match_id": match_id, "puuid": puuid}, doc, upsert=True
+            )
 
     def find_candidates(
         self,
