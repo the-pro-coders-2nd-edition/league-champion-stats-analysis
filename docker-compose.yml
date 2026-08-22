@@ -84,8 +84,15 @@ services:
     # returns a plain 401) -- without Caddy in front of it, fail2ban's
     # mongo-express jail would have nothing to watch. Loopback-only achieves
     # that without requiring Caddy to join the compose network.
+    #
+    # Host port is 8082, NOT 8081: Caddy itself binds *:8081 (all interfaces)
+    # to serve the public ${DOMAIN}:8081 site block -- a wildcard bind and a
+    # loopback bind can't both own the same port on one host, so this
+    # container's own published port has to differ from Caddy's public one
+    # even though the container's *internal* port is still 8081
+    # (deploy/run.sh's MONGO_EXPRESS_PORT=8082 matches this).
     ports:
-      - "127.0.0.1:8081:8081"
+      - "127.0.0.1:8082:8081"
     depends_on:
       - mongo
 
@@ -213,8 +220,15 @@ services:
     # Caddy still fronts it with the main domain's existing TLS cert (a
     # cert is issued per hostname, not per port, so no new DNS/cert is
     # needed for this), so the admin login is no longer plain HTTP.
+    #
+    # Host port is 3001, NOT 3000: Caddy itself binds *:3000 (all interfaces)
+    # to serve the public ${DOMAIN}:3000 site block -- a wildcard bind and a
+    # loopback bind can't both own the same port on one host, so this
+    # container's own published port has to differ from Caddy's public one
+    # even though the container's *internal* port is still 3000
+    # (deploy/run.sh's GRAFANA_PORT=3001 matches this).
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3000"
     depends_on:
       - prometheus
       - loki
