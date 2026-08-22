@@ -100,6 +100,26 @@ def test_different_champions_create_separate_reports(tmp_path: Path) -> None:
     assert labels == {"Viktor mid", "Ahri mid"}
 
 
+def test_report_build_id_is_a_real_objectid(tmp_path: Path) -> None:
+    from bson import ObjectId
+
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75)
+    records = _make_records()
+    peer = _peer(records)
+    config = _config(tmp_path, champion="Viktor", role="MIDDLE")
+    run_analysis(config, records, peer_comparison=peer, ranked=ranked)
+
+    with open_report_store() as store:
+        build_doc = store._builds.find_one(
+            {"player_slug": config.reports_group_slug, "build_slug": "viktor_middle"}
+        )
+        body_doc = store._bodies.find_one(
+            {"player_slug": config.reports_group_slug, "build_slug": "viktor_middle"}
+        )
+    assert isinstance(build_doc["_id"], ObjectId)
+    assert isinstance(body_doc["_id"], ObjectId)
+
+
 def test_same_combo_overwrites_report(tmp_path: Path) -> None:
     """Re-running the same player/champion/lane replaces that report."""
     ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75)

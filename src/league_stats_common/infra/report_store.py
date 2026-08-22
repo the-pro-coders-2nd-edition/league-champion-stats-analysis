@@ -11,14 +11,14 @@ Two collections, split by read pattern rather than by old filename:
 - ``report_builds``: everything needed to list a player's builds (the old
   ``meta.json`` + ``manifest.json`` content) *without* loading a report body,
   which can be a hundred-plus MB for a multi-account group. One document per
-  ``(player_slug, build_slug)``, ``_id = f"{player_slug}\\x1f{build_slug}"``
-  (same separator convention as ``CareerStore``/``DerivedStore``). Indexed on
+  ``(player_slug, build_slug)``, enforced by a compound unique index on those
+  two fields; ``_id`` is a Mongo-assigned ``ObjectId``. Indexed on
   ``player_slug`` since every player-hub/nav read filters on it. Carries
   ``match_ids`` so ``should_skip_unchanged_build`` can tell "no report yet"
   from "report exists" without touching the heavy body.
 - ``report_bodies``: the rendered report (old ``report.json``), the chatbot
   summary (old ``summary.json``) and the progression export (old
-  ``progression.json``/``progression.md``) for one build. Same ``_id`` shape.
+  ``progression.json``/``progression.md``) for one build. Same key shape.
   Only read when a specific build's full report is requested.
 
 This mirrors the existing intermediate-step caches in this codebase
@@ -40,11 +40,6 @@ from league_stats_common.infra.mongo import db_name_from_uri
 from league_stats_common.utils import get_logger
 
 
-def build_id(player_slug: str, build_slug: str) -> str:
-    """Stable document id for one player's build."""
-    return f"{player_slug}\x1f{build_slug}"
-
-
 class ReportStore:
     """MongoDB store of generated report metadata and bodies."""
 
@@ -60,6 +55,8 @@ class ReportStore:
         self._builds = db["report_builds"]
         self._bodies = db["report_bodies"]
         self._builds.create_index("player_slug")
+        self._builds.create_index([("player_slug", 1), ("build_slug", 1)], unique=True)
+        self._bodies.create_index([("player_slug", 1), ("build_slug", 1)], unique=True)
         self._log = get_logger("report_store")
 
     def __enter__(self) -> "ReportStore":
@@ -99,22 +96,26 @@ class ReportStore:
         ``match_ids`` is stored alongside so ``match_ids_for_build`` can answer
         "does this build already cover match X" without loading the report body.
         """
-        doc = {**meta, "_id": build_id(player_slug, build_slug), "player_slug": player_slug,
+        doc = {**meta, "player_slug": player_slug,
                "build_slug": build_slug, "match_ids": sorted(set(match_ids))}
-        self._builds.replace_one({"_id": doc["_id"]}, doc, upsert=True)
+        self._builds.replace_one(
+            {"player_slug": player_slug, "build_slug": build_slug}, doc, upsert=True
+        )
 
     def get_build(self, player_slug: str, build_slug: str) -> dict[str, Any] | None:
         """One build's listing metadata, or ``None`` if it has never been written."""
-        return self._builds.find_one({"_id": build_id(player_slug, build_slug)})
+        return self._builds.find_one({"player_slug": player_slug, "build_slug": build_slug})
 
     def has_build(self, player_slug: str, build_slug: str) -> bool:
         """Whether a build has ever been analysed and saved."""
-        return self._builds.count_documents({"_id": build_id(player_slug, build_slug)}, limit=1) > 0
+        return self._builds.count_documents(
+            {"player_slug": player_slug, "build_slug": build_slug}, limit=1
+        ) > 0
 
     def match_ids_for_build(self, player_slug: str, build_slug: str) -> frozenset[str] | None:
         """Match ids the stored build was last analysed with, or ``None`` if unsaved."""
         doc = self._builds.find_one(
-            {"_id": build_id(player_slug, build_slug)}, {"match_ids": 1}
+            {"player_slug": player_slug, "build_slug": build_slug}, {"match_ids": 1}
         )
         if doc is None:
             return None
@@ -139,7 +140,7 @@ class ReportStore:
         in that case, same as `patch_report_fields`.
         """
         result = self._builds.update_one(
-            {"_id": build_id(player_slug, build_slug)}, {"$set": fields}
+            {"player_slug": player_slug, "build_slug": build_slug}, {"$set": fields}
         )
         return result.matched_count > 0
 
@@ -186,7 +187,6 @@ class ReportStore:
     ) -> None:
         """Upsert one build's heavy report body."""
         doc = {
-            "_id": build_id(player_slug, build_slug),
             "player_slug": player_slug,
             "build_slug": build_slug,
             "report": report,
@@ -194,7 +194,9 @@ class ReportStore:
             "progression_json": progression_json,
             "progression_md": progression_md,
         }
-        self._bodies.replace_one({"_id": doc["_id"]}, doc, upsert=True)
+        self._bodies.replace_one(
+            {"player_slug": player_slug, "build_slug": build_slug}, doc, upsert=True
+        )
 
     def patch_report_fields(
         self, player_slug: str, build_slug: str, fields: dict[str, Any]
@@ -212,21 +214,21 @@ class ReportStore:
         """
         update = {f"report.{key}": value for key, value in fields.items()}
         result = self._bodies.update_one(
-            {"_id": build_id(player_slug, build_slug)}, {"$set": update}
+            {"player_slug": player_slug, "build_slug": build_slug}, {"$set": update}
         )
         return result.matched_count > 0
 
     def get_report(self, player_slug: str, build_slug: str) -> dict[str, Any] | None:
         """The rendered report payload (old ``report.json``), or ``None``."""
         doc = self._bodies.find_one(
-            {"_id": build_id(player_slug, build_slug)}, {"report": 1}
+            {"player_slug": player_slug, "build_slug": build_slug}, {"report": 1}
         )
         return doc.get("report") if doc else None
 
     def get_summary(self, player_slug: str, build_slug: str) -> dict[str, Any] | None:
         """The chatbot summary payload (old ``summary.json``), or ``None``."""
         doc = self._bodies.find_one(
-            {"_id": build_id(player_slug, build_slug)}, {"summary": 1}
+            {"player_slug": player_slug, "build_slug": build_slug}, {"summary": 1}
         )
         return doc.get("summary") if doc else None
 
