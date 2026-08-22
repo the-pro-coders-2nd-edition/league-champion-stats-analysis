@@ -56,7 +56,7 @@
     width: max-content; max-width: min(280px, 70vw); background: var(--color-surface-2);
     border: 1px solid var(--color-divider); border-radius: 8px; padding: 10px 12px;
     font-size: 12px; line-height: 1.45; color: var(--color-neutral-400); text-transform: none;
-    letter-spacing: normal; box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+    letter-spacing: normal; white-space: pre-wrap; box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
   }
   .metric-tooltip-wrap.is-open .metric-tooltip-panel,
   .metric-tooltip-wrap:hover .metric-tooltip-panel { display: block; }

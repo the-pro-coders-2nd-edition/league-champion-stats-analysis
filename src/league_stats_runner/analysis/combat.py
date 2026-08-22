@@ -6,6 +6,15 @@ from typing import Final, Literal
 
 TANK_DAMAGE_SHARE_MAX: Final[float] = 0.15
 
+# Below this average CC score per minute on a build, the champion kit is
+# unlikely to be a meaningful CC lever — skip CC career goals and coaching tips.
+MIN_CC_GOAL_CCPM: Final[float] = 1.0
+
+
+def build_uses_cc(*, avg_ccpm: float | None) -> bool:
+    """Whether CC is a meaningful coaching axis for this champion build."""
+    return avg_ccpm is not None and avg_ccpm >= MIN_CC_GOAL_CCPM
+
 
 def prefers_cc_over_dpm(role: str, *, avg_damage_share: float | None = None) -> bool:
     """Whether CC/min is a better headline combat metric than DPM.

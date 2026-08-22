@@ -98,6 +98,14 @@ def _rewrite_asset_href(href: str) -> str:
     return "/ddragon/" + rest
 
 
+def prepare_web_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Rewrite asset hrefs and refresh score verdicts for SPA/API consumers."""
+    from league_stats_runner.pipeline.bundles import refresh_score_verdicts_in_report
+
+    refresh_score_verdicts_in_report(payload)
+    return rewrite_web_asset_hrefs(payload)
+
+
 def rewrite_web_asset_hrefs(value: Any) -> Any:
     """Recursively rewrite report asset paths for SPA/API consumers."""
     if isinstance(value, dict):

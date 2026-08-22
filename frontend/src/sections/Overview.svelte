@@ -4,7 +4,8 @@
   import Meter from '../components/Meter.svelte';
   import MetricCard from '../components/MetricCard.svelte';
   import CareerNode from '../components/CareerNode.svelte';
-  import Chip from '../components/Chip.svelte';
+  import AccountsPanel from '../components/AccountsPanel.svelte';
+  import { scoreTone } from '../lib/format.js';
 
   export let data;
   // Career follows neither the queue nor the game-window filter, so the widget
@@ -27,13 +28,8 @@
     return resolved === 'flat' ? 'var(--color-text)' : `var(--tone-${resolved}-fg)`;
   }
 
-  // `score_color` already encodes the Strength/Solid/Focus verdict decided in Python;
-  // this just maps that string back to a tone name for the Meter fill.
-  function heroScoreTone(colorVar) {
-    if (colorVar === 'var(--tone-good-fg)') return 'good';
-    if (colorVar === 'var(--tone-bad-fg)') return 'bad';
-    return 'flat';
-  }
+  // `score_color` already encodes the verdict tone decided in Python;
+  // scoreTone maps that CSS var back to a Meter fill tone.
 
   $: heroChips = (data.overview_cards || []).slice(0, 4);
   $: topTips = data.top_tips || [];
@@ -42,7 +38,7 @@
   $: scoreColor = data.score_color || 'var(--color-text)';
   $: scoreVerdictLabel = data.score_verdict_label || 'Solid';
   $: scorePct = scorePercent(data.score);
-  $: heroTone = heroScoreTone(scoreColor);
+  $: heroTone = scoreTone(scoreColor);
 </script>
 
 <section id="overview" class="report-section report-section--summary">
@@ -75,35 +71,7 @@
         </div>
       </div>
       {#if showPlayerChips}
-        <div class="accounts-panel accounts-panel--hero">
-          <div class="accounts-panel-head">
-            <span class="accounts-panel-label">Accounts in this pool</span>
-            <span class="accounts-panel-count">{data.report_players.length} accounts</span>
-          </div>
-          {#each data.report_players as member}
-            <div class="accounts-panel-row">
-              {#if member.profile_icon}
-                <img src={member.profile_icon} alt="" class="accounts-panel-icon">
-              {:else}
-                <span class="accounts-panel-icon accounts-panel-icon--placeholder" aria-hidden="true"></span>
-              {/if}
-              <span class="accounts-panel-name">
-                {member.label}
-                {#if member.is_main}
-                  <Chip tone="good" fill={true} density="compact" label="Main" />
-                {/if}
-              </span>
-              <span class="accounts-panel-rank">
-                {#if member.solo_rank_icon}
-                  <img src={member.solo_rank_icon} alt="" class="accounts-panel-rank-icon">
-                {/if}
-                <span>{member.solo_rank_division || 'Unranked'}</span>
-              </span>
-              <span class="accounts-panel-lp">{member.solo_lp != null ? `${member.solo_lp} LP` : '—'}</span>
-              <span class="accounts-panel-region">{member.region || '—'}</span>
-            </div>
-          {/each}
-        </div>
+        <AccountsPanel members={data.report_players} title="Accounts in this pool" variant="hero" />
       {/if}
     </div>
     <div class="hero-actions-block">

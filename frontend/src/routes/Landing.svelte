@@ -1,27 +1,14 @@
 <script>
   import { onDestroy, onMount } from 'svelte';
-  import { link, push } from 'svelte-spa-router';
+  import { push } from 'svelte-spa-router';
   import { submitAnalysis, subscribeActivity, fetchGroups } from '../lib/api.js';
-  import Button from '../components/Button.svelte';
-  import Panel from '../components/Panel.svelte';
-  import Chip from '../components/Chip.svelte';
+  import AppNav from '../components/AppNav.svelte';
+  import AnalyzeForm from '../components/AnalyzeForm.svelte';
+  import PlayerCard from '../components/PlayerCard.svelte';
+  import PlayerCardSkeleton from '../components/PlayerCardSkeleton.svelte';
+  import LibraryHeaderSkeleton from '../components/LibraryHeaderSkeleton.svelte';
+  import SegmentedControl from '../components/SegmentedControl.svelte';
 
-  const MAX_PLAYERS = 8;
-  const REGION_CHOICES = [
-    ['EUW', 'euw1'],
-    ['EUNE', 'eun1'],
-    ['NA', 'na1'],
-    ['KR', 'kr'],
-    ['BR', 'br1'],
-    ['LAN', 'la1'],
-    ['LAS', 'la2'],
-    ['OCE', 'oc1'],
-    ['TR', 'tr1'],
-    ['RU', 'ru'],
-    ['JP', 'jp1'],
-  ];
-  const MIN_GAMES_CHOICES = [5, 10, 15, 20, 25, 30, 50];
-  const DEFAULT_MIN_GAMES = 20;
   const STATE_TITLES = {
     queued: 'Queued',
     fetching: 'Downloading matches',
@@ -34,48 +21,35 @@
     return STATE_TITLES[state] || 'Analysis in progress';
   }
 
-  let playerInputs = [''];
-  let region = 'euw1';
-  let minGames = DEFAULT_MIN_GAMES;
-  let submitting = false;
-  let error = '';
-
+  let analyzeForm;
   let groups = [];
   let groupsLoaded = false;
   let searchQuery = '';
+  let libraryFilter = 'all';
   let unsubscribeActivity = null;
 
-  function addPlayerRow() {
-    if (playerInputs.length >= MAX_PLAYERS) return;
-    playerInputs = [...playerInputs, ''];
-  }
-
-  function removePlayerRow(index) {
-    if (playerInputs.length <= 1) return;
-    playerInputs = playerInputs.filter((_, i) => i !== index);
-  }
+  const FILTER_ITEMS = [
+    { value: 'all', label: 'All' },
+    { value: 'busy', label: 'In progress' },
+    { value: 'groups', label: 'Groups' },
+  ];
 
   async function handleSubmit(event) {
-    event.preventDefault();
-    error = '';
-    const players = playerInputs.map((value) => value.trim()).filter(Boolean);
-    if (!players.length) {
-      error = 'Provide at least one Riot ID as Name#Tag.';
-      return;
-    }
-    submitting = true;
+    const { players, region, minGames } = event.detail;
     try {
-      const data = await submitAnalysis({ players, region, minGames: Number(minGames) });
+      const data = await submitAnalysis({ players, region, minGames });
       push(`/players/${data.player_slug}`);
     } catch (err) {
-      error = err.message || 'Something went wrong.';
-      submitting = false;
+      analyzeForm?.setError(err.message || 'Something went wrong.');
     }
   }
 
   function memberSearchText(group) {
     const bits = (group.players || []).map((member) => member.label || '');
     bits.push(group.player || '', group.slug || '');
+    for (const build of group.preview_builds || []) {
+      bits.push(build.champion || '', build.slug || '');
+    }
     return bits.join(' ').toLowerCase();
   }
 
@@ -120,6 +94,7 @@
         is_group: (item.players || []).length > 1,
         build_count: 0,
         total_games: 0,
+        preview_builds: [],
         busy: true,
         job_state: item.state,
         has_report: item.has_report,
@@ -145,89 +120,63 @@
   });
 
   $: normalizedQuery = searchQuery.trim().toLowerCase();
-  $: filteredGroups = normalizedQuery
-    ? groups.filter((group) => memberSearchText(group).includes(normalizedQuery))
-    : groups;
-  $: hasNoMatch = groupsLoaded && groups.length > 0 && normalizedQuery !== '' && filteredGroups.length === 0;
+  $: filteredGroups = groups.filter((group) => {
+    if (libraryFilter === 'busy' && !group.busy) return false;
+    if (libraryFilter === 'groups' && !group.is_group) return false;
+    if (normalizedQuery && !memberSearchText(group).includes(normalizedQuery)) return false;
+    return true;
+  });
+  $: hasNoMatch = groupsLoaded && groups.length > 0 && filteredGroups.length === 0;
+  $: hasLibrary = groupsLoaded && groups.length > 0;
+  $: showLibrarySkeleton = !groupsLoaded;
 </script>
 
-<div class="shell">
-<a class="app-brand app-brand--page" href="/" use:link title="Home">
-  <img src="/out/assets/brand/logo.png" alt="" class="app-logo" aria-hidden="true">
-  <span class="app-brand-title">League Champion Analyser</span>
-</a>
-<p class="home-lead">Coaching reports from your ranked games.</p>
+<div class="layout">
+<AppNav libraryItems={groups} listLabel="Reports" loading={showLibrarySkeleton} />
+<main class="library-main">
 
-<Panel class="panel-form">
-  <form id="analyze-form" on:submit={handleSubmit}>
-    <div id="player-rows">
-      {#each playerInputs as value, index (index)}
-        <div class="form-row player-row">
-          <input
-            name="riot_id"
-            class="riot-input"
-            placeholder="Riot ID (e.g. Faker#KR1)"
-            autocomplete="off"
-            bind:value={playerInputs[index]}
-          >
-          <Button
-            variant="bare"
-            size="sm"
-            class="remove-player"
-            hidden={playerInputs.length === 1}
-            ariaLabel="Remove player"
-            on:click={() => removePlayerRow(index)}
-          >Remove</Button>
-        </div>
-      {/each}
-    </div>
-    <div class="form-actions">
-      <Button variant="bare" size="sm" id="add-player" hidden={playerInputs.length >= MAX_PLAYERS} on:click={addPlayerRow}>
-        + Add another account
-      </Button>
-      <div class="form-row-end">
-        <select name="region" aria-label="Region" bind:value={region}>
-          {#each REGION_CHOICES as [label, value] (value)}
-            <option value={value}>{label}</option>
-          {/each}
-        </select>
-        <select name="min_games" aria-label="Minimum games for a report" bind:value={minGames}>
-          {#each MIN_GAMES_CHOICES as value (value)}
-            <option value={value}>{value} games</option>
-          {/each}
-        </select>
-        <Button type="submit" id="analyze-submit" disabled={submitting}>
-          {submitting ? 'Checking…' : 'Analyze'}
-        </Button>
-      </div>
-    </div>
-    <p class="hint">Same region for every account. The games menu sets the minimum ranked games a champion and lane need before a report is created.</p>
-    <div class="error" id="analyze-error">{error}</div>
-  </form>
-</Panel>
+<AnalyzeForm bind:this={analyzeForm} compact={hasLibrary || showLibrarySkeleton} on:submit={handleSubmit} />
 
-<div class="section-header" id="reports-heading" hidden={!groupsLoaded || groups.length === 0}>
-  <h2 class="section-label">Recent reports</h2>
-  <div class="reports-search">
-    <input
-      type="search"
-      class="reports-search-input"
-      id="reports-search"
-      placeholder="Search reports…"
-      autocomplete="off"
-      aria-label="Filter reports by player name"
-      bind:value={searchQuery}
-    >
-    <button
-      type="button"
-      class="reports-search-clear"
-      id="reports-search-clear"
-      hidden={!searchQuery}
-      aria-label="Clear search"
-      on:click={clearSearch}
-    >×</button>
+{#if showLibrarySkeleton}
+  <LibraryHeaderSkeleton />
+  <section class="player-cards" aria-label="Loading reports" aria-busy="true">
+    {#each Array(6) as _}
+      <PlayerCardSkeleton />
+    {/each}
+  </section>
+{:else if hasLibrary}
+  <div class="section-header" id="reports-heading">
+    <h2 class="section-label">Your reports</h2>
+    <SegmentedControl
+      items={FILTER_ITEMS}
+      value={libraryFilter}
+      variant="pill"
+      size="sm"
+      ariaLabel="Filter reports"
+      on:select={(event) => { libraryFilter = event.detail.value; }}
+    />
+    <div class="reports-search">
+      <input
+        type="search"
+        class="reports-search-input"
+        id="reports-search"
+        placeholder="Search players or champions…"
+        autocomplete="off"
+        aria-label="Filter reports by player or champion"
+        bind:value={searchQuery}
+      >
+      <button
+        type="button"
+        class="reports-search-clear"
+        id="reports-search-clear"
+        hidden={!searchQuery}
+        aria-label="Clear search"
+        on:click={clearSearch}
+      >×</button>
+    </div>
   </div>
-</div>
+{/if}
+
 <p class="reports-empty" id="reports-empty" hidden={!groupsLoaded || groups.length > 0}>
   <strong>No reports yet</strong>
   Enter a Riot ID above to generate your first coaching report.
@@ -237,49 +186,8 @@
 </p>
 <section class="player-cards" id="recent-reports" aria-label="Recent reports" hidden={groups.length === 0 || hasNoMatch}>
   {#each filteredGroups as group (group.slug)}
-    <a
-      class="player-card{group.busy ? ' is-busy' : ''}"
-      href="/players/{group.slug}"
-      use:link
-      data-slug={group.slug}
-      data-search={memberSearchText(group)}
-      data-has-report={group.has_report ? '1' : '0'}
-      data-job-state={group.job_state || ''}
-      title={group.busy ? stageLabel(group.job_state) : undefined}
-    >
-      <div class="player-card-name">
-        <span class="player-card-status" aria-hidden="true"></span>
-        <div class="player-card-members">
-          {#each (group.players && group.players.length ? group.players : [{ label: group.player || group.slug, profile_icon: null }]) as member (member.label)}
-            <div class="player-card-member">
-              {#if member.profile_icon}
-                <img class="player-card-icon" src={member.profile_icon} alt="" width="24" height="24">
-              {/if}
-              <span class="player-card-label">{member.label}</span>
-              {#if member.solo_rank_label}
-                <span class="player-card-rank">
-                  {#if member.solo_rank_icon}
-                    <img class="player-card-rank-icon" src={member.solo_rank_icon} alt="" width="20" height="20">
-                  {/if}
-                  <span class="player-card-rank-label">{member.solo_rank_label}</span>
-                </span>
-              {/if}
-            </div>
-          {/each}
-        </div>
-        {#if group.is_group}<span class="badge-group-slot"><Chip tone="plan" label="Group" caps={true} density="compact" /></span>{/if}
-      </div>
-      <div class="player-card-meta">
-        {#if group.has_report}
-          {group.build_count} report{group.build_count !== 1 ? 's' : ''} · {group.total_games} games
-        {:else}
-          Queued for analysis…
-        {/if}
-      </div>
-      {#if group.busy}
-        <div class="player-card-stage">{stageLabel(group.job_state)}</div>
-      {/if}
-    </a>
+    <PlayerCard {group} {stageLabel} />
   {/each}
 </section>
+</main>
 </div>

@@ -10,6 +10,20 @@ const MET = 'met';
 const MISSED = 'missed';
 const UNTRACKED = 'untracked';
 
+export const GOAL_OUTCOMES = { MET, MISSED, UNTRACKED };
+
+/** Stable identity for a goal row — column alone is not unique within a block. */
+export function goalKey(goal) {
+  return `${goal.column}:${goal.target}`;
+}
+
+function isStricterGoal(goal, other) {
+  if (goal.comparator === 'under' || goal.comparator === 'at_most') {
+    return Number(goal.target) < Number(other.target);
+  }
+  return Number(goal.target) > Number(other.target);
+}
+
 function liveGoals(ladder) {
   if (!ladder || !ladder.has_career) return [];
   const live = (ladder.blocks || []).find((block) => block.is_active);
@@ -47,12 +61,13 @@ export function careerGoalsForGame(ladder, game) {
       const outcome = outcomeFor(goal, game);
       if (outcome === null) return null;
       return {
+        key: goalKey(goal),
         text: goal.text,
         why: goal.why || '',
         column: goal.column,
         state: goal.state,
         outcome,
-        value: (game.key_stats || {})[goal.column],
+        value: (game.key_stats || {})[goal.column] ?? (game.career_goal_values || {})[goal.column],
         target: goal.target,
         comparator: goal.comparator,
       };
@@ -64,7 +79,10 @@ export function careerGoalsForGame(ladder, game) {
 export function goalOutcomeByColumn(ladder, game) {
   const byColumn = {};
   for (const goal of careerGoalsForGame(ladder, game)) {
-    byColumn[goal.column] = goal;
+    const existing = byColumn[goal.column];
+    if (!existing || isStricterGoal(goal, existing)) {
+      byColumn[goal.column] = goal;
+    }
   }
   return byColumn;
 }

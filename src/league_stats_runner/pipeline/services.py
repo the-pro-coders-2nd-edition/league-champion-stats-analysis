@@ -35,10 +35,23 @@ class PlayerContext:
     solo_tier: str | None = None
     solo_rank: str | None = None
     solo_lp: int | None = None
+    flex_tier: str | None = None
+    flex_rank: str | None = None
+    flex_lp: int | None = None
 
     @property
     def label(self) -> str:
         return f"{self.riot_id}#{self.tagline}"
+
+    def _queue_payload(self, queue: str, tier: str | None, rank: str | None, lp: int | None) -> dict[str, str | int]:
+        payload: dict[str, str | int] = {}
+        if tier:
+            payload[f"{queue}_tier"] = tier
+            if rank:
+                payload[f"{queue}_rank"] = rank
+            if lp is not None:
+                payload[f"{queue}_lp"] = lp
+        return payload
 
     def as_player_dict(self) -> dict[str, str | int]:
         """Identity dict suitable for job/meta persistence (optional icon/rank)."""
@@ -48,12 +61,12 @@ class PlayerContext:
         }
         if self.profile_icon_id is not None:
             payload["profile_icon_id"] = self.profile_icon_id
-        if self.solo_tier:
-            payload["solo_tier"] = self.solo_tier
-            if self.solo_rank:
-                payload["solo_rank"] = self.solo_rank
-            if self.solo_lp is not None:
-                payload["solo_lp"] = self.solo_lp
+        payload.update(
+            self._queue_payload("solo", self.solo_tier, self.solo_rank, self.solo_lp)
+        )
+        payload.update(
+            self._queue_payload("flex", self.flex_tier, self.flex_rank, self.flex_lp)
+        )
         return payload
 
 

@@ -359,6 +359,36 @@ def test_encode_players_preserves_solo_rank() -> None:
     ]
 
 
+def test_encode_players_preserves_flex_rank() -> None:
+    encoded = jobs.encode_players(
+        [
+            {
+                "riot_id": "Alice",
+                "tagline": "EUW",
+                "solo_tier": "DIAMOND",
+                "solo_rank": "IV",
+                "solo_lp": 83,
+                "flex_tier": "GOLD",
+                "flex_rank": "II",
+                "flex_lp": 12,
+            },
+        ]
+    )
+    decoded = jobs.decode_players(encoded)
+    assert decoded == [
+        {
+            "riot_id": "Alice",
+            "tagline": "EUW",
+            "solo_tier": "DIAMOND",
+            "solo_rank": "IV",
+            "solo_lp": 83,
+            "flex_tier": "GOLD",
+            "flex_rank": "II",
+            "flex_lp": 12,
+        },
+    ]
+
+
 def test_player_registry_stores_group(store: JobStore) -> None:
     players = [
         {"riot_id": "Alice", "tagline": "EUW"},

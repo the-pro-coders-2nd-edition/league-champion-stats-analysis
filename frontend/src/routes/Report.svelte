@@ -4,7 +4,7 @@
   import { computeWindowScopeLabel, WINDOW_SCOPE_KEY } from '../lib/windowScope.js';
   import { resolveCareerView } from '../lib/careerView.js';
   import { get, writable } from 'svelte/store';
-  import { link, replace } from 'svelte-spa-router';
+  import { replace } from 'svelte-spa-router';
   import {
     fetchBuild,
     fetchAccountViews,
@@ -33,11 +33,11 @@
   import RecapModal from '../components/RecapModal.svelte';
   import WelcomeBackToast from '../components/WelcomeBackToast.svelte';
   import ReportSkeleton from '../components/ReportSkeleton.svelte';
+  import AppNav from '../components/AppNav.svelte';
   import { bindPlotlyDetailsResize, resizePlotlySoon } from '../lib/plotlyResize.js';
 
   export let params = {};
 
-  const NAV_COLLAPSE_KEY = 'report-nav-collapsed';
   const ACTIVE_JOB_STATES = ['queued', 'fetching', 'analyzing', 'report_ready', 'peer_running'];
   const ACTIVE_PEER_STATES = ['report_ready', 'peer_running'];
 
@@ -258,8 +258,8 @@
   // fast rebuild doesn't flash empty -- this flag alone gates the skeleton instead.
   let switchingBuild = false;
   let playerBuilds = [];
+  let playerBuildsLoading = true;
   let playerPageHref = null;
-  let navCollapsed = true;
   let stickyHeaderEl = null;
 
   function syncStickyOffset() {
@@ -334,6 +334,7 @@
   let loadedStatusSlug = '';
   $: if (params.slug !== loadedStatusSlug) {
     loadedStatusSlug = params.slug;
+    playerBuildsLoading = true;
     fetchPlayerStatus(params.slug)
       .then((status) => {
         playerBuilds = status.builds || [];
@@ -342,6 +343,9 @@
       })
       .catch(() => {
         playerBuilds = [];
+      })
+      .finally(() => {
+        playerBuildsLoading = false;
       });
   }
 
@@ -371,11 +375,6 @@
   }
 
   onMount(() => {
-    try {
-      navCollapsed = localStorage.getItem(NAV_COLLAPSE_KEY) !== '0';
-    } catch (err) {
-      // Private mode: collapse state lives for this page only.
-    }
     const unbindPlotlyResize = bindPlotlyDetailsResize();
     window.addEventListener('scroll', syncStickyOffset, { passive: true });
     window.addEventListener('resize', syncStickyOffset);
@@ -384,31 +383,11 @@
       window.removeEventListener('scroll', syncStickyOffset);
       window.removeEventListener('resize', syncStickyOffset);
       stickyResizeObserver?.disconnect();
-      document.documentElement.classList.remove('report-nav-collapsed');
     };
   });
 
   $: if (stickyHeaderEl && (statusBannerVisible !== undefined || payload)) {
     tick().then(syncStickyOffset);
-  }
-
-  // CSS for the collapsed state is scoped to html.report-nav-collapsed (matching
-  // the original report.html script), not a class on any element this component owns.
-  $: if (typeof document !== 'undefined') {
-    document.documentElement.classList.toggle('report-nav-collapsed', navCollapsed);
-  }
-
-  function toggleNav() {
-    navCollapsed = !navCollapsed;
-    try {
-      localStorage.setItem(NAV_COLLAPSE_KEY, navCollapsed ? '1' : '0');
-    } catch (err) {
-      // Private mode: collapse state lives for this page only.
-    }
-  }
-
-  function winratePct(build) {
-    return build.winrate != null ? Math.round(build.winrate * 100) : null;
   }
 
   const REPORT_CATEGORIES = [
@@ -462,7 +441,22 @@
     selectCategory(tabFromParams(params.tab), { updateUrl: false });
   }
 
-  setContext(REPORT_NAV_KEY, createReportNav(selectCategory));
+  function resolveGameReviewMatch(matchId) {
+    if (!report) return;
+    const viewData = get(report.view);
+    const review = viewData?.game_review || {};
+    const currentQueue = get(report.queue);
+    if (review[currentQueue]?.games?.some((game) => game.match_id === matchId)) return;
+    for (const [key, bundle] of Object.entries(review)) {
+      if (bundle?.games?.some((game) => game.match_id === matchId)) {
+        report.selectQueue(key);
+        return;
+      }
+    }
+  }
+
+  const reportNav = createReportNav(selectCategory, { resolveGameReviewMatch });
+  setContext(REPORT_NAV_KEY, reportNav);
 
   const windowScopeLabel = writable('');
   setContext(WINDOW_SCOPE_KEY, windowScopeLabel);
@@ -509,57 +503,14 @@
 </script>
 
 <div class="layout">
-<nav class="report-nav{navCollapsed ? ' is-collapsed' : ''}" id="report-nav" aria-label="Report navigation">
-  <div class="nav-header">
-    <a class="app-brand app-brand--nav" href="/" use:link title="Home">
-      <img src="/out/assets/brand/logo.png" alt="" class="app-logo" aria-hidden="true">
-      <span class="app-brand-title">League Champion Analyser</span>
-    </a>
-    <button
-      type="button"
-      class="nav-fold-btn"
-      id="nav-fold-btn"
-      aria-expanded={!navCollapsed}
-      aria-controls="nav-builds-panel"
-      title={navCollapsed ? 'Expand champions menu' : 'Collapse champions menu'}
-      on:click={toggleNav}
-    >
-      <iconify-icon class="nav-fold-icon nav-fold-icon--collapse" icon="mdi:chevron-left" width="18" height="18" aria-hidden="true"></iconify-icon>
-      <iconify-icon class="nav-fold-icon nav-fold-icon--expand" icon="mdi:chevron-right" width="18" height="18" aria-hidden="true"></iconify-icon>
-      <span class="nav-fold-label">{navCollapsed ? 'Show' : 'Hide'}</span>
-    </button>
-  </div>
-  <div class="nav-back">
-    {#if playerPageHref}
-      <a href={playerPageHref} use:link>← Player page</a>
-    {:else}
-      <a href="/" use:link>← Home</a>
-    {/if}
-  </div>
-  {#if playerBuilds.length}
-    <div class="nav-builds" id="nav-builds-panel">
-      <div class="nav-builds-label">Champions</div>
-      <div class="build-grid">
-        {#each playerBuilds as build (build.slug)}
-          <a
-            class="build-card{build.slug === params.buildSlug ? ' is-default' : ''}"
-            href="/players/{params.slug}/{build.slug}"
-            use:link
-            title="{build.champion}{build.role_display ? ' · ' + build.role_display : ''} · {build.games} games · {winratePct(build)}%"
-          >
-            {#if build.champion_icon}
-              <img src={build.champion_icon} alt={build.champion} class="game-icon">
-            {/if}
-            <div class="build-card-body">
-              <strong>{build.champion}{#if build.role_display}<span class="build-card-role">{#if build.role_icon}<img src={build.role_icon} alt="" class="role-icon role-icon--sm">{/if} {build.role_display}</span>{/if}</strong>
-              <div class="meta">{build.games} games · {winratePct(build)}%</div>
-            </div>
-          </a>
-        {/each}
-      </div>
-    </div>
-  {/if}
-</nav>
+<AppNav
+  builds={playerBuilds}
+  playerSlug={params.slug}
+  activeBuildSlug={params.buildSlug}
+  backHref={playerPageHref || '/'}
+  backLabel={playerPageHref ? '← All champions' : '← Reports'}
+  loading={playerBuildsLoading && playerBuilds.length === 0}
+/>
 <main>
 
 <WelcomeBackToast data={welcomeBack} onDismiss={() => { welcomeBack = null; }} />
@@ -641,7 +592,7 @@
     <ReportSkeleton category={activeCategory} />
   {:else}
     <div class="report-category-panel{activeCategory === 'summary' ? ' is-active' : ''}" id="category-summary" data-category="summary">
-      <Overview data={$view} career={careerLadder} onGoToCareer={() => selectCategory('career')} />
+      <Overview data={$view} career={careerLadder} onGoToCareer={() => reportNav.scrollToSection('career')} />
       <Coaching data={$view} />
     </div>
 
