@@ -25,8 +25,11 @@ COPY src/ ./src/
 COPY main.py ./
 COPY config.toml.example ./
 # Ops scripts (e.g. deploy/clear_mongodb.py) meant to be run via `docker compose exec
-# api-ui python deploy/<script>.py` against the running container's environment/network,
-# not just from the VPS host checkout.
+# api-ui uv run python deploy/<script>.py` against the running container's
+# environment/network, not just from the VPS host checkout. Plain `python` (not `uv run
+# python`) can't see the uv-managed venv `uv sync` installs into below, so it'll
+# ModuleNotFoundError on any dependency (e.g. pymongo) despite it being declared and
+# installed correctly.
 COPY deploy/ ./deploy/
 
 # vite.config.js sets build.outDir to ../src/league_stats_api_ui/spa_dist (relative to
