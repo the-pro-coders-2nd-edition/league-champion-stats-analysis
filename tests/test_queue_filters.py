@@ -26,6 +26,12 @@ def _report_payload(config) -> dict:
         return store.get_report(config.reports_group_slug, build_slug)
 
 
+def _view_slice(config, queue_key: str, window_key: str) -> dict:
+    build_slug = champion_slug(config.champion, config.role)
+    with open_report_store() as store:
+        return store.get_view_slice(config.reports_group_slug, build_slug, queue_key, window_key)
+
+
 def _make_flex_records(n: int) -> list[MatchRecord]:
     base = MatchParser(ItemCatalog(FAKE_ITEMS)).parse(
         make_match(queue_id=RANKED_FLEX_QUEUE_ID), make_timeline(), MY_PUUID
@@ -82,11 +88,11 @@ def test_report_contains_queue_filter_toggle(tmp_path: Path) -> None:
     payload = _report_payload(config)
     assert payload["queue_filter_default"] == "solo"
 
-    views = payload["report_views"]
+    views = payload["view_manifest"]
     assert set(views) == {"solo", "flex", "all"}
     assert set(views["solo"]["windows"]) == {"50", "100", "all"}
-    assert views["solo"]["windows"]["all"]["total_games"] == 25
-    assert views["flex"]["windows"]["all"]["total_games"] == 0
+    assert _view_slice(config, "solo", "all")["total_games"] == 25
+    assert _view_slice(config, "flex", "all")["total_games"] == 0
 
 
 def test_flex_records_appear_in_flex_view(tmp_path: Path) -> None:
@@ -99,10 +105,9 @@ def test_flex_records_appear_in_flex_view(tmp_path: Path) -> None:
 
     payload = _report_payload(config)
     assert payload["queue_filter_default"] == "flex"
-    views = payload["report_views"]
-    assert views["flex"]["windows"]["all"]["total_games"] == 12
-    assert views["solo"]["windows"]["all"]["total_games"] == 0
-    assert views["flex"]["windows"]["all"].get("peer") is None
+    assert _view_slice(config, "flex", "all")["total_games"] == 12
+    assert _view_slice(config, "solo", "all")["total_games"] == 0
+    assert _view_slice(config, "flex", "all").get("peer") is None
 
 
 def test_mixed_queues_have_different_window_options(tmp_path: Path) -> None:
@@ -114,7 +119,7 @@ def test_mixed_queues_have_different_window_options(tmp_path: Path) -> None:
     run_analysis(config, records, peer_comparison=peer, ranked=None)
 
     payload = _report_payload(config)
-    views = payload["report_views"]
+    views = payload["view_manifest"]
     solo_options = {opt["key"]: opt["enabled"] for opt in views["solo"]["window_options"]}
     flex_options = {opt["key"]: opt["enabled"] for opt in views["flex"]["window_options"]}
     assert solo_options["50"] is True

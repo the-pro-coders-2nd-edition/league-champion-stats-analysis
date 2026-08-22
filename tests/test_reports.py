@@ -338,3 +338,34 @@ def test_delete_player_clears_view_slices_and_game_review(tmp_path: Path) -> Non
         store.delete_player("player_b")
         assert store.get_view_slice("player_b", "build_a", "solo", "50") is None
         assert store.get_game_review("player_b", "build_a") is None
+
+
+def test_run_analysis_stores_view_slices_fetchable_via_report_store(tmp_path: Path) -> None:
+    """End-to-end: a real `run_analysis` call must leave every (queue, window)
+    combination fetchable via `get_view_slice`, and the head report must not
+    embed `report_views`/`game_review` inline."""
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75)
+    records = _make_records()
+    peer = _peer(records)
+    config = _config(tmp_path, champion="Viktor", role="MIDDLE")
+
+    run_analysis(config, records, peer_comparison=peer, ranked=ranked)
+
+    with open_report_store() as store:
+        head = store.get_report(config.reports_group_slug, "viktor_middle")
+        assert "report_views" not in head
+        assert "game_review" not in head
+        manifest = head["view_manifest"]
+        default_queue = head["queue_filter_default"]
+        default_window = head["game_window_default"]
+        assert default_queue in manifest
+        assert default_window in manifest[default_queue]["windows"]
+
+        default_slice = store.get_view_slice(
+            config.reports_group_slug, "viktor_middle", default_queue, default_window
+        )
+        assert default_slice is not None
+        assert default_slice["overview"] == head["overview"]
+
+        review = store.get_game_review(config.reports_group_slug, "viktor_middle")
+        assert review is not None

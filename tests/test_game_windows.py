@@ -24,6 +24,12 @@ def _read_report(config) -> dict:
         return store.get_report(config.reports_group_slug, build_slug)
 
 
+def _view_slice(config, queue_key: str, window_key: str) -> dict:
+    build_slug = champion_slug(config.champion, config.role)
+    with open_report_store() as store:
+        return store.get_view_slice(config.reports_group_slug, build_slug, queue_key, window_key)
+
+
 def _make_records(n: int, *, recent_wins: bool = False) -> list[MatchRecord]:
     base = MatchParser(ItemCatalog(FAKE_ITEMS)).parse(make_match(), make_timeline(), MY_PUUID)
     records: list[MatchRecord] = []
@@ -73,12 +79,12 @@ def test_report_contains_game_window_toggle(tmp_path: Path) -> None:
     payload = _read_report(config)
     assert payload["game_window_default"] == "all"
 
-    views = payload["report_views"]
+    views = payload["view_manifest"]
     solo_windows = views["solo"]["windows"]
     assert set(solo_windows) == {"50", "100", "all"}
-    assert solo_windows["50"]["total_games"] == 25
-    assert solo_windows["100"]["total_games"] == 25
-    assert solo_windows["all"]["total_games"] == 25
+    assert _view_slice(config, "solo", "50")["total_games"] == 25
+    assert _view_slice(config, "solo", "100")["total_games"] == 25
+    assert _view_slice(config, "solo", "all")["total_games"] == 25
 
 
 def test_default_window_active_when_enough_games(tmp_path: Path) -> None:
@@ -111,6 +117,7 @@ def test_window_snapshots_change_winrate(tmp_path: Path) -> None:
 
     run_analysis(config, records, peer_comparison=peer, ranked=None)
 
-    payload = _read_report(config)
-    solo_windows = payload["report_views"]["solo"]["windows"]
-    assert solo_windows["50"]["overview"]["winrate"] > solo_windows["all"]["overview"]["winrate"]
+    _read_report(config)
+    solo_50 = _view_slice(config, "solo", "50")
+    solo_all = _view_slice(config, "solo", "all")
+    assert solo_50["overview"]["winrate"] > solo_all["overview"]["winrate"]

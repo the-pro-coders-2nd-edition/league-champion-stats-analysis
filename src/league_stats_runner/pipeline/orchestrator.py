@@ -930,6 +930,27 @@ def run_analysis(
     build_slug = champion_slug(config.champion, config.role)
     report_payload = context_to_json(context)
 
+    # `report_views`/`game_review` are popped out here rather than ever being
+    # embedded in `report_payload` in the first place: MongoDB's 16MB
+    # per-document limit is what a real 598-game build already exceeded when
+    # these were nested inline (see design "Splitting report_bodies" RFC).
+    # `report_views_popped` keeps queue-level scalars (total_games,
+    # default_window, window_options) for the manifest and flattens
+    # `windows[window_key]` into `view_slices`, keyed by (queue_key,
+    # window_key) -- exactly the shape `ReportStore.save_body` expects.
+    report_views_popped = report_payload.pop("report_views", {})
+    game_review_popped = report_payload.pop("game_review", None)
+    view_slices: dict[tuple[str, str], dict[str, Any]] = {}
+    for queue_key, queue_view in report_views_popped.items():
+        for window_key, bundle in (queue_view.get("windows") or {}).items():
+            bundle_with_meta = {
+                **bundle,
+                "total_games": queue_view.get("total_games"),
+                "default_window": queue_view.get("default_window"),
+                "window_options": queue_view.get("window_options"),
+            }
+            view_slices[(queue_key, window_key)] = bundle_with_meta
+
     generated_at = context.get("generated_at", "")
     primary_icon = next(
         (
@@ -975,6 +996,8 @@ def run_analysis(
             summary=summary,
             progression_json=progression_json,
             progression_md=progression_md,
+            view_slices=view_slices,
+            game_review=game_review_popped,
         )
     refresh_report_indexes(
         config.output_dir,

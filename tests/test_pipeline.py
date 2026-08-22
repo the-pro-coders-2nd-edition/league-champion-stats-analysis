@@ -314,7 +314,7 @@ def test_pipeline_saves_a_json_safe_report_body(tmp_path: Path) -> None:
 
     payload = _read_report(report_ref)
     assert payload["champion"] == "Viktor"
-    assert "report_views" in payload
+    assert "view_manifest" in payload
 
 
 def test_run_analysis_writes_none_of_the_six_migrated_report_files(tmp_path: Path) -> None:
