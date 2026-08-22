@@ -39,6 +39,11 @@ class PeersServiceStub:
                 request_serializer=league__stats__rpc_dot_v1_dot_peers__pb2.RequestBaselineRequest.SerializeToString,
                 response_deserializer=league__stats__rpc_dot_v1_dot_peers__pb2.RequestBaselineResponse.FromString,
                 _registered_method=True)
+        self.PeekBaseline = channel.unary_unary(
+                '/league_stats_rpc.v1.PeersService/PeekBaseline',
+                request_serializer=league__stats__rpc_dot_v1_dot_peers__pb2.PeekBaselineRequest.SerializeToString,
+                response_deserializer=league__stats__rpc_dot_v1_dot_peers__pb2.PeekBaselineResponse.FromString,
+                _registered_method=True)
 
 
 class PeersServiceServicer:
@@ -53,6 +58,17 @@ class PeersServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def PeekBaseline(self, request, context):
+        """Read-only: returns whatever is currently cached for this key, or
+        found=false. Never enqueues a SamplingTask -- callers that want PEERS
+        to actually go fetch data must use RequestBaseline instead. Meant for
+        a cheap "has this improved since I last saved it" check on report
+        read, not for resolving a baseline from scratch.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PeersServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -60,6 +76,11 @@ def add_PeersServiceServicer_to_server(servicer, server):
                     servicer.RequestBaseline,
                     request_deserializer=league__stats__rpc_dot_v1_dot_peers__pb2.RequestBaselineRequest.FromString,
                     response_serializer=league__stats__rpc_dot_v1_dot_peers__pb2.RequestBaselineResponse.SerializeToString,
+            ),
+            'PeekBaseline': grpc.unary_unary_rpc_method_handler(
+                    servicer.PeekBaseline,
+                    request_deserializer=league__stats__rpc_dot_v1_dot_peers__pb2.PeekBaselineRequest.FromString,
+                    response_serializer=league__stats__rpc_dot_v1_dot_peers__pb2.PeekBaselineResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -89,6 +110,33 @@ class PeersService:
             '/league_stats_rpc.v1.PeersService/RequestBaseline',
             league__stats__rpc_dot_v1_dot_peers__pb2.RequestBaselineRequest.SerializeToString,
             league__stats__rpc_dot_v1_dot_peers__pb2.RequestBaselineResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PeekBaseline(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/league_stats_rpc.v1.PeersService/PeekBaseline',
+            league__stats__rpc_dot_v1_dot_peers__pb2.PeekBaselineRequest.SerializeToString,
+            league__stats__rpc_dot_v1_dot_peers__pb2.PeekBaselineResponse.FromString,
             options,
             channel_credentials,
             insecure,
