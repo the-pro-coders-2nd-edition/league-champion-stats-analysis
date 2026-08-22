@@ -164,7 +164,7 @@ def test_score_verdict_sentence_steady_and_watch() -> None:
 
 
 def test_refresh_score_verdicts_in_report_updates_baked_labels() -> None:
-    from league_stats.pipeline.bundles import refresh_score_verdicts_in_report
+    from league_stats_runner.pipeline.bundles import refresh_score_verdicts_in_report
 
     payload = {
         "score": 53.0,

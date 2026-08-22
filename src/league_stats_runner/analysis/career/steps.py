@@ -493,7 +493,7 @@ def _shortfall(ctx, column: str, norm: float) -> float:
 
 def _offers_cc_goals(ctx) -> bool:
     """Whether this build's games suggest CC is worth coaching on."""
-    from league_stats.analysis.combat import build_uses_cc
+    from league_stats_runner.analysis.combat import build_uses_cc
 
     return build_uses_cc(avg_ccpm=player_mean(ctx.matches_df, "ccpm"))
 
