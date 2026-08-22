@@ -72,17 +72,16 @@ services:
     env_file:
       - .env
     # Published to LOOPBACK ONLY, never all interfaces: deploy/run.sh's Caddy
-    # is a host systemd process, not a member of this compose network, so
-    # (like Grafana's GRAFANA_HOST/GRAFANA_PORT below) it can only reach a
-    # container through a published host port -- there is no such thing as
-    # "no host port at all" while still letting host-based Caddy reverse-
-    # proxy to it. The point of NOT doing what Grafana's current (temporary)
-    # `3000:3000` does -- publish on all interfaces -- is that mongo-express
-    # must never be reachable directly from the internet, only through
-    # Caddy's `mongo.${DOMAIN}` site block, because Caddy's access log for
-    # that site is the only place a failed Basic Auth login ever shows up as
-    # a line on disk (mongo-express has no failed-login log of its own, it
-    # just returns a plain 401) -- without Caddy in front of it, fail2ban's
+    # is a host systemd process, not a member of this compose network, so it
+    # can only reach a container through a published host port -- there is
+    # no such thing as "no host port at all" while still letting host-based
+    # Caddy reverse-proxy to it. mongo-express must never be reachable
+    # directly from the internet, only through Caddy's `${DOMAIN}:8081`
+    # port-based site block (no subdomain -- this VPS's setup avoids
+    # per-service subdomains), because Caddy's access log for that site is
+    # the only place a failed Basic Auth login ever shows up as a line on
+    # disk (mongo-express has no failed-login log of its own, it just
+    # returns a plain 401) -- without Caddy in front of it, fail2ban's
     # mongo-express jail would have nothing to watch. Loopback-only achieves
     # that without requiring Caddy to join the compose network.
     ports:
@@ -208,14 +207,14 @@ services:
       - ./deploy/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
       - ./deploy/grafana/logs:/var/log/grafana
-    # TEMPORARY, for pre-DNS testing only: published on all interfaces so
-    # Grafana is reachable at <vps-ip-or-domain>:3000 without Caddy/DNS/TLS
-    # in front of it. This means the admin login goes over plain HTTP,
-    # unencrypted, protected only by the admin password -- revert to
-    # `127.0.0.1:3000:3000` (loopback-only, reached via Caddy's
-    # `grafana.<DOMAIN>` reverse proxy instead) once DNS is set up.
+    # Loopback-only: reached via Caddy's `${DOMAIN}:3000` port-based site
+    # block (deploy/run.sh), not a subdomain -- a per-service subdomain
+    # needs its own DNS A record, which this VPS's setup doesn't want.
+    # Caddy still fronts it with the main domain's existing TLS cert (a
+    # cert is issued per hostname, not per port, so no new DNS/cert is
+    # needed for this), so the admin login is no longer plain HTTP.
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - prometheus
       - loki

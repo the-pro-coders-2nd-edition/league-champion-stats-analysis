@@ -40,7 +40,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service=\"fail2ban\"} | regexp `NOTICE\\\\s+\\\\[(?P<jail>[\\\\w-]+)\\\\]\\\\s+Ban\\\\b` | jail=\"grafana\" [$__range]))",
+          "expr": "sum(count_over_time({service=\"fail2ban\"} | regexp `NOTICE\\s+\\[(?P<jail>[\\w-]+)\\]\\s+Ban\\b` | jail=\"grafana\" [$__range]))",
           "refId": "A"
         }
       ]
@@ -71,7 +71,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service=\"fail2ban\"} | regexp `NOTICE\\\\s+\\\\[(?P<jail>[\\\\w-]+)\\\\]\\\\s+Ban\\\\b` | jail=\"mongo-express\" [$__range]))",
+          "expr": "sum(count_over_time({service=\"fail2ban\"} | regexp `NOTICE\\s+\\[(?P<jail>[\\w-]+)\\]\\s+Ban\\b` | jail=\"mongo-express\" [$__range]))",
           "refId": "A"
         }
       ]
@@ -102,7 +102,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum by (jail, action) (count_over_time({service=\"fail2ban\"} | regexp `NOTICE\\\\s+\\\\[(?P<jail>[\\\\w-]+)\\\\]\\\\s+(?P<action>Ban|Unban|Found)\\\\b` [$__interval]))",
+          "expr": "sum by (jail, action) (count_over_time({service=\"fail2ban\"} | regexp `NOTICE\\s+\\[(?P<jail>[\\w-]+)\\]\\s+(?P<action>Ban|Unban|Found)\\b` [$__interval]))",
           "legendFormat": "{{jail}} - {{action}}",
           "refId": "A"
         }
