@@ -44,12 +44,21 @@ class _FakeTask:
         self.batches_run = 0
         self._batches_to_finish = batches_to_finish
         self.reached_interim = False
-        self.exhausted = False
         self.failing = False
 
     @property
     def reached_target(self) -> bool:
         return self.batches_run >= self._batches_to_finish
+
+    @property
+    def exhausted(self) -> bool:
+        # RFC "PEERS priority scheduling...", §2: reaching target no longer
+        # finalizes a task by itself -- only `exhausted` does. This fake has
+        # no separate ceiling/ "full vs partial" concept to exercise (that's
+        # covered directly by test_peer_sampling_scheduler.py's own
+        # SamplingTask-based tests), so "finished" and "exhausted" are the
+        # same thing here.
+        return self.reached_target
 
     def run_batch(self) -> None:
         if self.failing:

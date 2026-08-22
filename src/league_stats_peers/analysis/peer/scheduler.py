@@ -239,12 +239,12 @@ class SamplingScheduler:
             self._finalize(task, "partial")
             return
 
-        if task.reached_target:
-            self._finalize(task, "full")
-        elif task.exhausted:
-            self._finalize(task, "partial")
+        if task.exhausted:
+            self._finalize(task, "full" if task.reached_target else "partial")
         else:
-            if task.reached_interim and self._on_interim is not None:
+            if task.reached_target and task.priority != "background":
+                task.priority = "refining"  # RFC §1.2 Case B: unconditional demotion
+            if (task.reached_interim or task.reached_target) and self._on_interim is not None:
                 try:
                     self._on_interim(task)
                 except Exception:  # noqa: BLE001 -- see `_finalize`'s matching guard.

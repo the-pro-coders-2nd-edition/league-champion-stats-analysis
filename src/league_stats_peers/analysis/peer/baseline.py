@@ -118,7 +118,8 @@ def _on_task_interim(task: SamplingTask) -> None:
     was still refining gets another push here too, whenever the sample
     actually grew.
     """
-    snapshot = task.build_snapshot(confidence="low", still_refining=True)
+    confidence = "full" if task.reached_target else "low"
+    snapshot = task.build_snapshot(confidence=confidence, still_refining=True)
     write_live_cache(task.client.platform, task.ranked.tier, task.champion, task.role, snapshot, patch=task.patch)
     _dispatch_progressive_listeners(task.key, snapshot)
 

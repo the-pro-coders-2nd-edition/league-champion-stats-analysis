@@ -199,6 +199,73 @@ def test_get_or_create_promotes_priority_never_demotes() -> None:
     assert task.priority == "explicit"  # unchanged -- background never demotes
 
 
+# --------------------------------------------- confidence/finalization decoupling
+
+
+def test_reaching_target_demotes_explicit_to_refining_not_background() -> None:
+    """RFC §1.2 Case B: a task that started explicit and reaches target (but
+    hasn't exhausted) must land in the refining queue, never straight to
+    background, and must stay active in the scheduler."""
+    scheduler = SamplingScheduler(num_workers=0)
+    key = ("p", "t", "c", "r", "16.16")
+
+    def _on_run(task: _FakeTask) -> None:
+        task.reached_target = True
+
+    task = _FakeTask(key, priority="explicit", on_run=_on_run)
+    scheduler.get_or_create(key, lambda: task)
+    scheduler.step()
+
+    assert task.priority == "refining"
+    assert task in scheduler._refining_queue
+    assert task not in scheduler._background_queue
+    assert task not in scheduler._explicit_queue
+    assert scheduler.is_active(key) is True
+
+
+def test_reaching_target_does_not_remove_the_task_from_the_scheduler() -> None:
+    """Only exhaustion finalizes a task now -- reaching target alone must
+    leave it active (is_active still True, no on_finalize call)."""
+    finalized: list[str] = []
+    scheduler = SamplingScheduler(
+        num_workers=0, on_finalize=lambda task, status: finalized.append(status)
+    )
+    key = ("p", "t", "c", "r", "16.16")
+
+    def _on_run(task: _FakeTask) -> None:
+        task.reached_target = True
+        task.exhausted = False
+
+    task = _FakeTask(key, on_run=_on_run)
+    scheduler.get_or_create(key, lambda: task)
+    scheduler.step()
+
+    assert scheduler.is_active(key) is True
+    assert finalized == []
+
+
+def test_task_finalizes_as_full_once_exhausted_after_reaching_target() -> None:
+    """A task that reached target and later exhausts its ceiling must
+    finalize with status='full', not 'partial' -- the terminal snapshot
+    must say still_refining=False only once, correctly."""
+    finalized: list[str] = []
+    scheduler = SamplingScheduler(
+        num_workers=0, on_finalize=lambda task, status: finalized.append(status)
+    )
+    key = ("p", "t", "c", "r", "16.16")
+
+    def _on_run(task: _FakeTask) -> None:
+        task.reached_target = True
+        task.exhausted = True
+
+    task = _FakeTask(key, on_run=_on_run)
+    scheduler.get_or_create(key, lambda: task)
+    scheduler.step()
+
+    assert finalized == ["full"]
+    assert scheduler.is_active(key) is False
+
+
 # ------------------------------------------------------------- fairness
 
 
@@ -399,6 +466,13 @@ def test_progressive_listener_fires_on_every_improving_batch_and_once_terminal(
     `PeersServicer._on_resolved`/`_notify_runner` relies on this module's
     `register_progressive_listener`/`_dispatch_progressive_listeners` to
     close.
+
+    RFC "PEERS priority scheduling...", §2: reaching `target` (6) no longer
+    finalizes the task -- it keeps sampling toward `ceiling`. `ceiling` is
+    set to 8 here (2 batches past target, with this deterministic
+    always-hits client) so the task still finalizes quickly and
+    deterministically, but only once real exhaustion (ceiling) is reached,
+    not at target.
     """
     import league_stats_peers.analysis.peer.benchmark_cache as benchmark_cache
     from league_stats_peers.analysis.peer.baseline import register_progressive_listener
@@ -410,7 +484,7 @@ def test_progressive_listener_fires_on_every_improving_batch_and_once_terminal(
 
     client = _YieldClient("euw1", hit_every=1, prefix="prog")
     key = ("euw1", "GOLD", "zac", "JUNGLE-progressive", "")
-    task = _make_task(key, client, batch_size=2, ceiling=100, target=6, interim_threshold=2)
+    task = _make_task(key, client, batch_size=2, ceiling=8, target=6, interim_threshold=2)
     scheduler = SamplingScheduler(num_workers=1, on_interim=_on_task_interim, on_finalize=_on_task_finalize)
     scheduler.get_or_create(key, lambda: task)
 
@@ -434,13 +508,22 @@ def test_progressive_listener_fires_on_every_improving_batch_and_once_terminal(
     games_seen = [games for games, _still_refining in received]
     assert games_seen == sorted(games_seen)
     assert len(games_seen) == len(set(games_seen))
-    assert games_seen[-1] == task.games == 6
+    # Task kept sampling past target(6) to ceiling(8) -- it no longer stops
+    # dead at target (RFC §2's whole point).
+    assert games_seen[-1] == task.games == task.ceiling == 8
 
 
 def test_progressive_listener_deregistered_after_terminal_push(monkeypatch: pytest.MonkeyPatch) -> None:
     """A listener must stop being called once its task has finalized -- a new
     task later reusing the same key must not accidentally replay into an old
-    listener that should have been forgotten."""
+    listener that should have been forgotten.
+
+    RFC "PEERS priority scheduling...", §2: `ceiling` is set equal to
+    `target` here so the task exhausts (finalizes) within its very first
+    batch -- with target no longer independently finalizing a task, this is
+    what now makes it deterministic that no interim push happens before the
+    single terminal one.
+    """
     import league_stats_peers.analysis.peer.benchmark_cache as benchmark_cache
     from league_stats_peers.analysis.peer.baseline import _dispatch_progressive_listeners, register_progressive_listener
     from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
@@ -451,7 +534,7 @@ def test_progressive_listener_deregistered_after_terminal_push(monkeypatch: pyte
 
     client = _YieldClient("euw1", hit_every=1, prefix="term")
     key = ("euw1", "GOLD", "zac", "JUNGLE-terminal-only", "")
-    task = _make_task(key, client, batch_size=6, ceiling=100, target=2, interim_threshold=2)
+    task = _make_task(key, client, batch_size=6, ceiling=2, target=2, interim_threshold=2)
     scheduler = SamplingScheduler(num_workers=1, on_interim=_on_task_interim, on_finalize=_on_task_finalize)
     scheduler.get_or_create(key, lambda: task)
 
@@ -523,13 +606,22 @@ def test_interleaved_scheduling_costs_the_same_as_sequential() -> None:
     """Total Riot API calls across two interleaved tasks match what running
     them sequentially would have cost -- the scheduler reallocates *when*
     work happens, not how much of it there is.
+
+    RFC "PEERS priority scheduling...", §2: `task.done` (reached_target OR
+    exhausted) no longer marks "no more work will ever be done on this task"
+    -- only `task.exhausted` does, since a task keeps sampling past target
+    toward ceiling. The scheduler-driven ("interleaved") path already runs
+    each task to real exhaustion (via `is_active`, which only clears at
+    `_finalize`, itself only reached at `exhausted`); the sequential
+    comparison below must drive each task to the same `exhausted` stopping
+    point to remain a fair equivalence check, not stop early at `done`.
     """
 
     def _build_pair() -> tuple[SamplingTask, SamplingTask, _YieldClient, _YieldClient]:
         client_a = _YieldClient("euw1", hit_every=1, prefix="f")
         client_b = _YieldClient("euw1", hit_every=3, prefix="g")
-        task_a = _make_task(("euw1", "GOLD", "zac", "JUNGLE-f", ""), client_a, batch_size=2, target=6)
-        task_b = _make_task(("euw1", "GOLD", "zac", "JUNGLE-g", ""), client_b, batch_size=2, target=6)
+        task_a = _make_task(("euw1", "GOLD", "zac", "JUNGLE-f", ""), client_a, batch_size=2, ceiling=8, target=6)
+        task_b = _make_task(("euw1", "GOLD", "zac", "JUNGLE-g", ""), client_b, batch_size=2, ceiling=8, target=6)
         return task_a, task_b, client_a, client_b
 
     # Interleaved (round robin via the scheduler).
@@ -544,11 +636,12 @@ def test_interleaved_scheduling_costs_the_same_as_sequential() -> None:
         client_a.match_ids_calls + client_a.match_calls + client_b.match_ids_calls + client_b.match_calls
     )
 
-    # Sequential: task A to completion, then task B to completion.
+    # Sequential: task A to completion, then task B to completion. Driven to
+    # `exhausted`, not `done` -- see this test's docstring.
     task_a2, task_b2, client_a2, client_b2 = _build_pair()
-    while not task_a2.done:
+    while not task_a2.exhausted:
         task_a2.run_batch()
-    while not task_b2.done:
+    while not task_b2.exhausted:
         task_b2.run_batch()
     sequential_calls = (
         client_a2.match_ids_calls + client_a2.match_calls + client_b2.match_ids_calls + client_b2.match_calls

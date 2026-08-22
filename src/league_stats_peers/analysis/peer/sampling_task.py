@@ -116,7 +116,19 @@ class SamplingTask:
 
     @property
     def exhausted(self) -> bool:
-        """No more useful work remains, short of the target.
+        """No more useful work remains at all -- ceiling spent, or the
+        snowball queue has genuinely run dry after seeding.
+
+        RFC "PEERS priority scheduling...", §2: deliberately independent of
+        `reached_target` now. Reaching target used to make this method
+        return False unconditionally (finalization happened at target,
+        `exhausted` was never even consulted for such a task) -- now that a
+        task keeps sampling toward `CEILING` after reaching target (RFC §1.2
+        Case B/§2), `exhausted` has to be able to say "yes, genuinely done"
+        purely from ceiling/queue state, independent of whether target was
+        ever reached. Without this, a task that already reached target could
+        never finalize: it would sit in `_refining_queue` forever, re-run
+        every batch for no further progress once its queue drains.
 
         True once the download ceiling is hit, or once the snowball queue
         has genuinely run dry after seeding (e.g. no league entries at all,
@@ -124,8 +136,6 @@ class SamplingTask:
         second condition a task with no candidates left would sit in the
         scheduler's queue forever, re-enqueued every batch for no progress.
         """
-        if self.reached_target:
-            return False
         if self.downloads >= self.ceiling:
             return True
         return self._seeded and not self.queue
@@ -219,22 +229,27 @@ class SamplingTask:
         """Advance the scan by at most `batch_size` new match downloads.
 
         Mirrors `benchmark_fetcher._collect_sample_rows`'s snowball loop, but
-        stops after one batch instead of running until target/ceiling -- the
+        stops after one batch instead of running until ceiling -- the
         scheduler decides what happens next (finalize, finalize-partial, or
         re-enqueue), not this method.
+
+        RFC "PEERS priority scheduling...", §2: no longer stops early once
+        `reached_target` -- a task keeps collecting toward `ceiling` after
+        target (the scheduler demotes it to "refining" priority instead of
+        finalizing it, see `SamplingScheduler._run_one_batch`). Only
+        `self.exhausted` (ceiling spent, or the snowball queue genuinely dry)
+        stops this method from doing further work.
         """
         log = get_logger("sampling_task")
         self._ensure_seeded()
         self.batches_run += 1
-        if self.reached_target:
+        if self.exhausted:
             return
 
         scope = build_widened_scope(self.ranked)
         batch_downloads = 0
 
         while self.queue and batch_downloads < self.batch_size and self.downloads < self.ceiling:
-            if self.reached_target:
-                break
             puuid = self.queue.popleft()
             if puuid in self.seen_for_snowball:
                 continue
@@ -249,11 +264,7 @@ class SamplingTask:
                 continue
 
             for match_id in match_ids:
-                if (
-                    self.reached_target
-                    or batch_downloads >= self.batch_size
-                    or self.downloads >= self.ceiling
-                ):
+                if batch_downloads >= self.batch_size or self.downloads >= self.ceiling:
                     break
                 if match_id in self.seen_matches:
                     continue
@@ -309,5 +320,3 @@ class SamplingTask:
                     row["match_id"] = match_id
                     self.rows.append(row)
                     self.players_used.add(p_puuid)
-                    if self.reached_target:
-                        break
