@@ -70,6 +70,33 @@ loki.process "app_logs" {
 	forward_to = [loki.write.default.receiver]
 }
 
+// fail2ban runs on the HOST, not in a container -- it has no Prometheus
+// metrics and no existing Loki ingestion path of its own, and the Docker
+// discovery pipeline above only ever sees container stdout/stderr, never
+// arbitrary host files. This tails fail2ban's own log file directly
+// instead (mounted read-only into this container, see docker-compose.yml's
+// `alloy` service: `/var/log/fail2ban:/var/log/fail2ban:ro`), tagging it
+// with `service="fail2ban"` up front (via `path_targets`' static labels,
+// the same way `discovery.relabel` above tags the Docker-sourced streams)
+// so it's queryable/joinable the same way as every other service's logs.
+local.file_match "fail2ban" {
+	path_targets = [{
+		__path__ = "/var/log/fail2ban/fail2ban.log",
+		service  = "fail2ban",
+	}]
+}
+
+loki.source.file "fail2ban" {
+	targets    = local.file_match.fail2ban.targets
+	// No stage.regex/process here: fail2ban's log line format
+	// ("2024-... fail2ban.actions [pid]: NOTICE [jailname] Ban <ip>") is a
+	// different shape from app_logs' own; the fail2ban dashboard's LogQL
+	// panels parse it directly out of the raw line instead. Forwarded to
+	// the same loki.write destination as every other log source in this
+	// file.
+	forward_to = [loki.write.default.receiver]
+}
+
 loki.write "default" {
 	endpoint {
 		url = "http://loki:3100/loki/api/v1/push"
