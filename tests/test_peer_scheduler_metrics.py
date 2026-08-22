@@ -92,13 +92,17 @@ def test_finalized_full_batch_increments_counter_and_clears_gauges() -> None:
     scheduler.get_or_create(task.key, lambda: task)
 
     before = _sample_value(
-        _generate_latest_default_registry(), "peers_scheduler_batches_total", {"outcome": "finalized_full"}
+        _generate_latest_default_registry(),
+        "peers_scheduler_batches_total",
+        {"outcome": "finalized_full", "priority": "explicit"},
     ) or 0.0
 
     assert scheduler.step()
 
     text = _generate_latest_default_registry()
-    after = _sample_value(text, "peers_scheduler_batches_total", {"outcome": "finalized_full"})
+    after = _sample_value(
+        text, "peers_scheduler_batches_total", {"outcome": "finalized_full", "priority": "explicit"}
+    )
     assert after == before + 1.0
     assert _sample_value(text, "peers_scheduler_queued_tasks") == 0.0
     assert _sample_value(text, "peers_scheduler_active_tasks", {"role": "MIDDLE"}) == 0.0
@@ -110,13 +114,17 @@ def test_re_enqueued_batch_increments_counter_and_keeps_task_queued() -> None:
     scheduler.get_or_create(task.key, lambda: task)
 
     before = _sample_value(
-        _generate_latest_default_registry(), "peers_scheduler_batches_total", {"outcome": "re_enqueued"}
+        _generate_latest_default_registry(),
+        "peers_scheduler_batches_total",
+        {"outcome": "re_enqueued", "priority": "explicit"},
     ) or 0.0
 
     assert scheduler.step()
 
     text = _generate_latest_default_registry()
-    after = _sample_value(text, "peers_scheduler_batches_total", {"outcome": "re_enqueued"})
+    after = _sample_value(
+        text, "peers_scheduler_batches_total", {"outcome": "re_enqueued", "priority": "explicit"}
+    )
     assert after == before + 1.0
     assert _sample_value(text, "peers_scheduler_queued_tasks") == 1.0
 
@@ -128,13 +136,17 @@ def test_failed_batch_finalizes_partial_and_increments_counter() -> None:
     scheduler.get_or_create(task.key, lambda: task)
 
     before = _sample_value(
-        _generate_latest_default_registry(), "peers_scheduler_batches_total", {"outcome": "finalized_partial"}
+        _generate_latest_default_registry(),
+        "peers_scheduler_batches_total",
+        {"outcome": "finalized_partial", "priority": "explicit"},
     ) or 0.0
 
     assert scheduler.step()
 
     text = _generate_latest_default_registry()
-    after = _sample_value(text, "peers_scheduler_batches_total", {"outcome": "finalized_partial"})
+    after = _sample_value(
+        text, "peers_scheduler_batches_total", {"outcome": "finalized_partial", "priority": "explicit"}
+    )
     assert after == before + 1.0
     assert not scheduler.is_active(task.key)
 
