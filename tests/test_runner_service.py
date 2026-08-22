@@ -164,10 +164,10 @@ def test_enqueue_job_and_stream_progress_uses_raw_match_store_in_mongo_mode(
         r for r in results if r.stage == common_pb2.STAGE_A and r.detail and not r.final
     ]
     assert stage_a_progress, "expected at least one non-final STAGE_A progress update"
-    report_path = (
-        tmp_path / "output" / "reports" / player_slug / "viktor_middle" / "report.json"
-    )
-    assert report_path.exists(), f"expected report artifact at {report_path}"
+    from league_stats_common.infra.report_store import open_report_store
+
+    with open_report_store() as report_store:
+        assert report_store.get_report(player_slug, "viktor_middle") is not None
 
 
 def test_runner_servicer_never_delegates_even_with_stale_runner_mode_env_set(

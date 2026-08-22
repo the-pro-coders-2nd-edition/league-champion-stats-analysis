@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pandas as pd
 
 from league_stats_peers.analysis.peer import build_comparisons
-from league_stats_common.core.champions import player_slug
+from league_stats_common.core.champions import champion_slug, player_slug
 from league_stats_common.core.config import AppConfig
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_runner.pipeline.orchestrator import run_analysis
 from league_stats_common.core.models import MatchRecord, PeerComparisonResult, RankedEntry
 from league_stats_runner.presentation.report import discover_reports, refresh_report_indexes
@@ -83,15 +83,18 @@ def test_different_champions_create_separate_reports(tmp_path: Path) -> None:
     viktor_config = _config(tmp_path, champion="Viktor", role="MIDDLE")
     ahri_config = _config(tmp_path, champion="Ahri", role="MIDDLE")
 
-    viktor_path = run_analysis(viktor_config, records, peer_comparison=peer, ranked=ranked)
-    ahri_path = run_analysis(ahri_config, records, peer_comparison=peer, ranked=ranked)
+    viktor_ref = run_analysis(viktor_config, records, peer_comparison=peer, ranked=ranked)
+    ahri_ref = run_analysis(ahri_config, records, peer_comparison=peer, ranked=ranked)
 
-    assert viktor_path != ahri_path
-    assert viktor_path.parent.name == "viktor_middle"
-    assert ahri_path.parent.name == "ahri_middle"
-    assert viktor_path.exists() and ahri_path.exists()
+    assert viktor_ref != ahri_ref
+    assert viktor_ref == f"{viktor_config.reports_group_slug}/viktor_middle"
+    assert ahri_ref == f"{ahri_config.reports_group_slug}/ahri_middle"
 
-    entries = discover_reports(viktor_config.output_dir)
+    with open_report_store() as store:
+        assert store.get_report(viktor_config.reports_group_slug, "viktor_middle") is not None
+        assert store.get_report(ahri_config.reports_group_slug, "ahri_middle") is not None
+
+    entries = discover_reports()
     assert len(entries) == 2
     labels = {entry["build_label"] for entry in entries}
     assert labels == {"Viktor mid", "Ahri mid"}
@@ -103,15 +106,16 @@ def test_same_combo_overwrites_report(tmp_path: Path) -> None:
     config = _config(tmp_path)
     peer = _peer(_make_records(10))
 
-    first_path = run_analysis(config, _make_records(10), peer_comparison=peer, ranked=ranked)
+    first_ref = run_analysis(config, _make_records(10), peer_comparison=peer, ranked=ranked)
 
-    second_path = run_analysis(config, _make_records(20), peer_comparison=peer, ranked=ranked)
-    second_meta = (config.report_dir / "meta.json").read_text(encoding="utf-8")
+    second_ref = run_analysis(config, _make_records(20), peer_comparison=peer, ranked=ranked)
+    build_slug = champion_slug(config.champion, config.role)
+    with open_report_store() as store:
+        build_meta = store.get_build(config.reports_group_slug, build_slug)
 
-    assert first_path == second_path
-    assert '"games": 20' in second_meta
-    assert '"games": 10' not in second_meta
-    assert len(discover_reports(config.output_dir)) == 1
+    assert first_ref == second_ref
+    assert build_meta["games"] == 20
+    assert len(discover_reports()) == 1
 
 
 def test_player_slug_sanitizes_special_characters() -> None:
@@ -129,21 +133,19 @@ def test_discover_reports_lists_all_builds(tmp_path: Path) -> None:
     run_analysis(_config(tmp_path, champion="Ahri"), records, peer_comparison=peer, ranked=ranked)
 
     config = _config(tmp_path)
-    hub = refresh_report_indexes(
+    refresh_report_indexes(
         config.output_dir,
         config.template_dir,
         player_dir=config.player_reports_dir,
         player_label="Test#EUW",
     )
-    assert hub is not None
-    assert hub.exists()
     assert not (config.output_dir / "index.html").exists()
 
-    reports = discover_reports(config.output_dir)
+    reports = discover_reports()
     champions = {report["champion"] for report in reports}
     assert "Viktor" in champions
     assert "Ahri" in champions
-    assert all("reports/" in report["href"] for report in reports)
+    assert all(report["build_slug"] for report in reports)
 
 
 def test_improvement_score_has_a_resolved_tone_colour(tmp_path: Path) -> None:
@@ -152,13 +154,14 @@ def test_improvement_score_has_a_resolved_tone_colour(tmp_path: Path) -> None:
     records = _make_records()
     peer = _peer(records)
 
-    report_path = run_analysis(
+    report_ref = run_analysis(
         _config(tmp_path, champion="Viktor", role="MIDDLE"),
         records,
         peer_comparison=peer,
         ranked=ranked,
     )
-    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    with open_report_store() as store:
+        payload = store.get_report(*report_ref.split("/"))
 
     assert payload["score_color"]
     assert "var(--" in payload["score_color"]

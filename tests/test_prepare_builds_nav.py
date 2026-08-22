@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_runner.ingest.parser import BuildPool
 from league_stats_runner.pipeline import orchestrator
 from league_stats_runner.pipeline.orchestrator import _merge_manifest_with_disk, prepare_builds
@@ -14,33 +13,32 @@ from league_stats_runner.pipeline.services import PlayerContext
 from league_stats_runner.presentation.report import build_manifest_entry
 
 
-def _write_meta(player_dir: Path, slug: str, *, champion: str, role: str, games: int) -> None:
-    report_dir = player_dir / slug
-    report_dir.mkdir(parents=True, exist_ok=True)
-    (report_dir / "report.json").write_text("{}", encoding="utf-8")
-    (report_dir / "meta.json").write_text(
-        json.dumps(
+def _seed_build(
+    player_slug: str, build_slug: str, *, champion: str, role: str, games: int
+) -> None:
+    with open_report_store() as store:
+        store.save_build(
+            player_slug,
+            build_slug,
             {
                 "champion": champion,
                 "role": role,
                 "games": games,
                 "winrate": 0.5,
                 "build_label": f"{champion} {role.lower()}",
-            }
-        ),
-        encoding="utf-8",
-    )
+            },
+        )
 
 
-def test_merge_manifest_with_disk_keeps_existing_reports(tmp_path: Path) -> None:
-    player_dir = tmp_path / "reports" / "test_euw"
-    _write_meta(player_dir, "viktor_middle", champion="Viktor", role="MIDDLE", games=40)
-    _write_meta(player_dir, "fiora_top", champion="Fiora", role="TOP", games=30)
+def test_merge_manifest_with_disk_keeps_existing_reports() -> None:
+    player_slug = "test_euw"
+    _seed_build(player_slug, "viktor_middle", champion="Viktor", role="MIDDLE", games=40)
+    _seed_build(player_slug, "fiora_top", champion="Fiora", role="TOP", games=30)
 
     live = [
         build_manifest_entry(champion="Fiora", role="TOP", games=31, winrate=0.55),
     ]
-    merged = _merge_manifest_with_disk(live, player_dir)
+    merged = _merge_manifest_with_disk(live, player_slug)
     slugs = {
         f"{entry['champion'].lower()}_{entry['role'].lower()}" for entry in merged
     }
@@ -49,12 +47,10 @@ def test_merge_manifest_with_disk_keeps_existing_reports(tmp_path: Path) -> None
     assert fiora["games"] == 31
 
 
-def test_prepare_builds_scoped_keeps_full_manifest(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
-    player_dir = tmp_path / "reports" / "test_euw"
-    _write_meta(player_dir, "viktor_middle", champion="Viktor", role="MIDDLE", games=40)
-    _write_meta(player_dir, "fiora_top", champion="Fiora", role="TOP", games=30)
+def test_prepare_builds_scoped_keeps_full_manifest(monkeypatch: Any) -> None:
+    player_slug = "test_euw"
+    _seed_build(player_slug, "viktor_middle", champion="Viktor", role="MIDDLE", games=40)
+    _seed_build(player_slug, "fiora_top", champion="Fiora", role="TOP", games=30)
 
     pools = [
         BuildPool(champion="Viktor", role="MIDDLE", games=40),
@@ -75,7 +71,7 @@ def test_prepare_builds_scoped_keeps_full_manifest(
         min_games=20,
         filter_champion="Fiora",
         filter_role="TOP",
-        player_reports_dir=player_dir,
+        reports_group_slug=player_slug,
     )
     assets = SimpleNamespace(ensure_downloaded=lambda: None)
     services = SimpleNamespace(store=object(), config=config, assets=assets)
@@ -89,15 +85,13 @@ def test_prepare_builds_scoped_keeps_full_manifest(
     assert {entry["champion"] for entry in batch.manifest_builds} == {"Viktor", "Fiora"}
 
 
-def test_prepare_builds_unscoped_keeps_on_disk_siblings(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
+def test_prepare_builds_unscoped_keeps_on_disk_siblings(monkeypatch: Any) -> None:
     """Full-account refresh must not drop existing reports from the Champions nav."""
-    player_dir = tmp_path / "reports" / "test_euw"
-    _write_meta(player_dir, "viktor_middle", champion="Viktor", role="MIDDLE", games=40)
-    _write_meta(player_dir, "fiora_top", champion="Fiora", role="TOP", games=30)
-    # Below the live min_games threshold, but still on disk from an earlier run.
-    _write_meta(player_dir, "bard_utility", champion="Bard", role="UTILITY", games=12)
+    player_slug = "test_euw"
+    _seed_build(player_slug, "viktor_middle", champion="Viktor", role="MIDDLE", games=40)
+    _seed_build(player_slug, "fiora_top", champion="Fiora", role="TOP", games=30)
+    # Below the live min_games threshold, but still saved from an earlier run.
+    _seed_build(player_slug, "bard_utility", champion="Bard", role="UTILITY", games=12)
 
     pools = [
         BuildPool(champion="Viktor", role="MIDDLE", games=40),
@@ -118,7 +112,7 @@ def test_prepare_builds_unscoped_keeps_on_disk_siblings(
         min_games=20,
         filter_champion=None,
         filter_role=None,
-        player_reports_dir=player_dir,
+        reports_group_slug=player_slug,
     )
     assets = SimpleNamespace(ensure_downloaded=lambda: None)
     services = SimpleNamespace(store=object(), config=config, assets=assets)
