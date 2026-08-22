@@ -60,8 +60,9 @@ PEERS_SCHEDULER_ACTIVE_TASKS = Gauge(
 )
 PEERS_SCHEDULER_BATCHES_TOTAL = Counter(
     "peers_scheduler_batches_total",
-    "SamplingTask batches processed, by outcome.",
-    ["outcome"],  # re_enqueued | finalized_full | finalized_partial
+    "SamplingTask/WarmupTask batches processed, by outcome and priority tier.",
+    ["outcome", "priority"],  # outcome: re_enqueued | finalized_full | finalized_partial
+                              # priority: explicit | refining | background
 )
 
 # RFC "PEERS priority scheduling...": relative rank of each of the three
@@ -274,7 +275,7 @@ class SamplingScheduler:
             with self._lock:
                 self._queue_for(task.priority).append(task)
                 self._update_task_gauges()
-            PEERS_SCHEDULER_BATCHES_TOTAL.labels(outcome="re_enqueued").inc()
+            PEERS_SCHEDULER_BATCHES_TOTAL.labels(outcome="re_enqueued", priority=task.priority).inc()
             self._log.info(
                 "sampling_task_re_enqueued key=%s %s", key, self._log_fields(task)
             )
@@ -297,7 +298,7 @@ class SamplingScheduler:
             self._update_task_gauges()
         # `status` is always "full" or "partial" (see this method's two call
         # sites) -- a fixed 2-value enum, safe to fold into the outcome label.
-        PEERS_SCHEDULER_BATCHES_TOTAL.labels(outcome=f"finalized_{status}").inc()
+        PEERS_SCHEDULER_BATCHES_TOTAL.labels(outcome=f"finalized_{status}", priority=task.priority).inc()
         if self._on_finalize is not None:
             try:
                 self._on_finalize(task, status)
