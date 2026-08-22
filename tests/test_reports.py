@@ -172,13 +172,18 @@ def test_patch_report_peer_comparison_updates_peer_fields_and_generated_at(
     tmp_path: Path,
 ) -> None:
     """Design "Progressive peer-comparison updates during live sampling" §3.2:
-    `patch_report_peer_comparison` rewrites an already-rendered `report.json`'s
-    peer fields in place -- without re-running the analysis pipeline -- and
-    bumps `generated_at` so the frontend's existing `generated_at`-triggers-
-    refetch logic (§3.4) picks up the change. `career`/`overview`/other
-    Stage-A-rendered fields must be left exactly as they were.
+    `patch_report_peer_comparison` rewrites an already-rendered report's peer
+    fields in place in the Mongo-backed `ReportStore` -- without re-running
+    the analysis pipeline -- and bumps `generated_at` so the frontend's
+    existing `generated_at`-triggers-refetch logic (§3.4) picks up the
+    change. `career`/`overview`/other Stage-A-rendered fields must be left
+    exactly as they were.
 
-    Fails pre-fix: `patch_report_peer_comparison` did not exist at all.
+    Fails pre-fix: `patch_report_peer_comparison` still did raw file I/O
+    against a `report.json` that no longer exists post-migration, so
+    `store.get_report(...)` after the patch would still show the Stage-A
+    (pre-patch) body -- `patched` would also be `False` since no such file
+    was ever written by `run_analysis` in the first place.
     """
     import time
 
@@ -187,10 +192,12 @@ def test_patch_report_peer_comparison_updates_peer_fields_and_generated_at(
 
     config = _config(tmp_path, champion="Viktor", role="MIDDLE")
     records = _make_records()
+    build_slug = champion_slug(config.champion, config.role)
 
     # Stage A: no peer comparison yet -- the awaiting_peers loading shape.
-    report_path = run_analysis(config, records, peer_comparison=None)
-    before = json.loads(report_path.read_text(encoding="utf-8"))
+    run_analysis(config, records, peer_comparison=None)
+    with open_report_store() as store:
+        before = store.get_report(config.reports_group_slug, build_slug)
     assert before["has_peer_comparison"] is False
     assert before["career"]["awaiting_peers"] is True
 
@@ -201,7 +208,9 @@ def test_patch_report_peer_comparison_updates_peer_fields_and_generated_at(
     patched = patch_report_peer_comparison(config, pool, interim_peer)
 
     assert patched is True
-    after = json.loads(report_path.read_text(encoding="utf-8"))
+    with open_report_store() as store:
+        after = store.get_report(config.reports_group_slug, build_slug)
+        meta = store.get_build(config.reports_group_slug, build_slug)
     assert after["has_peer_comparison"] is True
     assert after["peer_comparison"]["rank_label"] == "GOLD II"
     assert after["peer_rows"]
@@ -210,8 +219,11 @@ def test_patch_report_peer_comparison_updates_peer_fields_and_generated_at(
     assert after["career"] == before["career"]
     assert after["overview"] == before["overview"]
 
-    meta_path = config.report_dir / "meta.json"
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    # The LIGHT listing entry (`report_builds`) must ALSO reflect the patch:
+    # `/api/players/{slug}`'s polling/SSE response and `peers_ready` are both
+    # built from this document, not the heavy body -- a body-only patch would
+    # leave the frontend looking at stale Stage-A values forever.
+    assert meta is not None
     assert meta["has_peer_comparison"] is True
     assert meta["generated_at"] == after["generated_at"]
 
@@ -219,7 +231,7 @@ def test_patch_report_peer_comparison_updates_peer_fields_and_generated_at(
 def test_patch_report_peer_comparison_is_a_noop_without_an_existing_report(
     tmp_path: Path,
 ) -> None:
-    """No `report.json` yet (e.g. Stage A never got far enough) -- the patch
+    """No report body yet (e.g. Stage A never got far enough) -- the patch
     must report failure rather than crashing, so the caller can fall back to
     a full render."""
     from league_stats_runner.ingest.parser import BuildPool

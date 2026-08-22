@@ -120,6 +120,29 @@ class ReportStore:
             return None
         return frozenset(str(m) for m in doc.get("match_ids", []))
 
+    def patch_build_fields(
+        self, player_slug: str, build_slug: str, fields: dict[str, Any]
+    ) -> bool:
+        """Partially update specific keys in an existing build's LIGHT listing
+        entry (``report_builds``, old ``meta.json``/manifest content).
+
+        A progressive body patch (``patch_report_fields``) alone is not
+        enough for a caller like `_run_stage_b`'s interim peer-comparison
+        push to actually reach the browser: `discover_player_builds` (what
+        `/api/players/{slug}`'s polling/SSE response is built from) reads
+        `generated_at`/`has_peer_comparison` from THIS light document, not
+        the heavy `report_bodies` one -- patching only the body would leave
+        the frontend's `generated_at`-triggers-refetch logic (and the
+        `peers_ready` flag) looking at stale Stage-A values forever, even
+        though the body itself improved. Returns ``False`` if no listing
+        entry exists yet -- callers should fall back to a full `save_build`
+        in that case, same as `patch_report_fields`.
+        """
+        result = self._builds.update_one(
+            {"_id": build_id(player_slug, build_slug)}, {"$set": fields}
+        )
+        return result.matched_count > 0
+
     def list_builds(self, player_slug: str) -> list[dict[str, Any]]:
         """Every build's listing metadata for a player, most-played first.
 
@@ -172,6 +195,26 @@ class ReportStore:
             "progression_md": progression_md,
         }
         self._bodies.replace_one({"_id": doc["_id"]}, doc, upsert=True)
+
+    def patch_report_fields(
+        self, player_slug: str, build_slug: str, fields: dict[str, Any]
+    ) -> bool:
+        """Partially update specific keys inside an existing build's report body.
+
+        Used for cheap progressive updates (e.g. an interim peer-comparison
+        push during live sampling, design "Progressive peer-comparison
+        updates during live sampling" §3.2) that must not require the caller
+        to round-trip the whole body (report + summary + progression) through
+        Python just to change a few report fields. Returns ``False`` if no
+        body exists yet for this build -- callers should fall back to a full
+        ``save_body`` in that case, the same as they would for a brand-new
+        build.
+        """
+        update = {f"report.{key}": value for key, value in fields.items()}
+        result = self._bodies.update_one(
+            {"_id": build_id(player_slug, build_slug)}, {"$set": update}
+        )
+        return result.matched_count > 0
 
     def get_report(self, player_slug: str, build_slug: str) -> dict[str, Any] | None:
         """The rendered report payload (old ``report.json``), or ``None``."""

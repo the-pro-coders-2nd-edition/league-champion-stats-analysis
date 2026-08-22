@@ -258,8 +258,8 @@ def report_needs_peer_comparison(config: AppConfig, pool: BuildPool) -> bool:
 def patch_report_peer_comparison(
     config: AppConfig, pool: BuildPool, peer_comparison: PeerComparisonResult
 ) -> bool:
-    """Cheaply rewrite an already-rendered ``report.json``'s peer-comparison
-    fields in place, without re-running the analysis pipeline.
+    """Cheaply rewrite an already-rendered report's peer-comparison fields in
+    place, without re-running the analysis pipeline.
 
     Design "Progressive peer-comparison updates during live sampling" §3.2:
     RUNNER's stage-B wait loop calls this for every *interim*
@@ -272,35 +272,54 @@ def patch_report_peer_comparison(
     narrow, so an interim push during a slow live sample is cheap (no graph
     rendering, no export writing, no career computation).
 
-    Returns ``False`` (a no-op) when this pool has no `report.json` yet to
-    patch -- callers should fall back to a full `analyze_build` in that case,
-    the same as they would for a brand-new build.
-    """
-    run_dir = (
-        config.output_dir
-        / "reports"
-        / config.reports_group_slug
-        / champion_slug(pool.champion, pool.role)
-    )
-    report_json_path = run_dir / "report.json"
-    if not report_json_path.is_file():
-        return False
-    try:
-        context = json.loads(report_json_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
+    Patches BOTH `ReportStore` collections, not just the heavy report body:
+    `discover_player_builds`/`/api/players/{slug}`'s polling+SSE response
+    read `generated_at`/`has_peer_comparison` from the LIGHT `report_builds`
+    listing entry (see `ReportStore.patch_build_fields`'s docstring) -- a
+    body-only patch would leave the frontend's refetch-trigger and
+    `peers_ready` flag pointing at stale Stage-A values, silently defeating
+    the whole point of this design even though the body itself improved.
 
-    context["has_peer_comparison"] = True
-    context["peer_comparison"] = peer_comparison
-    context["peer_rows"] = [
+    Returns ``False`` (a no-op) when this pool has no report yet to patch --
+    callers should fall back to a full `analyze_build` in that case, the
+    same as they would for a brand-new build.
+    """
+    peer_rows = [
         peer_row_display(row.model_dump()) for row in peer_comparison.comparisons
     ]
+    # `context_to_json` is what the full render path uses to turn a pydantic
+    # value into a JSON-safe one; reused here on a single-key wrapper so this
+    # partial patch serializes `peer_comparison` identically without
+    # duplicating that conversion logic.
+    serialized_peer_comparison = context_to_json({"peer_comparison": peer_comparison})[
+        "peer_comparison"
+    ]
     generated_at = utc_now_iso()
-    context["generated_at"] = generated_at
+    player_slug = config.reports_group_slug
+    build_slug = champion_slug(pool.champion, pool.role)
 
-    tmp_json_path = report_json_path.with_suffix(".json.tmp")
-    tmp_json_path.write_text(json.dumps(context_to_json(context)), encoding="utf-8")
-    os.replace(tmp_json_path, report_json_path)
+    with open_report_store() as store:
+        patched_body = store.patch_report_fields(
+            player_slug,
+            build_slug,
+            {
+                "has_peer_comparison": True,
+                "peer_comparison": serialized_peer_comparison,
+                "peer_rows": peer_rows,
+                "generated_at": generated_at,
+            },
+        )
+        if not patched_body:
+            return False
+        # The body patch is authoritative for "does this build exist at all";
+        # the listing patch is best-effort bookkeeping on top of it, so its
+        # own return value isn't re-checked here the same way.
+        store.patch_build_fields(
+            player_slug,
+            build_slug,
+            {"has_peer_comparison": True, "generated_at": generated_at},
+        )
+        return True
 
     meta_path = run_dir / "meta.json"
     if meta_path.is_file():

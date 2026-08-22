@@ -85,9 +85,26 @@ def _peer_match_sample_store_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> 
     left over from a previous test's `PeersServicer` instead of building a
     fresh one). A plain assignment forces every test to start with a clean
     slate regardless of what earlier tests' production code did.
+
+    Calls `.stop()` on the OUTGOING scheduler first, if one exists:
+    `SamplingScheduler.start()` spawns `daemon=True` worker threads that
+    `_worker_loop` forever until `.stop()` sets `self._stopped`, and nothing
+    else in this codebase ever calls it. Without this, every test that
+    reaches level 2 leaks its scheduler's idle-polling background threads
+    for the rest of the whole test *session* (not just the process -- these
+    threads never join, they just keep waking up on `_IDLE_POLL_INTERVAL_S`
+    to check for work), accumulating across every test file that touches
+    live sampling. Confirmed via a real full-suite run: with dozens of these
+    ghost threads built up by the time later test files run, GIL contention
+    alone was enough to occasionally blow past tight timing assumptions in
+    an otherwise-correct, otherwise-isolated test
+    (`test_peers_service.py::test_resolve_peer_baseline_via_live_sampling_survives_the_noop_store_methods`)
+    -- a real resource leak, not just a "some stale state" leak.
     """
     store = PeerMatchSampleStore(mongomock.MongoClient(), db_name="test_default_match_samples")
     monkeypatch.setattr(_peers_service, "_build_default_match_sample_store", lambda *a, **k: store)
+    if _peer_baseline._default_scheduler is not None:
+        _peer_baseline._default_scheduler.stop()
     _peer_baseline._default_scheduler = None
 
 
