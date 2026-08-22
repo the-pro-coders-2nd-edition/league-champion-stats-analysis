@@ -1,12 +1,18 @@
 """FastAPI application: SPA hosting, JSON API, static report serving.
 
-Generated reports remain plain files under ``output/`` (served at ``/out``);
-the shared Data Dragon icon cache lives in its own volume under
-``assets_dir`` (served read-only at ``/ddragon``, separate from ``/out``
-since it is not tied to any individual job's lifecycle -- see
-``AppConfig.assets_dir``'s field comment); the Svelte SPA (built to
-``spa_dist/``) is served at ``/`` and talks to the job API and the Gemini
-chat proxy defined here.
+Generated report bodies and metadata (old ``report.json``/``meta.json``/
+``manifest.json``/``summary.json``/``progression.json``/``progression.md``)
+are stored in Mongo (see ``league_stats_common.infra.report_store``) and
+served through ``/api/players/{slug}/builds/{build_slug}`` and friends, not
+through the ``/out`` static mount. ``/out`` (still backed by ``output/``)
+now only serves the file artifacts that remain out of that migration's
+scope: CSV/Markdown exports, the death-heatmap PNG, saved-report branding
+assets, and the account-view JSON cache. The shared Data Dragon icon cache
+lives in its own volume under ``assets_dir`` (served read-only at
+``/ddragon``, separate from ``/out`` since it is not tied to any individual
+job's lifecycle -- see ``AppConfig.assets_dir``'s field comment); the Svelte
+SPA (built to ``spa_dist/``) is served at ``/`` and talks to the job API and
+the Gemini chat proxy defined here.
 """
 
 from __future__ import annotations
@@ -52,6 +58,7 @@ from league_stats_common.core.config import (
 from league_stats_common.infra.cache import HttpCache
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_common.infra.mongo import db_name_from_uri
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_common.infra.riot_api import RiotApiClient, RiotApiError, shared_rate_limiter
 from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.bundles import _overall_score_verdict
@@ -766,7 +773,9 @@ def _last_game_at_from_report(report: dict[str, Any]) -> str:
     return str(report.get("generated_at") or "")
 
 
-def _hub_build_fields(meta: dict[str, Any], report_dir: Path) -> dict[str, Any]:
+def _hub_build_fields(
+    meta: dict[str, Any], player_slug_value: str, build_slug: str
+) -> dict[str, Any]:
     """Score and last-played fields for player-hub build cards."""
     score = meta.get("score")
     score_color = str(meta.get("score_color") or "")
@@ -779,20 +788,16 @@ def _hub_build_fields(meta: dict[str, Any], report_dir: Path) -> dict[str, Any]:
         or not last_game_at
     )
     if needs_report:
-        report_path = report_dir / "report.json"
-        if report_path.is_file():
-            try:
-                report = json.loads(report_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                report = {}
-            if score is None:
-                score = report.get("score")
-            if not score_color:
-                score_color = str(report.get("score_color") or "")
-            if not score_verdict_label:
-                score_verdict_label = str(report.get("score_verdict_label") or "")
-            if not last_game_at:
-                last_game_at = _last_game_at_from_report(report)
+        with open_report_store() as report_store:
+            report = report_store.get_report(player_slug_value, build_slug) or {}
+        if score is None:
+            score = report.get("score")
+        if not score_color:
+            score_color = str(report.get("score_color") or "")
+        if not score_verdict_label:
+            score_verdict_label = str(report.get("score_verdict_label") or "")
+        if not last_game_at:
+            last_game_at = _last_game_at_from_report(report)
     if not last_game_at:
         last_game_at = str(meta.get("generated_at") or "")
     if score is not None:
@@ -811,15 +816,15 @@ def _hub_build_fields(meta: dict[str, Any], report_dir: Path) -> dict[str, Any]:
 
 
 def _player_builds(output_dir: Path, assets_dir: Path, slug: str) -> list[dict[str, Any]]:
-    """On-disk builds for one player, with web hrefs and icon URLs."""
-    builds = discover_player_builds(output_dir / "reports" / slug)
+    """Saved builds for one player, with web hrefs and icon URLs."""
+    builds = discover_player_builds(slug)
     shaped: list[dict[str, Any]] = []
     for build in builds:
         build_slug = str(build.get("href", "")).split("/", 1)[0]
         champion_id = str(build.get("champion", ""))
         role = str(build.get("role", ""))
         report_dir = output_dir / "reports" / slug / build_slug
-        hub = _hub_build_fields(build, report_dir)
+        hub = _hub_build_fields(build, slug, build_slug)
         shaped.append(
             {
                 "slug": build_slug,
@@ -860,8 +865,7 @@ def _preview_builds(
     ranked: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
     for build in builds:
         build_slug = str(build.get("href", "")).split("/", 1)[0]
-        report_dir = output_dir / "reports" / slug / build_slug
-        hub = _hub_build_fields(build, report_dir)
+        hub = _hub_build_fields(build, slug, build_slug)
         sort_at = str(hub.get("last_game_at") or build.get("generated_at") or "")
         ranked.append((sort_at, build, hub))
     ranked.sort(key=lambda item: item[0], reverse=True)
@@ -904,7 +908,7 @@ def _build_peers_ready(meta: dict[str, Any], report_dir: Path) -> bool:
 def _report_groups(
     reports_dir: Path, assets_dir: Path, store: JobStore | None = None
 ) -> list[dict[str, Any]]:
-    """Player cards for the landing page from on-disk report metadata.
+    """Player cards for the landing page from saved report metadata.
 
     When ``store`` is provided, cards are marked ``busy`` if that player has an
     active (queued/running) job, and players with an active job but no report
@@ -913,64 +917,63 @@ def _report_groups(
     output_dir = reports_dir.parent
     groups: list[dict[str, Any]] = []
     seen: set[str] = set()
-    if reports_dir.is_dir():
-        for player_dir in sorted(reports_dir.iterdir()):
-            if not player_dir.is_dir():
-                continue
-            builds = discover_player_builds(player_dir)
-            if not builds:
-                continue
-            meta = builds[0]
-            store_players = None
-            if store is not None:
-                row = store.get_player(player_dir.name)
-                if row and row.get("players"):
-                    store_players = list(row["players"])
-            tracked = _resolve_tracked_players(
-                player_dir.name, store_players=store_players, meta=meta
+    with open_report_store() as report_store:
+        player_slugs = report_store.list_player_slugs()
+    for slug in player_slugs:
+        builds = discover_player_builds(slug)
+        if not builds:
+            continue
+        meta = builds[0]
+        store_players = None
+        if store is not None:
+            row = store.get_player(slug)
+            if row and row.get("players"):
+                store_players = list(row["players"])
+        tracked = _resolve_tracked_players(
+            slug, store_players=store_players, meta=meta
+        )
+        label = _player_label_from_tracked(
+            tracked, str(meta.get("player", slug))
+        )
+        primary_icon = meta.get("profile_icon_id")
+        try:
+            primary_icon_id = int(primary_icon) if primary_icon is not None else None
+        except (TypeError, ValueError):
+            primary_icon_id = None
+        shaped = _shaped_players(assets_dir, output_dir, tracked)
+        if not shaped and label:
+            shaped = [{"label": label, "profile_icon": None}]
+        elif not shaped and primary_icon_id is not None:
+            icons = _profile_icon_hrefs(
+                assets_dir, None, primary_icon_id=primary_icon_id
             )
-            label = _player_label_from_tracked(
-                tracked, str(meta.get("player", player_dir.name))
-            )
-            primary_icon = meta.get("profile_icon_id")
-            try:
-                primary_icon_id = int(primary_icon) if primary_icon is not None else None
-            except (TypeError, ValueError):
-                primary_icon_id = None
-            shaped = _shaped_players(assets_dir, output_dir, tracked)
-            if not shaped and label:
-                shaped = [{"label": label, "profile_icon": None}]
-            elif not shaped and primary_icon_id is not None:
-                icons = _profile_icon_hrefs(
-                    assets_dir, None, primary_icon_id=primary_icon_id
-                )
-                shaped = [
-                    {
-                        "label": str(meta.get("player", player_dir.name)),
-                        "profile_icon": icons[0] if icons else None,
-                    }
-                ]
-            seen.add(player_dir.name)
-            groups.append(
+            shaped = [
                 {
-                    "slug": player_dir.name,
-                    "player": label,
-                    "players": shaped,
-                    "is_group": len(tracked) > 1 or is_group_player_label(label),
-                    "build_count": len(builds),
-                    "total_games": sum(int(build.get("games", 0)) for build in builds),
-                    "preview_builds": _preview_builds(
-                        output_dir, assets_dir, player_dir.name, builds
-                    ),
-                    "last_updated": max(
-                        (str(build.get("generated_at", "")) for build in builds),
-                        default="",
-                    ),
-                    "busy": False,
-                    "job_state": None,
-                    "has_report": True,
+                    "label": str(meta.get("player", slug)),
+                    "profile_icon": icons[0] if icons else None,
                 }
-            )
+            ]
+        seen.add(slug)
+        groups.append(
+            {
+                "slug": slug,
+                "player": label,
+                "players": shaped,
+                "is_group": len(tracked) > 1 or is_group_player_label(label),
+                "build_count": len(builds),
+                "total_games": sum(int(build.get("games", 0)) for build in builds),
+                "preview_builds": _preview_builds(
+                    output_dir, assets_dir, slug, builds
+                ),
+                "last_updated": max(
+                    (str(build.get("generated_at", "")) for build in builds),
+                    default="",
+                ),
+                "busy": False,
+                "job_state": None,
+                "has_report": True,
+            }
+        )
 
     if store is not None:
         active_by_slug = {
@@ -1330,7 +1333,7 @@ def create_app(
         if player is None and not builds:
             return None
         active = store.active_job_for_player(slug)
-        meta_builds = discover_player_builds(config.reports_dir / slug)
+        meta_builds = discover_player_builds(slug)
         tracked = _resolve_tracked_players(
             slug,
             store_players=(player.get("players") if player else None),
@@ -1473,10 +1476,10 @@ def create_app(
         """
         if not (_is_report_slug(slug) and _is_report_slug(build_slug)):
             raise HTTPException(status_code=400, detail="Invalid report reference.")
-        meta_path = config.reports_dir / slug / build_slug / "meta.json"
-        if not meta_path.is_file():
+        with open_report_store() as report_store:
+            meta = report_store.get_build(slug, build_slug)
+        if meta is None:
             raise HTTPException(status_code=404, detail="Unknown build")
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
         champion = str(meta.get("champion", ""))
         role = str(meta.get("role", ""))
         riot_id = str(meta.get("riot_id", ""))
@@ -1552,10 +1555,10 @@ def create_app(
     def build_payload(slug: str, build_slug: str) -> dict[str, Any]:
         if not (_is_report_slug(slug) and _is_report_slug(build_slug)):
             raise HTTPException(status_code=400, detail="Invalid report reference.")
-        report_json_path = config.reports_dir / slug / build_slug / "report.json"
-        if not report_json_path.is_file():
+        with open_report_store() as report_store:
+            payload = report_store.get_report(slug, build_slug)
+        if payload is None:
             raise HTTPException(status_code=404, detail="Unknown build")
-        payload = json.loads(report_json_path.read_text(encoding="utf-8"))
         return prepare_web_report_payload(payload)
 
     def _resolve_build_filter(
@@ -1606,7 +1609,7 @@ def create_app(
     ) -> dict[str, Any]:
         """Queue a job for a known player, recovering identity from disk if needed."""
         player = store.get_player(slug)
-        builds = discover_player_builds(config.reports_dir / slug)
+        builds = discover_player_builds(slug)
         meta = builds[0] if builds else None
         store_players = None
         if player is not None:
@@ -1657,7 +1660,7 @@ def create_app(
         champion = payload.champion.strip()
         role = payload.role.strip()
         if champion or role:
-            builds = discover_player_builds(config.reports_dir / slug)
+            builds = discover_player_builds(slug)
             if not builds and store.get_player(slug) is None:
                 raise HTTPException(status_code=404, detail="Unknown player")
             filter_champion, filter_role = _resolve_build_filter(
@@ -1695,7 +1698,7 @@ def create_app(
             return
         if not _player_builds(config.output_dir, config.assets_dir, slug):
             return
-        meta_builds = discover_player_builds(config.reports_dir / slug)
+        meta_builds = discover_player_builds(slug)
         meta = meta_builds[0] if meta_builds else None
         tracked = _resolve_tracked_players(slug, store_players=None, meta=meta)
         if not tracked:
@@ -1747,13 +1750,10 @@ def create_app(
         if not (_is_report_slug(slug) and _is_report_slug(build_slug)):
             raise HTTPException(status_code=400, detail="Invalid report reference.")
         build_dir = config.reports_dir / slug / build_slug
-        meta_path = build_dir / "meta.json"
-        if not meta_path.is_file():
+        with open_report_store() as report_store:
+            meta = report_store.get_build(slug, build_slug)
+        if meta is None:
             raise HTTPException(status_code=404, detail="Report not found.")
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            raise HTTPException(status_code=500, detail="Report metadata unreadable.")
         champion = str(meta.get("champion", "")).strip()
         role = str(meta.get("role", "")).strip()
         tracked = _players_from_meta(meta)
@@ -1886,7 +1886,7 @@ def create_app(
             raise HTTPException(status_code=503, detail="Chat is not configured.")
         try:
             history = validate_history(body.history)
-            summary = load_report_summary(config.reports_dir, body.report)
+            summary = load_report_summary(body.report)
             stats = resolve_chat_stats(summary, body.context)
             text = gemini_reply(
                 config.gemini_api_key,

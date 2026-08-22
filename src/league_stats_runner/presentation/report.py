@@ -1,13 +1,12 @@
-"""Report generation support: improvement score and on-disk report/manifest metadata."""
+"""Report generation support: improvement score and Mongo-backed report/manifest metadata."""
 
 from __future__ import annotations
 
-import json
 import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import Any, Iterable, TYPE_CHECKING
 
 import pandas as pd
 
@@ -19,6 +18,7 @@ from league_stats_common.core.champions import (
     role_display,
 )
 from league_stats_common.core.models import Recommendation
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_runner.presentation.brand_assets import refresh_saved_report_branding
 
 if TYPE_CHECKING:
@@ -145,14 +145,6 @@ def build_player_builds_nav(
     return nav
 
 
-def write_player_manifest(player_dir: Path, manifest: dict[str, Any]) -> Path:
-    """Persist the player-level build manifest."""
-    player_dir.mkdir(parents=True, exist_ok=True)
-    path = player_dir / "manifest.json"
-    path.write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
-    return path
-
-
 def build_manifest_entry(
     *,
     champion: str,
@@ -173,113 +165,40 @@ def build_manifest_entry(
     }
 
 
-def write_report_meta(report_dir: Path, meta: dict[str, Any]) -> Path:
-    """Persist report metadata beside ``report.json``.
+def save_build_record(
+    player_slug: str,
+    build_slug: str,
+    meta: dict[str, Any],
+    *,
+    match_ids: Iterable[str] = (),
+) -> None:
+    """Persist report listing metadata (old ``meta.json``) to Mongo.
 
     Args:
-        report_dir: Directory for this player/champion/lane run.
+        player_slug: The player-level report group slug.
+        build_slug: The champion+lane build slug within that group.
         meta: Serializable metadata (player, champion, lane, stats...).
-
-    Returns:
-        Path of ``meta.json``.
+        match_ids: Match ids this build was analysed with, so a later
+            ``should_skip_unchanged_build`` can tell whether new games are
+            already covered without loading the full report body.
     """
-    path = report_dir / "meta.json"
-    path.write_text(json.dumps(meta, indent=2, default=str), encoding="utf-8")
-    return path
+    with open_report_store() as store:
+        store.save_build(player_slug, build_slug, meta, match_ids=match_ids)
 
 
-def discover_player_builds(player_dir: Path) -> list[dict[str, Any]]:
-    """Scan a player directory for completed build reports.
+def discover_player_builds(player_slug: str) -> list[dict[str, Any]]:
+    """Every completed build report for a player, from Mongo.
 
     Args:
-        player_dir: ``output/reports/{player}/`` directory.
+        player_slug: The player-level report group slug (old
+            ``output/reports/{player}/`` directory name).
 
     Returns:
         Build metadata dicts sorted by game count (most played first).
-        Each entry includes an ``href`` relative to ``player_dir``.
+        Each entry includes an ``href`` relative to the player.
     """
-    if not player_dir.is_dir():
-        return []
-
-    builds: list[dict[str, Any]] = []
-    for meta_path in sorted(player_dir.glob("*/meta.json")):
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        report_json = meta_path.parent / "report.json"
-        if not report_json.is_file():
-            continue
-        slug = meta_path.parent.name
-        meta["href"] = f"{slug}/report.json"
-        builds.append(meta)
-
-    builds.sort(key=lambda entry: (entry.get("games", 0), entry.get("generated_at", "")), reverse=True)
-    return builds
-
-
-def refresh_player_hub(
-    player_dir: Path,
-    template_dir: Path,
-    *,
-    player_label: str | None = None,
-    assets: "DDragonAssets | None" = None,
-) -> Path | None:
-    """Rebuild ``output/reports/{player}/manifest.json`` from on-disk build metadata.
-
-    Args:
-        player_dir: Player reports root.
-        template_dir: Unused; kept for call-site compatibility (the player hub
-            page is now rendered client-side by the SPA, not from a template).
-        player_label: Display label (``Name#TAG``); inferred from builds when omitted.
-
-    Returns:
-        Path of the player hub, or ``None`` when no builds exist yet.
-    """
-    builds = discover_player_builds(player_dir)
-    if not builds:
-        return None
-
-    label = player_label or str(builds[0].get("player", ""))
-    if assets is not None:
-        for build in builds:
-            riot_id = str(build.get("champion", ""))
-            build["champion_icon"] = assets.champion_href(
-                riot_id,
-                from_dir=player_dir,
-            )
-            build["champion"] = champion_display_name(riot_id)
-            build["role_icon"] = assets.role_href(
-                str(build.get("role", "")),
-                from_dir=player_dir,
-            )
-    manifest = {
-        "player": label,
-        "builds": builds,
-        "default_href": builds[0]["href"],
-    }
-    return write_player_manifest(player_dir, manifest)
-
-
-def refresh_all_player_hubs(
-    output_dir: Path,
-    template_dir: Path,
-    *,
-    assets: "DDragonAssets | None" = None,
-) -> list[Path]:
-    """Rebuild every player hub under ``output/reports/``."""
-    reports_root = output_dir / "reports"
-    if not reports_root.is_dir():
-        return []
-
-    hubs: list[Path] = []
-    for player_dir in sorted(reports_root.iterdir()):
-        if not player_dir.is_dir():
-            continue
-        hub = refresh_player_hub(player_dir, template_dir, assets=assets)
-        if hub is not None:
-            hubs.append(hub)
-    return hubs
+    with open_report_store() as store:
+        return store.list_builds(player_slug)
 
 
 def refresh_report_indexes(
@@ -289,54 +208,34 @@ def refresh_report_indexes(
     player_dir: Path | None = None,
     player_label: str | None = None,
     assets: "DDragonAssets | None" = None,
-) -> Path | None:
-    """Refresh saved-report branding and optionally rebuild a player hub.
+) -> None:
+    """Refresh saved-report branding.
 
-    Call after each report is written so hubs stay current during batch runs.
+    Historically also rebuilt a ``manifest.json`` player hub file; that hub is
+    now served live from Mongo (``discover_player_builds``), so there is
+    nothing left to precompute here beyond branding assets. Kept as a single
+    call site (rather than inlining ``refresh_saved_report_branding`` at every
+    caller) so a future post-report-write hook has one place to attach to.
 
     Args:
         output_dir: Root output directory.
-        template_dir: Template directory.
-        player_dir: Optional player reports root for the player hub.
-        player_label: Optional player display label for the hub.
-
-    Returns:
-        Optional player hub path.
+        template_dir: Unused; kept for call-site compatibility.
+        player_dir: Unused; kept for call-site compatibility.
+        player_label: Unused; kept for call-site compatibility.
+        assets: Unused; kept for call-site compatibility.
     """
+    _ = template_dir, player_dir, player_label, assets
     refresh_saved_report_branding(output_dir)
-    if player_dir is None:
-        return None
-    return refresh_player_hub(
-        player_dir, template_dir, player_label=player_label, assets=assets
-    )
 
 
-def discover_reports(output_dir: Path) -> list[dict[str, Any]]:
-    """Scan ``output/reports/`` for saved report metadata.
-
-    Args:
-        output_dir: Root output directory.
+def discover_reports() -> list[dict[str, Any]]:
+    """Every saved report's listing metadata across every player, from Mongo.
 
     Returns:
         Report metadata dicts sorted by ``generated_at`` (newest first).
-        Each entry includes an ``href`` relative to ``output_dir``.
     """
-    reports_root = output_dir / "reports"
-    if not reports_root.is_dir():
-        return []
-
-    entries: list[dict[str, Any]] = []
-    for meta_path in reports_root.glob("*/*/meta.json"):
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        report_json = meta_path.parent / "report.json"
-        if not report_json.is_file():
-            continue
-        meta["href"] = report_json.relative_to(output_dir).as_posix()
-        entries.append(meta)
-
+    with open_report_store() as store:
+        entries = store.list_all_builds()
     entries.sort(key=lambda entry: entry.get("generated_at", ""), reverse=True)
     return entries
 

@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 from typing import Any, Final
 
 import requests
 from prometheus_client import Histogram
 
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_common.utils import get_logger
 
 log = get_logger("chat")
@@ -127,18 +127,16 @@ def validate_history(history: Any) -> list[dict[str, Any]]:
     return cleaned
 
 
-def load_report_summary(reports_dir: Path, report_ref: str) -> dict[str, Any]:
-    """Load ``summary.json`` for a ``{player_slug}/{build_slug}`` report ref."""
+def load_report_summary(report_ref: str) -> dict[str, Any]:
+    """Load the chatbot summary (old ``summary.json``) for a ``{player_slug}/{build_slug}`` ref."""
     parts = report_ref.split("/")
     if len(parts) != 2 or not all(_is_slug(part) for part in parts):
         raise ChatError("invalid report reference")
-    summary_path = reports_dir / parts[0] / parts[1] / "summary.json"
-    if not summary_path.is_file():
+    with open_report_store() as store:
+        summary = store.get_summary(parts[0], parts[1])
+    if summary is None:
         raise ChatError("report not found")
-    try:
-        return json.loads(summary_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ChatError("report summary unreadable") from exc
+    return summary
 
 
 def _is_slug(value: str) -> bool:
