@@ -1886,7 +1886,7 @@ def create_app(
             raise HTTPException(status_code=503, detail="Chat is not configured.")
         try:
             history = validate_history(body.history)
-            summary = load_report_summary(config.reports_dir, body.report)
+            summary = load_report_summary(body.report)
             stats = resolve_chat_stats(summary, body.context)
             text = gemini_reply(
                 config.gemini_api_key,

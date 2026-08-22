@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
-import os
 import time
 from dataclasses import dataclass, field
 from itertools import combinations
@@ -61,9 +59,9 @@ from league_stats_runner.pipeline.fetch import (
 )
 from league_stats_runner.pipeline.frames import AnalysisFrames, build_analysis_frames
 from league_stats_runner.pipeline.progression import (
+    build_progression_exports,
     build_progression_views,
     progression_to_template_context,
-    write_progression_exports,
 )
 from league_stats_runner.analysis.game_review.hints import game_review_tooltips
 from league_stats_runner.pipeline.game_review import build_game_review_views, game_review_to_template_context
@@ -85,10 +83,11 @@ from league_stats_runner.presentation.report import (
     discover_player_builds,
     game_creation_ms_to_iso,
     refresh_report_indexes,
+    save_build_record,
     utc_now_iso,
-    write_report_meta,
 )
 from league_stats_runner.infra.derived import KIND_SLICE, open_derived_store, slice_fingerprint
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_runner.presentation.report_json import context_to_json
 from league_stats_common.utils import get_logger
 
@@ -101,16 +100,16 @@ _APEX_TIERS = frozenset({"MASTER", "GRANDMASTER", "CHALLENGER"})
 
 
 def _merge_manifest_with_disk(
-    manifest_builds: list[dict[str, Any]], player_dir: Path
+    manifest_builds: list[dict[str, Any]], player_slug: str
 ) -> list[dict[str, Any]]:
-    """Keep sidebar links for every on-disk report, preferring live pool stats."""
+    """Keep sidebar links for every previously saved report, preferring live pool stats."""
     by_slug: dict[str, dict[str, Any]] = {
         champion_slug(str(entry["champion"]), str(entry["role"])): entry
         for entry in manifest_builds
     }
-    for disk in discover_player_builds(player_dir):
-        champion = str(disk.get("champion", "")).strip()
-        role = str(disk.get("role", "")).strip()
+    for saved in discover_player_builds(player_slug):
+        champion = str(saved.get("champion", "")).strip()
+        role = str(saved.get("role", "")).strip()
         if not champion or not role:
             continue
         slug = champion_slug(champion, role)
@@ -119,8 +118,8 @@ def _merge_manifest_with_disk(
         by_slug[slug] = build_manifest_entry(
             champion=champion,
             role=role,
-            games=int(disk.get("games", 0) or 0),
-            winrate=float(disk.get("winrate", 0.0) or 0.0),
+            games=int(saved.get("games", 0) or 0),
+            winrate=float(saved.get("winrate", 0.0) or 0.0),
         )
     return sorted(
         by_slug.values(),
@@ -210,15 +209,10 @@ def should_skip_unchanged_build(
     """
     if new_match_ids is None:
         return False
-    report_json = (
-        config.output_dir
-        / "reports"
-        / config.reports_group_slug
-        / champion_slug(pool.champion, pool.role)
-        / "report.json"
-    )
-    if not report_json.is_file():
-        return False
+    build_slug = champion_slug(pool.champion, pool.role)
+    with open_report_store() as store:
+        if not store.has_build(config.reports_group_slug, build_slug):
+            return False
     return new_match_ids.isdisjoint(record.match_id for record in records)
 
 
@@ -242,21 +236,21 @@ def live_block_goal_columns(career: dict[str, Any] | None) -> tuple[str, ...]:
 
 
 def report_needs_peer_comparison(config: AppConfig, pool: BuildPool) -> bool:
-    """Whether the on-disk build report is still missing rank peer comparison."""
+    """Whether the saved build report is still missing rank peer comparison."""
+    build_slug = champion_slug(pool.champion, pool.role)
+    with open_report_store() as store:
+        meta = store.get_build(config.reports_group_slug, build_slug)
+    if meta is not None and "has_peer_comparison" in meta:
+        return not bool(meta.get("has_peer_comparison"))
+    # `rank_comparison.csv` is a file export (out of scope for this Mongo
+    # migration -- only report.json/meta.json/manifest.json/summary.json/
+    # progression.json/.md moved), so this fallback still checks disk.
     run_dir = (
         config.output_dir
         / "reports"
         / config.reports_group_slug
-        / champion_slug(pool.champion, pool.role)
+        / build_slug
     )
-    meta_path = run_dir / "meta.json"
-    if meta_path.is_file():
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return True
-        if "has_peer_comparison" in meta:
-            return not bool(meta.get("has_peer_comparison"))
     return not (run_dir / "rank_comparison.csv").is_file()
 
 
@@ -325,7 +319,6 @@ def write_full_exports(
     exporter = Exporter(run_dir)
     exporter.write_all(
         tables=export_tables,
-        summary=summary,
         recommendations=recommendations,
         build_label=config.build_label,
     )
@@ -568,8 +561,12 @@ def run_analysis(
     profile_players: list[dict[str, Any]] | None = None,
     full_frames: AnalysisFrames | None = None,
     report_stats: ReportStats | None = None,
-) -> Path:
-    """Run every analysis, write exports and render the report.
+) -> str:
+    """Run every analysis, write exports and save the report to Mongo.
+
+    Returns the saved report's ``"{player_slug}/{build_slug}"`` reference
+    (old callers expected a ``report.json`` path; nothing report-shaped is
+    written to disk anymore -- see ``ReportStore``).
 
     ``full_frames``/``report_stats`` let a caller that already computed them
     for this exact record set (e.g. the web worker's peer-comparison pass,
@@ -677,7 +674,7 @@ def run_analysis(
     progression_comparison: ProgressionComparison | None = None
     if default_progression.get("comparison"):
         progression_comparison = ProgressionComparison.model_validate(default_progression["comparison"])
-    write_progression_exports(run_dir, progression_comparison)
+    progression_json, progression_md = build_progression_exports(progression_comparison)
 
     default_game_review = game_review.queues.get(default_queue) or game_review.queues.get("all")
     game_review_views = {
@@ -837,10 +834,9 @@ def run_analysis(
 
     context.setdefault("generated_at", utc_now_iso())
 
-    report_json_path = run_dir / "report.json"
-    tmp_json_path = report_json_path.with_suffix(".json.tmp")
-    tmp_json_path.write_text(json.dumps(context_to_json(context)), encoding="utf-8")
-    os.replace(tmp_json_path, report_json_path)
+    player_slug = config.reports_group_slug
+    build_slug = champion_slug(config.champion, config.role)
+    report_payload = context_to_json(context)
 
     generated_at = context.get("generated_at", "")
     primary_icon = next(
@@ -851,8 +847,9 @@ def run_analysis(
         ),
         None,
     )
-    write_report_meta(
-        run_dir,
+    save_build_record(
+        player_slug,
+        build_slug,
         {
             "player": config.players_label,
             "riot_id": config.riot_id,
@@ -876,20 +873,27 @@ def run_analysis(
             "score_verdict_label": default_bundle.get("score_verdict_label", ""),
             "has_peer_comparison": peer_comparison is not None,
         },
+        match_ids=(record.match_id for record in records),
     )
-    player_label = config.players_label
-    player_hub = refresh_report_indexes(
+    with open_report_store() as store:
+        store.save_body(
+            player_slug,
+            build_slug,
+            report=report_payload,
+            summary=summary,
+            progression_json=progression_json,
+            progression_md=progression_md,
+        )
+    refresh_report_indexes(
         config.output_dir,
         config.template_dir,
         player_dir=config.player_reports_dir,
-        player_label=player_label,
+        player_label=config.players_label,
         assets=asset_catalog,
     )
-    if player_hub is not None:
-        log.info("Done. Wrote %s (player hub manifest: %s)", report_json_path, player_hub)
-    else:
-        log.info("Done. Wrote %s", report_json_path)
-    return report_json_path
+    report_ref = f"{player_slug}/{build_slug}"
+    log.info("Done. Wrote report %s", report_ref)
+    return report_ref
 
 
 def ensure_platform(client: RiotApiClient, records: list[MatchRecord], config: AppConfig) -> None:
@@ -912,7 +916,7 @@ def run_with_peer(
     ranked: RankedEntry | None = None,
     player_builds: list[dict[str, Any]] | None = None,
     skip_peer: bool = False,
-) -> Path:
+) -> str:
     """Fetch rank, optionally build peer comparison and run the analysis pipeline."""
     if ranked is None:
         ensure_platform(services.client, records, config)
@@ -1012,10 +1016,10 @@ def prepare_builds(
             len(manifest_builds),
         )
 
-    # Always keep on-disk sibling reports in the Champions nav, even when a
-    # build drops below min_games or analysis is scoped to a single refresh.
+    # Always keep sibling reports in the Champions nav, even when a build
+    # drops below min_games or analysis is scoped to a single refresh.
     manifest_builds = _merge_manifest_with_disk(
-        manifest_builds, services.config.player_reports_dir
+        manifest_builds, services.config.reports_group_slug
     )
 
     return BuildBatch(
@@ -1037,7 +1041,7 @@ def resolve_ranked(
 
 @dataclass
 class BuildAnalysisResult:
-    """A build's report path plus the record-only work behind it.
+    """A build's saved-report reference plus the record-only work behind it.
 
     ``full_frames``/``report_stats`` depend only on this pool's records, not
     on peer comparison, so a caller that re-analyses the same pool right after
@@ -1045,7 +1049,7 @@ class BuildAnalysisResult:
     and skip redoing the RandomForest/correlation/clustering train.
     """
 
-    path: Path | None
+    path: str | None
     full_frames: AnalysisFrames | None = None
     report_stats: ReportStats | None = None
 
