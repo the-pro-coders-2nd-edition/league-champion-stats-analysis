@@ -295,6 +295,96 @@ def test_interim_snapshot_is_readable_before_task_finishes(monkeypatch: pytest.M
     assert cached.games_sampled == 2
 
 
+# --------------------------------- progressive listener dispatch (design doc §3.1)
+
+
+def test_progressive_listener_fires_on_every_improving_batch_and_once_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Design "Progressive peer-comparison updates during live sampling" §3.1:
+    a listener registered via `register_progressive_listener` must be pushed
+    on every batch that actually grows the sample (`still_refining=True`
+    each time), then exactly once more with `still_refining=False` on the
+    terminal batch -- never more than once at the end, and never for a batch
+    that made no progress.
+
+    Fails pre-fix: `_on_task_interim`/`_on_task_finalize` had no
+    listener-dispatch mechanism at all, so a caller that already received one
+    async callback while a `SamplingTask` was still refining had no way to
+    learn about any later batch -- this is exactly the gap PEERS' own
+    `PeersServicer._on_resolved`/`_notify_runner` relies on this module's
+    `register_progressive_listener`/`_dispatch_progressive_listeners` to
+    close.
+    """
+    import league_stats_peers.analysis.peer.benchmark_cache as benchmark_cache
+    from league_stats_peers.analysis.peer.baseline import register_progressive_listener
+    from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
+
+    monkeypatch.setattr(
+        benchmark_cache, "_store", LiveBenchmarkCacheStore(mongomock.MongoClient(), db_name="t")
+    )
+
+    client = _YieldClient("euw1", hit_every=1, prefix="prog")
+    key = ("euw1", "GOLD", "zac", "JUNGLE-progressive", "")
+    task = _make_task(key, client, batch_size=2, ceiling=100, target=6, interim_threshold=2)
+    scheduler = SamplingScheduler(num_workers=1, on_interim=_on_task_interim, on_finalize=_on_task_finalize)
+    scheduler.get_or_create(key, lambda: task)
+
+    received: list[tuple[int, bool]] = []
+    register_progressive_listener(
+        key, lambda snapshot: received.append((snapshot.games_sampled, snapshot.still_refining))
+    )
+
+    while scheduler.is_active(key):
+        scheduler.step()
+
+    assert received, "progressive listener never fired"
+    # Exactly one terminal push, and it's the last one.
+    terminal_pushes = [r for r in received if r[1] is False]
+    assert len(terminal_pushes) == 1
+    assert received[-1][1] is False
+    # Every push before it is an interim (still refining) push.
+    assert all(still_refining for _games, still_refining in received[:-1])
+    # Every push represents real growth over the previous one (dedup rule:
+    # "fires ... where the cached snapshot actually improved").
+    games_seen = [games for games, _still_refining in received]
+    assert games_seen == sorted(games_seen)
+    assert len(games_seen) == len(set(games_seen))
+    assert games_seen[-1] == task.games == 6
+
+
+def test_progressive_listener_deregistered_after_terminal_push(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A listener must stop being called once its task has finalized -- a new
+    task later reusing the same key must not accidentally replay into an old
+    listener that should have been forgotten."""
+    import league_stats_peers.analysis.peer.benchmark_cache as benchmark_cache
+    from league_stats_peers.analysis.peer.baseline import _dispatch_progressive_listeners, register_progressive_listener
+    from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
+
+    monkeypatch.setattr(
+        benchmark_cache, "_store", LiveBenchmarkCacheStore(mongomock.MongoClient(), db_name="t")
+    )
+
+    client = _YieldClient("euw1", hit_every=1, prefix="term")
+    key = ("euw1", "GOLD", "zac", "JUNGLE-terminal-only", "")
+    task = _make_task(key, client, batch_size=6, ceiling=100, target=2, interim_threshold=2)
+    scheduler = SamplingScheduler(num_workers=1, on_interim=_on_task_interim, on_finalize=_on_task_finalize)
+    scheduler.get_or_create(key, lambda: task)
+
+    received: list[bool] = []
+    register_progressive_listener(key, lambda snapshot: received.append(snapshot.still_refining))
+
+    while scheduler.is_active(key):
+        scheduler.step()
+
+    assert received == [False]
+
+    # Simulate another (unrelated) snapshot for the same key arriving after
+    # the listener should already have been forgotten -- must not replay.
+    _dispatch_progressive_listeners(key, task.build_snapshot(confidence="low", still_refining=True))
+    assert received == [False]
+
+
 # ------------------------------------------------------------- cross-champion reuse (Phase 2)
 
 

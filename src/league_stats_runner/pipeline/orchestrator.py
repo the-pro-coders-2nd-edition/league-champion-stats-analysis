@@ -55,6 +55,7 @@ from league_stats_runner.pipeline.bundles import (
     serialize_report_views_json,
     slice_records,
 )
+from league_stats_runner.pipeline.view_models import peer_row_display
 from league_stats_runner.pipeline.fetch import (
     group_records,
     load_all_records,
@@ -260,6 +261,65 @@ def report_needs_peer_comparison(config: AppConfig, pool: BuildPool) -> bool:
     return not (run_dir / "rank_comparison.csv").is_file()
 
 
+def patch_report_peer_comparison(
+    config: AppConfig, pool: BuildPool, peer_comparison: PeerComparisonResult
+) -> bool:
+    """Cheaply rewrite an already-rendered ``report.json``'s peer-comparison
+    fields in place, without re-running the analysis pipeline.
+
+    Design "Progressive peer-comparison updates during live sampling" §3.2:
+    RUNNER's stage-B wait loop calls this for every *interim*
+    `NotifyPeerBaselineReady` callback (still refining) instead of the full
+    `analyze_build` pass -- the score/lane/economy/etc. cards stay whatever
+    Stage A rendered (peer-blind) until the *terminal* callback, which still
+    goes through the normal `analyze_build` call (and is the only place
+    Career computes, §3.3). Only `peer_comparison`/`peer_rows`/
+    `has_peer_comparison` and `generated_at` are updated here -- deliberately
+    narrow, so an interim push during a slow live sample is cheap (no graph
+    rendering, no export writing, no career computation).
+
+    Returns ``False`` (a no-op) when this pool has no `report.json` yet to
+    patch -- callers should fall back to a full `analyze_build` in that case,
+    the same as they would for a brand-new build.
+    """
+    run_dir = (
+        config.output_dir
+        / "reports"
+        / config.reports_group_slug
+        / champion_slug(pool.champion, pool.role)
+    )
+    report_json_path = run_dir / "report.json"
+    if not report_json_path.is_file():
+        return False
+    try:
+        context = json.loads(report_json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    context["has_peer_comparison"] = True
+    context["peer_comparison"] = peer_comparison
+    context["peer_rows"] = [
+        peer_row_display(row.model_dump()) for row in peer_comparison.comparisons
+    ]
+    generated_at = utc_now_iso()
+    context["generated_at"] = generated_at
+
+    tmp_json_path = report_json_path.with_suffix(".json.tmp")
+    tmp_json_path.write_text(json.dumps(context_to_json(context)), encoding="utf-8")
+    os.replace(tmp_json_path, report_json_path)
+
+    meta_path = run_dir / "meta.json"
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            meta = {}
+        meta["has_peer_comparison"] = True
+        meta["generated_at"] = generated_at
+        write_report_meta(run_dir, meta)
+    return True
+
+
 def write_full_exports(
     config: AppConfig,
     records: list[MatchRecord],
@@ -350,6 +410,7 @@ def build_report_views(
     graphs_dir: Path,
     *,
     peer_comparison: PeerComparisonResult | None = None,
+    still_refining: bool = False,
     assets: DDragonAssets | None = None,
     shared_stats: Any = None,
 ) -> tuple[
@@ -387,14 +448,24 @@ def build_report_views(
     # every slice below rather than rebuilt per slice, and only the all-ranked
     # views actually render it.
     #
-    # Career is never attempted without a resolved peer comparison: Stage A
-    # (base stats) always passes ``peer_comparison=None`` here, and advancing
-    # the ladder against an empty peer baseline used to just get told "not
-    # ready" and return an awaiting_peers snapshot -- now Stage A skips calling
-    # advance_career at all and renders the same loading shape directly.
+    # Career is never attempted without a resolved, TERMINAL peer comparison:
+    # Stage A (base stats) always passes ``peer_comparison=None`` here, and
+    # advancing the ladder against an empty peer baseline used to just get
+    # told "not ready" and return an awaiting_peers snapshot -- Stage A skips
+    # calling advance_career at all and renders the same loading shape
+    # directly. Design "Progressive peer-comparison updates during live
+    # sampling" §3.3 extends this: an *interim* peer comparison
+    # (``still_refining=True``, still improving in the background) also
+    # renders the awaiting_peers shape -- Career only ever computes once,
+    # against the terminal result, never against a still-refining interim one
+    # that could change again a few seconds later. The actual "exactly once
+    # even under a duplicate terminal delivery" guard lives one layer up, in
+    # `worker.py`'s stage-B loop (a per-pool boolean, same shape as
+    # `seen_stage_b`) -- this function is pure and has no call-spanning state
+    # of its own to guard with.
     career_ladder = (
         build_all_ranked_ladder(config, records, peer_comparison)
-        if peer_comparison is not None
+        if peer_comparison is not None and not still_refining
         else awaiting_peers_career_view()
     )
     with open_derived_store() as derived:
@@ -562,6 +633,7 @@ def run_analysis(
     records: list[MatchRecord],
     *,
     peer_comparison: PeerComparisonResult | None = None,
+    still_refining: bool = False,
     ranked: RankedEntry | None = None,
     player_builds: list[dict[str, Any]] | None = None,
     assets: DDragonAssets | None = None,
@@ -619,6 +691,7 @@ def run_analysis(
         records,
         graphs_dir,
         peer_comparison=peer_comparison,
+        still_refining=still_refining,
         assets=asset_catalog,
         shared_stats=report_stats,
     )
@@ -1057,6 +1130,7 @@ def analyze_build(
     *,
     ranked: RankedEntry | None,
     peer_comparison: PeerComparisonResult | None,
+    still_refining: bool = False,
     full_frames: AnalysisFrames | None = None,
     report_stats: ReportStats | None = None,
 ) -> BuildAnalysisResult:
@@ -1085,6 +1159,7 @@ def analyze_build(
         build_config,
         records,
         peer_comparison=peer_comparison,
+        still_refining=still_refining,
         ranked=ranked,
         player_builds=batch.manifest_builds,
         assets=services.assets,

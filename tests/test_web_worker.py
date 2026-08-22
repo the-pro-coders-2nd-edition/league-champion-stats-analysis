@@ -102,7 +102,7 @@ def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, **overrides: Any) -> list[s
         # AppConfig (report_needs_peer_comparison reads config.output_dir).
         "report_needs_peer_comparison": lambda config, pool: False,
         "analyze_build": (
-            lambda services, batch, pool, *, ranked, peer_comparison, full_frames=None, report_stats=None: calls.append(
+            lambda services, batch, pool, *, ranked, peer_comparison, still_refining=False, full_frames=None, report_stats=None: calls.append(
                 f"analyze(peer={peer_comparison is not None})"
             )
             or BuildAnalysisResult(path=Path("report.json"))
@@ -1931,3 +1931,286 @@ def test_build_peer_for_pool_via_grpc_records_async_wait_delivered(
         "runner_peers_async_wait_duration_seconds_count", {"outcome": "delivered"}
     )
     assert after == before + 1
+
+
+# ------------------- progressive peer-comparison updates (design doc §3.2) -------------------
+
+
+def test_build_peer_for_pool_via_grpc_keeps_waiting_past_the_first_interim_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Design "Progressive peer-comparison updates during live sampling" §3.2:
+    an interim (`still_refining=True`) `NotifyPeerBaselineReady` callback must
+    NOT end the wait -- `_build_peer_for_pool_via_grpc` must keep waiting on
+    the same `request_id` for a later, terminal callback, calling `on_update`
+    once per delivery.
+
+    Fails pre-fix: the old wait loop returned as soon as ANY notification
+    arrived, regardless of a `still_refining` flag it didn't even read --
+    the second (terminal) delivery below would never be observed at all.
+    """
+    import json as _json
+    import threading as _threading
+    import time as _time
+    from dataclasses import asdict
+
+    from league_stats_peers.analysis.peer.baseline import PeerBaseline
+    from league_stats_common.core.models import RankedEntry
+    from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
+
+    interim_baseline = PeerBaseline(
+        metrics={"kda": 4.0}, games=6, players=6, source="live sample",
+        confidence="low", fallback_level=2, still_refining=True,
+    )
+    terminal_baseline = PeerBaseline(
+        metrics={"kda": 5.0}, games=50, players=40, source="live sample",
+        confidence="full", fallback_level=2, still_refining=False,
+    )
+
+    class _SlowPeersServicer(peers_pb2_grpc.PeersServiceServicer):
+        def RequestBaseline(self, request, context):
+            return peers_pb2.RequestBaselineResponse(request_id="req-progressive-1", cached=False)
+
+    server, port = _start_peers_server(_SlowPeersServicer())
+
+    def _deliver_later() -> None:
+        _time.sleep(0.1)
+        worker.resolve_peer_baseline_notification(
+            "req-progressive-1",
+            baseline_json=_json.dumps(asdict(interim_baseline)),
+            error="",
+            still_refining=True,
+        )
+        _time.sleep(0.1)
+        worker.resolve_peer_baseline_notification(
+            "req-progressive-1",
+            baseline_json=_json.dumps(asdict(terminal_baseline)),
+            error="",
+            still_refining=False,
+        )
+
+    _threading.Thread(target=_deliver_later, daemon=True).start()
+
+    updates: list[tuple[int, bool]] = []
+
+    try:
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        services = _fake_services_for_grpc_peer()
+        monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
+        batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
+        pool = BuildPool(champion="Ahri", role="MIDDLE", games=25)
+        ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+        result = worker._build_peer_for_pool_via_grpc(
+            services,
+            batch,
+            pool,
+            ranked,
+            web_config,
+            on_update=lambda peer, still_refining: updates.append(
+                (peer.peer_games, still_refining)
+            ),
+        )
+    finally:
+        server.stop(grace=None)
+
+    assert result is not None
+    assert result.peer_games == 50
+    assert updates == [(6, True), (50, False)]
+    assert "req-progressive-1" not in worker._peer_baseline_waiters
+
+
+def test_build_peer_for_pool_via_grpc_cached_response_always_reports_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A synchronous `cached=True` response is always reported to `on_update`
+    as `still_refining=False` -- PEERS makes no further attempt for it
+    regardless of what the underlying (possibly still-refining) snapshot's
+    own flag says, since no `request_id`/waiter exists for RUNNER to receive
+    a follow-up on. This is the "existing fast/common path... unchanged"
+    case from the design doc's testing section."""
+    import json as _json
+    from dataclasses import asdict
+
+    from league_stats_peers.analysis.peer.baseline import PeerBaseline
+    from league_stats_common.core.models import RankedEntry
+    from league_stats_rpc.v1 import peers_pb2, peers_pb2_grpc
+
+    baseline = PeerBaseline(
+        metrics={"kda": 3.0}, games=8, players=8, source="live cache",
+        confidence="low", fallback_level=2, still_refining=True,
+    )
+
+    class _CachedPeersServicer(peers_pb2_grpc.PeersServiceServicer):
+        def RequestBaseline(self, request, context):
+            return peers_pb2.RequestBaselineResponse(
+                request_id="req-cached-refining-1",
+                cached=True,
+                baseline_json=_json.dumps(asdict(baseline)),
+            )
+
+    server, port = _start_peers_server(_CachedPeersServicer())
+    updates: list[tuple[int, bool]] = []
+    try:
+        web_config = WebConfig(peers_grpc_target=f"127.0.0.1:{port}")
+        services = _fake_services_for_grpc_peer()
+        monkeypatch.setattr(worker, "group_records", lambda records, champ, role: _peer_records())
+        batch = BuildBatch(pools=[], records=[], manifest_builds=[], primary_puuid="my-puuid")
+        pool = BuildPool(champion="Ahri", role="MIDDLE", games=25)
+        ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+
+        result = worker._build_peer_for_pool_via_grpc(
+            services,
+            batch,
+            pool,
+            ranked,
+            web_config,
+            on_update=lambda peer, still_refining: updates.append(
+                (peer.peer_games, still_refining)
+            ),
+        )
+    finally:
+        server.stop(grace=None)
+
+    assert result is not None
+    assert updates == [(8, False)]
+
+
+# ------------------------- _run_stage_b: cheap patch vs. full render (design doc §3.2/§3.3)
+
+
+def test_run_stage_b_patches_report_json_on_interim_and_computes_career_once_on_terminal(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Design "Progressive peer-comparison updates during live sampling"
+    §3.2/§3.3: simulates PEERS delivering one interim (`still_refining=True`)
+    callback followed by one terminal (`still_refining=False`) callback for
+    the same pool. `report.json` must be patched cheaply
+    (`patch_report_peer_comparison`) on the interim delivery, and the full
+    `analyze_build` pass (the only place Career/`build_all_ranked_ladder`
+    computes) must run exactly once, after the terminal delivery.
+
+    Fails pre-fix: `_run_stage_b` had no concept of `still_refining` at all --
+    every delivery (there was only ever one) went straight to `analyze_build`,
+    so an interim result would have computed Career against still-refining
+    data, and there was no `patch_report_peer_comparison` call path at all.
+    """
+    from league_stats_common.core.models import RankedEntry
+
+    job = _claimed_job(store)
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+    batch = _fake_batch()
+    services = _fake_services()
+
+    interim_peer = SimpleNamespace(label="interim", peer_games=6)
+    terminal_peer = SimpleNamespace(label="terminal")
+
+    def _fake_build_peer_for_pool_via_grpc(
+        services, batch, pool, ranked, web_config, *, store=None, job_id=None, on_update=None
+    ):
+        on_update(interim_peer, True)
+        on_update(terminal_peer, False)
+        return terminal_peer
+
+    patch_calls: list[Any] = []
+    analyze_calls: list[dict[str, Any]] = []
+
+    def _fake_patch_report_peer_comparison(config, pool, peer_comparison):
+        patch_calls.append(peer_comparison)
+        return True
+
+    def _fake_analyze_build(
+        services, batch, pool, *, ranked, peer_comparison, still_refining=False,
+        full_frames=None, report_stats=None,
+    ):
+        analyze_calls.append(
+            {"peer_comparison": peer_comparison, "still_refining": still_refining}
+        )
+        return BuildAnalysisResult(path=Path("report.json"))
+
+    monkeypatch.setattr(worker, "group_records", lambda records, champ, role: ["record"])
+    monkeypatch.setattr(
+        worker, "should_skip_unchanged_build", lambda *args, **kwargs: False
+    )
+    monkeypatch.setattr(worker, "report_needs_peer_comparison", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        worker, "_build_peer_for_pool_via_grpc", _fake_build_peer_for_pool_via_grpc
+    )
+    monkeypatch.setattr(
+        worker, "patch_report_peer_comparison", _fake_patch_report_peer_comparison
+    )
+    monkeypatch.setattr(worker, "analyze_build", _fake_analyze_build)
+
+    # §3.4: a successful interim patch must also push a `store.update_progress`
+    # call -- the existing StreamJobProgress -> NotifyingJobStore -> JobEventBus
+    # -> SSE path api-ui already uses for every other progress event, which is
+    # what makes an open browser tab notice the patched report.json at all.
+    progress_details: list[str] = []
+    real_update_progress = store.update_progress
+
+    def _spy_update_progress(job_id, **kwargs):
+        progress_details.append(kwargs.get("detail", ""))
+        return real_update_progress(job_id, **kwargs)
+
+    monkeypatch.setattr(store, "update_progress", _spy_update_progress)
+
+    worker._run_stage_b(services, store, job, batch, ranked, frozenset(), {}, web_config)
+
+    assert patch_calls == [interim_peer]
+    assert len(analyze_calls) == 1
+    assert analyze_calls[0]["peer_comparison"] is terminal_peer
+    assert analyze_calls[0]["still_refining"] is False
+    assert any("improved" in detail for detail in progress_details), (
+        "interim patch must publish a store.update_progress event so an open "
+        "browser tab's SSE stream wakes and refetches"
+    )
+
+
+def test_run_stage_b_fast_path_still_computes_career_exactly_once(
+    store: JobStore, web_config: WebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The existing fast/common path (a single, immediately-terminal delivery
+    -- no interim callbacks at all) must still work unchanged: no cheap-patch
+    call, and `analyze_build` (Career) runs exactly once."""
+    from league_stats_common.core.models import RankedEntry
+
+    job = _claimed_job(store)
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+    batch = _fake_batch()
+    services = _fake_services()
+    resolved_peer = SimpleNamespace(label="resolved")
+
+    def _fake_build_peer_for_pool_via_grpc(
+        services, batch, pool, ranked, web_config, *, store=None, job_id=None, on_update=None
+    ):
+        on_update(resolved_peer, False)
+        return resolved_peer
+
+    patch_calls: list[Any] = []
+    analyze_calls: list[Any] = []
+
+    monkeypatch.setattr(worker, "group_records", lambda records, champ, role: ["record"])
+    monkeypatch.setattr(
+        worker, "should_skip_unchanged_build", lambda *args, **kwargs: False
+    )
+    monkeypatch.setattr(worker, "report_needs_peer_comparison", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        worker, "_build_peer_for_pool_via_grpc", _fake_build_peer_for_pool_via_grpc
+    )
+    monkeypatch.setattr(
+        worker, "patch_report_peer_comparison", lambda *a, **k: patch_calls.append(1)
+    )
+
+    def _fake_analyze_build(
+        services, batch, pool, *, ranked, peer_comparison, still_refining=False,
+        full_frames=None, report_stats=None,
+    ):
+        analyze_calls.append(peer_comparison)
+        return BuildAnalysisResult(path=Path("report.json"))
+
+    monkeypatch.setattr(worker, "analyze_build", _fake_analyze_build)
+
+    worker._run_stage_b(services, store, job, batch, ranked, frozenset(), {}, web_config)
+
+    assert patch_calls == []
+    assert analyze_calls == [resolved_peer]

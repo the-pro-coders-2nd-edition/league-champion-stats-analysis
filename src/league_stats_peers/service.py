@@ -215,7 +215,14 @@ import pymongo
 import requests
 from prometheus_client import Counter, Gauge, Histogram
 
-from league_stats_peers.analysis.peer.baseline import PeerBaseline, resolve_peer_baseline
+from league_stats_peers.analysis.peer.baseline import (
+    PeerBaseline,
+    _baseline_from_snapshot,
+    register_progressive_listener,
+    resolve_peer_baseline,
+    task_key_for,
+)
+from league_stats_peers.analysis.peer.benchmark_fetcher import BenchmarkSnapshot
 from league_stats_peers.analysis.peer.benchmarks import VALID_TIERS
 from league_stats_common.core.config import AppConfig, PLATFORM_TO_REGION, REGION_DEFAULT_PLATFORM, VALID_PLATFORMS
 from league_stats_common.core.models import RankedEntry
@@ -892,8 +899,9 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
                 if started
                 else "still queued behind other in-flight work",
             )
+            task_key = task_key_for(platform, tier, champion, role, patch)
             record.future.add_done_callback(
-                lambda f: self._on_resolved(f, request_id, champion, role, request.rank)
+                lambda f: self._on_resolved(f, request_id, champion, role, request.rank, task_key)
             )
             return peers_pb2.RequestBaselineResponse(request_id=request_id, cached=False)
         except Exception as exc:  # noqa: BLE001 -- report as a request-level failure
@@ -913,14 +921,33 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         )
 
     def _on_resolved(
-        self, future: "Future[PeerBaseline | None]", request_id: str, champion: str, role: str, rank: str
+        self,
+        future: "Future[PeerBaseline | None]",
+        request_id: str,
+        champion: str,
+        role: str,
+        rank: str,
+        task_key: "tuple[str, str, str, str, str]",
     ) -> None:
-        """Runs once a backgrounded resolution finishes (possibly shared by several callers)."""
+        """Runs once a backgrounded resolution finishes (possibly shared by several callers).
+
+        Design "Progressive peer-comparison updates during live sampling"
+        §3.1: when the delivered result is itself still `still_refining`
+        (an interim snapshot -- the underlying `SamplingTask` is still
+        running in the background), this also registers a progressive
+        listener on `task_key` so every later interim/finalize snapshot for
+        the same task keeps pushing further `NotifyPeerBaselineReady`
+        callbacks for THIS `request_id`, instead of RUNNER only ever hearing
+        about the one snapshot that happened to exist when this future
+        completed.
+        """
         try:
             baseline = future.result()
         except Exception as exc:  # noqa: BLE001 -- must still notify RUNNER
             log.exception("Background peer baseline resolution failed for %s %s", champion, role)
-            self._notify_runner(request_id, champion, role, rank, baseline_json="", error=str(exc))
+            self._notify_runner(
+                request_id, champion, role, rank, baseline_json="", error=str(exc), still_refining=False
+            )
             return
         if baseline is None:
             self._notify_runner(
@@ -930,11 +957,33 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
                 rank,
                 baseline_json="",
                 error=f"no peer baseline available for {champion} {role} at {rank!r}",
+                still_refining=False,
             )
             return
         self._notify_runner(
-            request_id, champion, role, rank, baseline_json=_encode_baseline(baseline), error=""
+            request_id,
+            champion,
+            role,
+            rank,
+            baseline_json=_encode_baseline(baseline),
+            error="",
+            still_refining=baseline.still_refining,
         )
+        if baseline.still_refining:
+
+            def _on_progress(snapshot: BenchmarkSnapshot) -> None:
+                updated = _baseline_from_snapshot(snapshot, champion, role, level=2)
+                self._notify_runner(
+                    request_id,
+                    champion,
+                    role,
+                    rank,
+                    baseline_json=_encode_baseline(updated),
+                    error="",
+                    still_refining=snapshot.still_refining,
+                )
+
+            register_progressive_listener(task_key, _on_progress)
 
     def _notify_runner(
         self,
@@ -945,6 +994,7 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         *,
         baseline_json: str,
         error: str,
+        still_refining: bool = False,
     ) -> None:
         try:
             with grpc.intercept_channel(
@@ -959,6 +1009,7 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
                         rank=rank,
                         baseline_json=baseline_json,
                         error=error,
+                        still_refining=still_refining,
                     )
                 )
         except Exception as exc:  # noqa: BLE001 -- a done-callback must never raise silently

@@ -380,6 +380,7 @@ class RunnerServicer(runner_pb2_grpc.RunnerServiceServicer):
             request.request_id,
             baseline_json=request.baseline_json,
             error=request.error,
+            still_refining=request.still_refining,
         )
         if delivered:
             log.info(

@@ -92,4 +92,10 @@ message PeerBaselineReadyRequest {
   // league_stats.web.jobs.JobStore.mark_player_peer_failed) instead of
   // waiting forever for a baseline that will never arrive.
   string error = 6;
+  // Mirrors BenchmarkSnapshot.still_refining (design "Progressive
+  // peer-comparison updates during live sampling" §3.1): true on an interim
+  // batch update (the SamplingTask keeps running and will call back again),
+  // false on the terminal callback (target reached, or ceiling/queue
+  // exhausted -- no further callback will follow for this request_id).
+  bool still_refining = 7;
 }

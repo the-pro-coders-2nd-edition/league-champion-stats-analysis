@@ -197,6 +197,69 @@ def test_stage_a_renders_the_awaiting_peers_loading_shape(tmp_path) -> None:
             assert career["awaiting_peers"] is True
 
 
+def test_still_refining_peer_comparison_keeps_career_awaiting(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Design "Progressive peer-comparison updates during live sampling" §3.3:
+    a resolved-but-still-refining peer comparison (an interim result) must
+    NOT unlock Career -- it renders the same awaiting_peers loading shape as
+    Stage A's ``peer_comparison=None`` case, exactly like a terminal one
+    (``still_refining=False``) unlocks it. Fails pre-fix: the gate only ever
+    checked ``peer_comparison is not None``, with no `still_refining`
+    parameter to check at all -- Career would have computed against the
+    interim result.
+    """
+    from league_stats_runner.pipeline import bundles as bundles_module
+    from league_stats_runner.pipeline.orchestrator import build_report_views
+    from tests.test_reports import _config, _make_records, _peer
+
+    config = _config(tmp_path)
+    records = _make_records()
+    graphs = config.run_graphs_dir
+    graphs.mkdir(parents=True, exist_ok=True)
+
+    calls: list[int] = []
+    real = bundles_module.build_career_bundle
+
+    def counted(cfg, frames, peer, components):
+        calls.append(len(frames.matches_df))
+        return real(cfg, frames, peer, components)
+
+    monkeypatch.setattr(bundles_module, "build_career_bundle", counted)
+    views, _, _ = build_report_views(
+        config, records, graphs, peer_comparison=_peer(records), still_refining=True
+    )
+
+    assert calls == []
+    for queue_key in ("solo", "flex", "all"):
+        for window in views[queue_key]["windows"].values():
+            career = window["career"]
+            assert career["has_career"] is False
+            assert career["awaiting_peers"] is True
+
+
+def test_terminal_peer_comparison_unlocks_career_same_as_before(tmp_path) -> None:
+    """`still_refining=False` (the default) must keep unlocking Career exactly
+    like before this design -- the existing Stage-B-only gate must not
+    regress."""
+    from league_stats_runner.pipeline.orchestrator import build_report_views
+    from tests.test_reports import _config, _make_records, _peer
+
+    config = _config(tmp_path)
+    records = _make_records()
+    graphs = config.run_graphs_dir
+    graphs.mkdir(parents=True, exist_ok=True)
+
+    views, _, _ = build_report_views(
+        config, records, graphs, peer_comparison=_peer(records), still_refining=False
+    )
+
+    for queue_key in ("solo", "flex", "all"):
+        for window in views[queue_key]["windows"].values():
+            career = window["career"]
+            assert career["has_career"] is True
+
+
 def test_the_ladder_reaches_every_queue_view(tmp_path) -> None:
     from league_stats_runner.pipeline.orchestrator import build_report_views
     from tests.test_reports import _config, _make_records, _peer

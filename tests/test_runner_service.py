@@ -362,7 +362,11 @@ def test_notify_peer_baseline_ready_delivers_to_a_registered_waiter() -> None:
 
     assert ack.ok is True
     delivered = events.get_nowait()
-    assert delivered == {"baseline_json": '{"games": 42}', "error": ""}
+    assert delivered == {
+        "baseline_json": '{"games": 42}',
+        "error": "",
+        "still_refining": False,
+    }
 
 
 def test_notify_peer_baseline_ready_reports_ok_false_when_no_waiter() -> None:
@@ -394,7 +398,11 @@ def test_notify_peer_baseline_ready_reports_ok_false_when_no_waiter() -> None:
     assert ack.ok is False
     assert "req-nobody-waiting" in web_worker._peer_baseline_orphans
     stored_at, payload = web_worker._peer_baseline_orphans.pop("req-nobody-waiting")
-    assert payload == {"baseline_json": "", "error": "some failure"}
+    assert payload == {
+        "baseline_json": "",
+        "error": "some failure",
+        "still_refining": False,
+    }
 
 
 def test_stream_job_progress_reconnect_after_terminal_returns_immediately(

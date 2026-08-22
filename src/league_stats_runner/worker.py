@@ -14,7 +14,7 @@ import queue
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 import pymongo
@@ -38,6 +38,7 @@ from league_stats_runner.pipeline.orchestrator import (
     BuildBatch,
     NoEligibleBuildsError,
     analyze_build,
+    patch_report_peer_comparison,
     prepare_builds,
     report_needs_peer_comparison,
     resolve_ranked,
@@ -135,7 +136,7 @@ _PEERS_BASELINE_POLL_INTERVAL_S = 5.0
 # `runner/service.py`'s module docstring for why RUNNER's servicer is
 # synchronous, not `grpc.aio`, and therefore needs a plain thread-safe handoff
 # like this rather than an `asyncio.Event`.
-_peer_baseline_waiters: dict[str, "queue.SimpleQueue[dict[str, str]]"] = {}
+_peer_baseline_waiters: dict[str, "queue.SimpleQueue[dict[str, Any]]"] = {}
 _peer_baseline_waiters_lock = threading.Lock()
 
 # Lost-wakeup guard (fix round 1): `concurrent.futures.Future.add_done_callback`
@@ -155,7 +156,7 @@ _peer_baseline_waiters_lock = threading.Lock()
 # `_PEERS_BASELINE_WAIT_TIMEOUT_S` for a baseline that had already landed.
 # Keyed the same way as `_peer_baseline_waiters`; values are
 # `(stored_at_monotonic, {"baseline_json":..., "error":...})`.
-_peer_baseline_orphans: dict[str, tuple[float, dict[str, str]]] = {}
+_peer_baseline_orphans: dict[str, tuple[float, dict[str, Any]]] = {}
 # The real race window above is normally milliseconds (the gap between PEERS
 # returning `cached=False` and this process calling
 # `_register_peer_baseline_waiter`), so this TTL only needs to survive
@@ -183,7 +184,7 @@ def _prune_expired_peer_baseline_orphans_locked() -> None:
         del _peer_baseline_orphans[request_id]
 
 
-def _register_peer_baseline_waiter(request_id: str) -> "queue.SimpleQueue[dict[str, str]]":
+def _register_peer_baseline_waiter(request_id: str) -> "queue.SimpleQueue[dict[str, Any]]":
     """Register a waiter for PEERS' async callback for `request_id`.
 
     Checks `_peer_baseline_orphans` first (see that dict's module comment for
@@ -192,7 +193,7 @@ def _register_peer_baseline_waiter(request_id: str) -> "queue.SimpleQueue[dict[s
     result in it instead of blocking on a queue nothing will ever put
     anything into.
     """
-    events: "queue.SimpleQueue[dict[str, str]]" = queue.SimpleQueue()
+    events: "queue.SimpleQueue[dict[str, Any]]" = queue.SimpleQueue()
     with _peer_baseline_waiters_lock:
         orphan = _peer_baseline_orphans.pop(request_id, None)
         if orphan is not None:
@@ -203,7 +204,7 @@ def _register_peer_baseline_waiter(request_id: str) -> "queue.SimpleQueue[dict[s
 
 
 def resolve_peer_baseline_notification(
-    request_id: str, *, baseline_json: str, error: str
+    request_id: str, *, baseline_json: str, error: str, still_refining: bool = False
 ) -> bool:
     """Deliver RUNNER's real `NotifyPeerBaselineReady` callback to whichever
     stage-B thread is waiting on `request_id`, if any.
@@ -212,31 +213,42 @@ def resolve_peer_baseline_notification(
     this is the real Phase 3 implementation of the coordination Phase 1's
     version of that method left as a logging-only stub.
 
+    Design "Progressive peer-comparison updates during live sampling" §3.1/
+    §3.2: unlike the original one-shot version, this does NOT remove the
+    waiter from `_peer_baseline_waiters` on delivery -- PEERS can (and now
+    does) call `NotifyPeerBaselineReady` more than once for the same
+    `request_id` while its `SamplingTask` is still `still_refining`, and each
+    push must reach the same stage-B thread's wait loop. The waiter is only
+    ever deregistered by the consumer itself (`_build_peer_for_pool_via_grpc`'s
+    wait loop below), once it decides to stop waiting -- a terminal
+    (`still_refining=False`) delivery, an error, a timeout, or cancellation.
+
     Returns ``False`` when no waiter is *currently* registered for
     `request_id` -- this covers two different cases the caller can't tell
     apart, and doesn't need to: (a) the stage-B thread already gave up after
-    `_PEERS_BASELINE_WAIT_TIMEOUT_S` and moved on, or `request_id` never
-    belonged to a request this process made -- nothing useful to do, the
-    notification is simply logged and dropped; (b) the genuine lost-wakeup
-    race documented on `_peer_baseline_orphans` above, where this notification
-    arrived before `_register_peer_baseline_waiter` ran for the same
-    `request_id` -- in that case the payload is NOT dropped, it's stashed in
-    `_peer_baseline_orphans` for `_register_peer_baseline_waiter` to pick up
-    immediately once it does run. Returning ``False`` here still accurately
-    reports "not delivered to a live waiter"; the value living on
-    unclaimed for a little while is what makes the race harmless either way.
+    `_PEERS_BASELINE_WAIT_TIMEOUT_S` (or a prior terminal delivery) and moved
+    on, or `request_id` never belonged to a request this process made --
+    nothing useful to do, the notification is simply logged and dropped;
+    (b) the genuine lost-wakeup race documented on `_peer_baseline_orphans`
+    above, where this notification arrived before
+    `_register_peer_baseline_waiter` ran for the same `request_id` -- in that
+    case the payload is NOT dropped, it's stashed in `_peer_baseline_orphans`
+    for `_register_peer_baseline_waiter` to pick up immediately once it does
+    run. Returning ``False`` here still accurately reports "not delivered to
+    a live waiter"; the value living on unclaimed for a little while is what
+    makes the race harmless either way.
     """
     with _peer_baseline_waiters_lock:
-        events = _peer_baseline_waiters.pop(request_id, None)
+        events = _peer_baseline_waiters.get(request_id)
         if events is None:
             _prune_expired_peer_baseline_orphans_locked()
             _peer_baseline_orphans[request_id] = (
                 time.monotonic(),
-                {"baseline_json": baseline_json, "error": error},
+                {"baseline_json": baseline_json, "error": error, "still_refining": still_refining},
             )
     if events is None:
         return False
-    events.put({"baseline_json": baseline_json, "error": error})
+    events.put({"baseline_json": baseline_json, "error": error, "still_refining": still_refining})
     return True
 
 
@@ -524,6 +536,7 @@ def _build_peer_for_pool_via_grpc(
     *,
     store: JobStore | None = None,
     job_id: int | None = None,
+    on_update: "Callable[[PeerComparisonResult, bool], None] | None" = None,
 ) -> PeerComparisonResult | None:
     """`_run_stage_b`'s sole peer-comparison path (since Phase 9 removed the
     `peers_mode` flag and its in-process fallback): resolves the peer
@@ -570,10 +583,29 @@ def _build_peer_for_pool_via_grpc(
     ever follow for that `request_id`.
 
     A `None` return (unreachable PEERS, a PEERS-side error, or a timed-out
-    wait for the async callback) is a soft failure for this one build -- it is
-    caught by `_run_stage_b`'s caller the same way the now-deleted
-    `build_peer_for_pool` raising or returning `None` used to be, and stage B
-    moves on to the next build.
+    wait with no callback ever delivered) is a soft failure for this one
+    build -- it is caught by `_run_stage_b`'s caller the same way the
+    now-deleted `build_peer_for_pool` raising or returning `None` used to be,
+    and stage B moves on to the next build.
+
+    Design "Progressive peer-comparison updates during live sampling" §3.2:
+    a `cached=False` response no longer waits for exactly one callback and
+    returns -- PEERS can (and now does) call `NotifyPeerBaselineReady` more
+    than once for the same `request_id` while its `SamplingTask` is still
+    `still_refining` (see `resolve_peer_baseline_notification`'s docstring).
+    This function keeps polling `_peer_baseline_waiters` for further
+    deliveries until either a terminal (`still_refining=False`) one arrives,
+    or the original `_PEERS_BASELINE_WAIT_TIMEOUT_S` deadline elapses (NOT
+    reset per notification -- it is a budget for the whole wait, not per
+    callback). `on_update`, when given, is called once per delivered result
+    -- `(peer_comparison, still_refining)` -- including the single delivery
+    a fast-path `cached=True` response produces (always reported as
+    `still_refining=False`: PEERS makes no further attempt for a synchronous
+    response regardless of what its own internal snapshot says, so from this
+    function's caller's perspective it is always the final answer for this
+    stage-B pass). The return value is always the LAST delivered result (or
+    `None` if none ever arrived) -- callers that only care about "did we get
+    anything" can ignore `on_update` entirely, exactly as before this design.
 
     Cancellation and progress (finding 2 of the final whole-branch review):
     in-process, `services.progress` (a `JobProgressReporter`) is threaded into
@@ -599,6 +631,29 @@ def _build_peer_for_pool_via_grpc(
     if len(records) < services.config.min_games or ranked is None:
         return None
     matches_df = pd.DataFrame([r.to_row() for r in records])
+
+    def _to_peer_comparison(baseline_json: str) -> PeerComparisonResult | None:
+        if not baseline_json:
+            return None
+        try:
+            baseline = PeerBaseline(**json.loads(baseline_json))
+        except (TypeError, ValueError) as exc:
+            log.warning(
+                "Skipping peer comparison update for %s: malformed baseline from PEERS: %s",
+                pool.build_label,
+                exc,
+            )
+            return None
+        return finish_peer_comparison(
+            baseline,
+            matches_df=matches_df,
+            records=records,
+            store=services.store,
+            user_puuid=batch.primary_puuid,
+            ranked=ranked,
+            champion=pool.champion,
+            role=pool.role,
+        )
 
     request = peers_pb2.RequestBaselineRequest(
         champion=pool.champion,
@@ -648,100 +703,99 @@ def _build_peer_for_pool_via_grpc(
             OUTBOUND_RPC_DURATION.labels(
                 target="peers", operation="RequestBaseline", outcome="ok"
             ).observe(request_elapsed)
-            baseline_json = response.baseline_json
-        else:
-            RUNNER_PEERS_REQUEST_DURATION.labels(outcome="cached_miss").observe(request_elapsed)
-            OUTBOUND_RPC_DURATION.labels(
-                target="peers", operation="RequestBaseline", outcome="ok"
-            ).observe(request_elapsed)
-            wait_start = time.perf_counter()
-            waiter = _register_peer_baseline_waiter(response.request_id)
-            deadline = time.monotonic() + _PEERS_BASELINE_WAIT_TIMEOUT_S
-            notification: dict[str, str] | None = None
-            while True:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    break
-                poll_timeout = min(_PEERS_BASELINE_POLL_INTERVAL_S, remaining)
-                try:
-                    notification = waiter.get(timeout=poll_timeout)
-                    break
-                except queue.Empty:
-                    if store is not None and job_id is not None:
-                        try:
-                            _ensure_not_cancelled(store, job_id)
-                        except JobCancelled:
-                            with _peer_baseline_waiters_lock:
-                                _peer_baseline_waiters.pop(response.request_id, None)
-                            RUNNER_PEERS_ASYNC_WAIT_DURATION.labels(outcome="cancelled").observe(
-                                time.perf_counter() - wait_start
-                            )
-                            log.info(
-                                "Job %d cancelled while waiting on PEERS for %s "
-                                "(request_id=%s)",
-                                job_id,
-                                pool.build_label,
-                                response.request_id,
-                            )
-                            raise
-                        store.update_progress(
-                            job_id,
-                            detail=(
-                                f"Comparing {pool.build_label} to players at your "
-                                "rank — waiting on PEERS…"
-                            ),
+            # Always reported as terminal (`still_refining=False`): PEERS
+            # makes no further attempt for a synchronous response regardless
+            # of what its own internal snapshot says -- see this function's
+            # docstring, "Design ... §3.2".
+            result = _to_peer_comparison(response.baseline_json)
+            if result is not None and on_update is not None:
+                on_update(result, False)
+            return result
+
+        RUNNER_PEERS_REQUEST_DURATION.labels(outcome="cached_miss").observe(request_elapsed)
+        OUTBOUND_RPC_DURATION.labels(
+            target="peers", operation="RequestBaseline", outcome="ok"
+        ).observe(request_elapsed)
+        wait_start = time.perf_counter()
+        waiter = _register_peer_baseline_waiter(response.request_id)
+        deadline = time.monotonic() + _PEERS_BASELINE_WAIT_TIMEOUT_S
+        last_result: PeerComparisonResult | None = None
+        terminal_reached = False
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            poll_timeout = min(_PEERS_BASELINE_POLL_INTERVAL_S, remaining)
+            try:
+                notification = waiter.get(timeout=poll_timeout)
+            except queue.Empty:
+                if store is not None and job_id is not None:
+                    try:
+                        _ensure_not_cancelled(store, job_id)
+                    except JobCancelled:
+                        with _peer_baseline_waiters_lock:
+                            _peer_baseline_waiters.pop(response.request_id, None)
+                        RUNNER_PEERS_ASYNC_WAIT_DURATION.labels(outcome="cancelled").observe(
+                            time.perf_counter() - wait_start
                         )
-                    continue
-            if notification is None:
-                with _peer_baseline_waiters_lock:
-                    _peer_baseline_waiters.pop(response.request_id, None)
-                RUNNER_PEERS_ASYNC_WAIT_DURATION.labels(outcome="timed_out").observe(
-                    time.perf_counter() - wait_start
-                )
-                log.warning(
-                    "Skipping peer comparison for %s: PEERS never called back within "
-                    "%ss for request_id=%s",
-                    pool.build_label,
-                    _PEERS_BASELINE_WAIT_TIMEOUT_S,
-                    response.request_id,
-                )
-                return None
-            RUNNER_PEERS_ASYNC_WAIT_DURATION.labels(outcome="delivered").observe(
-                time.perf_counter() - wait_start
-            )
+                        log.info(
+                            "Job %d cancelled while waiting on PEERS for %s "
+                            "(request_id=%s)",
+                            job_id,
+                            pool.build_label,
+                            response.request_id,
+                        )
+                        raise
+                    store.update_progress(
+                        job_id,
+                        detail=(
+                            f"Comparing {pool.build_label} to players at your "
+                            "rank — waiting on PEERS…"
+                        ),
+                    )
+                continue
+
             if notification["error"]:
                 log.warning(
                     "Skipping peer comparison for %s: PEERS reported %s",
                     pool.build_label,
                     notification["error"],
                 )
-                return None
-            baseline_json = notification["baseline_json"]
+                terminal_reached = True
+                break
+
+            still_refining = bool(notification.get("still_refining", False))
+            result = _to_peer_comparison(notification["baseline_json"])
+            if result is not None:
+                last_result = result
+                if on_update is not None:
+                    on_update(result, still_refining)
+            if not still_refining:
+                terminal_reached = True
+                break
+            # Interim delivery: keep waiting on the SAME waiter for further
+            # batches (design §3.1/§3.2) -- the deadline above is a budget
+            # for the whole wait, not reset per notification.
+
+        with _peer_baseline_waiters_lock:
+            _peer_baseline_waiters.pop(response.request_id, None)
+        RUNNER_PEERS_ASYNC_WAIT_DURATION.labels(
+            outcome="delivered" if last_result is not None else "timed_out"
+        ).observe(time.perf_counter() - wait_start)
+        if not terminal_reached:
+            log.warning(
+                "PEERS never sent a terminal callback for %s within %ss for "
+                "request_id=%s%s",
+                pool.build_label,
+                _PEERS_BASELINE_WAIT_TIMEOUT_S,
+                response.request_id,
+                "; using the last delivered (still refining) peer comparison"
+                if last_result is not None
+                else "",
+            )
+        return last_result
     finally:
         channel.close()
-
-    if not baseline_json:
-        return None
-    try:
-        baseline = PeerBaseline(**json.loads(baseline_json))
-    except (TypeError, ValueError) as exc:
-        log.warning(
-            "Skipping peer comparison for %s: malformed baseline from PEERS: %s",
-            pool.build_label,
-            exc,
-        )
-        return None
-
-    return finish_peer_comparison(
-        baseline,
-        matches_df=matches_df,
-        records=records,
-        store=services.store,
-        user_puuid=batch.primary_puuid,
-        ranked=ranked,
-        champion=pool.champion,
-        role=pool.role,
-    )
 
 
 def _run_stage_b(
@@ -763,6 +817,19 @@ def _run_stage_b(
     (`build_peer_for_pool`, itself deleted as fully dead code in Phase 9's
     final sweep) -- see `_build_peer_for_pool_via_grpc`'s own docstring for
     the topology precondition this gRPC-only path carries.
+
+    Design "Progressive peer-comparison updates during live sampling" §3.2/
+    §3.3: `_build_peer_for_pool_via_grpc` may now call `on_update` more than
+    once per pool while PEERS' `SamplingTask` is still refining. An interim
+    (`still_refining=True`) update is patched into `report.json` cheaply
+    (`patch_report_peer_comparison`, no pipeline re-run, no Career). Only a
+    terminal (`still_refining=False`) update runs the full `analyze_build`
+    pass, which is also the only place Career computes -- and a per-pool
+    `career_computed` boolean (same shape as `_execute_job_via_runner`'s
+    `seen_stage_b` guard) ensures that happens exactly once per pool even if
+    a terminal update is somehow delivered more than once (e.g. both PEERS'
+    own one-shot `_on_resolved` and its progressive-listener path deliver the
+    same final snapshot -- see `peers/service.py`).
     """
     log = get_logger("worker")
     job_id = int(job["id"])
@@ -789,21 +856,91 @@ def _run_stage_b(
             current=index,
             total=total,
         )
-        peer = _build_peer_for_pool_via_grpc(
-            services, batch, pool, ranked, web_config, store=store, job_id=job_id
-        )
-        if peer is None:
-            continue
         cached = analysed.get((pool.champion, pool.role))
-        analyze_build(
+        career_computed = False
+
+        def _run_terminal_analysis(peer_comparison: PeerComparisonResult) -> None:
+            nonlocal career_computed
+            if career_computed:
+                return
+            career_computed = True
+            analyze_build(
+                services,
+                batch,
+                pool,
+                ranked=ranked,
+                peer_comparison=peer_comparison,
+                still_refining=False,
+                full_frames=cached.full_frames if cached else None,
+                report_stats=cached.report_stats if cached else None,
+            )
+
+        def _on_peer_update(peer_comparison: PeerComparisonResult, still_refining: bool) -> None:
+            if not still_refining:
+                _run_terminal_analysis(peer_comparison)
+                return
+            patched = patch_report_peer_comparison(services.config, pool, peer_comparison)
+            if not patched:
+                # No report.json exists yet for this pool (e.g. Stage A never
+                # got far enough) -- fall back to a full render so the
+                # interim result is still visible, without computing Career
+                # against a still-refining result (still_refining=True keeps
+                # `build_report_views`'s Career gate closed, §3.3).
+                analyze_build(
+                    services,
+                    batch,
+                    pool,
+                    ranked=ranked,
+                    peer_comparison=peer_comparison,
+                    still_refining=True,
+                    full_frames=cached.full_frames if cached else None,
+                    report_stats=cached.report_stats if cached else None,
+                )
+                return
+            # Design "Progressive peer-comparison updates during live sampling"
+            # §3.4: a cheap `report.json` patch on disk has NO effect on its
+            # own for a browser tab already open on this report -- it is
+            # RUNNER's own local process state, invisible to api-ui's
+            # `NotifyingJobStore`/`JobEventBus` (a separate process) unless
+            # something rides the existing `StreamJobProgress` ->
+            # `_execute_job_via_runner` replay -> local `store.update_progress`
+            # -> `bus.publish(slug)` -> SSE path those already use for every
+            # other progress event. `store.update_progress` here is exactly
+            # that "something": `RunnerJobAdapter.update_progress` (RUNNER
+            # side) turns it into a `StageResult`, and
+            # `_execute_job_via_runner`'s replay (api-ui side, `worker.py`
+            # line ~1307) calls the same method on its own local,
+            # notification-wrapped store -- reusing plumbing every other
+            # progress update already goes through, not adding any new one.
+            # `Report.svelte`'s `applyStatusMessage` then sees this build's
+            # `generated_at` changed and refetches (`reloadBuild()`).
+            store.update_progress(
+                job_id,
+                detail=(
+                    f"Comparison for {pool.build_label} improved — "
+                    f"{peer_comparison.peer_games} peer games so far…"
+                ),
+            )
+
+        peer = _build_peer_for_pool_via_grpc(
             services,
             batch,
             pool,
-            ranked=ranked,
-            peer_comparison=peer,
-            full_frames=cached.full_frames if cached else None,
-            report_stats=cached.report_stats if cached else None,
+            ranked,
+            web_config,
+            store=store,
+            job_id=job_id,
+            on_update=_on_peer_update,
         )
+        if peer is None:
+            continue
+        # `on_update` already ran the terminal `analyze_build` pass above for
+        # every code path that can return a non-None `peer` -- this is a
+        # defensive backstop, not the normal path, so `_run_stage_b`'s
+        # postcondition ("peer is not None implies analyze_build ran") holds
+        # even if a future change to `_build_peer_for_pool_via_grpc` ever
+        # returns a result without having called `on_update` terminally.
+        _run_terminal_analysis(peer)
 
 
 _PLAYER_ENRICHMENT_FIELDS = ("profile_icon_id", "solo_tier", "solo_rank", "solo_lp")
