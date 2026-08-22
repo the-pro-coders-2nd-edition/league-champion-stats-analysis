@@ -63,6 +63,12 @@ PEERS_SCHEDULER_BATCHES_TOTAL = Counter(
     "SamplingTask batches processed, by outcome.",
     ["outcome"],  # re_enqueued | finalized_full | finalized_partial
 )
+
+# RFC "PEERS priority scheduling...": relative rank of each of the three
+# priority tiers, lower is higher-priority. Used by `get_or_create` to decide
+# whether a caller's requested priority should promote an already-active
+# task -- never used to demote one.
+_PRIORITY_RANK: dict[str, int] = {"explicit": 0, "refining": 1, "background": 2}
 PEERS_SCHEDULER_BATCH_DURATION = Histogram(
     "peers_scheduler_batch_duration_seconds",
     "Wall-clock time of one SamplingTask.run_batch() call.",
@@ -86,7 +92,9 @@ class SamplingScheduler:
         on_finalize: "Callable[[SamplingTask, str], None] | None" = None,
     ) -> None:
         self._lock = threading.RLock()
-        self._queue: "deque[SamplingTask]" = deque()
+        self._explicit_queue: "deque[SamplingTask]" = deque()
+        self._refining_queue: "deque[SamplingTask]" = deque()
+        self._background_queue: "deque[SamplingTask]" = deque()
         self._tasks: dict[TaskKey, SamplingTask] = {}
         self._conditions: dict[TaskKey, threading.Condition] = {}
         self._num_workers = num_workers
@@ -113,7 +121,16 @@ class SamplingScheduler:
                 counts[role] += 1
         for role, count in counts.items():
             PEERS_SCHEDULER_ACTIVE_TASKS.labels(role=role).set(count)
-        PEERS_SCHEDULER_QUEUED_TASKS.set(len(self._queue))
+        PEERS_SCHEDULER_QUEUED_TASKS.set(
+            len(self._explicit_queue) + len(self._refining_queue) + len(self._background_queue)
+        )
+
+    def _queue_for(self, priority: str) -> "deque[SamplingTask]":
+        if priority == "explicit":
+            return self._explicit_queue
+        if priority == "refining":
+            return self._refining_queue
+        return self._background_queue
 
     @staticmethod
     def _log_fields(task: SamplingTask) -> str:
@@ -132,22 +149,43 @@ class SamplingScheduler:
     # -- task lifecycle -----------------------------------------------------
 
     def get_or_create(
-        self, key: TaskKey, factory: "Callable[[], SamplingTask]"
+        self,
+        key: TaskKey,
+        factory: "Callable[[], SamplingTask]",
+        *,
+        priority: str = "explicit",
     ) -> SamplingTask:
         """Return the active task for `key`, enqueuing a new one if none exists.
 
         Mirrors `PeersServicer._get_or_submit`'s existing dedup shape: a
         caller for a key already active attaches to that task instead of
         starting a redundant scan.
+
+        `priority` only ever promotes an existing task (never demotes it) --
+        RFC "PEERS priority scheduling...", §1.2 Case A/B: a caller asking
+        for a higher-priority tier than the task currently holds moves it to
+        the front of the relevant queue; a caller asking for a lower tier
+        than the task already holds is a no-op on priority.
         """
         with self._lock:
             existing = self._tasks.get(key)
             if existing is not None:
+                if _PRIORITY_RANK[priority] < _PRIORITY_RANK[existing.priority]:
+                    old_queue = self._queue_for(existing.priority)
+                    try:
+                        old_queue.remove(existing)
+                    except ValueError:
+                        pass  # mid-batch, not sitting in a queue right now
+                    else:
+                        self._queue_for(priority).append(existing)
+                    existing.priority = priority
+                    self._update_task_gauges()
                 return existing
             task = factory()
+            task.priority = priority
             self._tasks[key] = task
             self._conditions[key] = threading.Condition()
-            self._queue.append(task)
+            self._queue_for(priority).append(task)
             self._update_task_gauges()
             self._log.info(
                 "sampling_task_enqueued key=%s %s", key, self._log_fields(task)
@@ -168,9 +206,14 @@ class SamplingScheduler:
         from a background worker thread (`start()`).
         """
         with self._lock:
-            if not self._queue:
+            if self._explicit_queue:
+                task = self._explicit_queue.popleft()
+            elif self._refining_queue:
+                task = self._refining_queue.popleft()
+            elif self._background_queue:
+                task = self._background_queue.popleft()
+            else:
                 return False
-            task = self._queue.popleft()
             self._update_task_gauges()
         self._run_one_batch(task)
         return True
@@ -184,7 +227,7 @@ class SamplingScheduler:
         except Exception:  # noqa: BLE001 -- a single bad batch must never wedge
             # this key forever. Without this, an exception here would leave
             # the task permanently in `self._tasks`/`self._conditions` (already
-            # popped off `self._queue` by `step()`, never re-enqueued or
+            # popped off its priority queue by `step()`, never re-enqueued or
             # finalized) -- any caller blocked in `wait_for_signal` would hang
             # forever, since the production caller (`_try_live_baseline`)
             # passes no timeout. Finalizing as partial with whatever was
@@ -207,7 +250,7 @@ class SamplingScheduler:
                 except Exception:  # noqa: BLE001 -- see `_finalize`'s matching guard.
                     self._log.exception("on_interim hook failed for key=%s", key)
             with self._lock:
-                self._queue.append(task)
+                self._queue_for(task.priority).append(task)
                 self._update_task_gauges()
             PEERS_SCHEDULER_BATCHES_TOTAL.labels(outcome="re_enqueued").inc()
             self._log.info(

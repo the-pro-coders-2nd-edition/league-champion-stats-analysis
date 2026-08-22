@@ -67,6 +67,13 @@ class SamplingTask:
     role: str
     exclude_puuid: str | None = None
     patch: str = ""
+    # RFC "PEERS priority scheduling...": which of SamplingScheduler's three
+    # queues this task belongs in. "explicit" (someone is synchronously
+    # blocked in wait_for_signal for this exact task), "refining" (already
+    # answered the confidence-full bar, still improving toward CEILING, but
+    # nobody is blocked waiting), "background" (WarmupTask only -- see that
+    # module). Never set directly except by SamplingScheduler.
+    priority: str = "explicit"
     # Phase 2 (RFC §5.2): shared cross-champion/cross-tier match cache. None
     # disables the pre-check entirely (falls back to a pure live scan) --
     # used by tests that don't care about Phase 2 wiring.

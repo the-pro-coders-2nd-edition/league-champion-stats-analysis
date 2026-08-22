@@ -115,6 +115,90 @@ def _make_task(
     )
 
 
+class _FakeTask:
+    """Minimal scheduler-compatible fake: only the duck-typed surface
+    `SamplingScheduler` actually touches (`key`, `priority`, `run_batch()`,
+    `reached_target`/`exhausted`/`reached_interim`/`games`/`downloads`/
+    `batches_run`) -- used by the priority-queue tests below, which care
+    about queue ordering/promotion, not real snowball-sampling behavior.
+    """
+
+    def __init__(
+        self,
+        key: tuple[str, str, str, str, str],
+        *,
+        priority: str = "explicit",
+        on_run: Any = None,
+    ) -> None:
+        self.key = key
+        self.priority = priority
+        self.reached_target = False
+        self.exhausted = False
+        self.reached_interim = False
+        self.games = 0
+        self.downloads = 0
+        self.batches_run = 0
+        self._on_run = on_run
+
+    @property
+    def done(self) -> bool:
+        return self.reached_target or self.exhausted
+
+    def run_batch(self) -> None:
+        self.batches_run += 1
+        if self._on_run is not None:
+            self._on_run(self)
+
+
+# ------------------------------------------------------- priority scheduling
+
+
+def test_step_services_explicit_queue_before_refining_and_background() -> None:
+    """A task enqueued at each of the three priorities: step() must always
+    run the explicit one first, then refining, then background, regardless
+    of enqueue order."""
+    scheduler = SamplingScheduler(num_workers=0)  # no auto-workers; call step() manually
+    ran_order: list[str] = []
+
+    def make_task(name: str, priority: str) -> _FakeTask:
+        def _on_run(task: _FakeTask, name: str = name) -> None:
+            ran_order.append(name)
+            task.exhausted = True  # one-shot: finalizes immediately, freeing its queue
+
+        return _FakeTask(("p", "t", name, "r", "16.16"), priority=priority, on_run=_on_run)
+
+    # Enqueue background and refining first, explicit last -- step() must
+    # still service explicit first.
+    bg = make_task("bg", "background")
+    ref = make_task("ref", "refining")
+    exp = make_task("exp", "explicit")
+    scheduler.get_or_create(bg.key, lambda: bg, priority="background")
+    scheduler.get_or_create(ref.key, lambda: ref, priority="refining")
+    scheduler.get_or_create(exp.key, lambda: exp, priority="explicit")
+
+    scheduler.step()
+    scheduler.step()
+    scheduler.step()
+
+    assert ran_order == ["exp", "ref", "bg"]
+
+
+def test_get_or_create_promotes_priority_never_demotes() -> None:
+    """An explicit caller attaching to an already-refining task must promote
+    it back to explicit; a background caller attaching to an explicit task
+    must NOT demote it."""
+    scheduler = SamplingScheduler(num_workers=0)
+    key = ("p", "t", "c", "r", "16.16")
+    task = scheduler.get_or_create(key, lambda: _FakeTask(key), priority="refining")
+    assert task.priority == "refining"
+    promoted = scheduler.get_or_create(key, lambda: _FakeTask(key), priority="explicit")
+    assert promoted is task
+    assert task.priority == "explicit"
+    not_demoted = scheduler.get_or_create(key, lambda: _FakeTask(key), priority="background")
+    assert not_demoted is task
+    assert task.priority == "explicit"  # unchanged -- background never demotes
+
+
 # ------------------------------------------------------------- fairness
 
 
