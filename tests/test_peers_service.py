@@ -28,6 +28,7 @@ from league_stats_peers.service import (
     PeersServicer,
     _build_riot_client_for_platform,
     _db_name_from_uri,
+    _IdleCoordinator,
     _parse_rank,
     _PeerStoreAdapter,
     prewarm_tick,
@@ -1371,3 +1372,53 @@ def test_prewarm_tick_runs_a_real_batch_against_a_real_peer_sample_store(peer_st
     )
     assert task is not None
     assert task.downloads >= 1
+
+
+def test_idle_coordinator_backfills_rank_so_prewarmed_rows_count_toward_coverage(
+    peer_store,
+) -> None:
+    """Regression: `extract_peer_rows` always inserts a fresh peer row with
+    `rank_verified=0` -- rank is never known at ingest time. Before this,
+    nothing ever backfilled it for a WarmupTask's own downloads (only a real
+    `RequestBaseline` call's own store-level fallback did, scoped to
+    whatever champion+role that specific request needed). `count_by_tier`
+    only counts `rank_verified=True` rows, so `prewarm_tick` could never see
+    its own downloads as progress -- confirmed live, every tier showed 0
+    verified games despite real downloads happening. The idle coordinator's
+    rank-backfill tick must resolve unverified puuids and make them count.
+    """
+    peer_store.upsert_peer_game(
+        {
+            "match_id": "EUW1_1",
+            "puuid": "puuid-unverified",
+            "champion": "Zac",
+            "role": "JUNGLE",
+            "platform": "euw1",
+            "queue_id": 420,
+            "metrics": {"win": 1.0},
+            "ingested_at": 0.0,
+            "patch": "16.16",
+            # tier/rank/rank_verified deliberately omitted -- upsert_peer_game
+            # defaults them exactly like extract_peer_rows does for a real
+            # WarmupTask download (tier="", rank="", rank_verified=0).
+        }
+    )
+    assert peer_store.count_by_tier() == {}  # unverified, invisible to coverage
+
+    ranked_client = MagicMock()
+    ranked_client.fetch_solo_rank.return_value = MagicMock(tier="GOLD", rank="II")
+
+    coordinator = _IdleCoordinator(
+        scheduler=SamplingScheduler(num_workers=0),
+        peer_store=peer_store,
+        riot_client_for=lambda platform: ranked_client,
+        default_platform="euw1",
+    )
+    coordinator._last_rank_backfill = 0.0  # force the backfill branch due
+    coordinator._current_patch = "16.16"  # skip the Data Dragon refresh branch
+    coordinator._last_patch_refresh = float("inf")
+    coordinator._last_prewarm_tick = float("inf")  # isolate: only test backfill here
+
+    coordinator()
+
+    assert peer_store.count_by_tier() == {"GOLD": 1}

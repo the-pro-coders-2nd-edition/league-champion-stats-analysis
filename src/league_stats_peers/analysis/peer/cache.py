@@ -75,14 +75,23 @@ def _backfill_ranks(
     champion: str = "",
     role: str = "",
     platform: str = "",
+    limit: int = MAX_RANK_LOOKUPS,
 ) -> None:
-    """Resolve unknown peer ranks via league-v4, scoped to the current build when provided."""
+    """Resolve unknown peer ranks via league-v4, scoped to the current build when provided.
+
+    `limit` defaults to `MAX_RANK_LOOKUPS` (this function's original,
+    per-request cap) but is overridable -- the idle-time pre-warm coordinator
+    (`service._IdleCoordinator`) calls this unscoped (no champion/role/
+    platform) on its own periodic cadence, with a much smaller limit, since
+    a 200-lookup burst on a tight timer would dominate the shared Riot API
+    rate limit instead of trickling in behind real traffic.
+    """
     if client is None:
         return
     if champion and role and platform:
-        puuids = store.iter_unverified_puuids_for_build(champion, role, platform, limit=MAX_RANK_LOOKUPS)
+        puuids = store.iter_unverified_puuids_for_build(champion, role, platform, limit=limit)
     else:
-        puuids = store.iter_unverified_puuids(MAX_RANK_LOOKUPS)
+        puuids = store.iter_unverified_puuids(limit)
     for puuid in puuids:
         ranked = client.fetch_solo_rank(puuid)
         if ranked is None:

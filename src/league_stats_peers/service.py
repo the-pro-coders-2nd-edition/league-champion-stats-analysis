@@ -226,6 +226,7 @@ from league_stats_peers.analysis.peer.baseline import (
 )
 from league_stats_peers.analysis.peer.benchmark_cache import read_live_cache
 from league_stats_peers.analysis.peer.benchmark_fetcher import BenchmarkSnapshot
+from league_stats_peers.analysis.peer.cache import _backfill_ranks
 from league_stats_peers.analysis.peer.benchmarks import VALID_TIERS
 from league_stats_peers.analysis.peer.scheduler import SamplingScheduler
 from league_stats_peers.analysis.peer.warmup_task import (
@@ -441,6 +442,24 @@ PEERS_PREWARM_TIERS: tuple[str, ...] = ("GOLD", "PLATINUM", "EMERALD", "DIAMOND"
 # every two weeks, so a coarse interval costs nothing in responsiveness.
 _PREWARM_TICK_INTERVAL_S: float = 5.0
 _PATCH_REFRESH_INTERVAL_S: float = 300.0
+# `extract_peer_rows` (`analysis/peer/ingest.py`) always inserts a fresh peer
+# row with `tier=""`/`rank_verified=0` -- rank is never known at ingest time,
+# only backfilled later. Before this, the ONLY thing that ever backfilled it
+# was `_backfill_ranks` via a real `RequestBaseline` call's own store-level
+# fallback (`analysis/peer/cache.py::collect_peer_games_from_store`) -- a
+# `WarmupTask`'s own downloads never triggered it, so `count_by_tier()`
+# (which only counts `rank_verified=True` rows) could never see pre-warm's
+# own work as progress: confirmed live, every tier showed 0 verified games
+# despite real downloads happening, so `prewarm_tick` kept re-creating a
+# `WarmupTask` for every tier on every cycle, forever, without ever
+# converging. A much smaller limit than `_backfill_ranks`' own default
+# (`MAX_RANK_LOOKUPS=200`) and a short-ish interval: worst case
+# `_RANK_BACKFILL_LIMIT` real Riot API calls every `_RANK_BACKFILL_INTERVAL_S`
+# seconds, a deliberately slow trickle so this never dominates the shared
+# 95-req/2min budget alongside real requests and pre-warm's own downloads --
+# tunable starting points, not derived/measured values.
+_RANK_BACKFILL_INTERVAL_S: float = 20.0
+_RANK_BACKFILL_LIMIT: int = 15
 
 
 def prewarm_tick(
@@ -581,6 +600,7 @@ class _IdleCoordinator:
         self._lock = threading.Lock()
         self._last_prewarm_tick = 0.0
         self._last_patch_refresh = 0.0
+        self._last_rank_backfill = 0.0
         self._current_patch = ""
 
     def __call__(self) -> None:
@@ -592,6 +612,9 @@ class _IdleCoordinator:
             do_prewarm = now - self._last_prewarm_tick >= _PREWARM_TICK_INTERVAL_S
             if do_prewarm:
                 self._last_prewarm_tick = now
+            do_rank_backfill = now - self._last_rank_backfill >= _RANK_BACKFILL_INTERVAL_S
+            if do_rank_backfill:
+                self._last_rank_backfill = now
             current_patch = self._current_patch
 
         if do_patch_refresh:
@@ -605,6 +628,20 @@ class _IdleCoordinator:
                 current_patch,
                 self._tier_cursor,
                 self._default_platform,
+            )
+
+        if do_rank_backfill:
+            # Unscoped (no champion/role/platform): resolves whatever's
+            # unverified globally, not just this tier's own downloads --
+            # helps every tier converge over time, not just whichever one
+            # pre-warm most recently touched. `_backfill_ranks` itself is
+            # already fail-soft-per-puuid (an unranked/lookup-failure puuid
+            # is marked "UNRANKED" and skipped, never raises); no extra
+            # try/except needed here beyond what it already does internally.
+            _backfill_ranks(
+                self._peer_store,
+                self._riot_client_for(self._default_platform),
+                limit=_RANK_BACKFILL_LIMIT,
             )
 
     def _refresh_patch_and_check_changeover(self) -> str:
