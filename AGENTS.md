@@ -137,3 +137,22 @@ Riot API key or secrets involved. It mirrors `tests/test_reports.py`'s `_make_re
 `tests/test_build_preview_report.py` only catches structural breaks (missing hub page,
 wrong report count) — it will not catch stale/incomplete mock data, so keep the mock's
 shape intentionally in sync rather than relying on that test to flag drift.
+
+## Flaky tests: report, don't chase
+
+If a test you didn't touch fails intermittently (passes in isolation/serial re-runs,
+fails only occasionally under `pytest-xdist` parallel load), that's a flaky test, not
+a regression from your own change. Do not spend your task's budget debugging or fixing
+it inline — confirm it's pre-existing (re-run in isolation a few times), note it in your
+final report as "pre-existing flake, unrelated to this change," and move on.
+
+**Report it to whoever dispatched you** (the orchestrating session, not a fresh subagent
+you spawn yourself) rather than silently working around it. The orchestrator is
+responsible for spawning a dedicated subagent, in its own isolated worktree, whose sole
+job is investigating and fixing that one flaky test — not folding a flake-fix into
+whatever unrelated task happened to trip over it.
+
+Known flaky test as of 2026-08-22: `tests/test_peers_service.py::test_resolve_peer_baseline_via_live_sampling_survives_the_noop_store_methods`
+— timing-sensitive under `pytest-xdist` parallel load, passes reliably in isolation/serial
+mode. A prior fix (stopping the outgoing `SamplingScheduler` in `tests/conftest.py`'s
+autouse mongomock fixture, to close a daemon-thread leak) reduced but did not eliminate it.
