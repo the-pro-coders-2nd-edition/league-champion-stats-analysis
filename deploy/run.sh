@@ -22,19 +22,25 @@ APP_HOST="127.0.0.1"
 # by default). Override with --app-port if that mapping's host side has been
 # changed (e.g. because something else on the VPS already held 8000).
 APP_PORT="8000"
-# Grafana (docker-compose service `grafana`) publishes only to host loopback
-# (`127.0.0.1:3000:3000` in docker-compose.yml) -- never a public port -- so
-# this host-based Caddy reaches it the same way it reaches the app itself.
+# Grafana (docker-compose service `grafana`) publishes only to host loopback,
+# on a DIFFERENT host port (3001) than the public-facing one Caddy answers
+# on (${DOMAIN}:3000, see write_caddyfile()) -- Caddy itself binds *:3000 to
+# serve that public site block, and a wildcard bind and a loopback bind can't
+# both own the same port on this host, so the container's own published port
+# must differ from Caddy's public port even though they're both "3000" in
+# spirit. `docker-compose.yml`'s grafana service maps `127.0.0.1:3001:3000`
+# (host 3001 -> container's own internal 3000) to match.
 GRAFANA_HOST="127.0.0.1"
-GRAFANA_PORT="3000"
-# mongo-express (docker-compose service `mongo-express`) publishes only to
-# host loopback (`127.0.0.1:8081:8081` in docker-compose.yml) -- never a
-# public port -- so this host-based Caddy reaches it the same way it
-# reaches Grafana above. Unlike Grafana, mongo-express has NO fallback
-# direct-port path at all: it must go through this Caddy site block so its
-# access log gives fail2ban something to watch for failed Basic Auth logins.
+GRAFANA_PORT="3001"
+# mongo-express (docker-compose service `mongo-express`): same reasoning as
+# Grafana above -- host loopback on a different port (8082) than Caddy's
+# public ${DOMAIN}:8081 site block, since Caddy itself binds *:8081.
+# `docker-compose.yml` maps `127.0.0.1:8082:8081` (host 8082 -> container's
+# own internal 8081) to match. mongo-express has NO fallback direct-port
+# path at all: it must go through this Caddy site block so its access log
+# gives fail2ban something to watch for failed Basic Auth logins.
 MONGO_EXPRESS_HOST="127.0.0.1"
-MONGO_EXPRESS_PORT="8081"
+MONGO_EXPRESS_PORT="8082"
 DEFAULT_DOMAIN="league-champion-analyser.eu"
 HTTP_ONLY=0
 ACTION="install"
