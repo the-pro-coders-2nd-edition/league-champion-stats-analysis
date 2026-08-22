@@ -1107,8 +1107,8 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
       `docker-compose` restart of api-ui/RUNNER races) at exactly the moment
       the one-shot Stage-B `StageResult` would have been sent/received, the
       `store.upsert_player` call above never fires -- but RUNNER still
-      finishes independently (report.json lives on its own shared volume, no
-      Mongo/gRPC dependency), so the job can still reach a terminal `final`
+      finishes independently (the report is saved straight to the shared
+      Mongo `ReportStore`, no gRPC dependency), so the job can still reach a terminal `final`
       message. Without a fallback, that job would land in `job_states.DONE`
       with `has_report: true` but no registry row at all: `can_watch` stays
       false forever, and unwatch 404s with "Unknown player". So the `final`
@@ -1293,8 +1293,9 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
                             # stream drops at exactly the wrong moment (e.g. a
                             # docker-compose restart mid-job) -- see
                             # `_upsert_player_registry`. RUNNER still finishes the
-                            # job independently of this stream (report.json lives
-                            # on its own shared volume), so without this, a job
+                            # job independently of this stream (the report is
+                            # saved straight to the shared Mongo `ReportStore`),
+                            # so without this, a job
                             # can reach DONE with no registry row at all:
                             # can_watch stays false forever and unwatch 404s with
                             # "Unknown player". Must not depend on ever having

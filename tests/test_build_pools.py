@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import mongomock
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +13,7 @@ import league_stats_common.infra.jobs as jobs
 import league_stats_runner.worker as worker
 from league_stats_common.core.config import AppConfig
 from league_stats_common.infra.jobs import JobStore
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_common.infra.riot_api import RiotApiClient
 from league_stats_runner.ingest.parser import ItemCatalog, MatchParser, discover_build_pools
 from league_stats_runner.infra.raw_match_store import RawMatchStore
@@ -180,17 +180,14 @@ def test_run_all_builds_generates_player_hub(tmp_path: Path, monkeypatch: pytest
         http_cache.close()
         job_store.close()
 
-    hub_path = config.player_reports_dir / "manifest.json"
-    assert hub_path.exists()
-    builds = discover_player_builds(config.player_reports_dir)
+    builds = discover_player_builds(config.reports_group_slug)
     champions = {build["champion"] for build in builds}
     assert "Viktor" in champions
     assert "Ahri" in champions
-    assert (config.player_reports_dir / "viktor_middle" / "report.json").exists()
-    assert (config.player_reports_dir / "ahri_middle" / "report.json").exists()
+    with open_report_store() as store:
+        assert store.has_build(config.reports_group_slug, "viktor_middle")
+        assert store.has_build(config.reports_group_slug, "ahri_middle")
+        report_json = store.get_report(config.reports_group_slug, "viktor_middle")
 
-    report_json = json.loads(
-        (config.player_reports_dir / "viktor_middle" / "report.json").read_text(encoding="utf-8")
-    )
     assert report_json["player_builds"]
     assert any(build["champion"] == "Ahri" for build in report_json["player_builds"])

@@ -130,15 +130,18 @@ for the same summoner refreshes every eligible build.
 Browse recent reports from the web home page, or open any **`report.html`** and
 use the **sidebar build picker** to switch champions.
 
+The report itself (old `report.json`), its per-build listing metadata (old
+`meta.json`/`manifest.json`) and its derived exports (old `summary.json`,
+`progression.json`/`progression.md`) are no longer files at all -- they are
+stored in MongoDB (`league_stats_common.infra.report_store.ReportStore`,
+collections `report_builds`/`report_bodies`) and served through
+`GET /api/players/{slug}/builds/{build_slug}` and friends. What's left under
+`output/reports/{player}/{champion_lane}/` is only what that migration left
+out of scope:
+
 | File | Content |
 | --- | --- |
-| `output/reports/{player}/index.html` | Redirect to default build (convenience entry) |
-| `output/reports/{player}/manifest.json` | Build list metadata for the UI |
-| `output/reports/.../report.html` | Interactive dark dashboard for one build |
-| `output/reports/.../summary.json` | Every aggregate in machine-readable form |
 | `output/reports/.../recommendations.md` | Ranked coaching recommendations |
-| `output/reports/.../progression.json` | Form Tracker comparison (recent vs baseline) |
-| `output/reports/.../progression.md` | Form Tracker human-readable summary |
 | `output/reports/.../{matches,deaths,...}.csv` | Flat tables for your own analysis |
 | `output/reports/.../win_predictor.joblib` | Trained RandomForest model |
 | `output/reports/.../graphs/death_heatmap.png` | Static per-phase death heatmaps |

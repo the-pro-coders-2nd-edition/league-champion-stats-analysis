@@ -10,6 +10,7 @@ from league_stats_peers.analysis.peer import baseline as _peer_baseline
 from league_stats_peers.analysis.peer import benchmark_cache as _benchmark_cache
 from league_stats_common.infra import career_store as _career_store
 from league_stats_common.infra import jobs as _jobs
+from league_stats_common.infra import report_store as _report_store
 from league_stats_common.infra.ddragon_assets import DDragonAssets
 from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
 from league_stats_peers.infra.peer_match_sample_store import PeerMatchSampleStore
@@ -153,3 +154,26 @@ def _jobs_store_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     client = mongomock.MongoClient()
     monkeypatch.setattr(_jobs, "_build_mongo_client", lambda uri: client)
+
+
+@pytest.fixture(autouse=True)
+def _report_store_uses_mongomock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default every test's report store (report.json/meta.json/manifest.json/
+    summary.json/progression.json/progression.md migration) to an in-memory
+    mongomock store instead of a real Mongo connection.
+
+    `report_store.open_report_store` lazily builds a real `pymongo.MongoClient`
+    against `RUNNER_MONGO_URI`/`MONGO_URI` (falling back to `localhost:27017`)
+    on first use via `_build_mongo_client`, the same seam `derived.py`/
+    `career_store.py`/`jobs.py` use. Without this fixture, `run_analysis`,
+    `app.py`'s report-serving routes, and `chat.py`'s `load_report_summary`
+    would try a real network connection and hang. One fresh client per test
+    (function-scoped fixture) mirrors the old per-test `tmp_path` on-disk file
+    isolation -- tests that need to seed report data a real route must also
+    see, or to prove two stores are isolated, construct their own
+    `ReportStore`/`mongomock.MongoClient()` directly and either reuse this
+    fixture's client (via `open_report_store()`) or build a separate one,
+    same as `_career_store_uses_mongomock`/`_jobs_store_uses_mongomock` above.
+    """
+    client = mongomock.MongoClient()
+    monkeypatch.setattr(_report_store, "_build_mongo_client", lambda uri: client)

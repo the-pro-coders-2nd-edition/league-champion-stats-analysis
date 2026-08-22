@@ -11,14 +11,21 @@ script defaults to listing what it *would* delete and requires an explicit --yes
 actually do it, on top of printing the resolved database name/host so a pasted
 production URI is visually obvious before you confirm.
 
-Also clears `output_dir` (`AppConfig`/`WebConfig`'s per-job report tree -- generated
-report.json/meta.json/manifest.json blobs and anything else RUNNER writes per job).
-Deliberately does NOT touch `assets_dir` (the Data Dragon icon cache): since the
-"give DDragon assets their own volume" change, `assets_dir` is a fully separate
-directory tree from `output_dir`, not nested under it, so a plain `output_dir` wipe
-already can't reach it -- this script asserts that separation explicitly rather than
-relying on it silently, so a future config change that renests them fails loudly
-here instead of quietly deleting the icon cache.
+Also clears `output_dir` (`AppConfig`/`WebConfig`'s per-job report tree). As of the
+Mongo report-storage migration, report.json/meta.json/manifest.json/summary.json/
+progression.json/progression.md no longer live under `output_dir` at all -- they are
+the `report_builds`/`report_bodies` Mongo collections, which `--yes` without
+`--collections` already drops as part of "every collection in the database". What
+`--output-dir` still clears is everything that migration left on disk: CSV/Markdown
+exports, the death-heatmap PNG, saved-report branding assets, and the account-view
+JSON cache. **Stale flag combination**: `--yes --skip-mongo` (filesystem-only wipe)
+no longer deletes any report data at all -- it only ever clears these leftover file
+exports now, not the report itself. Deliberately does NOT touch `assets_dir` (the
+Data Dragon icon cache): since the "give DDragon assets their own volume" change,
+`assets_dir` is a fully separate directory tree from `output_dir`, not nested under
+it, so a plain `output_dir` wipe already can't reach it -- this script asserts that
+separation explicitly rather than relying on it silently, so a future config change
+that renests them fails loudly here instead of quietly deleting the icon cache.
 
 Usage:
     # Dry run (default): lists Mongo collections + doc counts and what's under

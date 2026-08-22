@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import mongomock
 
-import json
 from pathlib import Path
 
 import pytest
@@ -12,6 +11,7 @@ import pytest
 import league_stats_runner.worker as worker
 from league_stats_common.core.config import PlayerIdentity, load_config
 from league_stats_common.infra.ddragon_assets import DDragonAssets
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_runner.ingest.parser import ItemCatalog, MatchParser, discover_build_pools
 from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.fetch import group_records
@@ -151,11 +151,9 @@ def test_run_all_builds_pools_multi_player_reports(
         http_cache.close()
         job_store.close()
 
-    hub_path = config.player_reports_dir / "manifest.json"
-    report_payload = json.loads(
-        (config.player_reports_dir / "viktor_middle" / "report.json").read_text(encoding="utf-8")
-    )
-    assert hub_path.exists()
+    with open_report_store() as store:
+        assert store.has_build(config.reports_group_slug, "viktor_middle")
+        report_payload = store.get_report(config.reports_group_slug, "viktor_middle")
     assert report_payload["player_name"] == "Alice#EUW, Bob#NA1"
     assert report_payload["total_games"] == 25
 

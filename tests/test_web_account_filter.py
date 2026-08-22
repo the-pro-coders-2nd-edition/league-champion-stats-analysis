@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -12,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from league_stats_common.core.config import WebConfig
 from league_stats_common.infra.mongo import db_name_from_uri
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_runner.infra.raw_match_store import RawMatchStore
 from league_stats_runner.pipeline.services import PlayerContext
 import league_stats_api_ui.app as web_app
@@ -70,8 +70,10 @@ def _seed_group_report(
 ) -> None:
     report_dir = tmp_path / "output" / "reports" / GROUP_SLUG / BUILD_SLUG
     report_dir.mkdir(parents=True, exist_ok=True)
-    (report_dir / "meta.json").write_text(
-        json.dumps(
+    with open_report_store() as report_store:
+        report_store.save_build(
+            GROUP_SLUG,
+            BUILD_SLUG,
             {
                 "player": "Alice#EUW, Bob#NA1",
                 "riot_id": "Alice",
@@ -85,11 +87,8 @@ def _seed_group_report(
                 "games": alice_games + bob_games,
                 "winrate": 0.5,
                 "generated_at": "2026-08-01T10:00:00Z",
-            }
-        ),
-        encoding="utf-8",
-    )
-    (report_dir / "report.json").write_text("{}", encoding="utf-8")
+            },
+        )
 
     store = RawMatchStore(
         mongo_client, db_name=db_name_from_uri(web_config.runner_mongo_uri)

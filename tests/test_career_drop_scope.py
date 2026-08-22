@@ -10,13 +10,13 @@ ladder. ``filter_champion``/``filter_role`` narrow ``analysis_pools``
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from league_stats_common.core.config import WebConfig
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_api_ui.app import create_app
 
 SLUG = "hugros_euw"
@@ -25,10 +25,10 @@ OTHER = "jinx_bottom"
 
 
 def _write_build(reports: Path, slug: str, build_slug: str, champion: str, role: str) -> None:
-    build_dir = reports / slug / build_slug
-    build_dir.mkdir(parents=True, exist_ok=True)
-    (build_dir / "meta.json").write_text(
-        json.dumps(
+    with open_report_store() as store:
+        store.save_build(
+            slug,
+            build_slug,
             {
                 "champion": champion,
                 "role": role,
@@ -36,10 +36,8 @@ def _write_build(reports: Path, slug: str, build_slug: str, champion: str, role:
                 "tagline": "EUW",
                 "region": "euw1",
                 "games": 30,
-            }
-        ),
-        encoding="utf-8",
-    )
+            },
+        )
 
 
 @pytest.fixture()

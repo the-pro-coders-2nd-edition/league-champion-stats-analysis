@@ -29,11 +29,16 @@ services:
       # CRON_WATCH_GRPC_PORT below.
       - CRON_WATCH_GRPC_TARGET=cron-watch:50052
     volumes:
-      # Report artifacts (HTML/CSV/JSON), referenced by job rows in Mongo.
-      # Without this, recreating the container wipes /app/output while jobs
-      # still show as completed, so "done" report links 404. /app/.cache
-      # (match/HTTP caches) is left ephemeral -- losing it just costs slower
-      # re-fetches, not a broken link.
+      # Per-job file artifacts that still live on disk after the report.json/
+      # meta.json/manifest.json/summary.json/progression.json/progression.md
+      # migration to Mongo (see `ReportStore`): CSV/Markdown exports
+      # (matches.csv, recommendations.md, rank_comparison.csv, ...), the
+      # death-heatmap PNG, saved-report branding assets, and the account-view
+      # JSON cache. Still needed -- these were never in scope for that
+      # migration. Without this volume, recreating the container loses all of
+      # them even though the job itself (and its report, now in Mongo) is
+      # unaffected. /app/.cache (match/HTTP caches) is left ephemeral --
+      # losing it just costs slower re-fetches, not a broken link.
       - app-output:/app/output
       # Shared Data Dragon champion/rune/item/summoner icon cache
       # (`AppConfig.assets_dir`/`WebConfig.assets_dir`), deliberately a
@@ -116,17 +121,19 @@ services:
     env_file:
       - .env
     volumes:
-      # RUNNER is the only service that actually writes report artifacts
-      # (report.json/meta.json under output/reports/); api-ui only reads them
-      # back via its own `app-output` mount above. Without RUNNER sharing the
-      # same named volume, every report it writes lands in its own container's
-      # ephemeral filesystem -- invisible to api-ui (has_report/builds stay
-      # empty, 404 on every /out/reports/... path) and lost on container
-      # recreation, even though the job itself completes cleanly and RUNNER's
-      # own logs say "Done. Wrote ...report.json". Confirmed live: a real job
-      # for a real player completed end to end (base + peer stages both
-      # finished, timestamps recorded) with zero report ever visible to the
-      # frontend, purely from this missing mount.
+      # RUNNER is the only service that writes the file artifacts that remain
+      # under output/reports/ (CSV/Markdown exports, the death-heatmap PNG,
+      # the account-view JSON cache) now that report.json/meta.json/
+      # manifest.json/summary.json/progression.json/progression.md are stored
+      # in Mongo (`ReportStore`) instead of this volume -- api-ui only reads
+      # the remaining files back via its own `app-output` mount above.
+      # Without RUNNER sharing the same named volume, every such file it
+      # writes lands in its own container's ephemeral filesystem, invisible
+      # to api-ui and lost on container recreation, even though the report
+      # itself (in Mongo) and the job's completion are unaffected. This used
+      # to also be true of the report itself before the Mongo migration --
+      # confirmed live at the time: a real job completed end to end with zero
+      # report ever visible to the frontend, purely from this missing mount.
       - app-output:/app/output
       # Shared Data Dragon icon cache -- SEPARATE volume from `app-output`
       # (see api-ui's identical mount above for the full reasoning: report

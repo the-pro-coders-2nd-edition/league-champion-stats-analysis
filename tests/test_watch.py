@@ -524,25 +524,22 @@ def test_watch_route_backfills_a_registry_row_missing_despite_a_real_report(
     `_execute_job_via_runner`) must self-heal on a watch/unwatch click instead
     of 404ing with "Unknown player" forever.
     """
-    import json
+    from league_stats_common.infra.report_store import open_report_store
 
     slug = "orphan_euw"
     config = WebConfig(output_dir=tmp_path / "out", assets_dir=tmp_path / "assets")
-    build_dir = config.reports_dir / slug / "viktor_middle"
-    build_dir.mkdir(parents=True)
-    (build_dir / "meta.json").write_text(
-        json.dumps(
+    with open_report_store() as report_store:
+        report_store.save_build(
+            slug,
+            "viktor_middle",
             {
                 "champion": "Viktor",
                 "role": "MIDDLE",
                 "riot_id": "Orphan",
                 "tagline": "EUW",
                 "region": "europe",
-            }
-        ),
-        encoding="utf-8",
-    )
-    (build_dir / "report.json").write_text("{}", encoding="utf-8")
+            },
+        )
 
     app = create_app(config, start_worker=False)
     with TestClient(app) as handle:
@@ -560,29 +557,26 @@ def test_watch_route_backfills_a_registry_row_missing_despite_a_real_report(
 
 def test_career_banner_ack_route(tmp_path: Path) -> None:
     """A reader can retire a Career banner that watch rebuilds must not eat."""
-    import json
-
     from league_stats_common.core.champions import player_slug
     from league_stats_common.infra.career_store import (
         build_key as career_build_key,
         open_career_store,
     )
+    from league_stats_common.infra.report_store import open_report_store
 
     config = WebConfig(output_dir=tmp_path / "out", assets_dir=tmp_path / "assets")
-    build_dir = config.reports_dir / SLUG / "viktor_middle"
-    build_dir.mkdir(parents=True)
-    (build_dir / "meta.json").write_text(
-        json.dumps(
+    with open_report_store() as report_store:
+        report_store.save_build(
+            SLUG,
+            "viktor_middle",
             {
                 "champion": "Viktor",
                 "role": "MIDDLE",
                 "riot_id": "Hugros",
                 "tagline": "EUW",
                 "region": "europe",
-            }
-        ),
-        encoding="utf-8",
-    )
+            },
+        )
 
     key = career_build_key(player_slug("Hugros", "EUW"), "Viktor", "MIDDLE")
     # `open_career_store()` (not a fresh `CareerStore(...)`) so this seed lands
