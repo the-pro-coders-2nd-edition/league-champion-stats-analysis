@@ -158,10 +158,12 @@ flowchart TD
     PEERS["peers<br/>gRPC: rank-peer baseline sampling"]
     CRON["cron-watch<br/>gRPC: new-game polling, welcome-back"]
     MONGO[("mongo")]
+    MONGOEXP["mongo-express"]
     PROM["prometheus"]
     GRAF["grafana"]
     LOKI[("loki")]
     ALLOY["alloy"]
+    F2B["fail2ban<br/>(host process)"]
 
     Browser -->|HTTP/REST, polling| API_UI
     API_UI -->|gRPC: EnqueueJob, StreamJobProgress| RUNNER
@@ -173,6 +175,7 @@ flowchart TD
     RUNNER --> MONGO
     PEERS --> MONGO
     CRON --> MONGO
+    MONGOEXP -->|admin UI| MONGO
 
     PROM -->|scrape /metrics| API_UI
     PROM -->|scrape /metrics| RUNNER
@@ -184,6 +187,7 @@ flowchart TD
     ALLOY -.->|reads container logs| RUNNER
     ALLOY -.->|reads container logs| PEERS
     ALLOY -.->|reads container logs| CRON
+    ALLOY -.->|reads /var/log/fail2ban/fail2ban.log| F2B
     ALLOY -->|push| LOKI
     GRAF -->|query| LOKI
 ```
@@ -227,13 +231,19 @@ Per-service breakdown:
   background and calls back into `runner` when ready. All caches (peer-game
   rows and the live-sampling TTL cache) are Mongo-backed.
 - **mongo** — single shared instance. Backs `JobStore`, `CareerStore`,
-  `RawMatchStore`, `DerivedStore`, `PeerSampleStore`, and the live-benchmark
-  cache. No SQLite anywhere in the app.
+  `RawMatchStore`, `DerivedStore`, `PeerSampleStore`, `peer_match_samples`,
+  and the live-benchmark cache. No SQLite anywhere in the app.
+- **mongo-express** — a web UI onto the same `mongo` instance, for ad-hoc
+  inspection. Loopback-only in `docker-compose.yml` (never reachable
+  directly); only reachable through Caddy's `${DOMAIN}:8081` port-based site
+  block (`deploy/run.sh`), Basic Auth-protected, credentials in `.env`
+  (`ME_CONFIG_BASICAUTH_USERNAME`/`PASSWORD`).
 - **prometheus** / **grafana** — pull-based metrics scraping
   (`deploy/prometheus.yml`) of each app service's `/metrics`, visualized in
   Grafana. Dashboards (one per app service — request/job/resolution rates,
-  latency percentiles, CPU/memory, live logs) are provisioned automatically
-  from `deploy/grafana/dashboards/`.
+  latency percentiles, CPU/memory, live logs — plus a `fail2ban` activity
+  dashboard, see below) are provisioned automatically from
+  `deploy/grafana/dashboards/`.
 - **loki** / **alloy** — structured logging. `alloy` reads every container's
   stdout/stderr directly via the Docker socket (no per-service logging
   config needed) and pushes it to `loki`. Every log stream is tagged with a
@@ -243,9 +253,28 @@ Per-service breakdown:
   cardinality cost of using them as labels), read straight out of the
   `service`/`version`/`trace_id` tags every log line already carries (see
   `league_stats_common/utils.py::setup_logging`). Grafana's per-service
-  dashboards each end with a live logs panel scoped to that service.
-  Grafana itself also logs failed admin logins to a mounted file, watched by
-  a `deploy/fail2ban/` jail that permanently bans an IP after 10 failures.
+  dashboards each end with a live logs panel scoped to that service. `alloy`
+  also tails fail2ban's own host log (`/var/log/fail2ban/fail2ban.log`,
+  bind-mounted read-only) under a `service="fail2ban"` label, feeding the
+  `fail2ban` dashboard's Ban/Unban/Found activity panels.
+- **Caddy** (host systemd process, not a container — `deploy/run.sh`) is the
+  public HTTPS front door. It fronts the main app on `${DOMAIN}` and Grafana
+  / mongo-express on dedicated **ports** of that same domain
+  (`${DOMAIN}:3000`, `${DOMAIN}:8081`) rather than subdomains — a port-based
+  site block reuses the certificate already issued for `${DOMAIN}` (Caddy
+  issues certs per hostname, not per port), so neither needs its own DNS A
+  record. `microservice.${DOMAIN}` remains a real (transitional) subdomain,
+  used only for side-by-side cutover testing against an old deployment still
+  on `${DOMAIN}`.
+  - Grafana logs failed admin logins to a mounted file
+    (`GF_LOG_MODE=console file`), watched directly by a
+    `deploy/fail2ban/` jail that permanently bans an IP after 10 failures.
+  - mongo-express has no failed-login log of its own (just a plain HTTP 401),
+    so its jail instead watches Caddy's own access log for the
+    `${DOMAIN}:8081` site block (`/var/log/caddy/mongo-express-access.log`),
+    matching 401 responses.
+  - Either jail: `fail2ban-client set <grafana|mongo-express> unbanip <ip>`
+    lifts a ban.
 
 ### Package layout
 
