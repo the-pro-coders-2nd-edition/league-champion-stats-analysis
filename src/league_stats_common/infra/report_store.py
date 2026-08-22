@@ -132,6 +132,14 @@ class ReportStore:
         docs.sort(key=lambda entry: (entry.get("games", 0), entry.get("generated_at", "")), reverse=True)
         return docs
 
+    def list_player_slugs(self) -> list[str]:
+        """Every player slug with at least one saved build, sorted.
+
+        Replaces the old ``reports_dir.iterdir()`` directory scan the landing
+        page used to enumerate which players have a report at all.
+        """
+        return sorted(str(slug) for slug in self._builds.distinct("player_slug"))
+
     def list_all_builds(self) -> list[dict[str, Any]]:
         """Every build's listing metadata across every player (admin/index use)."""
         return list(self._builds.find({}))
