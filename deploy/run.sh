@@ -27,6 +27,14 @@ APP_PORT="8000"
 # this host-based Caddy reaches it the same way it reaches the app itself.
 GRAFANA_HOST="127.0.0.1"
 GRAFANA_PORT="3000"
+# mongo-express (docker-compose service `mongo-express`) publishes only to
+# host loopback (`127.0.0.1:8081:8081` in docker-compose.yml) -- never a
+# public port -- so this host-based Caddy reaches it the same way it
+# reaches Grafana above. Unlike Grafana, mongo-express has NO fallback
+# direct-port path at all: it must go through this Caddy site block so its
+# access log gives fail2ban something to watch for failed Basic Auth logins.
+MONGO_EXPRESS_HOST="127.0.0.1"
+MONGO_EXPRESS_PORT="8081"
 DEFAULT_DOMAIN="league-champion-analyser.eu"
 HTTP_ONLY=0
 ACTION="install"
@@ -138,18 +146,33 @@ EOF
     if [[ "$microservice_domain" != www.* ]]; then
       microservice_sites="${microservice_domain}, www.${microservice_domain}"
     fi
+    local mongo_domain="mongo.${DOMAIN}"
+    local mongo_sites="$mongo_domain"
+    if [[ "$mongo_domain" != www.* ]]; then
+      mongo_sites="${mongo_domain}, www.${mongo_domain}"
+    fi
     # NOTE (external, manual, one-time precondition): a DNS A record for
-    # grafana.${DOMAIN} and microservice.${DOMAIN} (and each one's www. alias
-    # above) must already point at this server before Let's Encrypt can issue
-    # a cert for them -- Caddy's automatic TLS will fail/retry indefinitely
-    # for a site block until its DNS record exists. This is not something to
-    # fake or work around here; it's an out-of-band DNS change the operator
-    # makes once. microservice.${DOMAIN} is a transitional site block for
-    # running the docker-compose stack side by side with the site at
-    # ${DOMAIN} during cutover testing -- both currently proxy to the same
-    # APP_HOST:APP_PORT, so this only matters while ${DOMAIN} still points
-    # somewhere else (e.g. an old deployment); remove this block once
-    # ${DOMAIN} itself is cut over to the docker-compose stack.
+    # grafana.${DOMAIN}, microservice.${DOMAIN}, and mongo.${DOMAIN} (and
+    # each one's www. alias above) must already point at this server before
+    # Let's Encrypt can issue a cert for them -- Caddy's automatic TLS will
+    # fail/retry indefinitely for a site block until its DNS record exists.
+    # This is not something to fake or work around here; it's an out-of-band
+    # DNS change the operator makes once. microservice.${DOMAIN} is a
+    # transitional site block for running the docker-compose stack side by
+    # side with the site at ${DOMAIN} during cutover testing -- both
+    # currently proxy to the same APP_HOST:APP_PORT, so this only matters
+    # while ${DOMAIN} still points somewhere else (e.g. an old deployment);
+    # remove this block once ${DOMAIN} itself is cut over to the
+    # docker-compose stack.
+    #
+    # mongo.${DOMAIN}'s `log` directive writes this site's own access log to
+    # a host path (Caddy's default JSON format, which already includes a
+    # `status` field per request) so fail2ban's mongo-express jail
+    # (deploy/fail2ban/jail.d/mongo-express.conf) has a real file to watch --
+    # mongo-express itself has no failed-login log of its own, unlike
+    # Grafana's GF_LOG_MODE=console file above, so this Caddy access log is
+    # the only place a failed Basic Auth attempt against mongo-express ever
+    # lands on disk.
     cat >"$CADDYFILE" <<EOF
 ${sites} {
 ${metrics_gate}	reverse_proxy ${APP_HOST}:${APP_PORT}
@@ -162,9 +185,16 @@ ${grafana_sites} {
 ${microservice_sites} {
 ${metrics_gate}	reverse_proxy ${APP_HOST}:${APP_PORT}
 }
+
+${mongo_sites} {
+	log {
+		output file /var/log/caddy/mongo-express-access.log
+	}
+	reverse_proxy ${MONGO_EXPRESS_HOST}:${MONGO_EXPRESS_PORT}
+}
 EOF
   fi
-  echo "→ wrote $CADDYFILE (app: ${APP_HOST}:${APP_PORT}, grafana: ${GRAFANA_HOST}:${GRAFANA_PORT})"
+  echo "→ wrote $CADDYFILE (app: ${APP_HOST}:${APP_PORT}, grafana: ${GRAFANA_HOST}:${GRAFANA_PORT}, mongo-express: ${MONGO_EXPRESS_HOST}:${MONGO_EXPRESS_PORT})"
 }
 
 show_status() {
@@ -215,6 +245,8 @@ install_and_start() {
     echo "(DNS A record for grafana.${DOMAIN} / www must also point at this server for its TLS cert.)"
     echo "Microservices stack (transitional, cutover testing): https://microservice.${DOMAIN}/"
     echo "(DNS A record for microservice.${DOMAIN} / www must also point at this server for its TLS cert.)"
+    echo "mongo-express: https://mongo.${DOMAIN}/"
+    echo "(DNS A record for mongo.${DOMAIN} / www must also point at this server for its TLS cert.)"
   fi
   echo "Caddy logs: journalctl -u caddy -f"
   echo "App logs:   docker compose logs -f api-ui runner peers cron-watch"

@@ -62,6 +62,34 @@ services:
     ports:
       - "27017:27017"
 
+  mongo-express:
+    image: mongo-express:1.0.2
+    # ME_CONFIG_MONGODB_URL/ME_CONFIG_BASICAUTH_USERNAME/PASSWORD come from
+    # the gitignored .env file (see .env.example for placeholders) --
+    # deliberately not re-listed under `environment:` here, matching how
+    # Grafana's GF_SECURITY_ADMIN_USER/PASSWORD above are only ever sourced
+    # via `env_file`, never inlined.
+    env_file:
+      - .env
+    # Published to LOOPBACK ONLY, never all interfaces: deploy/run.sh's Caddy
+    # is a host systemd process, not a member of this compose network, so
+    # (like Grafana's GRAFANA_HOST/GRAFANA_PORT below) it can only reach a
+    # container through a published host port -- there is no such thing as
+    # "no host port at all" while still letting host-based Caddy reverse-
+    # proxy to it. The point of NOT doing what Grafana's current (temporary)
+    # `3000:3000` does -- publish on all interfaces -- is that mongo-express
+    # must never be reachable directly from the internet, only through
+    # Caddy's `mongo.${DOMAIN}` site block, because Caddy's access log for
+    # that site is the only place a failed Basic Auth login ever shows up as
+    # a line on disk (mongo-express has no failed-login log of its own, it
+    # just returns a plain 401) -- without Caddy in front of it, fail2ban's
+    # mongo-express jail would have nothing to watch. Loopback-only achieves
+    # that without requiring Caddy to join the compose network.
+    ports:
+      - "127.0.0.1:8081:8081"
+    depends_on:
+      - mongo
+
   runner:
     build:
       context: .
@@ -210,6 +238,14 @@ services:
       # no changes needed to any service's own logging driver/config.
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./deploy/alloy-config.alloy:/etc/alloy/config.alloy:ro
+      # fail2ban runs on the HOST (not in a container) and logs to
+      # /var/log/fail2ban/fail2ban.log -- Alloy's docker.sock discovery
+      # above only tails container stdout/stderr, so it can never see that
+      # file on its own. Read-only bind mount at the same host path so the
+      # `local.file_match`/`loki.source.file` pair in alloy-config.alloy can
+      # tail it, the same way Grafana's own failed-login log is watched by
+      # fail2ban directly on the host (not through this container).
+      - /var/log/fail2ban:/var/log/fail2ban:ro
     command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "/etc/alloy/config.alloy"]
     # No `ports:` here either -- Alloy's own debug UI (12345) is for local
     # troubleshooting only, not something this deployment exposes.
