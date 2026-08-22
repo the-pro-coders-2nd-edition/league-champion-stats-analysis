@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from league_stats.presentation.report import improvement_score
+from league_stats_runner.presentation.report import improvement_score
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
-from league_stats.ingest.parser import ItemCatalog, MatchParser
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 
 
 def _matches_df(role: str, *, challenges_kp: float | None = 0.55) -> pd.DataFrame:

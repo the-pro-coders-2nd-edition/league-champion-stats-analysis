@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from league_stats.analysis.matchups import matchup_advice, matchup_recommendation, matchups_dataframe
-from league_stats.pipeline.view_models import annotate_matchup_rows, matchup_row_display
+from league_stats_runner.analysis.matchups import matchup_advice, matchup_recommendation, matchups_dataframe
+from league_stats_runner.pipeline.view_models import annotate_matchup_rows, matchup_row_display
 
 
 def _row(**overrides: object) -> dict[str, object]:

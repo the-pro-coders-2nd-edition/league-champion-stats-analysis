@@ -6,20 +6,20 @@ import pandas as pd
 
 import pytest
 
-from league_stats.analysis.peer.comparison import _verdict as _peer_verdict
-from league_stats.analysis.progression.diff import _progression_verdict, build_progression_comparison
-from league_stats.analysis.progression.form_score import compute_form_score, trend_from_score
-from league_stats.analysis.progression.metrics import progression_metrics_for_role
-from league_stats.analysis.progression.slicing import (
+from league_stats_peers.analysis.peer.comparison import _verdict as _peer_verdict
+from league_stats_runner.analysis.progression.diff import _progression_verdict, build_progression_comparison
+from league_stats_runner.analysis.progression.form_score import compute_form_score, trend_from_score
+from league_stats_runner.analysis.progression.metrics import progression_metrics_for_role
+from league_stats_runner.analysis.progression.slicing import (
     slice_baseline_exclusive,
     slice_baseline_inclusive,
     slice_recent,
 )
-from league_stats.analysis.progression.stats import proportion_test, welch_test, winrate_significant
-from league_stats.core.config import AppConfig
-from league_stats.core.models import MatchRecord, MetricDelta
+from league_stats_runner.analysis.progression.stats import welch_test, winrate_significant
+from league_stats_common.core.config import AppConfig
+from league_stats_common.core.models import MatchRecord, MetricDelta
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
-from league_stats.ingest.parser import ItemCatalog, MatchParser
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 
 
 def _make_config(**overrides: object) -> AppConfig:
@@ -139,7 +139,7 @@ def test_progression_comparison_schema_roundtrip() -> None:
     )
     assert comparison is not None
     payload = comparison.model_dump()
-    from league_stats.core.models import ProgressionComparison
+    from league_stats_common.core.models import ProgressionComparison
 
     restored = ProgressionComparison.model_validate(payload)
     assert restored.preset_key == "20_80"
@@ -147,8 +147,8 @@ def test_progression_comparison_schema_roundtrip() -> None:
 
 
 def test_form_stories_fold_death_rate_into_deaths() -> None:
-    from league_stats.analysis.progression.stories import build_form_stories
-    from league_stats.core.models import Recommendation, RecommendationTone
+    from league_stats_runner.analysis.progression.stories import build_form_stories
+    from league_stats_common.core.models import Recommendation, RecommendationTone
 
     deaths = MetricDelta(
         metric="deaths",
@@ -231,8 +231,8 @@ def test_form_stories_fold_death_rate_into_deaths() -> None:
 
 
 def test_form_stories_action_does_not_restate_driver() -> None:
-    from league_stats.analysis.progression.stories import build_form_stories
-    from league_stats.core.models import Recommendation, RecommendationTone
+    from league_stats_runner.analysis.progression.stories import build_form_stories
+    from league_stats_common.core.models import Recommendation, RecommendationTone
 
     delta = MetricDelta(
         metric="deaths",

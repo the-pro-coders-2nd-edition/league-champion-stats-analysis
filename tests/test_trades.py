@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from league_stats.analysis.trades import evaluate_objective_trade
-from league_stats.core.models import BuildingRecord, ObjectiveKind, ObjectiveRecord, Position
+from league_stats_runner.analysis.trades import evaluate_objective_trade
+from league_stats_common.core.models import BuildingRecord, ObjectiveKind, ObjectiveRecord, Position
 
 
 def _building(
@@ -47,7 +47,7 @@ class _Ctx:
 
 
 def test_format_trade_asset_labels() -> None:
-    from league_stats.analysis.trades import format_trade_asset_labels
+    from league_stats_runner.analysis.trades import format_trade_asset_labels
 
     assert format_trade_asset_labels(["mid_t2", "baron"], gained=True) == [
         "their Mid T2",

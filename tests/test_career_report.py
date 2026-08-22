@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from league_stats.analysis.career.models import BLOCK_SLOTS
-from league_stats.analysis.peer import build_comparisons
-from league_stats.core.models import MatchRecord, PeerComparisonResult, RankedEntry
-from league_stats.pipeline.orchestrator import run_analysis
+from league_stats_runner.analysis.career.models import BLOCK_SLOTS
+from league_stats_peers.analysis.peer import build_comparisons
+from league_stats_common.core.models import MatchRecord, PeerComparisonResult, RankedEntry
+from league_stats_runner.pipeline.orchestrator import run_analysis
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 from tests.test_reports import _config
-from league_stats.ingest.parser import ItemCatalog, MatchParser
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 
 PEER_METRICS = {
     "win": 0.5,
@@ -86,7 +86,7 @@ def test_career_rules_and_legend_are_present(tmp_path: Path) -> None:
     career = _career_payload(tmp_path)
     # Derived from the constants rather than the literal copy: the wording of this
     # panel is pinned in tests/test_career_rules_copy.py.
-    from league_stats.analysis.career.steps import ANCHOR_QUANTILE, BASELINE_GAMES
+    from league_stats_runner.analysis.career.steps import ANCHOR_QUANTILE, BASELINE_GAMES
 
     anchor = f"P{int(ANCHOR_QUANTILE * 100)} of your last {BASELINE_GAMES} games"
     assert any(anchor in rule["value"] for rule in career["rules"])

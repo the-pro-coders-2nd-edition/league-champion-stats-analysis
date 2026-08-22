@@ -12,7 +12,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../src/league_stats/web/spa_dist',
+    outDir: '../src/league_stats_api_ui/spa_dist',
     emptyOutDir: true,
   },
 });

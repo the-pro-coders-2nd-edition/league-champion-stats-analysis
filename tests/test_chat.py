@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from league_stats.web.chat import (
+from league_stats_api_ui.chat import (
     MAX_OUTPUT_TOKENS,
     _extract_reply_text,
     _generation_config,

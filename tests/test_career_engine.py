@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
+import mongomock
 import pandas as pd
 import pytest
 
-from league_stats.analysis.career.engine import advance_career
-from league_stats.analysis.career.models import BLOCK_SLOTS
-from league_stats.analysis.career.tracks import TrackContext
-from league_stats.infra.career_store import CareerStore, build_key
+from league_stats_runner.analysis.career.engine import advance_career
+from league_stats_runner.analysis.career.models import BLOCK_SLOTS
+from league_stats_runner.analysis.career.tracks import TrackContext
+from league_stats_common.infra.career_store import CareerStore, build_key
 
 KEY = build_key("p", "Viktor", "MIDDLE")
 
@@ -153,8 +153,8 @@ def _ctx(matches: pd.DataFrame) -> TrackContext:
 
 
 @pytest.fixture()
-def store(tmp_path: Path):
-    with CareerStore(tmp_path / "career.sqlite") as handle:
+def store():
+    with CareerStore(mongomock.MongoClient(), db_name="career") as handle:
         yield handle
 
 

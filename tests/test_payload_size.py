@@ -18,12 +18,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from league_stats.core.config import WebConfig
-from league_stats.pipeline.orchestrator import (
+from league_stats_common.core.config import WebConfig
+from league_stats_runner.pipeline.orchestrator import (
     ACCOUNT_FULL_COMBINATION_LIMIT,
     account_subset_keys,
 )
-from league_stats.web.app import create_app
+from league_stats_api_ui.app import create_app
 
 SLUG = "group_euw"
 BUILD = "aatrox_top"
@@ -82,7 +82,9 @@ def _write_report(reports: Path, payload: dict) -> None:
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)
-    config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite")
+    config = WebConfig(
+        output_dir=tmp_path / "out"
+    )
     # Compressible bulk, the shape a real report's figures have.
     _write_report(
         tmp_path / "out" / "reports",
@@ -137,7 +139,7 @@ def test_a_client_that_does_not_accept_gzip_gets_plain_json(client: TestClient) 
 
 def test_a_tiny_response_is_not_worth_compressing(client: TestClient) -> None:
     """Below the threshold gzip costs CPU and framing bytes for nothing."""
-    response = client.get("/api/players", headers={"Accept-Encoding": "gzip"})
+    response = client.get("/api/activity", headers={"Accept-Encoding": "gzip"})
 
     assert response.status_code == 200
     assert response.headers.get("content-encoding") is None

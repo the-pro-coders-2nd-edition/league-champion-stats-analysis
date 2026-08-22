@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from league_stats.pipeline.view_models import (
+from league_stats_runner.pipeline.view_models import (
     annotate_card_tiers,
     cards_from_specs,
     enrich_value_semantics,
@@ -13,8 +13,8 @@ from league_stats.pipeline.view_models import (
     overview_card_entries,
     priority_label,
 )
-from league_stats.core.role_metrics import MetricSpec, role_profile
-from league_stats.presentation.metric_colors import interpolate_metric_color, LOSS_HEX, score_form_delta
+from league_stats_common.core.role_metrics import MetricSpec, role_profile
+from league_stats_runner.presentation.metric_colors import interpolate_metric_color, LOSS_HEX, score_form_delta
 
 
 def test_priority_label_maps_badge_classes() -> None:
@@ -71,7 +71,7 @@ def test_death_section_cards_skip_value_colors() -> None:
 
 
 def test_enrich_value_semantics_colors_diff_and_win_rate() -> None:
-    from league_stats.presentation.metric_colors import CS_DIFF_SPAN, score_lane_diff
+    from league_stats_runner.presentation.metric_colors import CS_DIFF_SPAN, score_lane_diff
 
     gd = {"label": "Gold diff @10", "value": "+250", "value_class": ""}
     csd = {"label": "CS diff @10", "value": "+8", "value_class": ""}
@@ -286,7 +286,7 @@ def test_cards_from_specs_attaches_peer_metric_keys() -> None:
 
 
 def test_peer_row_display_includes_metric_key() -> None:
-    from league_stats.pipeline.view_models import peer_row_display
+    from league_stats_runner.pipeline.view_models import peer_row_display
 
     row = peer_row_display(
         {
@@ -303,7 +303,7 @@ def test_peer_row_display_includes_metric_key() -> None:
 
 
 def test_attach_peer_benchmarks_only_on_headline_non_inline_cards() -> None:
-    from league_stats.pipeline.bundles import _attach_peer_benchmarks
+    from league_stats_runner.pipeline.bundles import _attach_peer_benchmarks
 
     cards = [
         {"label": "KDA", "value": "3.0", "tier": "headline", "metric": "kda"},

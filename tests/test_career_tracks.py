@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from league_stats.analysis.career.steps import BLOCK_CATEGORY_KEYS
-from league_stats.analysis.career.tracks import (
+from league_stats_runner.analysis.career.steps import BLOCK_CATEGORY_KEYS
+from league_stats_runner.analysis.career.tracks import (
     MAX_BLOCK_STRETCH,
     TRACK_SPECS,
     TRACKS_BY_KEY,

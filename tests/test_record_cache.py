@@ -6,16 +6,18 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import mongomock
 import pytest
 
-from league_stats.core.config import AppConfig
-from league_stats.core.models import MatchRecord
-from league_stats.core.progress import ProgressReporter
-from league_stats.infra.cache import MatchStore
-from league_stats.infra.derived import KIND_RECORD, DerivedStore
-from league_stats.ingest import parser as parser_module
-from league_stats.pipeline.fetch import load_all_records
-from league_stats.pipeline.services import Services
+from league_stats_common.core.config import AppConfig
+from league_stats_common.core.models import MatchRecord
+from league_stats_common.core.progress import ProgressReporter
+from league_stats_runner.infra import derived as derived_module
+from league_stats_runner.infra.derived import KIND_RECORD
+from league_stats_runner.infra.raw_match_store import RawMatchStore
+from league_stats_runner.ingest import parser as parser_module
+from league_stats_runner.pipeline.fetch import load_all_records
+from league_stats_runner.pipeline.services import Services
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 
 PUUID = MY_PUUID
@@ -23,12 +25,14 @@ PUUID = MY_PUUID
 
 @pytest.fixture()
 def make_services(request: pytest.FixtureRequest):
-    """Factory that closes every MatchStore it opens.
+    """Factory that closes every RawMatchStore it opens.
 
-    Windows cannot remove a SQLite file that is still open, so leaking stores
-    turns tmp_path cleanup into a CI-only failure.
+    Kept for symmetry with the pre-Phase-8 on-disk `MatchStore` version of
+    this fixture -- `RawMatchStore.close()` is a documented no-op (the
+    underlying Mongo client is shared/process-wide), so nothing actually
+    needs cleanup here anymore, but the finalizer pattern is harmless to keep.
     """
-    opened: list[MatchStore] = []
+    opened: list[RawMatchStore] = []
 
     def factory(tmp_path: Path, match_count: int = 6) -> Services:
         services = _services(tmp_path, match_count)
@@ -54,7 +58,7 @@ def _services(tmp_path: Path, match_count: int = 6) -> Services:
         cache_dir=tmp_path / "cache",
     )
     config.ensure_directories()
-    store = MatchStore(config.db_path)
+    store = RawMatchStore(mongomock.MongoClient(), db_name="league_stats")
     for index in range(match_count):
         match = make_match()
         match["info"]["gameCreation"] = 1_700_000_000_000 + index * 3_600_000
@@ -139,7 +143,7 @@ def test_a_code_change_forces_a_reparse(
     load_all_records(services, PUUID)
 
     monkeypatch.setattr(
-        "league_stats.infra.derived.code_version", lambda kind: "cafebabecafebabe"
+        "league_stats_runner.infra.derived.code_version", lambda kind: "cafebabecafebabe"
     )
     calls = {"n": 0}
     original = parser_module.MatchParser.parse
@@ -189,16 +193,22 @@ def test_account_label_is_not_baked_into_the_cache(tmp_path: Path, make_services
     assert "Smurf#EUW" not in {record.account for record in warm}
 
 
-def test_a_corrupt_cached_record_is_recovered(tmp_path: Path, make_services) -> None:
+def test_a_corrupt_cached_record_is_recovered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_services
+) -> None:
+    # Override the autouse `_derived_store_uses_mongomock` fixture with an
+    # explicit client held here, so both `load_all_records` calls below share
+    # it and this test can reach into the collection directly in between.
+    client = mongomock.MongoClient()
+    monkeypatch.setattr(derived_module, "_build_mongo_client", lambda uri: client)
+    db_name = derived_module.db_name_from_uri(derived_module._resolve_mongo_uri())
+
     services = make_services(tmp_path)
     load_all_records(services, PUUID)
 
-    with DerivedStore(services.config.derived_db_path) as derived:
-        derived._conn.execute(
-            "UPDATE derived SET payload = '{\"nonsense\": true}' WHERE kind = ?",
-            (KIND_RECORD,),
-        )
-        derived._conn.commit()
+    client[db_name]["derived"].update_many(
+        {"kind": KIND_RECORD}, {"$set": {"payload": {"nonsense": True}}}
+    )
 
     recovered = load_all_records(services, PUUID)
     assert len(recovered) == 6

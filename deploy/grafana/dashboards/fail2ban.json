@@ -1,0 +1,142 @@
+{
+  "id": null,
+  "uid": "fail2ban-activity",
+  "title": "fail2ban",
+  "tags": [
+    "league-champion-stats"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Bans in range (grafana jail)",
+      "description": "Ban events fail2ban logged for the `grafana` jail. Parses fail2ban's standard log line shape (`fail2ban.actions [pid]: NOTICE [jailname] Ban <ip>`) -- this format has been stable across fail2ban versions but has not been verified live against this deployment's actual log output; check with a real ban before trusting this panel.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service=\"fail2ban\"} | regexp `NOTICE\\\\s+\\\\[(?P<jail>[\\\\w-]+)\\\\]\\\\s+Ban\\\\b` | jail=\"grafana\" [$__range]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Bans in range (mongo-express jail)",
+      "description": "Same as the grafana-jail panel, filtered to the `mongo-express` jail instead.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service=\"fail2ban\"} | regexp `NOTICE\\\\s+\\\\[(?P<jail>[\\\\w-]+)\\\\]\\\\s+Ban\\\\b` | jail=\"mongo-express\" [$__range]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Found / Ban / Unban events by jail",
+      "description": "One series per (jail, action) pair, extracted from fail2ban's own log line via LogQL regexp -- NOT verified live against a real fail2ban.log from this deployment. If this panel stays empty despite genuine activity in the raw-logs panel below, tail /var/log/fail2ban/fail2ban.log directly and adjust the regexp to match the real line shape.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (jail, action) (count_over_time({service=\"fail2ban\"} | regexp `NOTICE\\\\s+\\\\[(?P<jail>[\\\\w-]+)\\\\]\\\\s+(?P<action>Ban|Unban|Found)\\\\b` [$__interval]))",
+          "legendFormat": "{{jail}} - {{action}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "fail2ban activity",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessages": true,
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{service=\"fail2ban\"}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

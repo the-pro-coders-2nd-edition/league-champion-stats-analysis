@@ -2,21 +2,44 @@
 
 from __future__ import annotations
 
+import mongomock
+
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from league_stats.infra.cache import MatchStore
-from league_stats.core.config import AppConfig
-from league_stats.infra.riot_api import RiotApiClient
-from league_stats.infra.ddragon_assets import DDragonAssets
-from league_stats.ingest.parser import ItemCatalog, MatchParser, discover_build_pools
-from league_stats.pipeline.fetch import group_records
-from league_stats.pipeline.orchestrator import run_all_builds
-from league_stats.pipeline.services import PlayerContext, Services
-from league_stats.presentation.report import discover_player_builds
+import league_stats_common.infra.jobs as jobs
+import league_stats_runner.worker as worker
+from league_stats_common.core.config import AppConfig
+from league_stats_common.infra.jobs import JobStore
+from league_stats_common.infra.riot_api import RiotApiClient
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser, discover_build_pools
+from league_stats_runner.infra.raw_match_store import RawMatchStore
+from league_stats_runner.pipeline.fetch import group_records
+from league_stats_runner.pipeline.services import PlayerContext, Services
+from league_stats_runner.presentation.report import discover_player_builds
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_player_match, make_timeline
+
+
+def _job_store(slug: str) -> JobStore:
+    js = JobStore(mongomock.MongoClient())
+    js.upsert_player(slug=slug, riot_id="Test", tagline="EUW", region="euw1")
+    return js
+
+
+def _claimed_job(store: JobStore, slug: str) -> dict[str, Any]:
+    store.enqueue(
+        kind=jobs.JOB_KIND_ANALYZE,
+        riot_id="Test",
+        tagline="EUW",
+        region="euw1",
+        player_slug=slug,
+    )
+    job = store.claim_next()
+    assert job is not None
+    return job
 
 
 def _config(tmp_path: Path) -> AppConfig:
@@ -28,11 +51,12 @@ def _config(tmp_path: Path) -> AppConfig:
         min_games=20,
         cache_dir=tmp_path / "cache",
         output_dir=tmp_path / "output",
+        assets_dir=tmp_path / "assets",
         template_dir=Path(__file__).resolve().parent.parent / "src/league_stats/presentation/templates",
     )
 
 
-def _seed_store(store: MatchStore, puuid: str, *, viktor: int, ahri: int) -> None:
+def _seed_store(store: RawMatchStore, puuid: str, *, viktor: int, ahri: int) -> None:
     for index in range(viktor):
         match_id = f"EUW1_v{index}"
         store.save_match(match_id, puuid, make_player_match(match_id, champion="Viktor", position="MIDDLE"))
@@ -46,7 +70,7 @@ def _seed_store(store: MatchStore, puuid: str, *, viktor: int, ahri: int) -> Non
 def test_discover_build_pools_respects_min_games(tmp_path: Path) -> None:
     """Only champion+lane pairs with enough games are returned."""
     config = _config(tmp_path)
-    store = MatchStore(config.db_path)
+    store = RawMatchStore(mongomock.MongoClient(), db_name="league_stats")
     _seed_store(store, MY_PUUID, viktor=25, ahri=10)
     try:
         pools = discover_build_pools(store, MY_PUUID, config, min_games=20)
@@ -61,7 +85,7 @@ def test_discover_build_pools_respects_min_games(tmp_path: Path) -> None:
 def test_discover_build_pools_treats_lanes_separately(tmp_path: Path) -> None:
     """Same champion on different lanes counts as separate builds."""
     config = _config(tmp_path)
-    store = MatchStore(config.db_path)
+    store = RawMatchStore(mongomock.MongoClient(), db_name="league_stats")
     for index in range(20):
         match_id = f"EUW1_t{index}"
         store.save_match(
@@ -106,14 +130,22 @@ def test_group_records_filters_by_champion_and_lane() -> None:
 
 
 def test_run_all_builds_generates_player_hub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Batch analysis writes every eligible report and a player hub."""
-    from league_stats.infra.cache import HttpCache
-    from league_stats.core.models import RankedEntry
-    from league_stats.infra.ddragon_assets import DDragonAssets
+    """Batch analysis (via RUNNER's real stage-A pipeline) writes every eligible
+    report and a player hub.
+
+    Drives this through `worker.prepare_builds` + `worker._run_stage_a` rather
+    than `orchestrator.run_all_builds`, which Phase 9's dead-code sweep
+    confirmed is orphaned (no production caller since commit `33bd81b`
+    deleted the CLI shim that used to invoke it). The hub/manifest refresh
+    tested here is a side effect of `analyze_build` itself, called by both.
+    """
+    from league_stats_common.infra.cache import HttpCache
+    from league_stats_common.core.models import RankedEntry
+    from league_stats_common.infra.ddragon_assets import DDragonAssets
 
     config = _config(tmp_path)
     config.ensure_directories()
-    store = MatchStore(config.db_path)
+    store = RawMatchStore(mongomock.MongoClient(), db_name="league_stats")
     http_cache = HttpCache(config.http_cache_dir)
     client = RiotApiClient(config, http_cache, store)
     _seed_store(store, MY_PUUID, viktor=20, ahri=20)
@@ -137,19 +169,19 @@ def test_run_all_builds_generates_player_hub(tmp_path: Path, monkeypatch: pytest
         client=client,
         assets=DDragonAssets(config),
     )
+    job_store = _job_store("test_euw")
     try:
-        hub_path = run_all_builds(
-            services,
-            [PlayerContext(riot_id="Test", tagline="EUW", puuid=MY_PUUID)],
-            fetch=False,
-            skip_peer=True,
-        )
+        job = _claimed_job(job_store, "test_euw")
+        contexts = [PlayerContext(riot_id="Test", tagline="EUW", puuid=MY_PUUID)]
+        batch = worker.prepare_builds(services, contexts)
+        worker._run_stage_a(services, job_store, job, batch, None)
     finally:
         store.close()
         http_cache.close()
+        job_store.close()
 
+    hub_path = config.player_reports_dir / "manifest.json"
     assert hub_path.exists()
-    assert hub_path == config.player_reports_dir / "manifest.json"
     builds = discover_player_builds(config.player_reports_dir)
     champions = {build["champion"] for build in builds}
     assert "Viktor" in champions

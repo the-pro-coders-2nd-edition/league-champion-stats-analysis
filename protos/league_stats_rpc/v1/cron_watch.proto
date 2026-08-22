@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package league_stats_rpc.v1;
+
+import "league_stats_rpc/v1/common.proto";
+
+service CronWatchService {
+  // Called by API-UI when a user submits a new Riot ID to track.
+  rpc RegisterAccount(RegisterAccountRequest) returns (Ack);
+
+  // Called by API-UI's "Refresh" button to force an immediate check.
+  rpc ForceRefresh(ForceRefreshRequest) returns (Ack);
+
+  // Subscribed to by API-UI; pushes a fast update the moment CronWatch
+  // detects a new game for this account, without waiting on RUNNER.
+  rpc WatchUpdates(WatchUpdatesRequest) returns (stream WelcomeBackUpdate);
+}
+
+message RegisterAccountRequest {
+  string puuid = 1;
+  league_stats_rpc.v1.Region region = 2;
+}
+
+message ForceRefreshRequest {
+  string puuid = 1;
+}
+
+message WatchUpdatesRequest {
+  string puuid = 1;
+}
+
+message WelcomeBackUpdate {
+  string puuid = 1;
+  string new_match_id = 2;
+  // JSON-encoded lightweight summary (win/loss, K/D/A, CS/min, damage
+  // share) computed directly from the new match's summary alone — NOT the
+  // career/recap engine's ladder progression, which still only updates
+  // when the full stage-A pipeline runs. See analysis/career/engine.py's
+  // advance_career() for why: it needs the full analyzed report, not a
+  // raw match summary, so it cannot be this field's source.
+  string match_summary_json = 3;
+  int64 detected_at_unix = 4;
+}

@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import pandas as pd
 
-from league_stats.analysis.career.models import Rung
-from league_stats.analysis.career.window import (
+from league_stats_runner.analysis.career.models import Rung
+from league_stats_runner.analysis.career.window import (
     count_hits,
     newest_game_ms,
     player_mean,
     player_median,
-    player_quantile,
     recent_window,
 )
 

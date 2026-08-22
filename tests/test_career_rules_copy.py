@@ -10,20 +10,20 @@ and stretch themselves, which have already moved once (P35+15% to P45+17.5%).
 
 from __future__ import annotations
 
-from league_stats.analysis.career.models import (
+from league_stats_runner.analysis.career.models import (
     CLEAR_BAR,
     HOLD_RATIO,
     SETUP_CLEAR_BAR,
     WINDOW,
     hold_bar,
 )
-from league_stats.analysis.career.steps import (
+from league_stats_runner.analysis.career.steps import (
     ANCHOR_QUANTILE,
     BASELINE_GAMES,
     MAX_STEP_STRETCH,
     STEP_BANK,
 )
-from league_stats.presentation.career import CAREER_RULES
+from league_stats_runner.presentation.career import CAREER_RULES
 
 
 def _rule(key: str) -> dict[str, str]:
@@ -112,7 +112,7 @@ def test_the_bank_still_only_uses_the_two_documented_clear_bars() -> None:
     """If a step introduces a third bar, the Clear bar copy has to say so."""
     import pandas as pd
 
-    from league_stats.analysis.career.tracks import TrackContext
+    from league_stats_runner.analysis.career.tracks import TrackContext
 
     frame = pd.DataFrame(
         {c: [1.0] * 30 for c in ("cspm", "vspm", "damage_share", "deaths_pre20")}

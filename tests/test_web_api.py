@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any, Iterator
@@ -9,9 +10,9 @@ from typing import Any, Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from league_stats.core.config import WebConfig
-from league_stats.web import app as web_app
-from league_stats.web import jobs
+from league_stats_common.core.config import WebConfig
+import league_stats_api_ui.app as web_app
+import league_stats_common.infra.jobs as jobs
 
 
 def _write_report(output_dir: Path, slug: str, build_slug: str, **meta: Any) -> Path:
@@ -45,8 +46,8 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     # Skip Riot account-v1 lookup; dedicated tests cover the precheck path.
     monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
     config = WebConfig(
-        app_db_path=tmp_path / "app.sqlite",
         output_dir=tmp_path / "output",
+        assets_dir=tmp_path / "assets",
         gemini_api_key="fake-key",
     )
     application = web_app.create_app(config, start_worker=False)
@@ -100,7 +101,7 @@ def test_landing_page_preview_builds_are_most_recent(client: TestClient) -> None
 
 
 def test_landing_page_shows_profile_icons(client: TestClient) -> None:
-    icon_dir = client.web_config.output_dir / "assets" / "profile_icons"
+    icon_dir = client.web_config.assets_dir / "profile_icons"
     icon_dir.mkdir(parents=True, exist_ok=True)
     (icon_dir / "456.png").write_bytes(b"png")
     (icon_dir / "789.png").write_bytes(b"png")
@@ -121,8 +122,44 @@ def test_landing_page_shows_profile_icons(client: TestClient) -> None:
     labels = {member["label"] for member in group["players"]}
     assert labels == {"Alice#EUW", "Bob#EUW"}
     icons = {member["profile_icon"] for member in group["players"]}
-    assert icons == {"/out/assets/profile_icons/456.png", "/out/assets/profile_icons/789.png"}
+    assert icons == {"/ddragon/profile_icons/456.png", "/ddragon/profile_icons/789.png"}
     assert group["is_group"] is True
+
+
+def test_submit_analysis_persists_the_requests_trace_id_on_the_job(
+    client: TestClient,
+) -> None:
+    """Phase 6 final review, Finding 1: the HTTP request's trace_id (minted or
+    forwarded by `originate_trace_id`, echoed back as `X-Trace-Id`) must be
+    persisted on the enqueued `JobStore` row -- not just echoed to the client
+    -- so `AnalysisWorker` can later restore it before calling RUNNER."""
+    response = client.post(
+        "/api/analyses",
+        json={"riot_id": "New#EUW", "region": "euw1"},
+        headers={"x-trace-id": "caller-supplied-trace-abc"},
+    )
+    assert response.headers["X-Trace-Id"] == "caller-supplied-trace-abc"
+    job_id = response.json()["job"]["id"]
+
+    row = client.job_store.get(job_id)  # type: ignore[attr-defined]
+    assert row["trace_id"] == "caller-supplied-trace-abc"
+
+
+def test_refresh_player_persists_the_requests_trace_id_on_the_job(
+    client: TestClient,
+) -> None:
+    """Same as above for `_enqueue_player_job`'s call site (used by
+    `/refresh`, `/regenerate` and the career-ladder drop route)."""
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+
+    response = client.post(
+        "/api/players/test_euw/refresh", headers={"x-trace-id": "refresh-trace-xyz"}
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job"]["id"]
+
+    row = client.job_store.get(job_id)  # type: ignore[attr-defined]
+    assert row["trace_id"] == "refresh-trace-xyz"
 
 
 def test_groups_endpoint_matches_landing_page_data(client: TestClient) -> None:
@@ -222,7 +259,7 @@ def test_submit_rejects_unknown_riot_id(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def boom(
-        players: list[dict[str, str]], region: str, output_dir: Path
+        players: list[dict[str, str]], region: str, output_dir: Path, web_config: WebConfig
     ) -> None:
         raise ValueError(
             f"Player {players[0]['riot_id']}#{players[0]['tagline']} was not found "
@@ -242,10 +279,10 @@ def test_submit_rejects_unknown_riot_id(
 def test_submit_rejects_riot_api_outage(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from league_stats.infra.riot_api import RiotApiError
+    from league_stats_common.infra.riot_api import RiotApiError
 
     def boom(
-        players: list[dict[str, str]], region: str, output_dir: Path
+        players: list[dict[str, str]], region: str, output_dir: Path, web_config: WebConfig
     ) -> None:
         raise RiotApiError("GET failed: HTTP 503")
 
@@ -260,7 +297,7 @@ def test_submit_rejects_riot_api_outage(
 def test_verify_players_exist_raises_for_404(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from league_stats.infra.riot_api import RiotApiError
+    from league_stats_common.infra.riot_api import RiotApiError
 
     class FakeClient:
         def resolve_puuid(self, riot_id: str, tagline: str) -> str:
@@ -271,7 +308,9 @@ def test_verify_players_exist_raises_for_404(
                 )
             return "puuid-ok"
 
-    monkeypatch.setattr(web_app, "_build_precheck_client", lambda region, output_dir: FakeClient())
+    monkeypatch.setattr(
+        web_app, "_build_precheck_client", lambda region, output_dir, web_config: FakeClient()
+    )
     with pytest.raises(ValueError, match="Missing#EUW"):
         web_app._verify_players_exist(
             [
@@ -280,6 +319,7 @@ def test_verify_players_exist_raises_for_404(
             ],
             "euw1",
             tmp_path,
+            WebConfig(),
         )
 
 
@@ -290,12 +330,34 @@ def test_verify_players_exist_passes(
         def resolve_puuid(self, riot_id: str, tagline: str) -> str:
             return f"puuid-{riot_id}"
 
-    monkeypatch.setattr(web_app, "_build_precheck_client", lambda region, output_dir: FakeClient())
+    monkeypatch.setattr(
+        web_app, "_build_precheck_client", lambda region, output_dir, web_config: FakeClient()
+    )
     web_app._verify_players_exist(
         [{"riot_id": "Alice", "tagline": "EUW"}],
         "euw1",
         tmp_path,
+        WebConfig(),
     )
+
+
+def test_build_mongo_client_reuses_the_same_client_for_the_same_uri() -> None:
+    """Regression test for Phase 8's whole-branch review finding: `app.py`'s
+    `_build_mongo_client` previously opened a brand new, never-closed
+    `pymongo.MongoClient` on every call -- an unbounded connection-pool leak
+    reached on every `POST /api/analyses`, every in-process watch-poll tick,
+    and every hit of the per-champion refresh route. Mirrors
+    `test_web_worker.py::test_build_mongo_client_reuses_the_same_client_for_the_same_uri`
+    and `career_store.py`/`derived.py`/`jobs.py`'s own caching tests."""
+    first = web_app._build_mongo_client("mongodb://localhost:27017/league_stats_shared_test")
+    second = web_app._build_mongo_client("mongodb://localhost:27017/league_stats_shared_test")
+    assert first is second
+
+
+def test_build_mongo_client_returns_a_different_client_for_a_different_uri() -> None:
+    first = web_app._build_mongo_client("mongodb://localhost:27017/league_stats_client_a")
+    second = web_app._build_mongo_client("mongodb://localhost:27017/league_stats_client_b")
+    assert first is not second
 
 
 def test_job_status_includes_queue_position(client: TestClient) -> None:
@@ -373,6 +435,56 @@ def test_player_status_serves_existing_reports(client: TestClient) -> None:
     assert body["active_job"] is None
 
     assert client.get("/api/players/unknown_player").status_code == 404
+
+
+def test_player_status_includes_welcome_back_field(client: TestClient) -> None:
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+
+    # No cache entry: welcome_back should be null
+    response = client.get("/api/players/test_euw")
+    assert response.status_code == 200
+    body = response.json()
+    assert "welcome_back" in body
+    assert body["welcome_back"] is None
+
+    # Record something in the cache
+    welcome_back_data = {
+        "new_match_id": "match123",
+        "match_summary": {
+            "win": True,
+            "kills": 5,
+            "deaths": 2,
+            "assists": 10,
+            "kda": 7.5,
+            "cs_per_min": 6.5,
+            "damage_share": 0.35,
+        },
+        "detected_at_unix": 1692604800,
+    }
+    cache = client.app.state.welcome_back_cache  # type: ignore[attr-defined]
+    cache.record("test_euw", welcome_back_data)
+
+    # Cache entry exists: should be returned and consumed
+    response = client.get("/api/players/test_euw")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["welcome_back"] == welcome_back_data
+
+    # Consumed: next call should have None again
+    response = client.get("/api/players/test_euw")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["welcome_back"] is None
+
+
+def test_player_status_is_never_cached(client: TestClient) -> None:
+    """The welcome-back field is consumed-on-read: a cached/coalesced response
+    would silently eat a single delivery for a second reader (a duplicate tab,
+    a prefetch, a caching proxy)."""
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    response = client.get("/api/players/test_euw")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_player_status_reads_score_from_report_json(client: TestClient) -> None:
@@ -471,7 +583,7 @@ def test_player_status_merges_flex_from_store_when_meta_is_solo_only(
 
 
 def test_player_status_hydrates_missing_flex(client: TestClient, monkeypatch) -> None:
-    from league_stats.core.models import RankedEntry
+    from league_stats_common.core.models import RankedEntry
 
     rank_dir = client.web_config.output_dir / "assets" / "ranks"
     rank_dir.mkdir(parents=True, exist_ok=True)
@@ -522,7 +634,9 @@ def test_player_status_hydrates_missing_flex(client: TestClient, monkeypatch) ->
                 )
             }
 
-    monkeypatch.setattr(web_app, "_build_precheck_client", lambda region, output_dir: FakeClient())
+    monkeypatch.setattr(
+        web_app, "_build_precheck_client", lambda region, output_dir, web_config: FakeClient()
+    )
 
     player = client.get("/api/players/meojifo_moc").json()["players"][0]
 
@@ -535,7 +649,7 @@ def test_player_status_hydrates_missing_flex(client: TestClient, monkeypatch) ->
 
 
 def test_hydrate_tracked_ranks_fetches_missing_flex(client: TestClient, monkeypatch) -> None:
-    from league_stats.core.models import RankedEntry
+    from league_stats_common.core.models import RankedEntry
 
     class FakeClient:
         def resolve_puuid(self, riot_id: str, tagline: str) -> str:
@@ -552,7 +666,9 @@ def test_hydrate_tracked_ranks_fetches_missing_flex(client: TestClient, monkeypa
                 )
             }
 
-    monkeypatch.setattr(web_app, "_build_precheck_client", lambda region, output_dir: FakeClient())
+    monkeypatch.setattr(
+        web_app, "_build_precheck_client", lambda region, output_dir, web_config: FakeClient()
+    )
 
     tracked, changed = web_app._hydrate_tracked_ranks(
         [
@@ -566,6 +682,7 @@ def test_hydrate_tracked_ranks_fetches_missing_flex(client: TestClient, monkeypa
         ],
         region="euw1",
         output_dir=client.web_config.output_dir,
+        web_config=client.web_config,
     )
 
     assert changed is True
@@ -591,7 +708,7 @@ def test_get_build_payload_returns_report_json(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "champion": "Viktor",
-        "champion_icon": "/out/assets/champions/Viktor.png",
+        "champion_icon": "/ddragon/champions/Viktor.png",
     }
 
 
@@ -938,3 +1055,348 @@ def test_chat_rejects_bad_requests(client: TestClient) -> None:
         },
     )
     assert response.status_code == 400
+
+
+# ------------------------------------------------------ start_worker gating
+
+
+class _FakeWorker:
+    """Stand-in for AnalysisWorker: no real threads, just start()/stop() calls."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+
+def test_start_worker_controls_analysis_worker_startup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`start_worker` is now the only thing gating background-task startup in
+    `create_app`'s lifespan: api-ui no longer runs its own watcher (CronWatch's
+    always-on WatchPoller is the sole source of watch detection now), so
+    `AnalysisWorker` is the only remaining thing to assert on here."""
+    monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
+    started: list[bool] = []
+    stopped: list[bool] = []
+
+    class RecordingWorker(_FakeWorker):
+        def start(self) -> None:
+            started.append(True)
+
+        def stop(self) -> None:
+            stopped.append(True)
+
+    monkeypatch.setattr(web_app, "AnalysisWorker", RecordingWorker)
+    config = WebConfig(output_dir=tmp_path / "output", assets_dir=tmp_path / "assets")
+
+    application = web_app.create_app(config, start_worker=True)
+    with TestClient(application):
+        assert started == [True]
+    assert stopped == [True]
+
+    started.clear()
+    stopped.clear()
+    application = web_app.create_app(config, start_worker=False)
+    with TestClient(application):
+        assert started == []
+    assert stopped == []
+
+
+# ---------------------------------------------------------------- SSE routes
+#
+# `TestClient.stream()` (this repo's pinned `httpx` 0.28.1) cannot exercise these
+# routes: its `ASGITransport.handle_async_request` awaits the whole ASGI app call
+# to completion *before returning anything at all* (verified directly by reading
+# `httpx/_transports/asgi.py`) -- fine for a request/response body, but an SSE
+# route's generator only ever ends on disconnect, so that `await` never resolves
+# and the test process hangs forever (reproduced directly while writing these
+# tests). `_ASGIStream`/`_asgi_request` below drive the app's ASGI callable
+# directly instead, so a test can read `http.response.body` messages as they're
+# sent and explicitly cancel the request task to simulate a client disconnect --
+# each test also drives its own `lifespan_context` on one asyncio loop (rather
+# than using the module's `client` fixture, which runs its `TestClient` on a
+# separate thread/loop -- `job_event_bus.bind_loop()` must bind the *same* loop
+# these tests await on, or `publish()`'s `call_soon_threadsafe` would target the
+# wrong loop).
+
+
+async def _asgi_request(
+    app: Any, method: str, path: str, *, json_body: dict[str, Any] | None = None
+) -> tuple[int, Any]:
+    """One buffered (non-streaming) ASGI request/response round trip."""
+    body_bytes = b"" if json_body is None else json.dumps(json_body).encode()
+    headers = [(b"content-type", b"application/json")] if json_body is not None else []
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": method,
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "headers": headers,
+        "scheme": "http",
+        "server": ("testserver", 80),
+        "client": ("testclient", 123),
+        "root_path": "",
+    }
+    sent = False
+
+    async def receive() -> dict[str, Any]:
+        nonlocal sent
+        if sent:
+            return {"type": "http.disconnect"}
+        sent = True
+        return {"type": "http.request", "body": body_bytes, "more_body": False}
+
+    result: dict[str, Any] = {}
+    chunks: list[bytes] = []
+
+    async def send(message: dict[str, Any]) -> None:
+        if message["type"] == "http.response.start":
+            result["status"] = message["status"]
+        elif message["type"] == "http.response.body":
+            chunks.append(message.get("body", b""))
+
+    await app(scope, receive, send)
+    raw = b"".join(chunks)
+    return result["status"], (json.loads(raw) if raw else None)
+
+
+class _ASGIStream:
+    """Drives one SSE ASGI request against `app`, exposing `data:` events live."""
+
+    def __init__(self, app: Any, path: str) -> None:
+        self._app = app
+        self._path = path
+        self.queue: asyncio.Queue[bytes] = asyncio.Queue()
+        self.status: int | None = None
+        self._task: asyncio.Task[None] | None = None
+        self._headers_ready = asyncio.Event()
+
+    async def __aenter__(self) -> "_ASGIStream":
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "GET",
+            "path": self._path,
+            "raw_path": self._path.encode(),
+            "query_string": b"",
+            "headers": [],
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "client": ("testclient", 123),
+            "root_path": "",
+        }
+
+        async def receive() -> dict[str, Any]:
+            # A real disconnect is simulated by cancelling `self._task` instead
+            # (see `__aexit__`) -- this just needs to never resolve on its own.
+            await asyncio.sleep(3600)
+            return {"type": "http.disconnect"}  # pragma: no cover
+
+        async def send(message: dict[str, Any]) -> None:
+            if message["type"] == "http.response.start":
+                self.status = message["status"]
+                self._headers_ready.set()
+            elif message["type"] == "http.response.body":
+                body = message.get("body", b"")
+                if body:
+                    await self.queue.put(body)
+
+        self._task = asyncio.create_task(self._app(scope, receive, send))
+        headers_wait = asyncio.ensure_future(self._headers_ready.wait())
+        await asyncio.wait({self._task, headers_wait}, return_when=asyncio.FIRST_COMPLETED)
+        if self._task.done():
+            headers_wait.cancel()
+            await self._task  # surfaces a short-circuit path's exception, if any
+        return self
+
+    async def next_event(self, timeout: float = 2.0) -> dict[str, Any]:
+        chunk = await asyncio.wait_for(self.queue.get(), timeout=timeout)
+        for line in chunk.decode().splitlines():
+            if line.startswith("data:"):
+                return json.loads(line[len("data:") :].strip())
+        raise AssertionError(f"no data: line in chunk {chunk!r}")
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
+
+def _run_app_scenario(app: Any, scenario: Any) -> Any:
+    """Run `scenario(app)` inside the app's lifespan, on one fresh asyncio loop."""
+
+    async def wrapper() -> Any:
+        async with app.router.lifespan_context(app):
+            return await scenario(app)
+
+    return asyncio.run(wrapper())
+
+
+def _sse_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **config_kwargs: Any) -> Any:
+    monkeypatch.setattr(web_app, "_verify_players_exist", lambda *args, **kwargs: None)
+    config = WebConfig(output_dir=tmp_path / "output", gemini_api_key="fake-key", **config_kwargs)
+    application = web_app.create_app(config, start_worker=False)
+    application.state.web_config = config  # mirrors the `client` fixture's own attribute
+    return application
+
+
+def test_player_status_events_sends_initial_snapshot_immediately(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _sse_app(tmp_path, monkeypatch)
+    _write_report(app.state.web_config.output_dir, "test_euw", "viktor_middle")
+
+    async def scenario(app: Any) -> None:
+        _status, expected = await _asgi_request(app, "GET", "/api/players/test_euw")
+        async with _ASGIStream(app, "/api/players/test_euw/events") as stream:
+            assert stream.status == 200
+            first = await stream.next_event()
+        assert first == expected
+
+    _run_app_scenario(app, scenario)
+
+
+def test_player_status_events_404s_for_an_unknown_player(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _sse_app(tmp_path, monkeypatch)
+
+    async def scenario(app: Any) -> None:
+        async with _ASGIStream(app, "/api/players/unknown_player/events") as stream:
+            assert stream.status == 404
+
+    _run_app_scenario(app, scenario)
+
+
+def test_player_status_events_pushes_a_fresh_snapshot_on_state_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _sse_app(tmp_path, monkeypatch)
+
+    async def scenario(app: Any) -> None:
+        _status, submitted = await _asgi_request(
+            app, "POST", "/api/analyses", json_body={"riot_id": "Test#EUW", "region": "euw1"}
+        )
+        job_id = submitted["job"]["id"]
+
+        async with _ASGIStream(app, "/api/players/test_euw/events") as stream:
+            first = await stream.next_event()
+            assert first["active_job"]["state"] == jobs.QUEUED
+
+            app.state.job_store.set_state(job_id, jobs.ANALYZING, detail="Downloading matches")
+
+            second = await stream.next_event()
+            assert second["active_job"]["state"] == jobs.ANALYZING
+            assert second["active_job"]["stage_detail"] == "Downloading matches"
+
+    _run_app_scenario(app, scenario)
+
+
+def test_player_status_events_cleans_up_subscriber_on_disconnect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _sse_app(tmp_path, monkeypatch)
+    _write_report(app.state.web_config.output_dir, "test_euw", "viktor_middle")
+
+    async def scenario(app: Any) -> None:
+        bus = app.state.job_event_bus
+        assert bus.subscriber_count("test_euw") == 0
+        async with _ASGIStream(app, "/api/players/test_euw/events") as stream:
+            await stream.next_event()
+            assert bus.subscriber_count("test_euw") == 1
+        # Cleanup runs in the cancelled task's `finally:` block, awaited by
+        # `_ASGIStream.__aexit__` -- so it has already happened by this point.
+        assert bus.subscriber_count("test_euw") == 0
+
+    _run_app_scenario(app, scenario)
+
+
+def test_player_status_events_single_flight_avoids_double_consuming_welcome_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two tabs open on the same slug must both see one welcome-back delivery.
+
+    `WelcomeBackCache.get` is consume-on-read -- without the single-flight
+    wrapper around `_player_status_payload` in the SSE code path, the second
+    subscriber to independently recompute its own payload for the same publish
+    would get `welcome_back: None` where the first got the real payload.
+    """
+    app = _sse_app(tmp_path, monkeypatch)
+    _write_report(app.state.web_config.output_dir, "test_euw", "viktor_middle")
+
+    async def scenario(app: Any) -> None:
+        cache = app.state.welcome_back_cache
+        bus = app.state.job_event_bus
+
+        async with _ASGIStream(app, "/api/players/test_euw/events") as first_stream:
+            async with _ASGIStream(app, "/api/players/test_euw/events") as second_stream:
+                await first_stream.next_event()
+                await second_stream.next_event()
+
+                welcome_back_data = {
+                    "new_match_id": "EUW1_42",
+                    "match_summary": {"win": True},
+                    "detected_at_unix": 1_700_000_000,
+                }
+                cache.record("test_euw", welcome_back_data)
+                bus.publish("test_euw")
+
+                first_payload = await first_stream.next_event()
+                second_payload = await second_stream.next_event()
+
+        assert first_payload["welcome_back"] == welcome_back_data
+        assert second_payload["welcome_back"] == welcome_back_data
+
+    _run_app_scenario(app, scenario)
+
+
+def test_activity_events_sends_initial_snapshot_immediately(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _sse_app(tmp_path, monkeypatch)
+
+    async def scenario(app: Any) -> None:
+        _status, submitted = await _asgi_request(
+            app, "POST", "/api/analyses", json_body={"riot_id": "New#EUW", "region": "euw1"}
+        )
+        assert submitted["created"] is True
+        _status, expected = await _asgi_request(app, "GET", "/api/activity")
+
+        async with _ASGIStream(app, "/api/activity/events") as stream:
+            assert stream.status == 200
+            first = await stream.next_event()
+        assert first == expected
+
+    _run_app_scenario(app, scenario)
+
+
+def test_activity_events_pushes_on_a_newly_submitted_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _sse_app(tmp_path, monkeypatch)
+
+    async def scenario(app: Any) -> None:
+        async with _ASGIStream(app, "/api/activity/events") as stream:
+            first = await stream.next_event()
+            assert first["items"] == []
+
+            await _asgi_request(
+                app, "POST", "/api/analyses", json_body={"riot_id": "New#EUW", "region": "euw1"}
+            )
+
+            second = await stream.next_event()
+            assert any(item["slug"] == "new_euw" for item in second["items"])
+
+    _run_app_scenario(app, scenario)

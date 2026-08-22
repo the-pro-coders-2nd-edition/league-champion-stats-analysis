@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from league_stats.presentation.metric_colors import (
+from league_stats_runner.presentation.metric_colors import (
     JADE_HEX,
     LOSS_HEX,
     MINT_HEX,
@@ -28,7 +28,7 @@ def test_interpolate_metric_color_midpoint_is_neutral() -> None:
 
 def test_interpolate_metric_color_goes_mint_then_teal_then_jade() -> None:
     """Slightly positive scores should already read mint (like score bars)."""
-    from league_stats.presentation.metric_colors import _POS_MINT, _POS_TEAL
+    from league_stats_runner.presentation.metric_colors import _POS_MINT, _POS_TEAL
 
     assert interpolate_metric_color(_POS_MINT) == MINT_HEX
     assert interpolate_metric_color(_POS_TEAL) == WIN_HEX
@@ -63,7 +63,7 @@ def test_score_lane_diff_scales_signed_gold() -> None:
 
 
 def test_score_lane_diff_uses_tighter_cs_span() -> None:
-    from league_stats.presentation.metric_colors import CS_DIFF_SPAN, score_form_delta
+    from league_stats_runner.presentation.metric_colors import CS_DIFF_SPAN, score_form_delta
 
     assert score_lane_diff(CS_DIFF_SPAN, span=CS_DIFF_SPAN) == 1.0
     assert score_form_delta("csd10", 7.5) == 0.5

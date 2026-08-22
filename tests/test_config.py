@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 
-from league_stats.core.champions import parse_riot_id, players_group_slug
-from league_stats.core.config import AppConfig, load_config
+from league_stats_common.core.champions import parse_riot_id, players_group_slug
+from league_stats_common.core.config import AppConfig, WebConfig, load_config, load_web_config
 
 
 def test_parse_riot_id_splits_name_and_tag() -> None:
@@ -96,3 +95,61 @@ def test_load_config_reads_gemini_api_key_from_dotenv(
 
     config = load_config(riot_id="Test", tagline="EUW", api_key="RGAPI-test")
     assert config.gemini_api_key == "AIza-from-dotenv"
+
+
+def test_web_config_runner_grpc_target_defaults_to_localhost() -> None:
+    assert WebConfig().runner_grpc_target == "localhost:50051"
+
+
+def test_web_config_runner_mongo_uri_defaults_to_localhost() -> None:
+    assert WebConfig().runner_mongo_uri == "mongodb://localhost:27017/league_stats"
+
+
+def test_load_web_config_reads_runner_mongo_uri_from_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUNNER_MONGO_URI", "mongodb://mongo.internal:27017/league_stats")
+    monkeypatch.chdir(tmp_path)
+
+    config = load_web_config()
+    assert config.runner_mongo_uri == "mongodb://mongo.internal:27017/league_stats"
+
+
+def test_load_web_config_runner_mongo_uri_falls_back_to_mongo_uri(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RUNNER_MONGO_URI is unset in the real docker-compose deployment -- only
+    the shared MONGO_URI is (see docker-compose.yml's `runner` service). Without
+    this fallback, RUNNER there would silently dial the wrong (default
+    localhost) Mongo instance instead of the compose network's `mongo`
+    service."""
+    monkeypatch.delenv("RUNNER_MONGO_URI", raising=False)
+    monkeypatch.setenv("MONGO_URI", "mongodb://mongo:27017/league_stats")
+    monkeypatch.chdir(tmp_path)
+
+    config = load_web_config()
+    assert config.runner_mongo_uri == "mongodb://mongo:27017/league_stats"
+
+
+def test_load_web_config_runner_mongo_uri_prefers_explicit_override_over_mongo_uri(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When both are set, RUNNER_MONGO_URI (the RUNNER-specific override) wins
+    over the shared MONGO_URI."""
+    monkeypatch.setenv("MONGO_URI", "mongodb://mongo:27017/league_stats")
+    monkeypatch.setenv("RUNNER_MONGO_URI", "mongodb://mongo-for-runner-only:27017/league_stats")
+    monkeypatch.chdir(tmp_path)
+
+    config = load_web_config()
+    assert config.runner_mongo_uri == "mongodb://mongo-for-runner-only:27017/league_stats"
+
+
+def test_load_web_config_reads_runner_grpc_target_from_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RUNNER_GRPC_TARGET overrides the default localhost:50051 target."""
+    monkeypatch.setenv("RUNNER_GRPC_TARGET", "runner.internal:9000")
+    monkeypatch.chdir(tmp_path)
+
+    config = load_web_config()
+    assert config.runner_grpc_target == "runner.internal:9000"

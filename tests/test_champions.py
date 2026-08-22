@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from league_stats.core.champions import (
+from league_stats_common.core.champions import (
     build_champion_catalog,
     build_label,
     champion_display_name,

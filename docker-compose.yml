@@ -1,0 +1,264 @@
+services:
+  api-ui:
+    build:
+      context: .
+      args:
+        # Set by CI to `$(git rev-parse HEAD)`; defaults to "dev" locally.
+        # Baked into the running service's `version` tag (see .env.example).
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/league_stats
+      - RUNNER_GRPC_TARGET=runner:50051
+      # api-ui has no peer-comparison code path of its own; it always
+      # delegates job execution to `runner` over gRPC. `_run_stage_b` there
+      # calls PEERS directly, but api-ui never hosts a RunnerServiceServicer,
+      # so a slow-path (live-sampling) PEERS baseline requested via this
+      # process degrades to a timeout-and-skip for that one build rather than
+      # crashing (base report is still served).
+      #
+      # Must point at the compose network's `peers` host (default is
+      # localhost, wrong inside this container); port matches `peers`'
+      # PEERS_GRPC_PORT.
+      - PEERS_GRPC_TARGET=peers:50053
+      # Required for welcome-back notifications: unset means
+      # WelcomeBackSubscriber never starts. Port must match cron-watch's
+      # CRON_WATCH_GRPC_PORT below.
+      - CRON_WATCH_GRPC_TARGET=cron-watch:50052
+    volumes:
+      # Report artifacts (HTML/CSV/JSON), referenced by job rows in Mongo.
+      # Without this, recreating the container wipes /app/output while jobs
+      # still show as completed, so "done" report links 404. /app/.cache
+      # (match/HTTP caches) is left ephemeral -- losing it just costs slower
+      # re-fetches, not a broken link.
+      - app-output:/app/output
+      # Shared Data Dragon champion/rune/item/summoner icon cache
+      # (`AppConfig.assets_dir`/`WebConfig.assets_dir`), deliberately a
+      # SEPARATE volume from `app-output` above: report artifacts are per-job
+      # and tied to a job's lifecycle, while this cache is shared,
+      # patch-versioned, and read-mostly -- it has nothing to do with any
+      # individual job, so it does not belong in the same volume just because
+      # both used to incidentally nest under `output/`. Mounted read-write:
+      # api-ui is NOT purely a reader -- `fetch_rank_emblem` (called from
+      # `_shaped_players`, on the landing page's `/api/groups` request path)
+      # lazily downloads+writes a rank emblem PNG the first time any request
+      # needs a tier nothing has fetched yet. A `:ro` mount here made every
+      # such request 500 with `OSError: [Errno 30] Read-only file system`
+      # the moment a not-yet-cached tier was hit in production -- confirmed
+      # live via Loki. `runner` is still the primary writer for champion/
+      # rune/item/summoner icons; api-ui only ever writes this one lazily-
+      # fetched, small, idempotent file.
+      - ddragon-assets:/app/assets
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    # ME_CONFIG_MONGODB_URL/ME_CONFIG_BASICAUTH_USERNAME/PASSWORD come from
+    # the gitignored .env file (see .env.example for placeholders) --
+    # deliberately not re-listed under `environment:` here, matching how
+    # Grafana's GF_SECURITY_ADMIN_USER/PASSWORD above are only ever sourced
+    # via `env_file`, never inlined.
+    env_file:
+      - .env
+    # Published to LOOPBACK ONLY, never all interfaces: deploy/run.sh's Caddy
+    # is a host systemd process, not a member of this compose network, so
+    # (like Grafana's GRAFANA_HOST/GRAFANA_PORT below) it can only reach a
+    # container through a published host port -- there is no such thing as
+    # "no host port at all" while still letting host-based Caddy reverse-
+    # proxy to it. The point of NOT doing what Grafana's current (temporary)
+    # `3000:3000` does -- publish on all interfaces -- is that mongo-express
+    # must never be reachable directly from the internet, only through
+    # Caddy's `mongo.${DOMAIN}` site block, because Caddy's access log for
+    # that site is the only place a failed Basic Auth login ever shows up as
+    # a line on disk (mongo-express has no failed-login log of its own, it
+    # just returns a plain 401) -- without Caddy in front of it, fail2ban's
+    # mongo-express jail would have nothing to watch. Loopback-only achieves
+    # that without requiring Caddy to join the compose network.
+    ports:
+      - "127.0.0.1:8081:8081"
+    depends_on:
+      - mongo
+
+  runner:
+    build:
+      context: .
+      args:
+        # Set by CI to `$(git rev-parse HEAD)`; defaults to "dev" locally.
+        # Baked into the running service's `version` tag (see .env.example).
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
+    command: ["uv", "run", "python", "-m", "league_stats_runner"]
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/league_stats
+      - RUNNER_GRPC_PORT=50051
+      - RUNNER_METRICS_PORT=9100
+      # Must point at the compose network's `peers` host (default is
+      # localhost, wrong here). Known follow-up: PEERS' baseline callback
+      # (NotifyPeerBaselineReady) back into RUNNER hasn't been exercised
+      # end-to-end against this specific topology yet.
+      - PEERS_GRPC_TARGET=peers:50053
+    env_file:
+      - .env
+    volumes:
+      # RUNNER is the only service that actually writes report artifacts
+      # (report.json/meta.json under output/reports/); api-ui only reads them
+      # back via its own `app-output` mount above. Without RUNNER sharing the
+      # same named volume, every report it writes lands in its own container's
+      # ephemeral filesystem -- invisible to api-ui (has_report/builds stay
+      # empty, 404 on every /out/reports/... path) and lost on container
+      # recreation, even though the job itself completes cleanly and RUNNER's
+      # own logs say "Done. Wrote ...report.json". Confirmed live: a real job
+      # for a real player completed end to end (base + peer stages both
+      # finished, timestamps recorded) with zero report ever visible to the
+      # frontend, purely from this missing mount.
+      - app-output:/app/output
+      # Shared Data Dragon icon cache -- SEPARATE volume from `app-output`
+      # (see api-ui's identical mount above for the full reasoning: report
+      # artifacts are per-job, this cache is shared/patch-versioned and
+      # unrelated to any one job's lifecycle). RUNNER is the only service
+      # that ever downloads/writes these icons (`DDragonAssets`), so this is
+      # the only read-write mount of this volume; without it, every
+      # container restart re-downloads hundreds of icons from Data Dragon
+      # from scratch -- the bug this whole split exists to fix.
+      - ddragon-assets:/app/assets
+    # No `ports:` here on purpose: RUNNER is only ever dialed by `api-ui` over
+    # the compose network (`RUNNER_GRPC_TARGET=runner:50051` above), never
+    # from outside it. Add a `ports:` mapping here if external debugging
+    # access is ever needed.
+    depends_on:
+      - mongo
+
+  peers:
+    build:
+      context: .
+      args:
+        # Set by CI to `$(git rev-parse HEAD)`; defaults to "dev" locally.
+        # Baked into the running service's `version` tag (see .env.example).
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
+    command: ["uv", "run", "python", "-m", "league_stats_peers"]
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/league_stats
+      - RUNNER_GRPC_TARGET=runner:50051
+      - PEERS_GRPC_PORT=50053
+      - PEERS_METRICS_PORT=9102
+    env_file:
+      - .env
+    # No `ports:` here on purpose: nothing outside the compose network dials
+    # PEERS directly today. `runner` and `api-ui` both dial this service;
+    # `cron-watch` never reaches peer comparison, so it doesn't.
+    depends_on:
+      - mongo
+
+  cron-watch:
+    build:
+      context: .
+      args:
+        # Set by CI to `$(git rev-parse HEAD)`; defaults to "dev" locally.
+        # Baked into the running service's `version` tag (see .env.example).
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
+    command: ["uv", "run", "python", "-m", "league_stats_cron_watch"]
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/league_stats
+      - CRON_WATCH_GRPC_PORT=50052
+      - CRON_WATCH_METRICS_PORT=9101
+    env_file:
+      - .env
+    # No `ports:` here on purpose, same reasoning as `runner`: nothing outside
+    # the compose network dials CRON-watch directly today.
+    depends_on:
+      - mongo
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    # No `ports:` here on purpose: Prometheus is only ever queried by
+    # `grafana` over the compose network -- nothing outside it needs direct
+    # access. Scrape targets (api-ui/runner/cron-watch/peers) are pull-based,
+    # so no `depends_on` is needed here either -- Prometheus retries scrapes
+    # on its own interval regardless of which service starts first.
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    # GF_SECURITY_ADMIN_USER/GF_SECURITY_ADMIN_PASSWORD come from the
+    # gitignored .env file below (see .env.example for placeholders) --
+    # deliberately not re-listed under `environment:` here, matching how
+    # every other secret (RIOT_API_KEY, etc.) in this file is only ever
+    # sourced via `env_file`, never inlined.
+    env_file:
+      - .env
+    environment:
+      # Logs to both stdout (docker compose logs) and a file on the host
+      # filesystem (below) so fail2ban -- which runs on the host, not in a
+      # container -- can watch failed-login attempts directly.
+      - GF_LOG_MODE=console file
+    volumes:
+      - ./deploy/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./deploy/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deploy/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+      - ./deploy/grafana/logs:/var/log/grafana
+    # TEMPORARY, for pre-DNS testing only: published on all interfaces so
+    # Grafana is reachable at <vps-ip-or-domain>:3000 without Caddy/DNS/TLS
+    # in front of it. This means the admin login goes over plain HTTP,
+    # unencrypted, protected only by the admin password -- revert to
+    # `127.0.0.1:3000:3000` (loopback-only, reached via Caddy's
+    # `grafana.<DOMAIN>` reverse proxy instead) once DNS is set up.
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+
+  loki:
+    image: grafana/loki:3.3.2
+    volumes:
+      - ./deploy/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    # No `ports:` here on purpose, same reasoning as `prometheus`: only
+    # `alloy` pushes logs in and only `grafana` queries out, both over the
+    # compose network.
+
+  alloy:
+    image: grafana/alloy:v1.5.1
+    volumes:
+      # Read-only access to the Docker socket is how Alloy discovers every
+      # container on this host and tails its stdout/stderr directly --
+      # no changes needed to any service's own logging driver/config.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./deploy/alloy-config.alloy:/etc/alloy/config.alloy:ro
+      # fail2ban runs on the HOST (not in a container) and logs to
+      # /var/log/fail2ban/fail2ban.log -- Alloy's docker.sock discovery
+      # above only tails container stdout/stderr, so it can never see that
+      # file on its own. Read-only bind mount at the same host path so the
+      # `local.file_match`/`loki.source.file` pair in alloy-config.alloy can
+      # tail it, the same way Grafana's own failed-login log is watched by
+      # fail2ban directly on the host (not through this container).
+      - /var/log/fail2ban:/var/log/fail2ban:ro
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "/etc/alloy/config.alloy"]
+    # No `ports:` here either -- Alloy's own debug UI (12345) is for local
+    # troubleshooting only, not something this deployment exposes.
+    depends_on:
+      - loki
+
+volumes:
+  mongo-data:
+  app-output:
+  # Data Dragon icon cache (`assets_dir`), kept separate from `app-output`:
+  # shared/patch-versioned/read-mostly, with no per-job lifecycle of its own,
+  # unlike report artifacts -- see the mount comments on `runner`/`api-ui`
+  # above for the full reasoning.
+  ddragon-assets:
+  grafana-data:
+  loki-data:

@@ -14,13 +14,17 @@ dependencies = [
     "scipy>=1.14",
     "matplotlib>=3.9",
     "pydantic>=2.9",
-    "tqdm>=4.66",
     "joblib>=1.4",
     "diskcache>=5.6",
     "scikit-learn>=1.5",
     "python-dotenv>=1.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+    "grpcio>=1.83",
+    "grpcio-tools>=1.83",
+    "protobuf>=7.35.1",
+    "pymongo>=4.9",
+    "prometheus-client>=0.21",
 ]
 
 [dependency-groups]
@@ -29,22 +33,29 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-xdist>=3.8.0",
     "httpx>=0.27",
-    "playwright==1.47.0",
+    "mongomock>=4.2",
 ]
 
 [project.scripts]
-league-champion-stats = "league_stats.web.__main__:main"
+league-champion-stats = "league_stats_api_ui.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/league_stats"]
+packages = [
+    "src/league_stats_rpc",
+    "src/league_stats_common",
+    "src/league_stats_api_ui",
+    "src/league_stats_cron_watch",
+    "src/league_stats_runner",
+    "src/league_stats_peers",
+]
 
 [tool.hatch.build.targets.wheel.force-include]
-"src/league_stats/data/benchmarks" = "league_stats/data/benchmarks"
-"src/league_stats/assets/brand" = "league_stats/assets/brand"
+"src/league_stats_peers/data/benchmarks" = "league_stats_peers/data/benchmarks"
+"src/league_stats_runner/assets/brand" = "league_stats_runner/assets/brand"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

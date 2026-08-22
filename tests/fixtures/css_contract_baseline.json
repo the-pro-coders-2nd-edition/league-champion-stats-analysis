@@ -7,36 +7,38 @@
     ]
   },
   "rule2_markup_builders": {
-    "total": 28,
     "per_file": {
-      "sections/GameReview.svelte": 22,
-      "lib/html.js": 6
-    }
+      "lib/html.js": 6,
+      "sections/GameReview.svelte": 22
+    },
+    "total": 28
   },
   "rule3_html_sites": {
-    "total": 8,
-    "permanent_allowlist": {
-      "sections/Chatbot.svelte": 1
-    },
     "per_file": {
       "components/TrendRow.svelte": 1,
       "sections/Chatbot.svelte": 1,
       "sections/GameReview.svelte": 3,
       "sections/GameReviewKeyMoments.svelte": 2,
       "sections/LaneObjectivesDeaths.svelte": 1
-    }
+    },
+    "permanent_allowlist": {
+      "sections/Chatbot.svelte": 1
+    },
+    "total": 8
   },
   "rule4_global_outside_allowlist": {
-    "files": 6,
-    "rules": 72,
+    "files": 8,
     "per_file": {
+      "components/BuildCardSkeleton.svelte": 1,
       "components/CareerNode.svelte": 17,
       "components/Chip.svelte": 32,
       "components/MetricLabel.svelte": 2,
+      "components/Panel.svelte": 2,
       "components/RecapModal.svelte": 2,
       "components/ReportSkeleton.svelte": 2,
       "components/StatChip.svelte": 17
-    }
+    },
+    "rules": 75
   },
   "rule5_root_token_collisions": {
     "count": 5,
@@ -49,17 +51,20 @@
     ]
   },
   "rule6_raw_colors": {
-    "occurrences": 21,
-    "lines": 18
+    "lines": 18,
+    "occurrences": 21
   },
   "rule7_generated_css": {
     "components_css_present": true,
-    "stale_hash_count": 38
+    "stale_hash_count": 28
   },
   "rule8_underused_components": {
-    "count": 24,
+    "count": 33,
     "names": [
+      "AnalyzeForm",
       "ChampionIconStack",
+      "ChampionsSectionSkeleton",
+      "ErrorToast",
       "FormWrBridge",
       "GameReviewIconRow",
       "GameReviewRunePage",
@@ -68,26 +73,32 @@
       "IconCell",
       "IconOnly",
       "IconStatTable",
+      "JobProgress",
+      "LibraryHeaderSkeleton",
       "MetricBenchmark",
       "MetricLabel",
       "MetricValue",
       "Modal",
       "PeerRankValue",
-      "RecapModal",
+      "PlayerCard",
+      "PlayerCardSkeleton",
+      "PlayerControlsSkeleton",
+      "PlayerHeaderSkeleton",
       "RecCard",
       "RecCardHead",
       "RecEvidenceSummary",
-      "ReportPlayerChip",
+      "RecapModal",
       "ReportSkeleton",
       "ScoreDisclosure",
       "SectionPulseHint",
       "Skeleton",
-      "SkillGrid"
+      "SkillGrid",
+      "WatchToggle"
     ]
   },
   "rule9_dead_modules": {
-    "tones_js_present": true,
+    "delta_label_non_test_callers": 0,
     "delta_tone_non_test_callers": 0,
-    "delta_label_non_test_callers": 0
+    "tones_js_present": true
   }
 }

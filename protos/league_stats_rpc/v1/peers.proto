@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package league_stats_rpc.v1;
+
+service PeersService {
+  // Called by RUNNER when it needs a champion+lane+rank peer baseline.
+  // If not cached, PEERS enqueues its own fetch and calls back into
+  // RunnerService.NotifyPeerBaselineReady when done.
+  rpc RequestBaseline(RequestBaselineRequest) returns (RequestBaselineResponse);
+}
+
+message RequestBaselineRequest {
+  string champion = 1;
+  string lane = 2;
+  string rank = 3;
+  // Platform routing host (e.g. "euw1", "kr", "na1") -- required to scope
+  // league-v4 lookups and to filter/key the peer-game store by the right
+  // platform. Without this PEERS has no reliable way to know which platform
+  // a request is for.
+  string platform = 4;
+  // The requesting player's own PUUID, excluded from their own peer average.
+  string exclude_puuid = 5;
+  // Gameplay patch to scope the baseline to (see `current_patch` in
+  // `analysis/peer/comparison.py`). Without this PEERS cannot filter
+  // `select_by_patch` (`analysis/peer/cache.py`) and blends every patch ever
+  // ingested into one baseline instead of scoping to the caller's patch.
+  string patch = 6;
+}
+
+message RequestBaselineResponse {
+  string request_id = 1;
+  bool cached = 2;
+  // Populated only when cached == true; otherwise RUNNER waits for the
+  // NotifyPeerBaselineReady callback.
+  string baseline_json = 3;
+  // Non-empty when PEERS could not even enqueue the fetch (e.g. rejected the
+  // request outright). Distinct from a later async failure, which is
+  // reported via PeerBaselineReadyRequest.error on the callback instead.
+  string error = 4;
+}

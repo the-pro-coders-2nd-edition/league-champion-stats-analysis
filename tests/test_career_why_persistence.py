@@ -9,17 +9,15 @@ report, regardless of regeneration.
 
 from __future__ import annotations
 
-import sqlite3
-from pathlib import Path
-
+import mongomock
 import pandas as pd
 import pytest
 
-from league_stats.analysis.career.engine import advance_career
-from league_stats.analysis.career.models import CLEAR_BAR, Rung
-from league_stats.analysis.career.tracks import TrackContext
-from league_stats.infra.career_store import CareerStore, build_key
-from league_stats.presentation.career import build_career_view
+from league_stats_runner.analysis.career.engine import advance_career
+from league_stats_runner.analysis.career.models import CLEAR_BAR, Rung
+from league_stats_runner.analysis.career.tracks import TrackContext
+from league_stats_common.infra.career_store import CareerStore, build_key
+from league_stats_runner.presentation.career import build_career_view
 
 KEY = build_key("p", "Aatrox", "TOP")
 HOUR = 3_600_000
@@ -65,8 +63,8 @@ def _ctx() -> TrackContext:
 
 
 @pytest.fixture()
-def store(tmp_path: Path):
-    with CareerStore(tmp_path / "career.sqlite") as opened:
+def store():
+    with CareerStore(mongomock.MongoClient(), db_name="career") as opened:
         yield opened
 
 
@@ -109,16 +107,21 @@ def test_the_overview_widget_carries_the_why_too(store: CareerStore) -> None:
     assert all(item["why"] for item in view["widget"])
 
 
-def test_a_ladder_written_before_the_column_existed_still_loads(tmp_path: Path) -> None:
-    """Older rows have no why; they must read as empty, not raise."""
-    path = tmp_path / "career.sqlite"
-    with CareerStore(path) as first:
+def test_a_ladder_written_before_the_column_existed_still_loads() -> None:
+    """Older documents have no `why` field; they must read as empty, not raise.
+
+    Mongo has no `ALTER TABLE`/migration step -- the old SQL test dropped
+    the column with a raw connection to simulate a pre-existing database;
+    here the equivalent is unsetting the field directly on the raw
+    mongomock collection, bypassing the store's own write methods the same
+    way the old test bypassed it via a raw connection.
+    """
+    client = mongomock.MongoClient()
+    with CareerStore(client, db_name="career") as first:
         advance_career(first, KEY, _ctx(), COMPONENTS)
+        first._goals.update_many({}, {"$unset": {"why": ""}})
 
-    with sqlite3.connect(path) as raw:
-        raw.execute("ALTER TABLE career_goals DROP COLUMN why")
-
-    with CareerStore(path) as reopened:
+    with CareerStore(client, db_name="career") as reopened:
         goals = reopened.load_goals(KEY)
         assert goals
         assert all(goal.rung.why == "" for goal in goals)

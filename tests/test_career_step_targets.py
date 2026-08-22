@@ -16,7 +16,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from league_stats.analysis.career.steps import (
+from league_stats_runner.analysis.career.steps import (
     ANCHOR_QUANTILE,
     BASELINE_GAMES,
     MAX_STEP_STRETCH,

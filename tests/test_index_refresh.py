@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from league_stats.core.config import AppConfig
-from league_stats.pipeline.orchestrator import run_analysis
-from league_stats.core.models import MatchRecord
-from league_stats.presentation.report import discover_reports, discover_player_builds, refresh_report_indexes
+from league_stats_common.core.config import AppConfig
+from league_stats_runner.pipeline.orchestrator import run_analysis
+from league_stats_common.core.models import MatchRecord
+from league_stats_runner.presentation.report import discover_reports, discover_player_builds, refresh_report_indexes
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
-from league_stats.ingest.parser import ItemCatalog, MatchParser
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 
 
 def _config(tmp_path: Path, *, champion: str = "Viktor", role: str = "MIDDLE") -> AppConfig:
@@ -21,6 +21,7 @@ def _config(tmp_path: Path, *, champion: str = "Viktor", role: str = "MIDDLE") -
         champion=champion,
         role=role,
         output_dir=tmp_path / "output",
+        assets_dir=tmp_path / "assets",
         cache_dir=tmp_path / "cache",
         template_dir=Path(__file__).resolve().parent.parent / "src/league_stats/presentation/templates",
     )

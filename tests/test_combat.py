@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from league_stats.analysis.combat import build_uses_cc, combat_output_metric, prefers_cc_over_dpm
+from league_stats_runner.analysis.combat import (
+    build_uses_cc,
+    combat_output_metric,
+    prefers_cc_over_dpm,
+)
 
 
 def test_support_prefers_cc_over_dpm() -> None:

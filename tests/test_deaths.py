@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from league_stats.core.models import MatchRecord, Zone
-from league_stats.ingest.parser import ItemCatalog, MatchParser
+from league_stats_common.core.models import MatchRecord, Zone
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 
 
@@ -46,7 +46,7 @@ def test_first_death_context(record: MatchRecord) -> None:
 
 def test_objective_setup_window_excludes_teamfight_deaths() -> None:
     """Deaths in the last 10s before a take are fight deaths, not setup catches."""
-    from league_stats.analysis.deaths import in_objective_setup_window
+    from league_stats_runner.analysis.deaths import in_objective_setup_window
 
     take = 780_000
     assert in_objective_setup_window(take - 60_000, take) is True
@@ -72,7 +72,7 @@ def test_second_death_context(record: MatchRecord) -> None:
 
 def test_deaths_dataframe_shape(record: MatchRecord) -> None:
     """The flattened death table carries match context."""
-    from league_stats.analysis.deaths import deaths_dataframe
+    from league_stats_runner.analysis.deaths import deaths_dataframe
 
     frame = deaths_dataframe([record])
     assert len(frame) == 3

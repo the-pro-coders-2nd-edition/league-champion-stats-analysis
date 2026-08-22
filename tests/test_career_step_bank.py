@@ -14,9 +14,9 @@ from dataclasses import dataclass
 import pandas as pd
 import pytest
 
-from league_stats.analysis.career.engine import candidate_step_keys
-from league_stats.analysis.career.models import GOALS_PER_BLOCK
-from league_stats.analysis.career.steps import (
+from league_stats_runner.analysis.career.engine import candidate_step_keys
+from league_stats_runner.analysis.career.models import GOALS_PER_BLOCK
+from league_stats_runner.analysis.career.steps import (
     BLOCK_CATEGORY_KEYS,
     CATEGORY_LANING,
     CATEGORY_UTILITY,
@@ -31,7 +31,7 @@ from league_stats.analysis.career.steps import (
     rank_steps,
     steps_for_category,
 )
-from league_stats.analysis.career.tracks import (
+from league_stats_runner.analysis.career.tracks import (
     LEGACY_TRACK_KEYS,
     TRACKS_BY_KEY,
     TrackContext,

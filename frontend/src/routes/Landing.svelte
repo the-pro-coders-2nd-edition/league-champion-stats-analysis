@@ -1,8 +1,7 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { push } from 'svelte-spa-router';
-  import { submitAnalysis, fetchActivity, fetchGroups } from '../lib/api.js';
-  import { createPoller } from '../lib/poller.js';
+  import { submitAnalysis, subscribeActivity, fetchGroups } from '../lib/api.js';
   import AppNav from '../components/AppNav.svelte';
   import AnalyzeForm from '../components/AnalyzeForm.svelte';
   import PlayerCard from '../components/PlayerCard.svelte';
@@ -27,7 +26,7 @@
   let groupsLoaded = false;
   let searchQuery = '';
   let libraryFilter = 'all';
-  const poller = createPoller();
+  let unsubscribeActivity = null;
 
   const FILTER_ITEMS = [
     { value: 'all', label: 'All' },
@@ -108,19 +107,16 @@
     if (needsReload) loadGroups();
   }
 
-  async function pollActivity() {
-    try {
-      const data = await fetchActivity();
-      applyActivity(data.items || []);
-    } catch {
-      // Ignore transient polling errors.
-    }
-  }
-
   onMount(() => {
     loadGroups().then(() => {
-      poller.start(pollActivity, 3000);
+      unsubscribeActivity = subscribeActivity((data) => {
+        applyActivity(data.items || []);
+      });
     });
+  });
+
+  onDestroy(() => {
+    if (unsubscribeActivity) unsubscribeActivity();
   });
 
   $: normalizedQuery = searchQuery.trim().toLowerCase();

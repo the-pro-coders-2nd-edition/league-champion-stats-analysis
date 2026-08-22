@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from league_stats.core.config import AppConfig
-from league_stats.ingest.parser import BuildPool
-from league_stats.pipeline.orchestrator import (
+from league_stats_common.core.config import AppConfig
+from league_stats_runner.ingest.parser import BuildPool
+from league_stats_runner.pipeline.orchestrator import (
     report_needs_peer_comparison,
     should_skip_unchanged_build,
 )

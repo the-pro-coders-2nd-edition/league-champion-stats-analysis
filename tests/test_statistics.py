@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from league_stats.analysis.statistics import StatisticsEngine, feature_label
+from league_stats_runner.analysis.statistics import StatisticsEngine, feature_label
 
 
 def _synthetic_matches(n: int = 60, seed: int = 7) -> pd.DataFrame:

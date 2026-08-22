@@ -1,6 +1,7 @@
-"""Reset every Career ladder in the local cache.
+"""Reset every Career ladder in the shared Mongo database.
 
-Career progress lives in ``{cache_dir}/career.sqlite``, keyed per player +
+Career progress lives in the ``career_goals``/``career_used_tracks``/
+``career_flags`` collections (see ``CareerStore``), keyed per player +
 champion + role. Reports embed career JSON at generation time, so after clearing
 the store you still need to regenerate each player (Regenerate on the player
 page, or re-queue a job) to refresh on-disk HTML/JSON.
@@ -17,14 +18,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from league_stats.core.config import load_paths_config
-from league_stats.infra.career_store import CareerStore
-from league_stats.presentation.report import discover_reports
+from league_stats_common.core.config import load_paths_config
+from league_stats_common.infra.career_store import open_career_store
+from league_stats_runner.presentation.report import discover_reports
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Clear every Career ladder from the local SQLite store.",
+        description="Clear every Career ladder from the shared Mongo database.",
     )
     parser.add_argument(
         "--config",
@@ -52,23 +53,13 @@ def main() -> int:
     if args.cache_dir is not None:
         overrides["cache_dir"] = args.cache_dir
     config = load_paths_config(config_file=args.config, **overrides)
-    db_path = config.career_db_path
     reports = discover_reports(config.output_dir)
 
-    if not db_path.is_file():
-        print(f"No career store at {db_path} — nothing to reset.")
-        if reports:
-            print(
-                f"Found {len(reports)} on-disk report(s); regenerate them after "
-                "career logic changes to refresh embedded career JSON."
-            )
-        return 0
-
-    with CareerStore(db_path) as store:
+    with open_career_store() as store:
         counts = store.row_counts() if args.dry_run else store.clear_all()
 
     prefix = "Would clear" if args.dry_run else "Cleared"
-    print(f"{prefix} career store at {db_path}")
+    print(f"{prefix} career store")
     print(f"  goals: {counts['career_goals']}")
     print(f"  retired tracks: {counts['career_used_tracks']}")
     print(f"  flags: {counts['career_flags']}")

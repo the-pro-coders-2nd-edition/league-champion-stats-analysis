@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from league_stats.analysis.objectives import extract_objectives, objective_summary, objectives_dataframe
-from league_stats.analysis.timeline import build_context
-from league_stats.core.models import MatchRecord, ObjectiveKind, ObjectiveRecord
+from league_stats_runner.analysis.objectives import extract_objectives, objective_summary, objectives_dataframe
+from league_stats_runner.analysis.timeline import build_context
+from league_stats_common.core.models import MatchRecord, ObjectiveKind, ObjectiveRecord
 from tests.fixtures import MY_PUUID, make_match, make_timeline
 
 

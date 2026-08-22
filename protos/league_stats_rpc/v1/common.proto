@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package league_stats_rpc.v1;
+
+enum Region {
+  REGION_UNSPECIFIED = 0;
+  EUROPE = 1;
+  AMERICAS = 2;
+  ASIA = 3;
+  SEA = 4;
+}
+
+enum Stage {
+  STAGE_UNSPECIFIED = 0;
+  // Base report without peer/rank comparison data (web/worker.py's stage A).
+  STAGE_A = 1;
+  // Rank-peer comparison, rendered once baselines land (stage B).
+  STAGE_B = 2;
+}
+
+message Ack {
+  bool ok = 1;
+  string message = 2;
+}

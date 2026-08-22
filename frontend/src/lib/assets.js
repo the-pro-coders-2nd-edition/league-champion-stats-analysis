@@ -1,7 +1,16 @@
-/** Map on-disk ``../assets/...`` hrefs to ``/out/assets/...`` for the SPA router. */
+/**
+ * Map on-disk ``../assets/...`` hrefs to web URLs for the SPA router.
+ *
+ * The DDragon icon cache lives in its own volume/mount (`/ddragon`), separate
+ * from `/out` (report artifacts under `output_dir`) -- mirrors
+ * `report_json._rewrite_asset_href`. Brand assets (`assets/brand/...`) are
+ * the one exception: they stay under `/out`, where they have always lived,
+ * since they are unrelated to the Data-Dragon download cache this split is
+ * about.
+ */
 export function rewriteAssetHref(href) {
   if (typeof href !== 'string' || !href.includes('assets/')) return href;
-  if (href.startsWith('/out/')) return href;
+  if (href.startsWith('/out/') || href.startsWith('/ddragon/')) return href;
   const marker = 'assets/';
   const index = href.indexOf(marker);
   if (index === -1) return href;
@@ -9,7 +18,11 @@ export function rewriteAssetHref(href) {
   if (prefix && !prefix.split('/').filter(Boolean).every((part) => part === '..')) {
     return href;
   }
-  return `/out/${href.slice(index)}`;
+  const rest = href.slice(index + marker.length);
+  if (rest.startsWith('brand/')) {
+    return `/out/${href.slice(index)}`;
+  }
+  return `/ddragon/${rest}`;
 }
 
 /** Recursively rewrite report JSON asset paths (mirrors report_json.rewrite_web_asset_hrefs). */

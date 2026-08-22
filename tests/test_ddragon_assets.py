@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from league_stats.core.config import AppConfig
-from league_stats.infra.ddragon_assets import (
+from league_stats_common.core.config import AppConfig
+from league_stats_common.infra.ddragon_assets import (
     DDragonAssets,
     build_item_name_to_id,
     build_summoner_icon_files,
@@ -24,6 +24,7 @@ def _config(tmp_path: Path) -> AppConfig:
         tagline="TAG",
         output_dir=tmp_path / "output",
         cache_dir=tmp_path / ".cache",
+        assets_dir=tmp_path / "assets",
     )
 
 
@@ -47,10 +48,10 @@ def test_champion_and_keystone_hrefs(tmp_path: Path) -> None:
     report_dir = config.output_dir / "reports" / "player" / "ahri_middle"
     report_dir.mkdir(parents=True)
 
-    assert assets.champion_href("Ahri", from_dir=report_dir) == "../../../assets/champions/Ahri.png"
-    assert assets.keystone_href("Electrocute", from_dir=report_dir) == "../../../assets/runes/8112.png"
+    assert assets.champion_href("Ahri", from_dir=report_dir) == "../../../../assets/champions/Ahri.png"
+    assert assets.keystone_href("Electrocute", from_dir=report_dir) == "../../../../assets/runes/8112.png"
     (assets._runes_dir / "8992.png").write_bytes(b"png")
-    assert assets.keystone_href("Deathfire Touch", from_dir=report_dir) == "../../../assets/runes/8992.png"
+    assert assets.keystone_href("Deathfire Touch", from_dir=report_dir) == "../../../../assets/runes/8992.png"
     assert assets.champion_href("Missing", from_dir=report_dir) is None
 
 
@@ -64,7 +65,7 @@ def test_ability_icon_href(tmp_path: Path) -> None:
     report_dir.mkdir(parents=True)
 
     assert assets.ability_href("Viktor", "Q", from_dir=report_dir) == (
-        "../../../assets/abilities/Viktor_Q.png"
+        "../../../../assets/abilities/Viktor_Q.png"
     )
     assert assets.ability_href("Viktor", "R", from_dir=report_dir) is None
 
@@ -83,7 +84,7 @@ def test_fiddlesticks_match_id_resolves_ddragon_icon(tmp_path: Path) -> None:
         assets._champions_dir / "Fiddlesticks.png"
     )
     assert assets.champion_href("FiddleSticks", from_dir=report_dir) == (
-        "../../../assets/champions/Fiddlesticks.png"
+        "../../../../assets/champions/Fiddlesticks.png"
     )
 
 
@@ -110,7 +111,7 @@ def test_ensure_profile_icon_downloads_once(tmp_path: Path, monkeypatch: pytest.
     report_dir = config.output_dir / "reports" / "player" / "viktor_middle"
     report_dir.mkdir(parents=True)
     assert assets.profile_icon_href(1234, from_dir=report_dir) == (
-        "../../../assets/profile_icons/1234.png"
+        "../../../../assets/profile_icons/1234.png"
     )
 
 
@@ -135,7 +136,7 @@ def test_ensure_rank_emblem_downloads_once(tmp_path: Path, monkeypatch: pytest.M
     report_dir = config.output_dir / "reports" / "player" / "viktor_middle"
     report_dir.mkdir(parents=True)
     assert assets.rank_emblem_href("DIAMOND", from_dir=report_dir) == (
-        "../../../assets/ranks/emblem-diamond.png"
+        "../../../../assets/ranks/emblem-diamond.png"
     )
 
 
@@ -143,8 +144,8 @@ def test_prepare_rank_emblem_trims_transparent_padding(tmp_path: Path) -> None:
     import numpy as np
     import matplotlib.pyplot as plt
 
-    from league_stats.infra import ddragon_assets as assets_mod
-    from league_stats.infra.ddragon_assets import prepare_rank_emblem, _png_dimensions
+    import league_stats_common.infra.ddragon_assets as assets_mod
+    from league_stats_common.infra.ddragon_assets import prepare_rank_emblem, _png_dimensions
 
     path = tmp_path / "emblem-diamond.png"
     canvas = np.zeros((720, 1280, 4), dtype=float)
@@ -177,8 +178,8 @@ def test_summoner_and_rune_tree_hrefs(tmp_path: Path) -> None:
     report_dir = config.output_dir / "reports" / "player" / "viktor_middle"
     report_dir.mkdir(parents=True)
 
-    assert assets.summoner_href("Flash", from_dir=report_dir) == "../../../assets/summoners/Flash.png"
-    assert assets.rune_tree_href("Sorcery", from_dir=report_dir) == "../../../assets/rune_trees/Sorcery.png"
+    assert assets.summoner_href("Flash", from_dir=report_dir) == "../../../../assets/summoners/Flash.png"
+    assert assets.rune_tree_href("Sorcery", from_dir=report_dir) == "../../../../assets/rune_trees/Sorcery.png"
 
     rune_rows = assets.enrich_rune_rows(
         [{"keystone": "Arcane Comet", "secondary_tree": "Inspiration"}],
@@ -201,7 +202,7 @@ def test_prepare_objective_icon_knocks_out_edge_black(tmp_path: Path) -> None:
     import numpy as np
     import matplotlib.pyplot as plt
 
-    from league_stats.infra.ddragon_assets import prepare_objective_icon, _png_dimensions
+    from league_stats_common.infra.ddragon_assets import prepare_objective_icon, _png_dimensions
 
     path = tmp_path / "dragon.png"
     canvas = np.zeros((64, 64, 4), dtype=float)
@@ -237,8 +238,8 @@ def test_ui_icon_href(tmp_path: Path) -> None:
     (assets._ui_dir / "tower.png").write_bytes(b"png")
     report_dir = config.output_dir / "reports" / "player" / "ahri_middle"
     report_dir.mkdir(parents=True)
-    assert assets.ui_icon_href("minions.png", from_dir=report_dir) == "../../../assets/ui/minions.png"
-    assert assets.ui_icon_href("tower.png", from_dir=report_dir) == "../../../assets/ui/tower.png"
+    assert assets.ui_icon_href("minions.png", from_dir=report_dir) == "../../../../assets/ui/minions.png"
+    assert assets.ui_icon_href("tower.png", from_dir=report_dir) == "../../../../assets/ui/tower.png"
 
 
 def test_objective_href(tmp_path: Path) -> None:
@@ -248,16 +249,15 @@ def test_objective_href(tmp_path: Path) -> None:
     (assets._objectives_dir / "dragon.png").write_bytes(b"png")
     report_dir = config.output_dir / "reports" / "player" / "ahri_middle"
     report_dir.mkdir(parents=True)
-    assert assets.objective_href("dragon", from_dir=report_dir) == "../../../assets/objectives/dragon.png"
+    assert assets.objective_href("dragon", from_dir=report_dir) == "../../../../assets/objectives/dragon.png"
     assert assets.objective_href("unknown", from_dir=report_dir) is None
 
 
 def test_crop_minion_icon(tmp_path: Path) -> None:
-    import matplotlib.image as mpimg
     import matplotlib.pyplot as plt
     import numpy as np
 
-    from league_stats.infra.ddragon_assets import _crop_top_half_png, _needs_minion_crop, _png_dimensions
+    from league_stats_common.infra.ddragon_assets import _crop_top_half_png, _needs_minion_crop, _png_dimensions
 
     source = tmp_path / "source.png"
     destination = tmp_path / "minions.png"
@@ -280,8 +280,8 @@ def test_role_href(tmp_path: Path) -> None:
     report_dir = config.output_dir / "reports" / "player" / "nidalee_jungle"
     report_dir.mkdir(parents=True)
 
-    assert assets.role_href("JUNGLE", from_dir=report_dir) == "../../../assets/roles/JUNGLE.png"
-    assert assets.role_href("jungle", from_dir=report_dir) == "../../../assets/roles/JUNGLE.png"
+    assert assets.role_href("JUNGLE", from_dir=report_dir) == "../../../../assets/roles/JUNGLE.png"
+    assert assets.role_href("jungle", from_dir=report_dir) == "../../../../assets/roles/JUNGLE.png"
     assert assets.role_href("UNKNOWN", from_dir=report_dir) is None
 
 
@@ -437,7 +437,7 @@ def test_ensure_downloaded_refreshes_when_patch_advances(
         "_fetch_champions",
         lambda version: {"Ahri": {"id": "Ahri", "name": "Ahri"}},
     )
-    monkeypatch.setattr(assets, "_fetch_keystone_icons", lambda version: {8112: "perk-images/Styles/Domination/Electrocute/Electrocute.png"})
+    monkeypatch.setattr(assets, "_fetch_rune_icons", lambda version: {8112: "perk-images/Styles/Domination/Electrocute/Electrocute.png"})
     monkeypatch.setattr(
         assets,
         "_fetch_items",

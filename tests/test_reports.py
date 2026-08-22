@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pandas as pd
 
-from league_stats.analysis.peer import build_comparisons
-from league_stats.core.champions import player_slug
-from league_stats.core.config import AppConfig
-from league_stats.pipeline.orchestrator import run_analysis
-from league_stats.core.models import MatchRecord, PeerComparisonResult, RankedEntry
-from league_stats.presentation.report import discover_reports, refresh_report_indexes
+from league_stats_peers.analysis.peer import build_comparisons
+from league_stats_common.core.champions import player_slug
+from league_stats_common.core.config import AppConfig
+from league_stats_runner.pipeline.orchestrator import run_analysis
+from league_stats_common.core.models import MatchRecord, PeerComparisonResult, RankedEntry
+from league_stats_runner.presentation.report import discover_reports, refresh_report_indexes
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
-from league_stats.ingest.parser import ItemCatalog, MatchParser
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 
 
 def _make_records(n: int = 12) -> list[MatchRecord]:
@@ -66,6 +66,7 @@ def _config(tmp_path: Path, *, champion: str = "Viktor", role: str = "MIDDLE") -
         champion=champion,
         role=role,
         output_dir=tmp_path / "output",
+        assets_dir=tmp_path / "assets",
         cache_dir=tmp_path / "cache",
         template_dir=Path(__file__).resolve().parent.parent / "src/league_stats/presentation/templates",
     )
@@ -103,7 +104,6 @@ def test_same_combo_overwrites_report(tmp_path: Path) -> None:
     peer = _peer(_make_records(10))
 
     first_path = run_analysis(config, _make_records(10), peer_comparison=peer, ranked=ranked)
-    first_meta = (config.report_dir / "meta.json").read_text(encoding="utf-8")
 
     second_path = run_analysis(config, _make_records(20), peer_comparison=peer, ranked=ranked)
     second_meta = (config.report_dir / "meta.json").read_text(encoding="utf-8")

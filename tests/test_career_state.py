@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from league_stats.analysis.career.models import CLEAR_BAR, SETUP_CLEAR_BAR, hold_bar
-from league_stats.analysis.career.state import block_is_complete, transition
+from league_stats_runner.analysis.career.models import CLEAR_BAR, SETUP_CLEAR_BAR, hold_bar
+from league_stats_runner.analysis.career.state import block_is_complete, transition
 
 
 def test_hold_bar_is_three_quarters_of_the_clear_bar() -> None:

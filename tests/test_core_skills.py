@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from league_stats.core.skills import (
+from league_stats_runner.core.skills import (
     build_skill_sequence_from_events,
     dedupe_skill_level_up_events,
     skill_display_max_level,

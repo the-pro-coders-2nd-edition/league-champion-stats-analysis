@@ -8,12 +8,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from league_stats.analysis.coach.engine import (
+from league_stats_runner.analysis.coach.engine import (
     CoachEngine,
     VISIBLE_RECOMMENDATIONS,
     recommendations_markdown,
 )
-from league_stats.analysis.statistics import StatisticsEngine
+from league_stats_runner.analysis.statistics import StatisticsEngine
 from tests.test_statistics import _synthetic_matches
 
 
@@ -180,7 +180,7 @@ def test_low_cc_fallback_uses_role_benchmark_not_peers(tmp_path: Path) -> None:
 
 def test_low_cc_defers_to_peer_comparison(tmp_path: Path) -> None:
     """Once peer CC exists, coach skips the static-norm tip (peer tip owns it)."""
-    from league_stats.core.models import MetricComparison, PeerComparisonResult
+    from league_stats_common.core.models import MetricComparison, PeerComparisonResult
 
     matches = _support_low_cc_matches()
     stats = StatisticsEngine(matches, tmp_path, role="UTILITY")

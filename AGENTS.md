@@ -10,7 +10,7 @@ All user-facing workflows go through the **web UI**. There is no analysis CLI.
 | Layer | Path | Rule |
 |-------|------|------|
 | Core | `src/league_stats/core/` | Config, Pydantic models, champion/role helpers — no I/O |
-| Infra | `src/league_stats/infra/` | HTTP, SQLite cache, DDragon assets |
+| Infra | `src/league_stats/infra/` | HTTP cache, DDragon assets |
 | Ingest | `src/league_stats/ingest/` | Raw JSON → `MatchRecord` |
 | Pipeline | `src/league_stats/pipeline/` | Orchestration, frames, bundles, view models |
 | Analysis | `src/league_stats/analysis/` | Pure stats on records/DataFrames |
@@ -80,7 +80,7 @@ Group reports get an **Accounts** dropdown in the filter bar (name, tag, rank, p
 ## Web app
 
 `uv run python main.py` (or `uv run python -m league_stats.web`) starts FastAPI
-(`web/app.py`) with a DB-backed job queue (`data/app.sqlite`, `web/jobs.py`)
+(`web/app.py`) with a MongoDB-backed job queue (`web/jobs.py`)
 drained by an in-process worker thread (`web/worker.py`).
 
 - Jobs run **two-stage**: stage A renders every build with `peer_comparison=None`

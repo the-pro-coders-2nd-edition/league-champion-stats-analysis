@@ -1,28 +1,28 @@
-"""Tests for peer comparison improvements: multi-participant extraction, rank cache, file cache."""
+"""Tests for peer comparison improvements: multi-participant extraction, rank cache, live cache."""
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
+import mongomock
 import pytest
 
-from league_stats.analysis.peer.benchmark_cache import read_live_cache, write_live_cache
-from league_stats.analysis.peer.benchmark_fetcher import (
+import league_stats_peers.analysis.peer.benchmark_cache as benchmark_cache
+from league_stats_peers.analysis.peer.benchmark_cache import read_live_cache, write_live_cache
+from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
+from league_stats_peers.analysis.peer.benchmark_fetcher import (
     BenchmarkSnapshot,
     fetch_benchmark_from_api,
 )
-from league_stats.analysis.peer.baseline import resolve_peer_baseline
-from league_stats.analysis.peer.rank_scope import (
-    build_exact_scope,
+from league_stats_peers.analysis.peer.baseline import resolve_peer_baseline
+from league_stats_peers.analysis.peer.rank_scope import (
     build_wider_scope,
     build_widened_scope,
     league_lookup_pairs,
     rank_matches,
 )
-from league_stats.infra.cache import MatchStore
-from league_stats.core.models import RankedEntry
-from tests.fixtures import make_match
+from league_stats_common.core.models import RankedEntry
+from tests.fixtures import CombinedMatchAndPeerStore, make_match
 
 
 # ---------------------------------------------------------------------------
@@ -64,11 +64,11 @@ def ranked_emerald() -> RankedEntry:
 def test_non_scanned_player_build_is_captured(tmp_path, monkeypatch, ranked_gold: RankedEntry) -> None:
     """A player who played the target build in a seeded player's match is captured
     even though the seeded player didn't play that build themselves."""
-    monkeypatch.setattr("league_stats.analysis.peer.benchmark_fetcher.MIN_BENCHMARK_GAMES", 1)
-    monkeypatch.setattr("league_stats.analysis.peer.benchmark_fetcher.TARGET_PEER_GAMES", 1)
-    monkeypatch.setattr("league_stats.analysis.peer.benchmark_fetcher.MAX_MATCH_DOWNLOADS", 5)
+    monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.MIN_BENCHMARK_GAMES", 1)
+    monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.TARGET_PEER_GAMES", 1)
+    monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.MAX_MATCH_DOWNLOADS", 5)
 
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     client = MagicMock()
     client.configure_mock(platform="euw1")
 
@@ -101,12 +101,12 @@ def test_non_scanned_player_build_is_captured(tmp_path, monkeypatch, ranked_gold
 
 def test_seed_rank_skips_fetch_solo_rank(tmp_path, monkeypatch, ranked_gold: RankedEntry) -> None:
     """A seed player's rank from the league entry avoids a fetch_solo_rank call."""
-    monkeypatch.setattr("league_stats.analysis.peer.benchmark_fetcher.MIN_BENCHMARK_GAMES", 1)
-    monkeypatch.setattr("league_stats.analysis.peer.benchmark_fetcher.TARGET_PEER_GAMES", 1)
-    monkeypatch.setattr("league_stats.analysis.peer.benchmark_fetcher.MAX_MATCH_DOWNLOADS", 5)
-    monkeypatch.setattr("league_stats.analysis.peer.benchmark_fetcher.MATCH_IDS_PER_PLAYER", 1)
+    monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.MIN_BENCHMARK_GAMES", 1)
+    monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.TARGET_PEER_GAMES", 1)
+    monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.MAX_MATCH_DOWNLOADS", 5)
+    monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_fetcher.MATCH_IDS_PER_PLAYER", 1)
 
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     client = MagicMock()
     client.configure_mock(platform="euw1")
 
@@ -130,14 +130,14 @@ def test_seed_rank_skips_fetch_solo_rank(tmp_path, monkeypatch, ranked_gold: Ran
 
 
 # ---------------------------------------------------------------------------
-# File cache (patch-keyed, 3-day TTL)
+# Live cache (Mongo-backed, patch-keyed, 3-day TTL)
 # ---------------------------------------------------------------------------
 
 
-def test_write_and_read_live_cache(tmp_path, monkeypatch) -> None:
+def test_write_and_read_live_cache(monkeypatch) -> None:
     """A written cache entry is read back correctly within the TTL."""
     monkeypatch.setattr(
-        "league_stats.analysis.peer.benchmark_cache._LIVE_CACHE_DIR", tmp_path / "cache"
+        benchmark_cache, "_store", LiveBenchmarkCacheStore(mongomock.MongoClient(), db_name="test_live_cache")
     )
     snapshot = BenchmarkSnapshot(
         metrics={"win": 0.52, "kda": 3.1, "dpm": 640.0, "cspm": 7.4,
@@ -158,12 +158,12 @@ def test_write_and_read_live_cache(tmp_path, monkeypatch) -> None:
     assert abs(cached.metrics["kda"] - 3.1) < 0.01
 
 
-def test_live_cache_expired_returns_none(tmp_path, monkeypatch) -> None:
+def test_live_cache_expired_returns_none(monkeypatch) -> None:
     """A cache entry past its TTL is ignored."""
     import time as _time
 
     monkeypatch.setattr(
-        "league_stats.analysis.peer.benchmark_cache._LIVE_CACHE_DIR", tmp_path / "cache"
+        benchmark_cache, "_store", LiveBenchmarkCacheStore(mongomock.MongoClient(), db_name="test_live_cache")
     )
     snapshot = BenchmarkSnapshot(
         metrics={"win": 0.5},
@@ -176,16 +176,16 @@ def test_live_cache_expired_returns_none(tmp_path, monkeypatch) -> None:
 
     # Advance the clock well past the TTL so the entry appears stale
     now = _time.time() + 8 * 24 * 3600
-    monkeypatch.setattr("league_stats.analysis.peer.benchmark_cache.time.time", lambda: now)
+    monkeypatch.setattr("league_stats_peers.analysis.peer.benchmark_cache.time.time", lambda: now)
 
     cached = read_live_cache("euw1", "GOLD", "Zac", "JUNGLE")
     assert cached is None
 
 
 def test_live_cache_hit_skips_live_api(tmp_path, monkeypatch, ranked_gold: RankedEntry) -> None:
-    """When a fresh file cache entry exists, no live API sampling is performed."""
+    """When a fresh cache entry exists, no live API sampling is performed."""
     monkeypatch.setattr(
-        "league_stats.analysis.peer.benchmark_cache._LIVE_CACHE_DIR", tmp_path / "cache"
+        benchmark_cache, "_store", LiveBenchmarkCacheStore(mongomock.MongoClient(), db_name="test_live_cache")
     )
 
     # Pre-populate the cache
@@ -200,7 +200,7 @@ def test_live_cache_hit_skips_live_api(tmp_path, monkeypatch, ranked_gold: Ranke
     )
     write_live_cache("euw1", "GOLD", "Zac", "JUNGLE", snapshot)
 
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     client = MagicMock()
     client.configure_mock(platform="euw1")
 
@@ -263,13 +263,11 @@ def test_store_threshold_requires_fifty_games(
     tmp_path, monkeypatch, ranked_gold: RankedEntry
 ) -> None:
     """A store with fewer than 50 games does not satisfy the exact-rank baseline."""
-    import league_stats.analysis.peer.baseline as peer_baseline
-
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     for index in range(30):
         match = make_match()
         match["info"]["participants"][1]["puuid"] = f"peer-{index}"
-        from league_stats.analysis.peer.ingest import ingest_match
+        from league_stats_peers.analysis.peer.ingest import ingest_match
         ingest_match(store, f"EUW1_{index}", match, "euw1")
         store.set_puuid_rank(f"peer-{index}", "GOLD", "II")
 
@@ -292,13 +290,11 @@ def test_widened_store_resolves_at_fifty_games(
     tmp_path, monkeypatch, ranked_gold: RankedEntry
 ) -> None:
     """Games from an adjacent tier resolve at level 1 once MIN_WIDENED_GAMES is met."""
-    import league_stats.analysis.peer.baseline as peer_baseline
-
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     for index in range(50):
         match = make_match()
         match["info"]["participants"][1]["puuid"] = f"peer-{index}"
-        from league_stats.analysis.peer.ingest import ingest_match
+        from league_stats_peers.analysis.peer.ingest import ingest_match
         ingest_match(store, f"EUW1_{index}", match, "euw1")
         store.set_puuid_rank(f"peer-{index}", "PLATINUM", "I")
 

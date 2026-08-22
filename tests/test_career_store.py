@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import mongomock
 
-from league_stats.analysis.career.models import Rung
-from league_stats.infra.career_store import CareerStore, build_key
+from league_stats_runner.analysis.career.models import Rung
+from league_stats_common.infra.career_store import CareerStore, build_key
 
 
 def _rungs(prefix: str) -> list[Rung]:
@@ -15,17 +15,17 @@ def _rungs(prefix: str) -> list[Rung]:
     ]
 
 
-def _store(tmp_path: Path) -> CareerStore:
-    return CareerStore(tmp_path / "nested" / "career.sqlite")
+def _store() -> CareerStore:
+    return CareerStore(mongomock.MongoClient(), db_name="career")
 
 
 def test_build_key_normalises_role() -> None:
     assert build_key("hugros_euw", "Viktor", "middle") == "hugros_euw|Viktor|MIDDLE"
 
 
-def test_write_and_load_slot_round_trip(tmp_path: Path) -> None:
+def test_write_and_load_slot_round_trip() -> None:
     key = build_key("p", "Viktor", "MIDDLE")
-    with _store(tmp_path) as store:
+    with _store() as store:
         store.write_slot(key, 0, "laning_income", _rungs("a"), ["In progress"] * 3)
         goals = store.load_goals(key)
 
@@ -37,7 +37,7 @@ def test_write_and_load_slot_round_trip(tmp_path: Path) -> None:
     assert goals[1].rung.need == 15
 
 
-def test_at_most_comparator_survives_a_round_trip(tmp_path: Path) -> None:
+def test_at_most_comparator_survives_a_round_trip() -> None:
     key = build_key("p", "Viktor", "MIDDLE")
     rungs = [
         Rung(
@@ -45,7 +45,7 @@ def test_at_most_comparator_survives_a_round_trip(tmp_path: Path) -> None:
             target=1.0, need=15,
         )
     ]
-    with _store(tmp_path) as store:
+    with _store() as store:
         store.write_slot(key, 0, "survival", rungs, ["In progress"])
         goals = store.load_goals(key)
 
@@ -53,9 +53,9 @@ def test_at_most_comparator_survives_a_round_trip(tmp_path: Path) -> None:
     assert goals[0].rung.target == 1.0
 
 
-def test_goals_are_ordered_by_slot_then_index(tmp_path: Path) -> None:
+def test_goals_are_ordered_by_slot_then_index() -> None:
     key = build_key("p", "Viktor", "MIDDLE")
-    with _store(tmp_path) as store:
+    with _store() as store:
         store.write_slot(key, 2, "map_presence", _rungs("c"), ["In progress"] * 3)
         store.write_slot(key, 0, "laning_income", _rungs("a"), ["In progress"] * 3)
         goals = store.load_goals(key)
@@ -70,9 +70,9 @@ def test_goals_are_ordered_by_slot_then_index(tmp_path: Path) -> None:
     ]
 
 
-def test_save_goal_states(tmp_path: Path) -> None:
+def test_save_goal_states() -> None:
     key = build_key("p", "Viktor", "MIDDLE")
-    with _store(tmp_path) as store:
+    with _store() as store:
         store.write_slot(key, 0, "laning_income", _rungs("a"), ["In progress"] * 3)
         store.save_goal_states(key, {(0, 0): "Cleared", (0, 1): "At risk"})
         states = [g.state for g in store.load_goals(key)]
@@ -80,9 +80,9 @@ def test_save_goal_states(tmp_path: Path) -> None:
     assert states == ["Cleared", "At risk", "In progress"]
 
 
-def test_move_slot_overwrites_the_destination(tmp_path: Path) -> None:
+def test_move_slot_overwrites_the_destination() -> None:
     key = build_key("p", "Viktor", "MIDDLE")
-    with _store(tmp_path) as store:
+    with _store() as store:
         store.write_slot(key, 0, "laning_income", _rungs("a"), ["Cleared"] * 3)
         store.write_slot(key, 1, "map_presence", _rungs("b"), ["In progress"] * 3)
         store.move_slot(key, 1, 0)
@@ -92,9 +92,9 @@ def test_move_slot_overwrites_the_destination(tmp_path: Path) -> None:
     assert {g.track_key for g in goals} == {"map_presence"}
 
 
-def test_used_tracks_and_pending_congrats(tmp_path: Path) -> None:
+def test_used_tracks_and_pending_congrats() -> None:
     key = build_key("p", "Viktor", "MIDDLE")
-    with _store(tmp_path) as store:
+    with _store() as store:
         assert store.used_track_keys(key) == set()
         store.record_used_track(key, "laning_income")
         assert store.used_track_keys(key) == {"laning_income"}
@@ -111,17 +111,30 @@ def test_used_tracks_and_pending_congrats(tmp_path: Path) -> None:
         assert store.peek_pending_congrats(key) == ""
 
 
-def test_ladders_are_isolated_per_build(tmp_path: Path) -> None:
+def test_record_used_track_is_idempotent_within_the_same_second() -> None:
+    """SQL's `INSERT OR IGNORE` keyed on `(build_key, track_key, cleared_at)`:
+    two clears of the same track landing in the same second (`_now()` has
+    second precision) must not create two rows."""
+    key = build_key("p", "Viktor", "MIDDLE")
+    with _store() as store:
+        store.record_used_track(key, "laning_income")
+        store.record_used_track(key, "laning_income")
+
+        assert store.row_counts()["career_used_tracks"] == 1
+        assert store.used_track_keys(key) == {"laning_income"}
+
+
+def test_ladders_are_isolated_per_build() -> None:
     mid = build_key("p", "Viktor", "MIDDLE")
     top = build_key("p", "Aatrox", "TOP")
-    with _store(tmp_path) as store:
+    with _store() as store:
         store.write_slot(mid, 0, "laning_income", _rungs("a"), ["In progress"] * 3)
         assert store.load_goals(top) == []
 
 
-def test_since_ms_round_trips_and_defaults_to_zero(tmp_path: Path) -> None:
+def test_since_ms_round_trips_and_defaults_to_zero() -> None:
     key = build_key("p", "Viktor", "MIDDLE")
-    with _store(tmp_path) as store:
+    with _store() as store:
         store.write_slot(key, 0, "laning_income", _rungs("a"), ["In progress"] * 3)
         assert {g.since_ms for g in store.load_goals(key)} == {0}
 
@@ -132,9 +145,9 @@ def test_since_ms_round_trips_and_defaults_to_zero(tmp_path: Path) -> None:
         assert {g.since_ms for g in queued} == {1234}
 
 
-def test_move_slot_can_restamp_the_start_line(tmp_path: Path) -> None:
+def test_move_slot_can_restamp_the_start_line() -> None:
     key = build_key("p", "Viktor", "MIDDLE")
-    with _store(tmp_path) as store:
+    with _store() as store:
         store.write_slot(
             key, 1, "map_presence", _rungs("b"), ["In progress"] * 3, since_ms=100
         )
@@ -145,36 +158,42 @@ def test_move_slot_can_restamp_the_start_line(tmp_path: Path) -> None:
         assert {g.since_ms for g in promoted} == {500}
 
 
-def test_since_ms_is_added_to_a_pre_existing_database(tmp_path: Path) -> None:
-    import sqlite3
-
-    path = tmp_path / "legacy.sqlite"
-    legacy = sqlite3.connect(str(path))
-    legacy.executescript(
-        "CREATE TABLE career_goals (build_key TEXT NOT NULL, slot INTEGER NOT NULL, "
-        "goal_index INTEGER NOT NULL, track_key TEXT NOT NULL, text TEXT NOT NULL, "
-        "column_name TEXT NOT NULL, comparator TEXT NOT NULL, target REAL NOT NULL, "
-        "need INTEGER NOT NULL, state TEXT NOT NULL, "
-        "PRIMARY KEY (build_key, slot, goal_index));"
-    )
-    legacy.execute(
-        "INSERT INTO career_goals VALUES ('k', 0, 0, 'laning_income', 'old', "
-        "'cspm', 'at_least', 7.0, 15, 'Cleared')"
-    )
-    legacy.commit()
-    legacy.close()
-
-    with CareerStore(path) as store:
-        goals = store.load_goals("k")
+def test_a_goal_document_missing_since_ms_defaults_to_zero_on_load() -> None:
+    """Mongo has no `ALTER TABLE`; a document written before `since_ms`
+    existed (or by a client that omitted it) must default to 0 on read, the
+    same as the old SQL schema migration's `DEFAULT 0` did for pre-existing
+    rows.
+    """
+    key = build_key("p", "Viktor", "MIDDLE")
+    with _store() as store:
+        store._goals.insert_one(
+            {
+                "_id": "k\x1f0\x1f0",
+                "build_key": key,
+                "slot": 0,
+                "goal_index": 0,
+                "track_key": "laning_income",
+                "text": "old",
+                "column_name": "cspm",
+                "comparator": "at_least",
+                "target": 7.0,
+                "need": 15,
+                "state": "Cleared",
+                # since_ms, peer_seeded, why deliberately absent.
+            }
+        )
+        goals = store.load_goals(key)
 
     assert len(goals) == 1
     assert goals[0].since_ms == 0
+    assert goals[0].peer_seeded is False
+    assert goals[0].rung.why == ""
     assert goals[0].state == "Cleared"
 
 
-def test_clear_all_removes_every_ladder(tmp_path: Path) -> None:
+def test_clear_all_removes_every_ladder() -> None:
     key = build_key("p", "Viktor", "MIDDLE")
-    with _store(tmp_path) as store:
+    with _store() as store:
         store.write_slot(key, 0, "laning_income", _rungs("a"), ["In progress"] * 3)
         store.record_used_track(key, "laning_income")
         store.set_pending_congrats(key, "laning_income")

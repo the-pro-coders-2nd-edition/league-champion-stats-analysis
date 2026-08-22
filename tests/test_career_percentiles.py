@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from league_stats.analysis.peer.baseline import PeerBaseline
-from league_stats.analysis.peer.cache import aggregate_peer_metrics, peer_metric_quantiles
-from league_stats.core.models import MetricComparison
+from league_stats_peers.analysis.peer.baseline import PeerBaseline
+from league_stats_peers.analysis.peer.cache import aggregate_peer_metrics, peer_metric_quantiles
+from league_stats_common.core.models import MetricComparison
 
 
 def _rows(values: list[float]) -> list[dict[str, Any]]:
@@ -62,8 +62,8 @@ def test_metric_comparison_percentiles_default_to_none() -> None:
 def test_window_slicing_preserves_peer_percentiles() -> None:
     import pandas as pd
 
-    from league_stats.analysis.peer import build_comparisons, peer_comparison_for_window
-    from league_stats.core.models import PeerComparisonResult
+    from league_stats_peers.analysis.peer import build_comparisons, peer_comparison_for_window
+    from league_stats_common.core.models import PeerComparisonResult
 
     base = PeerComparisonResult(
         rank_label="GOLD II",

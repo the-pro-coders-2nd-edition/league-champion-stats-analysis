@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from league_stats.core.models import Position, Zone
-from league_stats.utils import (
+from league_stats_common.core.models import Position, Zone
+from league_stats_common.utils import (
     MAP_SIZE,
     classify_zone,
     distance,
@@ -51,8 +51,8 @@ def test_normalize_coords_to_blue_side() -> None:
 
 def test_normalize_coords_to_blue_side_bot_lane() -> None:
     """Red-side bot-lane positions land on the bottom edge like blue-side bot."""
-    from league_stats.core.models import Position
-    from league_stats.utils import classify_zone
+    from league_stats_common.core.models import Position
+    from league_stats_common.utils import classify_zone
 
     blue_bot = Position(x=10504, y=1029)
     red_bot = Position(x=13866, y=4505)

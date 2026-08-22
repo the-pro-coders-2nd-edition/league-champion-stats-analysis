@@ -67,7 +67,7 @@ export function careerGoalsForGame(ladder, game) {
         column: goal.column,
         state: goal.state,
         outcome,
-        value: (game.key_stats || {})[goal.column],
+        value: (game.key_stats || {})[goal.column] ?? (game.career_goal_values || {})[goal.column],
         target: goal.target,
         comparator: goal.comparator,
       };

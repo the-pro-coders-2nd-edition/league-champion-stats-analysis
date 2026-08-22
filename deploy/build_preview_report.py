@@ -21,12 +21,12 @@ if str(REPO_ROOT) not in sys.path:
 
 import pandas as pd
 
-from league_stats.analysis.peer import build_comparisons
-from league_stats.core.config import AppConfig
-from league_stats.core.models import MatchRecord, PeerComparisonResult, RankedEntry
-from league_stats.ingest.parser import ItemCatalog, MatchParser
-from league_stats.pipeline.orchestrator import run_analysis
-from league_stats.presentation.report import build_manifest_entry, refresh_report_indexes
+from league_stats_peers.analysis.peer import build_comparisons
+from league_stats_common.core.config import AppConfig
+from league_stats_common.core.models import MatchRecord, PeerComparisonResult, RankedEntry
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
+from league_stats_runner.pipeline.orchestrator import run_analysis
+from league_stats_runner.presentation.report import build_manifest_entry, refresh_report_indexes
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 
 @dataclass(frozen=True)
@@ -315,6 +315,7 @@ def _config(output_dir: Path, *, champion: str, role: str) -> AppConfig:
         champion=champion,
         role=role,
         output_dir=output_dir,
+        assets_dir=output_dir.parent / "preview-assets",
         cache_dir=output_dir.parent / "preview-cache",
     )
     config.ensure_directories()

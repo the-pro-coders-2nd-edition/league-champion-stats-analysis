@@ -9,7 +9,6 @@ graphs/*.png
 graphs/*.html
 .cache/
 preview-cache/
-*.sqlite
 *.db
 config.toml
 .env
@@ -20,3 +19,4 @@ spa_dist/
 data/*
 !data/benchmarks/
 !data/benchmarks/**
+deploy/grafana/logs/

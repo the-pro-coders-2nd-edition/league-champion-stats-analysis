@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from league_stats.core.config import AppConfig
-from league_stats.core.models import MatchRecord
-from league_stats.ingest.parser import BaseMatchFilter, BuildMatchFilter, ItemCatalog, MatchParser, perk_name
+from league_stats_common.core.config import AppConfig
+from league_stats_common.core.models import MatchRecord
+from league_stats_runner.ingest.parser import BaseMatchFilter, BuildMatchFilter, ItemCatalog, MatchParser, perk_name
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 
 

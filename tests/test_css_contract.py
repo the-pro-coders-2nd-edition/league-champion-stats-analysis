@@ -309,6 +309,10 @@ def test_rule7_no_new_generated_css():
 # entry appearing is a regression). The RFC's final named allowlist (ScoreDisclosure,
 # SkillGrid, GameSummaryHeader, IconStatTable) is a subset of today's baseline and is never
 # itself flagged as a regression once the rest of the set empties out.
+#
+# ErrorToast was added to the baseline deliberately: it's a global singleton mounted once
+# at the app root (App.svelte), the same way WelcomeBackToast is mounted at each route root
+# -- it will only ever have one call site by design, not because it's under-adopted.
 _IMPORT_RE = re.compile(r"import\s+\w+\s+from\s+['\"]([^'\"]+)['\"]")
 
 

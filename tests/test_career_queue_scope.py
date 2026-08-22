@@ -11,10 +11,9 @@ carry it.
 
 from __future__ import annotations
 
-import pandas as pd
 import pytest
 
-from league_stats.presentation.career import career_scope_view, empty_career_view
+from league_stats_runner.presentation.career import career_scope_view, empty_career_view
 
 
 def test_scope_view_tells_the_reader_the_ladder_covers_all_ranked() -> None:
@@ -39,8 +38,8 @@ def test_empty_view_does_not_claim_all_ranked_scope() -> None:
 
 def test_career_view_declares_its_all_ranked_scope() -> None:
     """A rendered ladder says what it covers, so the tab can caption it."""
-    from league_stats.analysis.career.engine import CareerSnapshot
-    from league_stats.presentation.career import build_career_view
+    from league_stats_runner.analysis.career.engine import CareerSnapshot
+    from league_stats_runner.presentation.career import build_career_view
 
     assert build_career_view(CareerSnapshot()).get("tracks_all_ranked") is not True
 
@@ -52,7 +51,7 @@ def test_every_view_carries_the_same_ladder(queue_key: str) -> None:
     Gating it behind the all-ranked filter made it invisible in the view the report
     opens on, because DEFAULT_QUEUE_FILTER is solo.
     """
-    from league_stats.pipeline.bundles import career_view_for_queue
+    from league_stats_runner.pipeline.bundles import career_view_for_queue
 
     ladder = {"has_career": True, "blocks": [{"slot": 0}], "widget": [], "rules": [],
               "legend": [], "congrats": None}
@@ -64,7 +63,7 @@ def test_every_view_carries_the_same_ladder(queue_key: str) -> None:
 
 @pytest.mark.parametrize("queue_key", ["solo", "flex", "all"])
 def test_every_view_is_captioned_with_the_scope_it_covers(queue_key: str) -> None:
-    from league_stats.pipeline.bundles import career_view_for_queue
+    from league_stats_runner.pipeline.bundles import career_view_for_queue
 
     ladder = {"has_career": True, "blocks": [], "widget": [], "rules": [],
               "legend": [], "congrats": None}
@@ -74,8 +73,8 @@ def test_every_view_is_captioned_with_the_scope_it_covers(queue_key: str) -> Non
 
 def test_ranked_records_for_the_ladder_span_both_queues() -> None:
     """One ladder over all ranked games means solo and flex both feed it."""
-    from league_stats.core.config import RANKED_FLEX_QUEUE_ID, RANKED_SOLO_QUEUE_ID
-    from league_stats.pipeline.bundles import ranked_career_records
+    from league_stats_common.core.config import RANKED_FLEX_QUEUE_ID, RANKED_SOLO_QUEUE_ID
+    from league_stats_runner.pipeline.bundles import ranked_career_records
 
     class _Rec:
         def __init__(self, queue_id: int, match_id: str) -> None:
@@ -97,8 +96,8 @@ def test_ladder_is_advanced_once_per_report_not_once_per_slice(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """3 queues x 3 windows used to mean 9 advance_career calls on one ladder."""
-    from league_stats.pipeline import bundles as bundles_module
-    from league_stats.pipeline.orchestrator import build_report_views
+    from league_stats_runner.pipeline import bundles as bundles_module
+    from league_stats_runner.pipeline.orchestrator import build_report_views
     from tests.test_reports import _config, _make_records, _peer
 
     config = _config(tmp_path)
@@ -123,8 +122,8 @@ def test_the_ladder_sees_every_ranked_game_not_a_window(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A 50-game window must not decide the rungs of a 20-game habit tracker."""
-    from league_stats.pipeline import bundles as bundles_module
-    from league_stats.pipeline.orchestrator import build_report_views
+    from league_stats_runner.pipeline import bundles as bundles_module
+    from league_stats_runner.pipeline.orchestrator import build_report_views
     from tests.test_reports import _config, _make_records, _peer
 
     config = _config(tmp_path)
@@ -145,8 +144,61 @@ def test_the_ladder_sees_every_ranked_game_not_a_window(
     assert seen == [len(bundles_module.ranked_career_records(records))]
 
 
+def test_stage_a_never_attempts_career(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stage A (no peer comparison yet) must not call advance_career at all.
+
+    It used to call it and get told "not ready" (``ctx.can_seed_blocks()``
+    returning False), which is a different bug than never calling it. This
+    pins the stronger guarantee: Career is not even attempted until Stage B.
+    """
+    from league_stats_runner.pipeline import bundles as bundles_module
+    from league_stats_runner.pipeline.orchestrator import build_report_views
+    from tests.test_reports import _config, _make_records
+
+    config = _config(tmp_path)
+    records = _make_records()
+    graphs = config.run_graphs_dir
+    graphs.mkdir(parents=True, exist_ok=True)
+
+    calls: list[int] = []
+    real = bundles_module.build_career_bundle
+
+    def counted(cfg, frames, peer, components):
+        calls.append(len(frames.matches_df))
+        return real(cfg, frames, peer, components)
+
+    monkeypatch.setattr(bundles_module, "build_career_bundle", counted)
+    build_report_views(config, records, graphs, peer_comparison=None)
+
+    assert calls == []
+
+
+def test_stage_a_renders_the_awaiting_peers_loading_shape(tmp_path) -> None:
+    """With Career never attempted, Stage A's field must still read as loading.
+
+    The frontend (``CareerMode.svelte``) shows a loading skeleton for
+    ``awaiting_peers`` and a "no career yet" empty message otherwise. Stage A
+    has to produce the former, not the latter, while Stage B is still pending.
+    """
+    from league_stats_runner.pipeline.orchestrator import build_report_views
+    from tests.test_reports import _config, _make_records
+
+    config = _config(tmp_path)
+    records = _make_records()
+    graphs = config.run_graphs_dir
+    graphs.mkdir(parents=True, exist_ok=True)
+
+    views, _, _ = build_report_views(config, records, graphs, peer_comparison=None)
+
+    for queue_key in ("solo", "flex", "all"):
+        for window in views[queue_key]["windows"].values():
+            career = window["career"]
+            assert career["has_career"] is False
+            assert career["awaiting_peers"] is True
+
+
 def test_the_ladder_reaches_every_queue_view(tmp_path) -> None:
-    from league_stats.pipeline.orchestrator import build_report_views
+    from league_stats_runner.pipeline.orchestrator import build_report_views
     from tests.test_reports import _config, _make_records, _peer
 
     config = _config(tmp_path)

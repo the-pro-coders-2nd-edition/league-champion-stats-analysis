@@ -1,5 +1,5 @@
 <script>
-  import { onMount, setContext, tick } from 'svelte';
+  import { onDestroy, onMount, setContext, tick } from 'svelte';
   import { createReportNav, REPORT_NAV_KEY } from '../lib/reportNav.js';
   import { computeWindowScopeLabel, WINDOW_SCOPE_KEY } from '../lib/windowScope.js';
   import { resolveCareerView } from '../lib/careerView.js';
@@ -9,13 +9,13 @@
     fetchBuild,
     fetchAccountViews,
     fetchPlayerStatus,
+    subscribePlayerStatus,
     refreshPlayer,
     sendChatMessage,
     ackCareerRecap,
   } from '../lib/api.js';
   import { createReportState } from '../lib/reportState.js';
   import { getCachedBuild, setCachedBuild, invalidateIfStale } from '../lib/buildCache.js';
-  import { createPoller } from '../lib/poller.js';
   import SegmentedControl from '../components/SegmentedControl.svelte';
   import AccountFilter from '../sections/AccountFilter.svelte';
   import Chatbot from '../sections/Chatbot.svelte';
@@ -31,6 +31,7 @@
   import Graphs from '../sections/Graphs.svelte';
   import CareerMode from '../sections/CareerMode.svelte';
   import RecapModal from '../components/RecapModal.svelte';
+  import WelcomeBackToast from '../components/WelcomeBackToast.svelte';
   import ReportSkeleton from '../components/ReportSkeleton.svelte';
   import AppNav from '../components/AppNav.svelte';
   import { bindPlotlyDetailsResize, resizePlotlySoon } from '../lib/plotlyResize.js';
@@ -40,7 +41,8 @@
   const ACTIVE_JOB_STATES = ['queued', 'fetching', 'analyzing', 'report_ready', 'peer_running'];
   const ACTIVE_PEER_STATES = ['report_ready', 'peer_running'];
 
-  const poller = createPoller();
+  let unsubscribeStatus = null;
+  let subscribedStatusSlug = null;
   let peerStageDetail = '';
   let peerFailed = false;
   let peerUnavailable = false;
@@ -50,6 +52,10 @@
   let jobActive = false;
   let careerPendingSlot = null;
   let dismissedRecapId = null;
+  // The most recent non-null `welcome_back` payload from a status push -- server-side
+  // it's a consume-on-read cache (see `WelcomeBackCache.get`), so it is only ever
+  // handed to the client once; kept here until the toast itself dismisses it.
+  let welcomeBack = null;
 
   const RECAP_DISMISS_PREFIX = 'recap-dismissed:';
 
@@ -81,9 +87,9 @@
     const prevWindow = report ? get(report.gameWindow) : null;
     const prevAccount = report ? get(report.accountKey) : null;
     const result = await fetchBuild(params.slug, params.buildSlug);
-    // This runs when a background poll detects the report was regenerated -- the cached
-    // entry for this exact build must be refreshed too, or switching away and back would
-    // show the stale pre-regeneration data instead of what just landed.
+    // This runs when a pushed status update detects the report was regenerated -- the
+    // cached entry for this exact build must be refreshed too, or switching away and back
+    // would show the stale pre-regeneration data instead of what just landed.
     setCachedBuild(`${params.slug}/${params.buildSlug}`, result);
     payload = result;
     report = createReportState(payload, {
@@ -95,15 +101,15 @@
     if (prevAccount) await report.selectAccountKey(prevAccount);
   }
 
-  async function pollStatus() {
+  async function applyStatusMessage(data) {
     const slug = statusSlugFromEndpoint(payload?.status_endpoint);
-    if (!slug || !payload?.status_endpoint) return;
+    if (!slug) return;
     try {
-      const data = await fetchPlayerStatus(slug);
       playerBuilds = data.builds || [];
       peerFailed = !!data.peer_failed;
+      if (data.welcome_back) welcomeBack = data.welcome_back;
 
-      // This status call is cheap (metadata only) and already carries a fresh
+      // This status push is cheap (metadata only) and already carries a fresh
       // generated_at for every build, not just the one on screen -- use it to drop any
       // OTHER cached build whose data just went stale, so a later switch to it re-fetches
       // instead of serving pre-regeneration data. The active build's own staleness is
@@ -123,7 +129,6 @@
         refreshing = false;
         statusBannerVisible = false;
         peerStageDetail = '';
-        poller.reschedule(30000);
         return;
       }
 
@@ -138,7 +143,6 @@
           peerStageDetail = job.stage_detail || '';
           peerUnavailable = false;
         }
-        poller.reschedule(3000);
         return;
       }
 
@@ -151,13 +155,11 @@
         peerStageDetail = '';
         peerFailed = false;
         peerUnavailable = false;
-        poller.reschedule(30000);
         return;
       }
 
       if (data.peer_failed) {
         peerStageDetail = '';
-        poller.reschedule(30000);
         return;
       }
 
@@ -165,20 +167,24 @@
         peerUnavailable = true;
         peerStageDetail = '';
       }
-
-      const peerPending = !payload.has_peer_comparison && !peerFailed && !peerUnavailable;
-      poller.reschedule(peerPending || refreshing ? 3000 : 30000);
     } catch {
-      // Transient polling errors — keep trying.
+      // Transient errors -- the next pushed snapshot will still arrive.
     }
   }
 
-  function startStatusPoll(intervalMs = 10000) {
-    if (!payload?.status_endpoint) return;
-    poller.start(pollStatus, intervalMs);
+  function ensureStatusStream() {
+    const slug = statusSlugFromEndpoint(payload?.status_endpoint);
+    if (!slug || slug === subscribedStatusSlug) return;
+    if (unsubscribeStatus) unsubscribeStatus();
+    subscribedStatusSlug = slug;
+    unsubscribeStatus = subscribePlayerStatus(slug, applyStatusMessage);
   }
 
-  function resetStatusPollState() {
+  onDestroy(() => {
+    if (unsubscribeStatus) unsubscribeStatus();
+  });
+
+  function resetStatusBannerState() {
     peerStageDetail = '';
     peerFailed = false;
     peerUnavailable = false;
@@ -190,15 +196,14 @@
 
   function handleCareerDropped(result) {
     // The drop is performed by the regenerate job it enqueued, so the ladder only
-    // changes once that run rewrites the report. pollStatus already reloads on a
-    // new generated_at; this just drops it to the fast cadence so the new block
-    // appears on its own instead of waiting out the 30s idle poll. Until then the
-    // dropped slot renders as a skeleton rather than a block that is already gone.
+    // changes once that run rewrites the report. `applyStatusMessage` already
+    // reloads on a new generated_at, pushed the moment that job's enqueue publishes
+    // -- no explicit reconnect/refresh needed here. Until then the dropped slot
+    // renders as a skeleton rather than a block that is already gone.
     careerPendingSlot = result?.dropped_slot ?? null;
     jobActive = true;
     statusBannerVisible = true;
     statusBannerText = result?.job?.stage_detail || 'Rebuilding your Career ladder…';
-    startStatusPoll(3000);
   }
 
 
@@ -236,7 +241,6 @@
       });
       statusBannerText = result.job?.stage_detail || 'Fetching latest games…';
       refreshing = false;
-      startStatusPoll(3000);
     } catch (err) {
       refreshing = false;
       statusBannerText = err.message || 'Refresh failed.';
@@ -273,7 +277,7 @@
     const key = `${params.slug}/${params.buildSlug}`;
     if (key !== loadedKey) {
       loadedKey = key;
-      resetStatusPollState();
+      resetStatusBannerState();
       // Career's on-disk pending_recap only clears the next time this build's
       // report actually rebuilds (a new game, or a regenerate) -- a watch tick
       // with nothing new for THIS build re-serves the same stale report.json,
@@ -286,7 +290,7 @@
           fetchAccountViews: (accounts) => fetchAccountViews(params.slug, params.buildSlug, accounts),
         });
         if (payload.status_endpoint) {
-          startStatusPoll();
+          ensureStatusStream();
         }
       };
       // A build already visited this session is served from the in-memory cache --
@@ -335,6 +339,7 @@
       .then((status) => {
         playerBuilds = status.builds || [];
         playerPageHref = `/players/${params.slug}`;
+        if (status.welcome_back) welcomeBack = status.welcome_back;
       })
       .catch(() => {
         playerBuilds = [];
@@ -507,6 +512,8 @@
   loading={playerBuildsLoading && playerBuilds.length === 0}
 />
 <main>
+
+<WelcomeBackToast data={welcomeBack} onDismiss={() => { welcomeBack = null; }} />
 
 {#if error}
   <p class="report-error">Failed to load this report.</p>

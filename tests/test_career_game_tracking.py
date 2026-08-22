@@ -15,11 +15,9 @@ older than the live block was never tracked by it and must not be shown as a mis
 
 from __future__ import annotations
 
-import pandas as pd
-
-from league_stats.analysis.career.engine import CareerBlockState, CareerSnapshot
-from league_stats.analysis.career.models import CLEAR_BAR, Rung, StoredGoal
-from league_stats.presentation.career import build_career_view
+from league_stats_runner.analysis.career.engine import CareerBlockState, CareerSnapshot
+from league_stats_runner.analysis.career.models import CLEAR_BAR, Rung, StoredGoal
+from league_stats_runner.presentation.career import build_career_view
 
 HOUR = 3_600_000
 
@@ -90,19 +88,19 @@ def test_queued_goals_do_not_advertise_themselves_as_tracked() -> None:
 
 
 def test_a_reviewed_game_exposes_its_creation_timestamp() -> None:
-    from league_stats.analysis.game_review.assemble import _iso_date
+    from league_stats_runner.analysis.game_review.assemble import _iso_date
 
     # The assembler already has the millisecond timestamp; it only formatted it away.
     assert _iso_date(1_700_000_000_000).startswith("20")
 
 
 def test_the_game_review_payload_carries_game_creation_ms() -> None:
-    from league_stats.core.models import GameDetail
+    from league_stats_common.core.models import GameDetail
 
     assert "game_creation_ms" in GameDetail.model_fields
 
 
 def test_game_creation_ms_defaults_so_old_cached_payloads_still_load() -> None:
-    from league_stats.core.models import GameDetail
+    from league_stats_common.core.models import GameDetail
 
     assert GameDetail.model_fields["game_creation_ms"].default == 0

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from pathlib import Path
 from typing import Any
 
-from league_stats.analysis.peer.cache import patch_sort_key, select_by_patch
-from league_stats.analysis.peer.ingest import extract_peer_rows
-from league_stats.infra.cache import MatchStore
+from league_stats_peers.analysis.peer.cache import patch_sort_key, select_by_patch
+from league_stats_peers.analysis.peer.ingest import extract_peer_rows
+from tests.fixtures import CombinedMatchAndPeerStore
 
 
 def _rows(spec: dict[str, int]) -> list[dict[str, Any]]:
@@ -77,7 +76,7 @@ def test_ingest_records_the_patch_from_game_version() -> None:
 
 
 def test_patch_round_trips_through_the_store(tmp_path: Path) -> None:
-    store = MatchStore(tmp_path / "matches.sqlite")
+    store = CombinedMatchAndPeerStore()
     store.upsert_peer_game(
         {
             "match_id": "EUW1_1",
@@ -95,55 +94,3 @@ def test_patch_round_trips_through_the_store(tmp_path: Path) -> None:
 
     assert [row["patch"] for row in rows] == ["14.23"]
     store.close()
-
-
-def test_patch_column_is_added_to_a_pre_existing_store(tmp_path: Path) -> None:
-    path = tmp_path / "legacy.sqlite"
-    legacy = sqlite3.connect(str(path))
-    legacy.executescript(
-        "CREATE TABLE peer_games ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, match_id TEXT NOT NULL, "
-        "puuid TEXT NOT NULL, champion TEXT NOT NULL, role TEXT NOT NULL, "
-        "tier TEXT NOT NULL DEFAULT '', rank TEXT NOT NULL DEFAULT '', "
-        "platform TEXT NOT NULL, queue_id INTEGER NOT NULL, metrics TEXT NOT NULL, "
-        "ingested_at REAL NOT NULL, rank_verified INTEGER NOT NULL DEFAULT 0, "
-        "UNIQUE (match_id, puuid, champion, role));"
-    )
-    legacy.execute(
-        "INSERT INTO peer_games (match_id, puuid, champion, role, platform, "
-        "queue_id, metrics, ingested_at) "
-        "VALUES ('EUW1_old', 'peer-old', 'Zac', 'JUNGLE', 'euw1', 420, '{}', 0.0)"
-    )
-    legacy.commit()
-    legacy.close()
-
-    store = MatchStore(path)
-    rows = store.load_peer_games(champion="Zac", role="JUNGLE", platform="euw1")
-
-    assert len(rows) == 1
-    assert rows[0]["patch"] == ""
-    store.close()
-
-
-def test_concurrent_migration_does_not_crash(tmp_path: Path) -> None:
-    # The worker pool and the API process both open this store; two opens racing
-    # on the ALTER TABLE must not fail the loser.
-    path = tmp_path / "matches.sqlite"
-    legacy = sqlite3.connect(str(path))
-    legacy.executescript(
-        "CREATE TABLE peer_games ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, match_id TEXT NOT NULL, "
-        "puuid TEXT NOT NULL, champion TEXT NOT NULL, role TEXT NOT NULL, "
-        "tier TEXT NOT NULL DEFAULT '', rank TEXT NOT NULL DEFAULT '', "
-        "platform TEXT NOT NULL, queue_id INTEGER NOT NULL, metrics TEXT NOT NULL, "
-        "ingested_at REAL NOT NULL, rank_verified INTEGER NOT NULL DEFAULT 0, "
-        "UNIQUE (match_id, puuid, champion, role));"
-    )
-    legacy.commit()
-    legacy.close()
-
-    first = MatchStore(path)
-    second = MatchStore(path)
-    assert second.load_peer_games(champion="Zac", role="JUNGLE", platform="euw1") == []
-    first.close()
-    second.close()

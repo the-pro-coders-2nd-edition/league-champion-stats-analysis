@@ -16,8 +16,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from league_stats.core.config import WebConfig
-from league_stats.web.app import create_app
+from league_stats_common.core.config import WebConfig
+from league_stats_api_ui.app import create_app
 
 SLUG = "hugros_euw"
 BUILD = "aatrox_top"
@@ -44,11 +44,13 @@ def _write_build(reports: Path, slug: str, build_slug: str, champion: str, role:
 
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    # AppConfig.cache_dir defaults to the relative ".cache", and career_db_path
-    # hangs off it, so without this the drop route writes into the repo's real
-    # career database instead of the test's.
+    # Career storage is Mongo now (autouse `_career_store_uses_mongomock` gives
+    # this test its own in-memory client), but other config paths (output_dir,
+    # app_db_path) still hang off cwd -- keep the chdir so those stay isolated.
     monkeypatch.chdir(tmp_path)
-    config = WebConfig(output_dir=tmp_path / "out", app_db_path=tmp_path / "app.sqlite")
+    config = WebConfig(
+        output_dir=tmp_path / "out"
+    )
     reports = tmp_path / "out" / "reports"
     _write_build(reports, SLUG, BUILD, "Aatrox", "TOP")
     _write_build(reports, SLUG, OTHER, "Jinx", "BOTTOM")
@@ -69,11 +71,10 @@ def _seed_ladder(client: TestClient, build_slug: str, champion: str, role: str) 
     """Give the build a ladder so the drop route finds a block in slot 0."""
     import pandas as pd
 
-    from league_stats.analysis.career.engine import advance_career
-    from league_stats.analysis.career.tracks import TrackContext
-    from league_stats.core.champions import player_slug
-    from league_stats.core.config import load_config
-    from league_stats.infra.career_store import CareerStore, build_key
+    from league_stats_runner.analysis.career.engine import advance_career
+    from league_stats_runner.analysis.career.tracks import TrackContext
+    from league_stats_common.core.champions import player_slug
+    from league_stats_common.infra.career_store import build_key, open_career_store
 
     class _C:
         def __init__(self, name: str, score: float) -> None:
@@ -89,15 +90,12 @@ def _seed_ladder(client: TestClient, build_slug: str, champion: str, role: str) 
             "shutdown_given": [400.0] * 25,
         }
     )
-    app_config = load_config(
-        require_api_key=False,
-        riot_id="Hugros",
-        tagline="EUW",
-        region="euw1",
-        output_dir=client.app.state.web_config.output_dir,
-    )
     components = [_C("Survival", 10.0), _C("Laning", 80.0)]
-    with CareerStore(app_config.career_db_path) as store:
+    # `open_career_store()` (not a fresh `CareerStore(...)`) so this seed lands
+    # in the same mongomock client the real drop route reaches via
+    # `open_career_store()` -- the autouse `_career_store_uses_mongomock`
+    # fixture gives every call in this test the same in-memory client.
+    with open_career_store() as store:
         advance_career(
             store,
             build_key(player_slug("Hugros", "EUW"), champion, role),

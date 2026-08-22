@@ -1,0 +1,234 @@
+"""Load peer games from the local match store."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+import pandas as pd
+
+from league_stats_peers.analysis.peer.ingest import ingest_match
+from league_stats_peers.analysis.peer.metrics import BENCHMARK_METRIC_KEYS
+from league_stats_peers.analysis.peer.rank_scope import RankScope, rank_matches
+from league_stats_common.infra.riot_api import RiotApiClient
+from league_stats_common.utils import get_logger
+
+MAX_RANK_LOOKUPS: int = 200
+
+
+@dataclass(frozen=True)
+class PeerSample:
+    """Peer games collected for one champion + lane baseline."""
+
+    rows: list[dict[str, Any]]
+    games: int
+    players: int
+    source: str
+
+
+def _rows_to_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
+    """Flatten stored peer rows into a metrics dataframe."""
+    flat: list[dict[str, Any]] = []
+    for row in rows:
+        entry = {"puuid": row["puuid"], "match_id": row["match_id"]}
+        entry.update(row["metrics"])
+        flat.append(entry)
+    return pd.DataFrame(flat)
+
+
+def aggregate_peer_metrics(rows: list[dict[str, Any]]) -> dict[str, float]:
+    """Average end-of-game metrics across peer rows."""
+    if not rows:
+        return {}
+    frame = _rows_to_frame(rows)
+    metrics: dict[str, float] = {}
+    for key in BENCHMARK_METRIC_KEYS:
+        if key not in frame.columns:
+            continue
+        series = pd.to_numeric(frame[key], errors="coerce").dropna()
+        if not series.empty:
+            metrics[key] = float(series.mean())
+    if "win" in metrics:
+        metrics["winrate"] = metrics["win"]
+    return metrics
+
+
+def peer_metric_quantiles(rows: list[dict[str, Any]], q: float) -> dict[str, float]:
+    """Per-metric quantile across peer rows (Career mode rung targets)."""
+    if not rows:
+        return {}
+    frame = _rows_to_frame(rows)
+    metrics: dict[str, float] = {}
+    for key in BENCHMARK_METRIC_KEYS:
+        if key not in frame.columns:
+            continue
+        series = pd.to_numeric(frame[key], errors="coerce").dropna()
+        if not series.empty:
+            metrics[key] = float(series.quantile(q))
+    return metrics
+
+
+def _backfill_ranks(
+    store: Any,
+    client: RiotApiClient | None,
+    *,
+    champion: str = "",
+    role: str = "",
+    platform: str = "",
+) -> None:
+    """Resolve unknown peer ranks via league-v4, scoped to the current build when provided."""
+    if client is None:
+        return
+    if champion and role and platform:
+        puuids = store.iter_unverified_puuids_for_build(champion, role, platform, limit=MAX_RANK_LOOKUPS)
+    else:
+        puuids = store.iter_unverified_puuids(MAX_RANK_LOOKUPS)
+    for puuid in puuids:
+        ranked = client.fetch_solo_rank(puuid)
+        if ranked is None:
+            store.set_puuid_rank(puuid, "UNRANKED", "")
+            continue
+        store.set_puuid_rank(puuid, ranked.tier, ranked.rank)
+
+
+def patch_sort_key(patch: str) -> tuple[int, int]:
+    """Numeric ``(major, minor)`` for patch ordering; unparseable sorts oldest."""
+    parts = str(patch).split(".")
+    try:
+        return (int(parts[0]), int(parts[1]))
+    except (IndexError, ValueError):
+        return (0, 0)
+
+
+def select_by_patch(
+    rows: list[dict[str, Any]],
+    wanted: str,
+    min_games: int,
+) -> list[dict[str, Any]]:
+    """Prefer current-patch peer rows, widening to older patches only if thin.
+
+    Peer rows are kept forever, so without this a long-lived store blends every
+    patch it has ever ingested into one baseline. Widening is by whole patch,
+    newest first, and stops as soon as ``min_games`` is reachable. If even the
+    full history is too thin the unfiltered rows are returned, so an upgraded or
+    sparse store degrades to its previous behaviour rather than losing its
+    sample.
+    """
+    if not wanted or not rows:
+        return rows
+
+    by_patch: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_patch.setdefault(str(row.get("patch", "")), []).append(row)
+
+    wanted_key = patch_sort_key(wanted)
+    candidates = sorted(
+        (patch for patch in by_patch if patch and patch_sort_key(patch) <= wanted_key),
+        key=patch_sort_key,
+        reverse=True,
+    )
+
+    selected: list[dict[str, Any]] = []
+    for patch in candidates:
+        selected.extend(by_patch[patch])
+        if len(selected) >= min_games:
+            return selected
+    return rows if len(selected) < min_games else selected
+
+
+def _filter_rows(
+    rows: list[dict[str, Any]],
+    *,
+    scope: RankScope,
+    exclude_puuid: str,
+) -> list[dict[str, Any]]:
+    """Keep peer rows inside the rank scope."""
+    filtered: list[dict[str, Any]] = []
+    for row in rows:
+        if row["puuid"] == exclude_puuid:
+            continue
+        if not row.get("rank_verified"):
+            continue
+        if row.get("tier") == "UNRANKED":
+            continue
+        if rank_matches(str(row.get("tier", "")), str(row.get("rank", "")), scope):
+            filtered.append(row)
+    return filtered
+
+
+def collect_peer_games_from_store(
+    store: Any,
+    *,
+    champion: str,
+    role: str,
+    platform: str,
+    scope: RankScope,
+    exclude_puuid: str,
+    client: RiotApiClient | None = None,
+    patch: str = "",
+    min_games: int = 0,
+) -> PeerSample:
+    """Load peer games for a champion + lane from the persistent store.
+
+    On first access (peer store empty for this build) we ingest only the tracked
+    player's own match history rather than scanning the entire store, which is much
+    faster when many builds are active.
+    """
+    log = get_logger("peer_cache")
+
+    if store.count_peer_games(champion=champion, role=role, platform=platform) == 0:
+        for match_id in store.iter_match_ids(exclude_puuid):
+            match = store.load_match(match_id)
+            if match is None:
+                continue
+            ingest_match(store, match_id, match, platform)
+
+    _backfill_ranks(store, client, champion=champion, role=role, platform=platform)
+    rows = store.load_peer_games(champion=champion, role=role, platform=platform)
+    in_scope = _filter_rows(rows, scope=scope, exclude_puuid=exclude_puuid)
+    filtered = select_by_patch(in_scope, patch, min_games)
+    players = len({row["puuid"] for row in filtered})
+    if patch and len(filtered) != len(in_scope):
+        log.debug(
+            "Patch filter %s kept %d of %d peer game(s) for %s %s",
+            patch,
+            len(filtered),
+            len(in_scope),
+            champion,
+            role,
+        )
+    log.debug(
+        "Loaded %d peer game(s) for %s %s (%d players) from store",
+        len(filtered),
+        champion,
+        role,
+        players,
+    )
+    return PeerSample(
+        rows=filtered,
+        games=len(filtered),
+        players=players,
+        source="cached peer store",
+    )
+
+
+def collect_user_history_peers(
+    store: Any,
+    exclude_puuid: str,
+    champion: str,
+    role: str,
+) -> pd.DataFrame:
+    """Scan the tracked player's matches for same champion + lane opponents."""
+    from league_stats_peers.analysis.peer.metrics import extract_champion_role_rows
+
+    rows: list[dict[str, Any]] = []
+    for match_id in store.iter_match_ids(exclude_puuid):
+        match = store.load_match(match_id)
+        if not match:
+            continue
+        for row in extract_champion_role_rows(
+            match, exclude_puuid=exclude_puuid, champion=champion, role=role
+        ):
+            row["match_id"] = match_id
+            rows.append(row)
+    return pd.DataFrame(rows)

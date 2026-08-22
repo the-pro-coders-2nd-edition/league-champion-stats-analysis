@@ -5,16 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pandas as pd
-
-from league_stats.analysis.game_review.behaviors import evaluate_behaviors
-from league_stats.analysis.game_review.compare import compare_key_stats_to_baseline, compare_to_baseline
-from league_stats.analysis.game_review.export import game_review_chatbot_export
-from league_stats.analysis.game_review.score import compute_game_score
-from league_stats.analysis.game_review.views import build_game_review_views
-from league_stats.analysis.progression.slicing import slice_recent
-from league_stats.analysis.statistics import StatisticsEngine
-from league_stats.core.config import (
+from league_stats_runner.analysis.game_review.behaviors import evaluate_behaviors
+from league_stats_runner.analysis.game_review.compare import compare_key_stats_to_baseline, compare_to_baseline
+from league_stats_runner.analysis.game_review.export import game_review_chatbot_export
+from league_stats_runner.analysis.game_review.score import compute_game_score
+from league_stats_runner.analysis.game_review.views import build_game_review_views
+from league_stats_runner.analysis.progression.slicing import slice_recent
+from league_stats_common.core.config import (
     GAME_REVIEW_MAX_BEHAVIORS,
     GAME_REVIEW_MAX_COMPARISONS,
     GAME_REVIEW_RECENT_N,
@@ -22,17 +19,17 @@ from league_stats.core.config import (
     RANKED_SOLO_QUEUE_ID,
     AppConfig,
 )
-from league_stats.core.models import MatchRecord
-from league_stats.pipeline.bundles import filter_records_by_queue
-from league_stats.pipeline.frames import build_analysis_frames
-from league_stats.pipeline.game_review import (
+from league_stats_common.core.models import MatchRecord
+from league_stats_runner.pipeline.bundles import filter_records_by_queue
+from league_stats_runner.pipeline.frames import build_analysis_frames
+from league_stats_runner.pipeline.game_review import (
     _lookup_account_icon,
     build_game_review_views as pipeline_build_game_review,
 )
-from league_stats.pipeline.summaries import build_export_summary, compute_report_stats
-from league_stats.infra.ddragon_assets import DDragonAssets
-from league_stats.pipeline.orchestrator import run_analysis
-from league_stats.ingest.parser import ItemCatalog, MatchParser
+from league_stats_runner.pipeline.summaries import build_export_summary, compute_report_stats
+from league_stats_common.infra.ddragon_assets import DDragonAssets
+from league_stats_runner.pipeline.orchestrator import run_analysis
+from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 from tests.test_reports import _config
 
@@ -364,7 +361,7 @@ def test_compare_values_share_precision() -> None:
 
 def test_compare_gap_color_scales_with_delta_size() -> None:
     """Larger baseline gaps get stronger red/green, same calibration as Form Tracker."""
-    from league_stats.presentation.metric_colors import interpolate_metric_color
+    from league_stats_runner.presentation.metric_colors import interpolate_metric_color
 
     record = _parse_record()
     row = record.to_row()
@@ -381,7 +378,7 @@ def test_compare_gap_color_scales_with_delta_size() -> None:
 
 
 def test_top_game_review_includes_split_push_key_stats() -> None:
-    from league_stats.analysis.game_review.hints import (
+    from league_stats_runner.analysis.game_review.hints import (
         game_review_key_stats_for_role,
         game_review_tooltips,
     )
@@ -518,7 +515,9 @@ def test_lookup_account_icon_is_case_insensitive() -> None:
 
 
 def test_pipeline_enriches_account_icon_with_case_mismatch(tmp_path: Path) -> None:
-    config = _make_config(output_dir=tmp_path / "output", cache_dir=tmp_path / ".cache")
+    config = _make_config(
+        output_dir=tmp_path / "output", cache_dir=tmp_path / ".cache", assets_dir=tmp_path / "assets"
+    )
     records = [
         record.model_copy(update={"account": "test#euw"})
         for record in _make_records(1)
@@ -592,7 +591,9 @@ def test_chatbot_export_omits_full_timeline() -> None:
 
 
 def test_pipeline_enriches_game_review_icons(tmp_path: Path) -> None:
-    config = _make_config(output_dir=tmp_path / "output", cache_dir=tmp_path / ".cache")
+    config = _make_config(
+        output_dir=tmp_path / "output", cache_dir=tmp_path / ".cache", assets_dir=tmp_path / "assets"
+    )
     records = _make_records(3)
     frames = build_analysis_frames(records)
     assets = DDragonAssets(config)
