@@ -26,6 +26,9 @@ import time
 from collections import deque
 from typing import Callable
 
+from prometheus_client import Counter, Gauge, Histogram
+
+from league_stats_common.core.champions import VALID_ROLES
 from league_stats_peers.analysis.peer.sampling_task import SamplingTask, TaskKey
 from league_stats_common.utils import get_logger
 
@@ -33,6 +36,37 @@ from league_stats_common.utils import get_logger
 # Small enough that a newly-enqueued task starts within a batch or two of
 # real API latency, large enough not to busy-loop a CPU core doing nothing.
 _IDLE_POLL_INTERVAL_S: float = 0.05
+
+# Scheduler visibility (dashboard-observability follow-up to the RFC above --
+# this scheduler shipped with zero metrics). `role` is `VALID_ROLES`, a fixed
+# 5-value enum -- safe to label by. The queue's actual *content* (which
+# (platform, tier, champion, role, patch) keys are active right now) is
+# deliberately NOT a Prometheus label set here: that combination space is
+# effectively unbounded once champion is involved (~170 values and growing
+# with new releases), which would violate this project's cardinality rule.
+# That "what's in the queue right now" visibility instead comes from the
+# structured log lines in `get_or_create`/`_run_one_batch`/`_finalize` below,
+# read via Grafana's Loki panel -- see `deploy/grafana/dashboards/peers.json`.
+PEERS_SCHEDULER_QUEUED_TASKS = Gauge(
+    "peers_scheduler_queued_tasks",
+    "Sampling tasks currently waiting in the round-robin FIFO queue (not mid-batch).",
+)
+PEERS_SCHEDULER_ACTIVE_TASKS = Gauge(
+    "peers_scheduler_active_tasks",
+    "Sampling tasks tracked by the scheduler (queued + currently running a batch), "
+    "by role. Every VALID_ROLES member is always set, including 0, so a role with "
+    "no active tasks shows as an explicit zero rather than a missing series.",
+    ["role"],
+)
+PEERS_SCHEDULER_BATCHES_TOTAL = Counter(
+    "peers_scheduler_batches_total",
+    "SamplingTask batches processed, by outcome.",
+    ["outcome"],  # re_enqueued | finalized_full | finalized_partial
+)
+PEERS_SCHEDULER_BATCH_DURATION = Histogram(
+    "peers_scheduler_batch_duration_seconds",
+    "Wall-clock time of one SamplingTask.run_batch() call.",
+)
 
 
 class SamplingScheduler:
@@ -62,6 +96,39 @@ class SamplingScheduler:
         self._stopped = False
         self._log = get_logger("peer_sampling_scheduler")
 
+    # -- metrics --------------------------------------------------------------
+
+    def _update_task_gauges(self) -> None:
+        """Recompute queue-depth/active-by-role gauges from current state.
+
+        Called with `self._lock` held by every mutation site below -- cheap
+        (a handful of dict entries at most) and always sets every
+        `VALID_ROLES` member, so a role dropping to zero active tasks is
+        reflected immediately instead of leaving a stale nonzero value.
+        """
+        counts = {role: 0 for role in VALID_ROLES}
+        for key in self._tasks:
+            role = key[3]
+            if role in counts:
+                counts[role] += 1
+        for role, count in counts.items():
+            PEERS_SCHEDULER_ACTIVE_TASKS.labels(role=role).set(count)
+        PEERS_SCHEDULER_QUEUED_TASKS.set(len(self._queue))
+
+    @staticmethod
+    def _log_fields(task: SamplingTask) -> str:
+        """Structured ``key=value`` fields for one task, for Loki-side filtering.
+
+        Deliberately a log line, not a Prometheus label set -- see the module
+        docstring's cardinality note above.
+        """
+        platform, tier, champion, role, patch = task.key
+        return (
+            f"platform={platform} tier={tier} champion={champion} role={role} "
+            f"patch={patch} games={task.games} downloads={task.downloads} "
+            f"batches_run={task.batches_run}"
+        )
+
     # -- task lifecycle -----------------------------------------------------
 
     def get_or_create(
@@ -81,7 +148,10 @@ class SamplingScheduler:
             self._tasks[key] = task
             self._conditions[key] = threading.Condition()
             self._queue.append(task)
-            self._log.info("Enqueued new sampling task for key=%s", key)
+            self._update_task_gauges()
+            self._log.info(
+                "sampling_task_enqueued key=%s %s", key, self._log_fields(task)
+            )
             return task
 
     def is_active(self, key: TaskKey) -> bool:
@@ -101,6 +171,7 @@ class SamplingScheduler:
             if not self._queue:
                 return False
             task = self._queue.popleft()
+            self._update_task_gauges()
         self._run_one_batch(task)
         return True
 
@@ -108,7 +179,8 @@ class SamplingScheduler:
         key = task.key
         cond = self._conditions.get(key)
         try:
-            task.run_batch()
+            with PEERS_SCHEDULER_BATCH_DURATION.time():
+                task.run_batch()
         except Exception:  # noqa: BLE001 -- a single bad batch must never wedge
             # this key forever. Without this, an exception here would leave
             # the task permanently in `self._tasks`/`self._conditions` (already
@@ -136,6 +208,11 @@ class SamplingScheduler:
                     self._log.exception("on_interim hook failed for key=%s", key)
             with self._lock:
                 self._queue.append(task)
+                self._update_task_gauges()
+            PEERS_SCHEDULER_BATCHES_TOTAL.labels(outcome="re_enqueued").inc()
+            self._log.info(
+                "sampling_task_re_enqueued key=%s %s", key, self._log_fields(task)
+            )
 
         if cond is not None:
             with cond:
@@ -152,6 +229,10 @@ class SamplingScheduler:
         with self._lock:
             self._tasks.pop(key, None)
             cond = self._conditions.pop(key, None)
+            self._update_task_gauges()
+        # `status` is always "full" or "partial" (see this method's two call
+        # sites) -- a fixed 2-value enum, safe to fold into the outcome label.
+        PEERS_SCHEDULER_BATCHES_TOTAL.labels(outcome=f"finalized_{status}").inc()
         if self._on_finalize is not None:
             try:
                 self._on_finalize(task, status)
@@ -162,12 +243,10 @@ class SamplingScheduler:
                     "on_finalize hook failed for key=%s, status=%s", key, status
                 )
         self._log.info(
-            "Sampling task finalized for key=%s: status=%s, games=%d, downloads=%d, batches=%d",
+            "sampling_task_finalized key=%s status=%s %s",
             key,
             status,
-            task.games,
-            task.downloads,
-            task.batches_run,
+            self._log_fields(task),
         )
         if cond is not None:
             with cond:
