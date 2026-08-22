@@ -77,6 +77,20 @@ CRON_WATCH_LAST_TICK_TIMESTAMP = Gauge(
     "Unix timestamp of the most recently started tick() sweep -- staleness "
     "(time() - this) is the signal for a stalled/dead polling loop.",
 )
+# An "info" gauge (always 1, all the value in the labels) so a Grafana Table
+# panel can list every currently-watched account by name -- one row per
+# (slug, riot_id, tagline), not one row per group, since a multi-account
+# group tracks several accounts under a single slug. Cleared and fully
+# re-set every tick (see `tick()` below) rather than incrementally
+# added/removed, so an unwatched account disappears from the table on the
+# next sweep instead of lingering as a stale series forever -- bounded
+# cardinality (however many accounts this instance actually tracks), unlike
+# the champion/role labels this codebase otherwise avoids.
+CRON_WATCH_WATCHED_ACCOUNT_INFO = Gauge(
+    "cron_watch_watched_account_info",
+    "1 for each currently-watched account, labeled by identity.",
+    ["slug", "riot_id", "tagline"],
+)
 
 
 class MatchIdSource(Protocol):
@@ -204,6 +218,15 @@ class WatchPoller:
         rows = self._store.list_watched_players()
         CRON_WATCH_WATCHED_GROUPS.set(len(rows))
         CRON_WATCH_WATCHED_ACCOUNTS.set(sum(len(row.get("players") or []) for row in rows))
+        CRON_WATCH_WATCHED_ACCOUNT_INFO.clear()
+        for row in rows:
+            slug = str(row.get("slug", ""))
+            for player in row.get("players") or []:
+                CRON_WATCH_WATCHED_ACCOUNT_INFO.labels(
+                    slug=slug,
+                    riot_id=str(player.get("riot_id", "")),
+                    tagline=str(player.get("tagline", "")),
+                ).set(1)
         self._log.info("Watch tick starting; %d group(s) to consider", len(rows))
         refreshed: list[str] = []
         checked = 0

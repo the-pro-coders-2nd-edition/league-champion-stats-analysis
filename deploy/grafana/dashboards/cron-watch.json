@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": {
     "from": "now-6h",
@@ -510,6 +510,61 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "table",
+      "title": "Watched accounts",
+      "description": "Every account currently being watched, one row per (slug, riot_id, tagline). Cleared and re-set every tick() sweep, so an unwatched account disappears here on the next sweep.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 55
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "cron_watch_watched_account_info",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            },
+            "indexByName": {
+              "slug": 0,
+              "riot_id": 1,
+              "tagline": 2
+            },
+            "renameByName": {
+              "slug": "Group slug",
+              "riot_id": "Riot ID",
+              "tagline": "Tagline"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     }
   ]
 }

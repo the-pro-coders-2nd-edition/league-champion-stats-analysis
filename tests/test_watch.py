@@ -635,6 +635,41 @@ def test_tick_sets_watched_groups_and_accounts_gauges(store: JobStore) -> None:
     assert watch_module.CRON_WATCH_WATCHED_ACCOUNTS._value.get() == 1
 
 
+def test_tick_sets_watched_account_info_labeled_by_identity(store: JobStore) -> None:
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    clock = Clock()
+    poller = _poller(store, client, clock)
+
+    _tick(poller)
+
+    metric = watch_module.CRON_WATCH_WATCHED_ACCOUNT_INFO.labels(
+        slug=SLUG, riot_id="Hugros", tagline="EUW"
+    )
+    assert metric._value.get() == 1
+
+
+def test_tick_clears_watched_account_info_for_accounts_no_longer_watched(
+    store: JobStore,
+) -> None:
+    store.set_watch(SLUG, enabled=True, interval_s=60)
+    client = FakeClient({"puuid-hugros": {RANKED_SOLO_QUEUE_ID: ["EUW1_1"]}})
+    clock = Clock()
+    poller = _poller(store, client, clock)
+    _tick(poller)
+
+    store.set_watch(SLUG, enabled=False)
+    _tick(poller)
+
+    samples = [
+        sample
+        for metric in watch_module.CRON_WATCH_WATCHED_ACCOUNT_INFO.collect()
+        for sample in metric.samples
+        if sample.labels.get("slug") == SLUG
+    ]
+    assert samples == []
+
+
 def test_tick_sets_last_tick_timestamp_to_the_pollers_clock(store: JobStore) -> None:
     client = FakeClient()
     clock = Clock()
