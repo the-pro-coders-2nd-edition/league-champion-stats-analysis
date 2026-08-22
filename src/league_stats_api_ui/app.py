@@ -80,7 +80,6 @@ from league_stats_runner.presentation.brand_assets import (
 )
 from league_stats_runner.presentation.report import (
     discover_player_builds,
-    game_creation_ms_to_iso,
     is_group_player_label,
 )
 from league_stats_runner.presentation.report_json import prepare_web_report_payload
@@ -759,21 +758,16 @@ def _profile_icon_hrefs(
 
 
 def _last_game_at_from_report(report: dict[str, Any]) -> str:
-    """Newest match timestamp embedded in a saved report payload."""
-    latest_ms = 0
-    review = report.get("game_review") or {}
-    if isinstance(review, dict):
-        for bundle in review.values():
-            if not isinstance(bundle, dict):
-                continue
-            for game in bundle.get("games") or []:
-                if not isinstance(game, dict):
-                    continue
-                ms = int(game.get("game_creation_ms") or 0)
-                if ms > latest_ms:
-                    latest_ms = ms
-    if latest_ms > 0:
-        return game_creation_ms_to_iso(latest_ms)
+    """Newest match timestamp for a saved report payload.
+
+    `report["game_review"]` no longer exists (see design "Splitting
+    report_bodies"): the light `report_builds` listing's own `last_game_at`
+    field is always set by `save_build_record` for any build written since
+    the Mongo migration, so `_hub_build_fields` only reaches this fallback
+    for a listing entry missing that field entirely -- there is nothing left
+    in the head report body to derive it from, so this falls straight to
+    `generated_at`.
+    """
     return str(report.get("generated_at") or "")
 
 
@@ -1564,6 +1558,25 @@ def create_app(
         if payload is None:
             raise HTTPException(status_code=404, detail="Unknown build")
         return prepare_web_report_payload(payload)
+
+    @app.get("/api/players/{slug}/builds/{build_slug}/report-views/{queue_key}/{window_key}")
+    def build_view_slice(
+        slug: str, build_slug: str, queue_key: str, window_key: str
+    ) -> dict[str, Any]:
+        """One (queue, window) dashboard bundle, fetched on demand.
+
+        The default combination is already flattened into `build_payload`'s
+        response for zero-latency first paint; this endpoint is only called
+        by the frontend's queue/window toggle for any OTHER combination,
+        mirroring the existing account-views on-demand pattern.
+        """
+        if not (_is_report_slug(slug) and _is_report_slug(build_slug)):
+            raise HTTPException(status_code=400, detail="Invalid report reference.")
+        with open_report_store() as report_store:
+            bundle = report_store.get_view_slice(slug, build_slug, queue_key, window_key)
+        if bundle is None:
+            raise HTTPException(status_code=404, detail="Unknown queue/window combination")
+        return prepare_web_report_payload(bundle)
 
     def _resolve_build_filter(
         slug: str,

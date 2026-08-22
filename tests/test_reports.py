@@ -262,3 +262,110 @@ def test_patch_report_peer_comparison_is_a_noop_without_an_existing_report(
     pool = BuildPool(champion="Zed", role="MIDDLE", games=len(records))
 
     assert patch_report_peer_comparison(config, pool, _peer(records)) is False
+
+
+def test_save_body_splits_view_slices_and_game_review_out_of_the_head_document(
+    tmp_path: Path,
+) -> None:
+    """Regression: `report_bodies` must never embed `report_views`/`game_review`
+    inline -- that's exactly what made a 598-game report exceed MongoDB's 16MB
+    per-document limit in production. `save_body` must persist each
+    (queue, window) slice as its own document, and the multi-queue game-review
+    payload as its own document, leaving only a scalar manifest in the head.
+    """
+    with open_report_store() as store:
+        store.save_body(
+            "player_a",
+            "build_a",
+            # Deliberately does NOT contain "report_views"/"game_review" keys:
+            # the real contract (Task 2) requires the caller to build those
+            # as the separate `view_slices`/`game_review` arguments below,
+            # never nested inside `report`, so the oversized dict is never
+            # assembled at all.
+            report={"overview": {"winrate": 0.5}},
+            summary={"stats": "ok"},
+            view_slices={
+                ("solo", "50"): {
+                    "total_games": 10,
+                    "default_window": "50",
+                    "window_options": [{"key": "50", "enabled": True}],
+                    "cards": ["default-solo-50"],
+                },
+                ("flex", "all"): {
+                    "total_games": 3,
+                    "default_window": "all",
+                    "window_options": [{"key": "all", "enabled": True}],
+                    "cards": ["flex-all"],
+                },
+            },
+            game_review={
+                "solo": {"games": [{"match_id": "EUW1_1"}]},
+                "all": {"games": [{"match_id": "EUW1_1"}]},
+            },
+        )
+
+        head = store.get_report("player_a", "build_a")
+        assert "report_views" not in head
+        assert "game_review" not in head
+        assert head["overview"] == {"winrate": 0.5}
+        assert head["view_manifest"]["solo"]["total_games"] == 10
+        assert head["view_manifest"]["solo"]["default_window"] == "50"
+        assert head["view_manifest"]["flex"]["total_games"] == 3
+
+        solo_slice = store.get_view_slice("player_a", "build_a", "solo", "50")
+        assert solo_slice["cards"] == ["default-solo-50"]
+        flex_slice = store.get_view_slice("player_a", "build_a", "flex", "all")
+        assert flex_slice["cards"] == ["flex-all"]
+        assert store.get_view_slice("player_a", "build_a", "flex", "50") is None
+
+        review = store.get_game_review("player_a", "build_a")
+        assert review == {
+            "solo": {"games": [{"match_id": "EUW1_1"}]},
+            "all": {"games": [{"match_id": "EUW1_1"}]},
+        }
+
+
+def test_delete_player_clears_view_slices_and_game_review(tmp_path: Path) -> None:
+    with open_report_store() as store:
+        store.save_body(
+            "player_b",
+            "build_a",
+            report={"overview": {}},
+            summary={},
+            view_slices={("solo", "50"): {"cards": []}},
+            game_review={"solo": {"games": []}},
+        )
+        store.delete_player("player_b")
+        assert store.get_view_slice("player_b", "build_a", "solo", "50") is None
+        assert store.get_game_review("player_b", "build_a") is None
+
+
+def test_run_analysis_stores_view_slices_fetchable_via_report_store(tmp_path: Path) -> None:
+    """End-to-end: a real `run_analysis` call must leave every (queue, window)
+    combination fetchable via `get_view_slice`, and the head report must not
+    embed `report_views`/`game_review` inline."""
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=80, losses=75)
+    records = _make_records()
+    peer = _peer(records)
+    config = _config(tmp_path, champion="Viktor", role="MIDDLE")
+
+    run_analysis(config, records, peer_comparison=peer, ranked=ranked)
+
+    with open_report_store() as store:
+        head = store.get_report(config.reports_group_slug, "viktor_middle")
+        assert "report_views" not in head
+        assert "game_review" not in head
+        manifest = head["view_manifest"]
+        default_queue = head["queue_filter_default"]
+        default_window = head["game_window_default"]
+        assert default_queue in manifest
+        assert default_window in manifest[default_queue]["windows"]
+
+        default_slice = store.get_view_slice(
+            config.reports_group_slug, "viktor_middle", default_queue, default_window
+        )
+        assert default_slice is not None
+        assert default_slice["overview"] == head["overview"]
+
+        review = store.get_game_review(config.reports_group_slug, "viktor_middle")
+        assert review is not None

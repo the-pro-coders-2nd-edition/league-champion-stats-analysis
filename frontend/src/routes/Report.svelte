@@ -8,6 +8,7 @@
   import {
     fetchBuild,
     fetchAccountViews,
+    fetchViewSlice,
     fetchPlayerStatus,
     subscribePlayerStatus,
     refreshPlayer,
@@ -94,10 +95,12 @@
     payload = result;
     report = createReportState(payload, {
       fetchAccountViews: (accounts) => fetchAccountViews(params.slug, params.buildSlug, accounts),
+      fetchViewSlice: (queueKey, windowKey) =>
+        fetchViewSlice(params.slug, params.buildSlug, queueKey, windowKey),
     });
     careerPendingSlot = null;
-    if (prevQueue) report.selectQueue(prevQueue);
-    if (prevWindow) report.selectWindow(prevWindow);
+    if (prevQueue) await report.selectQueue(prevQueue);
+    if (prevWindow) await report.selectWindow(prevWindow);
     if (prevAccount) await report.selectAccountKey(prevAccount);
   }
 
@@ -288,6 +291,8 @@
         payload = result;
         report = createReportState(payload, {
           fetchAccountViews: (accounts) => fetchAccountViews(params.slug, params.buildSlug, accounts),
+          fetchViewSlice: (queueKey, windowKey) =>
+            fetchViewSlice(params.slug, params.buildSlug, queueKey, windowKey),
         });
         if (payload.status_endpoint) {
           ensureStatusStream();

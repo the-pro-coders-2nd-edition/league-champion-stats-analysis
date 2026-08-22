@@ -70,13 +70,14 @@ def _career_payload(tmp_path: Path) -> dict:
     build_slug = champion_slug(config.champion, config.role)
     with open_report_store() as store:
         payload = store.get_report(config.reports_group_slug, build_slug)
-    return _all_ranked_career(payload)
+        windows = payload["view_manifest"]["all"]["windows"]
+        bundle = store.get_view_slice(config.reports_group_slug, build_slug, "all", windows[0])
+    return _all_ranked_career(bundle)
 
 
-def _all_ranked_career(payload: dict) -> dict:
+def _all_ranked_career(bundle: dict) -> dict:
     """The ladder as the reader sees it. Every queue view carries the same one."""
-    windows = payload["report_views"]["all"]["windows"]
-    return windows[next(iter(windows))]["career"]
+    return bundle["career"]
 
 
 def test_report_json_has_a_career_block(tmp_path: Path) -> None:
@@ -151,8 +152,11 @@ def test_every_queue_view_renders_the_same_ladder(tmp_path: Path) -> None:
     with open_report_store() as store:
         payload = store.get_report(config.reports_group_slug, build_slug)
 
-    for queue_key in ("solo", "flex", "all"):
-        windows = payload["report_views"][queue_key]["windows"]
-        for window in windows.values():
-            assert window["career"]["has_career"] is True
-            assert window["career"]["tracks_all_ranked"] is True
+        for queue_key in ("solo", "flex", "all"):
+            windows = payload["view_manifest"][queue_key]["windows"]
+            for window_key in windows:
+                bundle = store.get_view_slice(
+                    config.reports_group_slug, build_slug, queue_key, window_key
+                )
+                assert bundle["career"]["has_career"] is True
+                assert bundle["career"]["tracks_all_ranked"] is True

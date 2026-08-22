@@ -57,6 +57,13 @@ class ReportStore:
         self._builds.create_index("player_slug")
         self._builds.create_index([("player_slug", 1), ("build_slug", 1)], unique=True)
         self._bodies.create_index([("player_slug", 1), ("build_slug", 1)], unique=True)
+        self._view_slices = db["report_view_slices"]
+        self._game_reviews = db["report_game_review"]
+        self._view_slices.create_index(
+            [("player_slug", 1), ("build_slug", 1), ("queue_key", 1), ("window_key", 1)],
+            unique=True,
+        )
+        self._game_reviews.create_index([("player_slug", 1), ("build_slug", 1)], unique=True)
         self._log = get_logger("report_store")
 
     def __enter__(self) -> "ReportStore":
@@ -169,9 +176,11 @@ class ReportStore:
         return list(self._builds.find({}))
 
     def delete_player(self, player_slug: str) -> None:
-        """Drop every build (listing + body) for a player."""
+        """Drop every build (listing + body + view slices + game review) for a player."""
         self._builds.delete_many({"player_slug": player_slug})
         self._bodies.delete_many({"player_slug": player_slug})
+        self._view_slices.delete_many({"player_slug": player_slug})
+        self._game_reviews.delete_many({"player_slug": player_slug})
 
     # -- report_bodies (heavy: full report/summary/progression payloads) --
 
@@ -184,12 +193,47 @@ class ReportStore:
         summary: dict[str, Any],
         progression_json: dict[str, Any] | None = None,
         progression_md: str = "",
+        view_slices: dict[tuple[str, str], dict[str, Any]] | None = None,
+        game_review: dict[str, Any] | None = None,
     ) -> None:
-        """Upsert one build's heavy report body."""
+        """Upsert one build's heavy report body, split across three collections.
+
+        `view_slices` (one entry per (queue_key, window_key) combination -- the
+        old `report["report_views"][queue]["windows"][window]` shape,
+        flattened) and `game_review` (the old `report["game_review"]`, the full
+        multi-queue payload) are stored in their own collections instead of
+        inline: MongoDB's 16MB per-document cap is per-document, not
+        per-field, so keeping every queue x window combination in one BSON
+        document does not bound total size as games count grows (a build with
+        598 games already produced a ~4MB body in the cheapest possible case;
+        `report_view_slices` split by combination keeps each individual
+        document small and bounded instead). `report` must NOT contain a
+        `report_views` or `game_review` key -- callers build those as
+        separate `view_slices`/`game_review` arguments instead of nesting
+        them into `report`, so the oversized dict is never assembled in the
+        first place.
+
+        A `view_manifest` field (scalars only: `total_games`,
+        `default_window`, `window_options`, `windows` -- the list of window
+        keys that have a slice, not the slices themselves) is derived from
+        `view_slices` and added to the head document, so callers reading
+        `get_report` still know what other combinations exist without
+        fetching every slice.
+        """
+        view_slices = view_slices or {}
+        manifest: dict[str, dict[str, Any]] = {}
+        for (queue_key, window_key), bundle in view_slices.items():
+            entry = manifest.setdefault(
+                queue_key, {"total_games": 0, "default_window": None, "window_options": [], "windows": []}
+            )
+            entry["windows"].append(window_key)
+            entry["total_games"] = bundle.get("total_games", entry["total_games"])
+            entry["default_window"] = bundle.get("default_window", entry["default_window"])
+            entry["window_options"] = bundle.get("window_options", entry["window_options"])
         doc = {
             "player_slug": player_slug,
             "build_slug": build_slug,
-            "report": report,
+            "report": {**report, "view_manifest": manifest},
             "summary": summary,
             "progression_json": progression_json,
             "progression_md": progression_md,
@@ -197,6 +241,33 @@ class ReportStore:
         self._bodies.replace_one(
             {"player_slug": player_slug, "build_slug": build_slug}, doc, upsert=True
         )
+        for (queue_key, window_key), bundle in view_slices.items():
+            self._view_slices.replace_one(
+                {
+                    "player_slug": player_slug,
+                    "build_slug": build_slug,
+                    "queue_key": queue_key,
+                    "window_key": window_key,
+                },
+                {
+                    "player_slug": player_slug,
+                    "build_slug": build_slug,
+                    "queue_key": queue_key,
+                    "window_key": window_key,
+                    "bundle": bundle,
+                },
+                upsert=True,
+            )
+        if game_review is not None:
+            self._game_reviews.replace_one(
+                {"player_slug": player_slug, "build_slug": build_slug},
+                {
+                    "player_slug": player_slug,
+                    "build_slug": build_slug,
+                    "game_review": game_review,
+                },
+                upsert=True,
+            )
 
     def patch_report_fields(
         self, player_slug: str, build_slug: str, fields: dict[str, Any]
@@ -232,11 +303,35 @@ class ReportStore:
         )
         return doc.get("summary") if doc else None
 
+    def get_view_slice(
+        self, player_slug: str, build_slug: str, queue_key: str, window_key: str
+    ) -> dict[str, Any] | None:
+        """One (queue, window) dashboard bundle, or `None` if never computed."""
+        doc = self._view_slices.find_one(
+            {
+                "player_slug": player_slug,
+                "build_slug": build_slug,
+                "queue_key": queue_key,
+                "window_key": window_key,
+            },
+            {"bundle": 1},
+        )
+        return doc.get("bundle") if doc else None
+
+    def get_game_review(self, player_slug: str, build_slug: str) -> dict[str, Any] | None:
+        """The full multi-queue game-review payload, or `None`."""
+        doc = self._game_reviews.find_one(
+            {"player_slug": player_slug, "build_slug": build_slug}, {"game_review": 1}
+        )
+        return doc.get("game_review") if doc else None
+
     def row_counts(self) -> dict[str, int]:
         """Document counts per collection, for parity with other stores' admin tooling."""
         return {
             "report_builds": self._builds.count_documents({}),
             "report_bodies": self._bodies.count_documents({}),
+            "report_view_slices": self._view_slices.count_documents({}),
+            "report_game_review": self._game_reviews.count_documents({}),
         }
 
 

@@ -665,7 +665,7 @@ def test_report_has_game_review_category_tab(tmp_path: Path) -> None:
     build_slug = champion_slug(config.champion, config.role)
     with open_report_store() as store:
         payload = store.get_report(config.reports_group_slug, build_slug)
-    game_review = payload["game_review"]
+        game_review = store.get_game_review(config.reports_group_slug, build_slug)
     assert "all" in game_review
     games = game_review["all"]["games"]
     assert len(games) == 5

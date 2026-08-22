@@ -719,11 +719,34 @@ def test_get_build_payload_returns_report_json(client: TestClient) -> None:
     assert response.json() == {
         "champion": "Viktor",
         "champion_icon": "/ddragon/champions/Viktor.png",
+        "view_manifest": {},
     }
 
 
 def test_get_build_payload_404_when_missing(client: TestClient) -> None:
     assert client.get("/api/players/test_euw/builds/nonexistent").status_code == 404
+
+
+def test_report_view_slice_endpoint_returns_a_non_default_combination(client: TestClient) -> None:
+    """GET .../report-views/{queue}/{window} must return exactly what
+    ReportStore.save_body stored for that combination, and 404 for one that
+    was never computed."""
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    with open_report_store() as store:
+        store.save_body(
+            "test_euw",
+            "viktor_middle",
+            report={"champion": "Viktor"},
+            summary={},
+            view_slices={("flex", "all"): {"total_games": 3, "cards": ["flex-all"]}},
+        )
+
+    response = client.get("/api/players/test_euw/builds/viktor_middle/report-views/flex/all")
+    assert response.status_code == 200
+    assert response.json() == {"total_games": 3, "cards": ["flex-all"]}
+
+    missing = client.get("/api/players/test_euw/builds/viktor_middle/report-views/flex/50")
+    assert missing.status_code == 404
 
 
 def test_get_build_payload_rejects_path_traversal(client: TestClient) -> None:
