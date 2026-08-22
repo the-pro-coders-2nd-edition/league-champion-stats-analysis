@@ -167,3 +167,22 @@ class PeerSampleStore:
             {"$set": {"tier": tier.upper(), "rank": rank.upper(), "rank_verified": True}},
         )
         return int(result.matched_count)
+
+    def count_by_tier(self) -> dict[str, int]:
+        """Verified peer-game row counts grouped by tier.
+
+        Dashboard-observability follow-up: a coverage/data-density signal for
+        peer sampling (`service.refresh_match_sample_coverage`), not a
+        request-path query. Only `rank_verified` rows are counted -- rows
+        awaiting rank backfill have ``tier == ""`` and would otherwise
+        pollute the distribution with a fake catch-all bucket.
+        """
+        pipeline = [
+            {"$match": {"rank_verified": True}},
+            {"$group": {"_id": "$tier", "count": {"$sum": 1}}},
+        ]
+        return {
+            doc["_id"]: int(doc["count"])
+            for doc in self._peer_games.aggregate(pipeline)
+            if doc["_id"]
+        }
