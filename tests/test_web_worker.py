@@ -830,6 +830,64 @@ def test_execute_job_grpc_mode_soft_peer_failure_marks_done(
     assert player["peer_failed"] == 1
 
 
+def test_execute_job_grpc_mode_stage_b_dropped_still_registers_player_at_done() -> None:
+    """Regression test for the production bug where a dropped Stage-B
+    `StreamJobProgress` event (e.g. a `docker-compose` restart racing the
+    stream between api-ui and RUNNER) permanently lost the player-registry
+    write. RUNNER finishes the job and reaches a terminal `final` message on
+    its own shared volume regardless of whether that one stream event
+    survived; before `_execute_job_via_runner`'s DONE-time safety net, the
+    only `store.upsert_player` call lived inside the `STAGE_B` branch, so a
+    stream that never carries a `STAGE_B` `StageResult` (simulated here by
+    simply never yielding one) reached `job_states.DONE` with no registry row
+    at all: `can_watch` stayed `False` forever, and unwatch 404'd with
+    "Unknown player" even though the report existed. Uses its own fresh
+    `JobStore`/`WebConfig` (not the shared fixtures) specifically so "test_euw"
+    starts out with *no* pre-existing registry row, proving the row is
+    created from scratch by the safety net alone.
+    """
+    from league_stats_rpc.v1 import common_pb2, runner_pb2
+
+    fresh_store = JobStore(mongomock.MongoClient())
+    try:
+        assert fresh_store.get_player("test_euw") is None
+
+        results = [
+            runner_pb2.StageResult(
+                job_id="scripted-1",
+                stage=common_pb2.STAGE_A,
+                detail="Analyzing Viktor Middle (1/1)",
+                current=1,
+                total=1,
+            ),
+            # No STAGE_B StageResult at all -- the dropped-event simulation --
+            # yet the stream still ends with a clean terminal message.
+            runner_pb2.StageResult(
+                job_id="scripted-1",
+                stage=common_pb2.STAGE_A,
+                detail="Report complete",
+                final=True,
+            ),
+        ]
+
+        fresh_web_config = WebConfig(output_dir=Path("/tmp/does-not-matter"))
+        job = _run_scripted_grpc_job(fresh_store, fresh_web_config, results)
+
+        final = fresh_store.get(int(job["id"]))
+        assert final["state"] == jobs.DONE
+        assert final["error"] == ""
+
+        player = fresh_store.get_player("test_euw")
+        assert player is not None
+        assert player["riot_id"] == "Test"
+        assert player["tagline"] == "EUW"
+        assert player["region"] == "euw1"
+        assert player["base_completed_at"] is not None
+        assert player["peer_completed_at"] is not None
+    finally:
+        fresh_store.close()
+
+
 def test_execute_job_grpc_mode_preserves_existing_enrichment_when_runner_sends_none(
     store: JobStore, web_config: WebConfig
 ) -> None:

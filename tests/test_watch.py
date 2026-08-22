@@ -514,6 +514,50 @@ def test_watch_routes_404_on_unknown_player(client: TestClient) -> None:
     assert client.delete("/api/players/nobody/watch").status_code == 404
 
 
+def test_watch_route_backfills_a_registry_row_missing_despite_a_real_report(
+    tmp_path: Path,
+) -> None:
+    """Regression test for the "dropped Stage-B event" production bug: a slug
+    with `has_report: true` on disk but no `store.get_player(slug)` row (the
+    stuck state left behind when `docker-compose down` drops the gRPC stream
+    at exactly the wrong moment -- see `worker.py`'s
+    `_execute_job_via_runner`) must self-heal on a watch/unwatch click instead
+    of 404ing with "Unknown player" forever.
+    """
+    import json
+
+    slug = "orphan_euw"
+    config = WebConfig(output_dir=tmp_path / "out", assets_dir=tmp_path / "assets")
+    build_dir = config.reports_dir / slug / "viktor_middle"
+    build_dir.mkdir(parents=True)
+    (build_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "champion": "Viktor",
+                "role": "MIDDLE",
+                "riot_id": "Orphan",
+                "tagline": "EUW",
+                "region": "europe",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (build_dir / "report.json").write_text("{}", encoding="utf-8")
+
+    app = create_app(config, start_worker=False)
+    with TestClient(app) as handle:
+        assert handle.app.state.job_store.get_player(slug) is None
+
+        response = handle.post(f"/api/players/{slug}/watch", json={"interval_s": 300})
+        assert response.status_code == 200
+        assert response.json()["watch_enabled"] is True
+
+        row = handle.app.state.job_store.get_player(slug)
+        assert row is not None
+        assert row["riot_id"] == "Orphan"
+        assert row["tagline"] == "EUW"
+
+
 def test_career_banner_ack_route(tmp_path: Path) -> None:
     """A reader can retire a Career banner that watch rebuilds must not eat."""
     import json

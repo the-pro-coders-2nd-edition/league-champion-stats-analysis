@@ -1418,10 +1418,49 @@ def create_app(
             )
         return _enqueue_player_job(slug, JOB_KIND_REFRESH)
 
+    def _backfill_player_registry_if_needed(slug: str) -> None:
+        """Self-heal a missing registry row for a slug that already has reports.
+
+        Recovery path for the "dropped Stage-B StreamJobProgress event" bug
+        (see `worker.py`'s `_execute_job_via_runner`): a `docker-compose`
+        restart racing that one-shot registry write can leave `has_report:
+        true` on disk with no matching `store.get_player(slug)` row --
+        `can_watch` stays `False` forever, and this is the "Unknown player"
+        404 a user hits when clicking watch/unwatch on such a slug. RUNNER's
+        own worker.py now carries a DONE-time safety net that prevents *new*
+        occurrences of this, but this recovers any row already stuck that way.
+
+        Only acts when there's on-disk proof reports exist for `slug` and no
+        registry row already covers it -- mirrors the exact disk-recovery
+        `_enqueue_player_job` above already relies on to repair a stale
+        registry row (same `_resolve_tracked_players` call, same "euw1"
+        region fallback -- also used by `WatchPoller.tick` for a row with no
+        region, see `cron_watch/watch.py`), so this isn't a new, unproven
+        pattern in this codebase.
+        """
+        if store.get_player(slug) is not None:
+            return
+        if not _player_builds(config.output_dir, config.assets_dir, slug):
+            return
+        meta_builds = discover_player_builds(config.reports_dir / slug)
+        meta = meta_builds[0] if meta_builds else None
+        tracked = _resolve_tracked_players(slug, store_players=None, meta=meta)
+        if not tracked:
+            return
+        primary = tracked[0]
+        store.upsert_player(
+            slug=slug,
+            riot_id=str(primary["riot_id"]),
+            tagline=str(primary["tagline"]),
+            region="euw1",
+            players=tracked,
+        )
+
     @app.post("/api/players/{slug}/watch")
     def enable_watch(slug: str, body: WatchRequest | None = None) -> dict[str, Any]:
         """Watch a group: poll for new games and refresh automatically."""
         payload = body or WatchRequest()
+        _backfill_player_registry_if_needed(slug)
         if not store.set_watch(slug, enabled=True, interval_s=payload.interval_s):
             raise HTTPException(status_code=404, detail="Unknown player")
         row = store.get_player(slug) or {}
@@ -1430,6 +1469,7 @@ def create_app(
     @app.delete("/api/players/{slug}/watch")
     def disable_watch(slug: str) -> dict[str, Any]:
         """Stop watching a group."""
+        _backfill_player_registry_if_needed(slug)
         if not store.set_watch(slug, enabled=False):
             raise HTTPException(status_code=404, detail="Unknown player")
         row = store.get_player(slug) or {}
