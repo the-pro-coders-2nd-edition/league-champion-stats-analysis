@@ -186,3 +186,25 @@ class PeerSampleStore:
             for doc in self._peer_games.aggregate(pipeline)
             if doc["_id"]
         }
+
+    def count_by_champion_role(self) -> dict[tuple[str, str], int]:
+        """Verified peer-game row counts grouped by (champion, role).
+
+        Dashboard-observability follow-up: champion is a Data Dragon-sourced,
+        ~170-value-and-growing set with no fixed enum in code, so this is
+        deliberately NOT surfaced as a Prometheus label (would risk unbounded
+        cardinality growth every time a new champion ships -- same rule that
+        keeps `count_by_tier` tier-only). Callers should feed this into a
+        structured log line for Grafana's Loki side instead of a metric --
+        see `service.log_champion_coverage`. Only `rank_verified` rows are
+        counted, same as `count_by_tier`.
+        """
+        pipeline = [
+            {"$match": {"rank_verified": True}},
+            {"$group": {"_id": {"champion": "$champion", "role": "$role"}, "count": {"$sum": 1}}},
+        ]
+        return {
+            (doc["_id"]["champion"], doc["_id"]["role"]): int(doc["count"])
+            for doc in self._peer_games.aggregate(pipeline)
+            if doc["_id"]["champion"] and doc["_id"]["role"]
+        }

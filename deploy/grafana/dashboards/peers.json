@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": {
     "from": "now-6h",
@@ -795,6 +795,37 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "logs",
+      "title": "Peer sample coverage by champion+role (verified games)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 98
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessages": true,
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{service=\"peers\"} |= \"peer_sample_champion_coverage\"",
+          "refId": "A"
+        }
+      ],
+      "description": "Per-(champion, role) verified peer-game counts, refreshed every 5m (service.log_champion_coverage, same cadence as peers_match_sample_coverage_games). Deliberately a Loki logs panel, not a Prometheus metric: champion is a Data Dragon-sourced, ~170-value-and-growing set with no fixed enum in code, so a champion label would risk unbounded Prometheus cardinality growth every time a new champion ships -- same rule that keeps the tier coverage panel above tier-only, and the same pattern the sampling queue activity panel below uses for its own high-cardinality keys."
     }
   ]
 }
