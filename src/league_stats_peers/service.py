@@ -925,13 +925,27 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         # out, not production that opts in.
         self._idle_coordinator: "_IdleCoordinator | None" = None
         if PEERS_ENABLE_PREWARM_COORDINATOR:
+            scheduler = _get_default_scheduler()
             self._idle_coordinator = _IdleCoordinator(
-                scheduler=_get_default_scheduler(),
+                scheduler=scheduler,
                 peer_store=self._peer_store,
                 riot_client_for=self._riot_client_for,
                 default_platform=self._default_platform,
             )
             configure_scheduler_idle_hook(self._idle_coordinator)
+            # `SamplingScheduler.start()` is otherwise only called lazily, by
+            # `_enqueue_sampling_task` the first time a real request falls
+            # through to live sampling (`baseline.py:345`) -- without this
+            # explicit call, a freshly started/restarted PEERS process with
+            # no real traffic yet never spins up the scheduler's background
+            # worker threads at all, so `_worker_loop` never runs, `on_idle`
+            # never fires, and pre-warm silently never does anything until
+            # the first real request happens to trigger it organically --
+            # confirmed live: a redeployed instance sat completely idle,
+            # logging nothing, because of exactly this. Pre-warm's whole
+            # point is to warm the cache BEFORE a real request needs it, so
+            # the workers must start at process startup, not on first use.
+            scheduler.start()
 
     @property
     def peer_store(self) -> PeerSampleStore:
