@@ -660,6 +660,7 @@ def _build_peer_for_pool_via_grpc(
             ranked=ranked,
             champion=pool.champion,
             role=pool.role,
+            platform=services.config.routing_platform,
         )
 
     request = peers_pb2.RequestBaselineRequest(

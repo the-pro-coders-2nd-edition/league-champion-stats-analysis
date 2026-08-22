@@ -466,6 +466,7 @@ def finish_peer_comparison(
     ranked: RankedEntry,
     champion: str,
     role: str,
+    platform: str = "",
 ) -> PeerComparisonResult:
     """Finish building a `PeerComparisonResult` once a `PeerBaseline` is in hand.
 
@@ -487,6 +488,11 @@ def finish_peer_comparison(
         ranked: Player's solo queue rank.
         champion: Riot champion id being analysed.
         role: Normalised team position being analysed.
+        platform: Platform the baseline was resolved against (e.g. `"euw1"`).
+            Stamped onto the result so a stored report can later be matched
+            back against PEERS' live-cache key for the lazy refresh-on-read
+            check. Defaults to `""` for callers that don't have a platform in
+            scope (e.g. direct unit tests of this function).
 
     Returns:
         The full comparison result.
@@ -552,6 +558,8 @@ def finish_peer_comparison(
         comparisons=comparisons,
         strengths=strengths,
         weaknesses=weaknesses,
+        platform=platform,
+        patch=current_patch(records),
     )
 
 
@@ -618,6 +626,7 @@ def build_peer_comparison(
         ranked=ranked,
         champion=champion,
         role=role,
+        platform=client.platform,
     )
 
 
