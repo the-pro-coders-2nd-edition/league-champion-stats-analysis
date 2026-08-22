@@ -2101,6 +2101,7 @@ def test_run_stage_b_patches_report_json_on_interim_and_computes_career_once_on_
     ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
     batch = _fake_batch()
     services = _fake_services()
+    services.config.reports_group_slug = "player_slug_placeholder"
 
     interim_peer = SimpleNamespace(label="interim", peer_games=6)
     terminal_peer = SimpleNamespace(label="terminal")
@@ -2115,7 +2116,7 @@ def test_run_stage_b_patches_report_json_on_interim_and_computes_career_once_on_
     patch_calls: list[Any] = []
     analyze_calls: list[dict[str, Any]] = []
 
-    def _fake_patch_report_peer_comparison(config, pool, peer_comparison):
+    def _fake_patch_report_peer_comparison(player_slug, build_slug, peer_comparison):
         patch_calls.append(peer_comparison)
         return True
 

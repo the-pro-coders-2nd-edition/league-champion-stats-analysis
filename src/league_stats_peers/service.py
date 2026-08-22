@@ -222,6 +222,7 @@ from league_stats_peers.analysis.peer.baseline import (
     resolve_peer_baseline,
     task_key_for,
 )
+from league_stats_peers.analysis.peer.benchmark_cache import read_live_cache
 from league_stats_peers.analysis.peer.benchmark_fetcher import BenchmarkSnapshot
 from league_stats_peers.analysis.peer.benchmarks import VALID_TIERS
 from league_stats_common.core.config import AppConfig, PLATFORM_TO_REGION, REGION_DEFAULT_PLATFORM, VALID_PLATFORMS
@@ -918,6 +919,42 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
             request_id=request_id,
             cached=True,
             baseline_json=_encode_baseline(baseline),
+        )
+
+    def PeekBaseline(self, request, context):
+        """Read-only: returns whatever is currently cached for this key, or
+        found=false. Never calls `resolve_peer_baseline` (the only path to a
+        `SamplingTask`) -- a genuine cache miss is reported as-is, it never
+        falls through to live sampling. See the `.proto`'s own docstring for
+        the intended caller (api-ui's lazy peer-comparison refresh on report
+        read, design "peers-scheduling-and-cleanup" RFC, lazy-refresh
+        section)."""
+        champion = request.champion
+        role = request.lane
+        tier, _division = _parse_rank(request.rank)
+        if not champion or not role or not tier:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("champion, lane and a parseable rank are required")
+            return peers_pb2.PeekBaselineResponse()
+
+        requested_platform = request.platform.strip().lower() if request.platform else ""
+        if requested_platform and requested_platform not in VALID_PLATFORMS:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details(
+                f"unknown platform {request.platform!r}; must be one of {sorted(VALID_PLATFORMS)}"
+            )
+            return peers_pb2.PeekBaselineResponse()
+        env_platform = os.environ.get("PEERS_PLATFORM", "").strip().lower()
+        platform = requested_platform or env_platform or self._default_platform
+
+        snapshot = read_live_cache(platform, tier, champion, role, patch=request.patch)
+        if snapshot is None:
+            return peers_pb2.PeekBaselineResponse(found=False)
+        baseline = _baseline_from_snapshot(snapshot, champion, role, level=2)
+        return peers_pb2.PeekBaselineResponse(
+            found=True,
+            baseline_json=_encode_baseline(baseline),
+            still_refining=snapshot.still_refining,
         )
 
     def _on_resolved(

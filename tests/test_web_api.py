@@ -1450,3 +1450,140 @@ def test_objectid_is_json_serializable_via_fastapi_encoders() -> None:
 
     encoded = jsonable_encoder({"_id": ObjectId(), "name": "test"})
     assert isinstance(encoded["_id"], str)
+
+
+# ------------------------- lazy peer-comparison refresh on report read
+
+
+def _stale_peer_comparison(**overrides: Any) -> dict[str, Any]:
+    """A `fallback_level >= 2` peer comparison -- resolved via PEERS' live
+    cache/SamplingTask path, so it's eligible for the lazy refresh check
+    (see design "peers-scheduling-and-cleanup" RFC, lazy-refresh section)."""
+    peer = {
+        "rank_label": "Emerald III",
+        "tier": "EMERALD",
+        "rank_badge": "III",
+        "champion": "Aatrox",
+        "role": "TOP",
+        "build_label": "Aatrox top",
+        "source": "live sample",
+        "peer_games": 20,
+        "peer_players": 15,
+        "confidence": "low",
+        "fallback_level": 2,
+        "comparisons": [],
+        "strengths": [],
+        "weaknesses": [],
+        "platform": "euw1",
+        "patch": "16.16",
+    }
+    peer.update(overrides)
+    return peer
+
+
+def test_report_read_patches_a_stale_peer_comparison_from_peek_baseline(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A report whose stored peer comparison is not already maximally
+    confident (`fallback_level >= 2`) must be refreshed from PEEK-ed
+    live-cache data on read, if PEERS reports something better is now
+    available."""
+    monkeypatch.setattr(web_app, "_last_peek_at", {})
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    _override_report_body(
+        "test_euw",
+        "viktor_middle",
+        {
+            "champion": "Viktor",
+            "peer_comparison": _stale_peer_comparison(),
+        },
+    )
+
+    class FakeStub:
+        def PeekBaseline(self, request, timeout=None):
+            return web_app.peers_pb2.PeekBaselineResponse(
+                found=True,
+                baseline_json=json.dumps(_stale_peer_comparison(peer_games=70, peer_players=40, source="improved")),
+                still_refining=True,
+            )
+
+    monkeypatch.setattr(web_app, "_peers_stub", lambda: FakeStub())
+
+    response = client.get("/api/players/test_euw/builds/viktor_middle")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["peer_comparison"]["peer_games"] == 70
+    assert body["peer_comparison"]["source"] == "improved"
+
+    with open_report_store() as store:
+        stored = store.get_report("test_euw", "viktor_middle")
+    assert stored["peer_comparison"]["peer_games"] == 70
+
+
+def test_report_read_skips_peek_for_already_high_confidence_peer_comparison(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A report whose peer comparison already has `fallback_level < 2` must
+    never call PeekBaseline at all -- levels 0/1 come from the persistent
+    peer_games store, not a SamplingTask/live cache, and cannot improve via
+    this mechanism."""
+    monkeypatch.setattr(web_app, "_last_peek_at", {})
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    _override_report_body(
+        "test_euw",
+        "viktor_middle",
+        {
+            "champion": "Viktor",
+            "peer_comparison": _stale_peer_comparison(confidence="high", fallback_level=0),
+        },
+    )
+
+    called: list[Any] = []
+
+    class FakeStub:
+        def PeekBaseline(self, request, timeout=None):
+            called.append(request)
+            raise AssertionError("PeekBaseline must not be called for a fallback_level < 2 report")
+
+    monkeypatch.setattr(web_app, "_peers_stub", lambda: FakeStub())
+
+    response = client.get("/api/players/test_euw/builds/viktor_middle")
+
+    assert response.status_code == 200
+    assert called == []
+
+
+def test_report_read_rate_limits_repeated_peeks_for_the_same_build(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second read of the same stale-peer-comparison report within
+    `_PEEK_RATE_LIMIT_S` must not fire a second PeekBaseline RPC -- protects
+    against an RPC storm on a popular report that gets viewed/polled
+    frequently."""
+    monkeypatch.setattr(web_app, "_last_peek_at", {})
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    _override_report_body(
+        "test_euw",
+        "viktor_middle",
+        {
+            "champion": "Viktor",
+            "peer_comparison": _stale_peer_comparison(),
+        },
+    )
+
+    calls: list[Any] = []
+
+    class FakeStub:
+        def PeekBaseline(self, request, timeout=None):
+            calls.append(request)
+            return web_app.peers_pb2.PeekBaselineResponse(found=False)
+
+    monkeypatch.setattr(web_app, "_peers_stub", lambda: FakeStub())
+
+    first = client.get("/api/players/test_euw/builds/viktor_middle")
+    second = client.get("/api/players/test_euw/builds/viktor_middle")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert len(calls) == 1

@@ -207,7 +207,6 @@ def test_patch_report_peer_comparison_updates_peer_fields_and_generated_at(
     """
     import time
 
-    from league_stats_runner.ingest.parser import BuildPool
     from league_stats_runner.pipeline.orchestrator import patch_report_peer_comparison
 
     config = _config(tmp_path, champion="Viktor", role="MIDDLE")
@@ -222,10 +221,11 @@ def test_patch_report_peer_comparison_updates_peer_fields_and_generated_at(
     assert before["career"]["awaiting_peers"] is True
 
     time.sleep(1.1)  # utc_now_iso() has second-level resolution
-    pool = BuildPool(champion="Viktor", role="MIDDLE", games=len(records))
     interim_peer = _peer(records)
 
-    patched = patch_report_peer_comparison(config, pool, interim_peer)
+    patched = patch_report_peer_comparison(
+        config.reports_group_slug, build_slug, interim_peer
+    )
 
     assert patched is True
     with open_report_store() as store:
@@ -254,14 +254,15 @@ def test_patch_report_peer_comparison_is_a_noop_without_an_existing_report(
     """No report body yet (e.g. Stage A never got far enough) -- the patch
     must report failure rather than crashing, so the caller can fall back to
     a full render."""
-    from league_stats_runner.ingest.parser import BuildPool
     from league_stats_runner.pipeline.orchestrator import patch_report_peer_comparison
 
     config = _config(tmp_path, champion="Zed", role="MIDDLE")
     records = _make_records()
-    pool = BuildPool(champion="Zed", role="MIDDLE", games=len(records))
+    build_slug = champion_slug(config.champion, config.role)
 
-    assert patch_report_peer_comparison(config, pool, _peer(records)) is False
+    assert patch_report_peer_comparison(
+        config.reports_group_slug, build_slug, _peer(records)
+    ) is False
 
 
 def test_save_body_splits_view_slices_and_game_review_out_of_the_head_document(

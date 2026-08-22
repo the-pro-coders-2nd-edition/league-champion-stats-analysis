@@ -1161,3 +1161,96 @@ def test_notify_peer_baseline_ready_fires_progressively_until_terminal(
     peer_baseline._dispatch_progressive_listeners(task_key, terminal_snapshot)
     time.sleep(0.2)
     assert len(fake_runner_servicer.received) == 3
+
+
+# --------------------------------------------------------------- PeekBaseline
+
+
+def test_peek_baseline_returns_cached_snapshot_without_enqueuing_a_task(
+    monkeypatch: pytest.MonkeyPatch, peer_store
+) -> None:
+    """PeekBaseline must be genuinely read-only: a cache hit is served
+    straight from `live_benchmark_cache` -- it must NOT call
+    `resolve_peer_baseline` (the only thing that can ever start a
+    `SamplingTask`)."""
+    import mongomock
+
+    import league_stats_peers.analysis.peer.benchmark_cache as benchmark_cache
+    from league_stats_peers.analysis.peer.benchmark_cache import write_live_cache
+    from league_stats_peers.analysis.peer.benchmark_fetcher import BenchmarkSnapshot
+    from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
+
+    monkeypatch.setattr(
+        benchmark_cache, "_store", LiveBenchmarkCacheStore(mongomock.MongoClient(), db_name="test_live_cache")
+    )
+    monkeypatch.setattr(
+        peers_service,
+        "resolve_peer_baseline",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("PeekBaseline must never enqueue a SamplingTask")),
+    )
+
+    write_live_cache(
+        "euw1",
+        "EMERALD",
+        "Aatrox",
+        "TOP",
+        BenchmarkSnapshot(
+            metrics={"kda": 3.5},
+            games_sampled=70,
+            players_sampled=40,
+            from_cache=False,
+            platform="euw1",
+            confidence="full",
+            still_refining=False,
+        ),
+        patch="16.16",
+    )
+
+    servicer = PeersServicer(
+        peer_store=peer_store, riot_client_factory=_fixed_riot_client_factory(_fake_riot_client())
+    )
+    response = servicer.PeekBaseline(
+        peers_pb2.PeekBaselineRequest(
+            champion="Aatrox", lane="TOP", rank="EMERALD III", platform="euw1", patch="16.16"
+        ),
+        context=MagicMock(),
+    )
+
+    assert response.found is True
+    assert response.baseline_json
+    assert json.loads(response.baseline_json)["games"] == 70
+    assert response.still_refining in (True, False)
+
+
+def test_peek_baseline_reports_not_found_without_enqueuing_a_task(
+    monkeypatch: pytest.MonkeyPatch, peer_store
+) -> None:
+    """A genuine cache miss must return found=False, never fall through to
+    live sampling -- `resolve_peer_baseline` (the only path to a
+    `SamplingTask`) must never be called."""
+    import mongomock
+
+    import league_stats_peers.analysis.peer.benchmark_cache as benchmark_cache
+    from league_stats_peers.infra.live_benchmark_cache_store import LiveBenchmarkCacheStore
+
+    monkeypatch.setattr(
+        benchmark_cache, "_store", LiveBenchmarkCacheStore(mongomock.MongoClient(), db_name="test_live_cache")
+    )
+    monkeypatch.setattr(
+        peers_service,
+        "resolve_peer_baseline",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("PeekBaseline must never enqueue a SamplingTask")),
+    )
+
+    servicer = PeersServicer(
+        peer_store=peer_store, riot_client_factory=_fixed_riot_client_factory(_fake_riot_client())
+    )
+    response = servicer.PeekBaseline(
+        peers_pb2.PeekBaselineRequest(
+            champion="Nonexistent", lane="TOP", rank="EMERALD III", platform="euw1", patch="16.16"
+        ),
+        context=MagicMock(),
+    )
+
+    assert response.found is False
+    assert response.baseline_json == ""

@@ -31,3 +31,27 @@ class RequestBaselineResponse(_message.Message):
     baseline_json: str
     error: str
     def __init__(self, request_id: _Optional[str] = ..., cached: _Optional[bool] = ..., baseline_json: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...
+
+class PeekBaselineRequest(_message.Message):
+    __slots__ = ("champion", "lane", "rank", "platform", "patch")
+    CHAMPION_FIELD_NUMBER: _ClassVar[int]
+    LANE_FIELD_NUMBER: _ClassVar[int]
+    RANK_FIELD_NUMBER: _ClassVar[int]
+    PLATFORM_FIELD_NUMBER: _ClassVar[int]
+    PATCH_FIELD_NUMBER: _ClassVar[int]
+    champion: str
+    lane: str
+    rank: str
+    platform: str
+    patch: str
+    def __init__(self, champion: _Optional[str] = ..., lane: _Optional[str] = ..., rank: _Optional[str] = ..., platform: _Optional[str] = ..., patch: _Optional[str] = ...) -> None: ...
+
+class PeekBaselineResponse(_message.Message):
+    __slots__ = ("found", "baseline_json", "still_refining")
+    FOUND_FIELD_NUMBER: _ClassVar[int]
+    BASELINE_JSON_FIELD_NUMBER: _ClassVar[int]
+    STILL_REFINING_FIELD_NUMBER: _ClassVar[int]
+    found: bool
+    baseline_json: str
+    still_refining: bool
+    def __init__(self, found: _Optional[bool] = ..., baseline_json: _Optional[str] = ..., still_refining: _Optional[bool] = ...) -> None: ...

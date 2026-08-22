@@ -219,6 +219,14 @@ class _NoHistoryStore:
         return iter(())
 
 
+class _FakeClient:
+    """Minimal `RiotApiClient` stand-in: `build_peer_comparison` only reads
+    `.platform` off it before delegating baseline resolution (mocked away in
+    these tests)."""
+
+    platform = "euw1"
+
+
 def _sample_baseline():
     from league_stats_peers.analysis.peer.baseline import PeerBaseline
 
@@ -259,7 +267,7 @@ def test_build_peer_comparison_matches_finish_peer_comparison_for_the_same_basel
     store = _NoHistoryStore()
 
     via_build = build_peer_comparison(
-        client=object(),
+        client=_FakeClient(),
         store=store,
         matches_df=matches_df,
         records=[],
@@ -277,12 +285,47 @@ def test_build_peer_comparison_matches_finish_peer_comparison_for_the_same_basel
         ranked=ranked,
         champion="Ahri",
         role="MIDDLE",
+        platform=_FakeClient.platform,
     )
 
     assert via_build is not None
     assert via_build.model_dump() == via_finish.model_dump()
     assert via_build.peer_games == 80
     assert via_build.comparisons, "expected real comparisons to have been computed"
+    assert via_build.platform == "euw1"
+
+
+def test_finish_peer_comparison_carries_platform_and_patch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`finish_peer_comparison` must stamp the platform it resolved the
+    baseline against, and the current patch (`current_patch(records)`), onto
+    the `PeerComparisonResult` -- so a stored report can later be matched
+    back against PEERS' live-cache key (platform/champion/role/tier/patch)
+    for the lazy refresh-on-read check (design "peers-scheduling-and-cleanup"
+    RFC, lazy-refresh section)."""
+    import league_stats_peers.analysis.peer.comparison as comparison_module
+    from league_stats_peers.analysis.peer.comparison import finish_peer_comparison
+
+    monkeypatch.setattr(comparison_module, "current_patch", lambda records: "16.16")
+    baseline = _sample_baseline()
+    matches_df = _sample_matches_df()
+    ranked = RankedEntry(tier="GOLD", rank="II", league_points=45, wins=10, losses=10)
+    store = _NoHistoryStore()
+
+    result = finish_peer_comparison(
+        baseline,
+        matches_df=matches_df,
+        records=[],
+        store=store,
+        user_puuid=MY_PUUID,
+        ranked=ranked,
+        champion="Ahri",
+        role="MIDDLE",
+        platform="euw1",
+    )
+
+    assert result is not None
+    assert result.platform == "euw1"
+    assert result.patch == "16.16"
 
 
 def test_finish_peer_comparison_reads_user_history_via_raw_match_store() -> None:

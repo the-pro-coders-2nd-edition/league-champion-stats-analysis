@@ -7,6 +7,12 @@ service PeersService {
   // If not cached, PEERS enqueues its own fetch and calls back into
   // RunnerService.NotifyPeerBaselineReady when done.
   rpc RequestBaseline(RequestBaselineRequest) returns (RequestBaselineResponse);
+  // Read-only: returns whatever is currently cached for this key, or
+  // found=false. Never enqueues a SamplingTask -- callers that want PEERS
+  // to actually go fetch data must use RequestBaseline instead. Meant for
+  // a cheap "has this improved since I last saved it" check on report
+  // read, not for resolving a baseline from scratch.
+  rpc PeekBaseline(PeekBaselineRequest) returns (PeekBaselineResponse);
 }
 
 message RequestBaselineRequest {
@@ -37,4 +43,18 @@ message RequestBaselineResponse {
   // request outright). Distinct from a later async failure, which is
   // reported via PeerBaselineReadyRequest.error on the callback instead.
   string error = 4;
+}
+
+message PeekBaselineRequest {
+  string champion = 1;
+  string lane = 2;
+  string rank = 3;
+  string platform = 4;
+  string patch = 5;
+}
+
+message PeekBaselineResponse {
+  bool found = 1;
+  string baseline_json = 2;
+  bool still_refining = 3;
 }
