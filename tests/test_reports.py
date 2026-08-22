@@ -163,3 +163,67 @@ def test_improvement_score_has_a_resolved_tone_colour(tmp_path: Path) -> None:
     assert payload["score_color"]
     assert "var(--" in payload["score_color"]
     assert payload["score_verdict_label"] in {"Strength", "Solid", "Steady", "Watch", "Focus"}
+
+
+def test_patch_report_peer_comparison_updates_peer_fields_and_generated_at(
+    tmp_path: Path,
+) -> None:
+    """Design "Progressive peer-comparison updates during live sampling" §3.2:
+    `patch_report_peer_comparison` rewrites an already-rendered `report.json`'s
+    peer fields in place -- without re-running the analysis pipeline -- and
+    bumps `generated_at` so the frontend's existing `generated_at`-triggers-
+    refetch logic (§3.4) picks up the change. `career`/`overview`/other
+    Stage-A-rendered fields must be left exactly as they were.
+
+    Fails pre-fix: `patch_report_peer_comparison` did not exist at all.
+    """
+    import time
+
+    from league_stats_runner.ingest.parser import BuildPool
+    from league_stats_runner.pipeline.orchestrator import patch_report_peer_comparison
+
+    config = _config(tmp_path, champion="Viktor", role="MIDDLE")
+    records = _make_records()
+
+    # Stage A: no peer comparison yet -- the awaiting_peers loading shape.
+    report_path = run_analysis(config, records, peer_comparison=None)
+    before = json.loads(report_path.read_text(encoding="utf-8"))
+    assert before["has_peer_comparison"] is False
+    assert before["career"]["awaiting_peers"] is True
+
+    time.sleep(1.1)  # utc_now_iso() has second-level resolution
+    pool = BuildPool(champion="Viktor", role="MIDDLE", games=len(records))
+    interim_peer = _peer(records)
+
+    patched = patch_report_peer_comparison(config, pool, interim_peer)
+
+    assert patched is True
+    after = json.loads(report_path.read_text(encoding="utf-8"))
+    assert after["has_peer_comparison"] is True
+    assert after["peer_comparison"]["rank_label"] == "GOLD II"
+    assert after["peer_rows"]
+    assert after["generated_at"] != before["generated_at"]
+    # Career/overview/etc. are Stage-A-rendered and untouched by this cheap patch.
+    assert after["career"] == before["career"]
+    assert after["overview"] == before["overview"]
+
+    meta_path = config.report_dir / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert meta["has_peer_comparison"] is True
+    assert meta["generated_at"] == after["generated_at"]
+
+
+def test_patch_report_peer_comparison_is_a_noop_without_an_existing_report(
+    tmp_path: Path,
+) -> None:
+    """No `report.json` yet (e.g. Stage A never got far enough) -- the patch
+    must report failure rather than crashing, so the caller can fall back to
+    a full render."""
+    from league_stats_runner.ingest.parser import BuildPool
+    from league_stats_runner.pipeline.orchestrator import patch_report_peer_comparison
+
+    config = _config(tmp_path, champion="Zed", role="MIDDLE")
+    records = _make_records()
+    pool = BuildPool(champion="Zed", role="MIDDLE", games=len(records))
+
+    assert patch_report_peer_comparison(config, pool, _peer(records)) is False
