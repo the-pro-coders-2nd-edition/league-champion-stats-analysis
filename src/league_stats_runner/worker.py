@@ -78,7 +78,14 @@ RUNNER_PEERS_ASYNC_WAIT_DURATION = Histogram(
 # Deadlines for the gRPC RPCs to RUNNER (see `_execute_job_via_runner`), so a
 # RUNNER that's reachable but hung doesn't block the worker thread forever.
 _RUNNER_ENQUEUE_TIMEOUT_S = 30.0
-_RUNNER_STREAM_TIMEOUT_S = 1800.0
+# Raised from 1800s (30min) to 5400s (90min): a multi-account tracked group
+# (several riot ids analyzed together) can need well over 30 minutes of
+# Riot-API-rate-limited match downloads across all its accounts before RUNNER
+# ever reports progress back over this stream. When this fired, api-ui gave
+# up and marked the job FAILED while RUNNER kept executing it in the
+# background, orphaned from any job/state tracking -- confirmed live in
+# production against a 3-account group needing ~1300 total matches.
+_RUNNER_STREAM_TIMEOUT_S = 5400.0
 
 # Deadline for the `RequestBaseline` unary call itself (see
 # `_build_peer_for_pool_via_grpc`). PEERS' own `RequestBaseline` blocks
@@ -107,10 +114,10 @@ _PEERS_REQUEST_TIMEOUT_S = 10.0
 # through to live sampling cannot benefit from a previous request's downloads).
 # 900s leaves real headroom above that ~505s+ floor. The actual outer
 # constraint this must stay under is RUNNER's own `StreamJobProgress` deadline
-# on the *caller* side (`_RUNNER_STREAM_TIMEOUT_S`, 1800s, in the
+# on the *caller* side (`_RUNNER_STREAM_TIMEOUT_S`, 5400s, in the
 # monolith-to-RUNNER gRPC client) -- since stage B can call this once per pool
 # in `batch.pools`, several pools each waiting close to this timeout could in
-# principle exceed that 1800s budget for a job with many builds; that
+# principle exceed that 5400s budget for a job with many builds; that
 # per-job/per-pool interaction is a known, not-yet-solved limit of this design
 # (see task-3-report.md), not something this constant alone can fix. A build
 # whose baseline never arrives in time skips its peer comparison (soft
