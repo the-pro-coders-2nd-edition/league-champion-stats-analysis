@@ -841,6 +841,37 @@ def _merge_player_enrichment(
     return merged
 
 
+def _upsert_player_registry(
+    *,
+    slug: str,
+    job: dict[str, Any],
+    store: JobStore,
+    resolved_players: list[dict[str, Any]] | None,
+    tracked: list[dict[str, Any]],
+) -> None:
+    """Idempotently write this job's player/group row into the registry.
+
+    Shared by `_execute_job_via_runner`'s two call sites: the normal
+    Stage-B-triggered fast path, and the DONE-time safety net below it. Both
+    must merge onto the existing row the same way (see
+    `_merge_player_enrichment`'s docstring) so neither call can wipe out
+    profile_icon_id/solo-rank data the other already wrote.
+    """
+    existing = store.get_player(slug)
+    existing_players = (existing or {}).get("players") or []
+    merged_players = _merge_player_enrichment(
+        resolved_players if resolved_players is not None else tracked,
+        existing_players,
+    )
+    store.upsert_player(
+        slug=slug,
+        riot_id=str(job.get("riot_id", "")),
+        tagline=str(job.get("tagline", "")),
+        region=str(job.get("region", "")),
+        players=merged_players or None,
+    )
+
+
 def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: WebConfig) -> None:
     """Delegate one claimed job to RUNNER over gRPC, replaying its progress into `store`.
 
@@ -935,6 +966,20 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
       is a real behavioral difference, not yet fixed -- fixing it needs
       `runner.proto`/`RunnerJobAdapter` to surface the resolved roster before
       stage A completes, which is out of this task's scope.
+    - Safety net for a lost Stage-B event: if the gRPC stream drops (or a
+      `docker-compose` restart of api-ui/RUNNER races) at exactly the moment
+      the one-shot Stage-B `StageResult` would have been sent/received, the
+      `store.upsert_player` call above never fires -- but RUNNER still
+      finishes independently (report.json lives on its own shared volume, no
+      Mongo/gRPC dependency), so the job can still reach a terminal `final`
+      message. Without a fallback, that job would land in `job_states.DONE`
+      with `has_report: true` but no registry row at all: `can_watch` stays
+      false forever, and unwatch 404s with "Unknown player". So the `final`
+      handling below unconditionally calls `_upsert_player_registry` (using
+      the same locally-resolved `tracked`/`resolved_players` data) whenever a
+      job is about to reach `DONE` and `seen_stage_b` never flipped -- purely
+      additive redundancy on top of the Stage-B fast path above, safe because
+      `JobStore.upsert_player` is an idempotent upsert.
     - This function also resolves the job's roster *locally* before ever
       contacting RUNNER, via the same `_tracked_players_for_job` recovery
       `execute_job` itself relies on (registry -> job's own
@@ -1085,18 +1130,12 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
                     # payload_json above) over the locally-resolved fallback, then fill
                     # any still-missing profile_icon_id/solo-rank fields from what the
                     # registry already had -- never erase existing data (see docstring).
-                    existing = store.get_player(slug)
-                    existing_players = (existing or {}).get("players") or []
-                    merged_players = _merge_player_enrichment(
-                        resolved_players if resolved_players is not None else tracked,
-                        existing_players,
-                    )
-                    store.upsert_player(
+                    _upsert_player_registry(
                         slug=slug,
-                        riot_id=str(job.get("riot_id", "")),
-                        tagline=str(job.get("tagline", "")),
-                        region=str(job.get("region", "")),
-                        players=merged_players or None,
+                        job=job,
+                        store=store,
+                        resolved_players=resolved_players,
+                        tracked=tracked,
                     )
                     store.mark_player_base_complete(slug)
                     store.set_state(
@@ -1110,19 +1149,42 @@ def _execute_job_via_runner(job: dict[str, Any], store: JobStore, web_config: We
                 if result.final:
                     if result.error and not seen_stage_b:
                         store.set_state(job_id, job_states.FAILED, error=result.error)
-                    elif result.error:
-                        store.mark_player_peer_failed(slug)
-                        store.set_state(
-                            job_id,
-                            job_states.DONE,
-                            detail=result.detail or "Report complete",
-                            error=result.error,
-                        )
                     else:
-                        store.mark_player_peer_complete(slug)
-                        store.set_state(
-                            job_id, job_states.DONE, detail=result.detail or "Report complete"
-                        )
+                        if not seen_stage_b:
+                            # Safety net: the Stage-B StreamJobProgress event that
+                            # normally triggers this write can be lost if the gRPC
+                            # stream drops at exactly the wrong moment (e.g. a
+                            # docker-compose restart mid-job) -- see
+                            # `_upsert_player_registry`. RUNNER still finishes the
+                            # job independently of this stream (report.json lives
+                            # on its own shared volume), so without this, a job
+                            # can reach DONE with no registry row at all:
+                            # can_watch stays false forever and unwatch 404s with
+                            # "Unknown player". Must not depend on ever having
+                            # seen RUNNER's Stage-B payload.
+                            _upsert_player_registry(
+                                slug=slug,
+                                job=job,
+                                store=store,
+                                resolved_players=resolved_players,
+                                tracked=tracked,
+                            )
+                            store.mark_player_base_complete(slug)
+                        if result.error:
+                            store.mark_player_peer_failed(slug)
+                            store.set_state(
+                                job_id,
+                                job_states.DONE,
+                                detail=result.detail or "Report complete",
+                                error=result.error,
+                            )
+                        else:
+                            store.mark_player_peer_complete(slug)
+                            store.set_state(
+                                job_id,
+                                job_states.DONE,
+                                detail=result.detail or "Report complete",
+                            )
                     log.info(
                         "Job %d (via RUNNER) finished: %s",
                         job_id,
