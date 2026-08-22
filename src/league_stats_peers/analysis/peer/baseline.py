@@ -17,7 +17,12 @@ from league_stats_peers.analysis.peer.cache import (
     collect_peer_games_from_store,
     peer_metric_quantiles,
 )
-from league_stats_peers.analysis.peer.rank_scope import RankScope, build_exact_scope, build_wider_scope, build_widened_scope
+from league_stats_peers.analysis.peer.rank_scope import (
+    RankScope,
+    build_division_scope,
+    build_wider_scope,
+    build_widened_scope,
+)
 from league_stats_peers.analysis.peer.sampling_task import SamplingTask, TaskKey
 from league_stats_peers.analysis.peer.scheduler import SamplingScheduler
 from league_stats_common.core.champions import build_label
@@ -496,7 +501,7 @@ def resolve_peer_baseline(
         ranked,
         champion,
         role,
-        scope=build_exact_scope(ranked),
+        scope=build_division_scope(ranked),
         exclude_puuid=exclude,
         min_games=MIN_EXACT_GAMES,
         level=0,
