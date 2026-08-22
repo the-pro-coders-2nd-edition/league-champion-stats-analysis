@@ -31,13 +31,17 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 import pymongo
+from bson import ObjectId
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.routing import Match
 from pydantic import BaseModel, Field
+
+ENCODERS_BY_TYPE[ObjectId] = str
 
 from league_stats_common.core.champions import (
     champion_display_name,
