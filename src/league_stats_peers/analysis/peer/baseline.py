@@ -337,8 +337,21 @@ def _try_live_baseline(
     progress: ProgressReporter = NULL_REPORTER,
     match_sample_store: Any | None = None,
     scheduler: SamplingScheduler | None = None,
-) -> PeerBaseline | None:
+) -> tuple[PeerBaseline | None, bool]:
     """Return a peer baseline from the Mongo-backed live cache, or a batched live scan.
+
+    Also returns whether a `SamplingTask` for this key is still active (not
+    yet exhausted -- target reached, ceiling spent, or snowball queue empty).
+    A caller falling through to a coarser fallback level (3/4/5) below
+    because this returned `(None, True)` must mark whatever it ultimately
+    returns as `still_refining=True`: the underlying task keeps improving in
+    the background regardless of which level answered THIS request, and
+    without that flag `PeersServicer._on_resolved` never registers a
+    progressive listener, silently freezing the report at the coarse
+    fallback forever (see design "Progressive peer-comparison updates during
+    live sampling" §3.1 and the live incident it was found from -- a static
+    champion-JSON answer stayed the permanent report content even after the
+    task went on to sample 16+ real games).
 
     RFC "Batched, Round-Robin Live Sampling for PEERS": live sampling no
     longer runs a whole scan to completion on this call. Instead it attaches
@@ -390,7 +403,7 @@ def _try_live_baseline(
                 patch=patch,
                 match_sample_store=match_sample_store,
             )
-        return _baseline_from_snapshot(cached, champion, role, level=2)
+        return _baseline_from_snapshot(cached, champion, role, level=2), cached.still_refining
 
     key = _enqueue_sampling_task(
         active_scheduler,
@@ -415,8 +428,8 @@ def _try_live_baseline(
 
     cached = read_live_cache(client.platform, ranked.tier, champion, role, patch=patch)
     if cached is None:
-        return None
-    return _baseline_from_snapshot(cached, champion, role, level=2)
+        return None, active_scheduler.is_active(key)
+    return _baseline_from_snapshot(cached, champion, role, level=2), cached.still_refining
 
 
 def resolve_peer_baseline(
@@ -536,8 +549,9 @@ def resolve_peer_baseline(
         client.platform,
         ranked.label,
     )
+    live_task_active = False
     try:
-        baseline = _try_live_baseline(
+        baseline, live_task_active = _try_live_baseline(
             client,
             store,
             ranked,
@@ -598,6 +612,7 @@ def resolve_peer_baseline(
                 f"Peer store (±2 tier range): {baseline.games} {label} games "
                 f"from {baseline.players} players near {ranked.label}."
             ),
+            still_refining=live_task_active,
         )
 
     static = try_static_benchmark(ranked.tier, champion, role)
@@ -618,6 +633,7 @@ def resolve_peer_baseline(
             source=f"Static champion benchmark for {label} at {ranked.label}.",
             confidence="low",
             fallback_level=4,
+            still_refining=live_task_active,
         )
 
     role_static = try_role_benchmark(ranked.tier, role)
@@ -638,6 +654,7 @@ def resolve_peer_baseline(
             source=f"Static role benchmark for {label} lane at {ranked.label}.",
             confidence="low",
             fallback_level=5,
+            still_refining=live_task_active,
         )
 
     log.warning(

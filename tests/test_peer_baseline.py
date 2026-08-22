@@ -160,6 +160,91 @@ def test_resolve_peer_baseline_high_confidence_at_hundred_games(
     assert baseline.confidence == "high"
 
 
+class _FakeSchedulerLeavesTaskActive:
+    """Fake scheduler simulating a `SamplingTask` still running in the
+    background: `wait_for_signal` returns immediately (as if the wait ceiling
+    elapsed with nothing in the cache yet), and `is_active` reports the task
+    as not yet exhausted."""
+
+    def get_or_create(self, key, factory):
+        return None
+
+    def start(self) -> None:
+        return None
+
+    def wait_for_signal(self, key, timeout=None) -> None:
+        return None
+
+    def is_active(self, key) -> bool:
+        return True
+
+
+class _FakeSchedulerTaskExhausted(_FakeSchedulerLeavesTaskActive):
+    """Same as above, but the task has already finalized -- no more updates
+    are ever coming."""
+
+    def is_active(self, key) -> bool:
+        return False
+
+
+def test_static_fallback_marks_still_refining_when_live_task_still_active(
+    tmp_path, ranked: RankedEntry
+) -> None:
+    """Regression: a report must not freeze at a crude static-fallback
+    comparison forever while its `SamplingTask` keeps improving in the
+    background -- confirmed live in production (pabanakujihar_euw's
+    Aatrox/TOP build stayed at fallback_level=4/confidence=low/peer_games=0
+    even after the underlying task went on to sample 16+ real games).
+
+    `still_refining=True` on the level-4/5 answer is what makes
+    `PeersServicer._on_resolved` register a progressive listener
+    (service.py `if baseline.still_refining:`) so later interim/finalize
+    snapshots keep reaching RUNNER via `NotifyPeerBaselineReady` instead of
+    the report being finalized on this one crude answer.
+    """
+    store = CombinedMatchAndPeerStore()
+    client = MagicMock()
+    client.configure_mock(platform="euw1")
+
+    baseline = resolve_peer_baseline(
+        client,
+        store,
+        ranked,
+        "Ornn",
+        "TOP",
+        exclude_puuid="puuid-me",
+        scheduler=_FakeSchedulerLeavesTaskActive(),
+    )
+    assert baseline is not None
+    assert baseline.fallback_level in {4, 5}
+    assert baseline.still_refining is True
+
+
+def test_static_fallback_does_not_claim_refining_once_task_is_exhausted(
+    tmp_path, ranked: RankedEntry
+) -> None:
+    """The flip side: once the SamplingTask has genuinely finished (target
+    reached, ceiling spent, or snowball exhausted), there is nothing left to
+    listen for -- `still_refining` must stay False so
+    `register_progressive_listener` is never called for a dead task."""
+    store = CombinedMatchAndPeerStore()
+    client = MagicMock()
+    client.configure_mock(platform="euw1")
+
+    baseline = resolve_peer_baseline(
+        client,
+        store,
+        ranked,
+        "Ornn",
+        "TOP",
+        exclude_puuid="puuid-me",
+        scheduler=_FakeSchedulerTaskExhausted(),
+    )
+    assert baseline is not None
+    assert baseline.fallback_level in {4, 5}
+    assert baseline.still_refining is False
+
+
 def test_resolve_peer_baseline_wider_scope_requires_fifty_games(
     tmp_path, ranked: RankedEntry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
