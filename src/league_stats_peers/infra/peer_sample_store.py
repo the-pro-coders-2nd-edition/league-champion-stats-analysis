@@ -62,10 +62,9 @@ class PeerSampleStore:
         # call on every construction, including in tests.
         self._peer_games.create_index([("champion", 1), ("role", 1), ("platform", 1)])
         self._peer_games.create_index("puuid")
-
-    @staticmethod
-    def _dedup_key(match_id: str, puuid: str, champion: str, role: str) -> str:
-        return f"{match_id}\x1f{puuid}\x1f{champion}\x1f{role}"
+        self._peer_games.create_index(
+            [("match_id", 1), ("puuid", 1), ("champion", 1), ("role", 1)], unique=True
+        )
 
     def upsert_peer_game(self, row: dict[str, Any]) -> bool:
         """Insert a peer game row when it is not already stored.
@@ -81,7 +80,6 @@ class PeerSampleStore:
         champion = row["champion"]
         role = row["role"]
         doc = {
-            "_id": self._dedup_key(match_id, puuid, champion, role),
             "match_id": match_id,
             "puuid": puuid,
             "champion": champion,

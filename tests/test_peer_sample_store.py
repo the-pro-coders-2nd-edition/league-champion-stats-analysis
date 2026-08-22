@@ -42,6 +42,14 @@ def test_construction_creates_the_mirrored_sql_indexes(store):
     assert (("puuid", 1),) in key_sets
 
 
+def test_peer_game_id_is_a_real_objectid(store):
+    from bson import ObjectId
+
+    store.upsert_peer_game(_row())
+    doc = store._peer_games.find_one({})
+    assert isinstance(doc["_id"], ObjectId)
+
+
 def test_upsert_peer_game_inserts_new_row_and_returns_true(store):
     assert store.upsert_peer_game(_row()) is True
 
