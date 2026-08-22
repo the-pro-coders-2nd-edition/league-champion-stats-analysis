@@ -25,15 +25,15 @@ _sym_db = _symbol_database.Default()
 from league_stats_rpc.v1 import common_pb2 as league__stats__rpc_dot_v1_dot_common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n league_stats_rpc/v1/runner.proto\x12\x13league_stats_rpc.v1\x1a league_stats_rpc/v1/common.proto\"-\n\tJobPlayer\x12\x0f\n\x07riot_id\x18\x01 \x01(\t\x12\x0f\n\x07tagline\x18\x02 \x01(\t\"\xc6\x02\n\x11\x45nqueueJobRequest\x12\r\n\x05puuid\x18\x01 \x01(\t\x12+\n\x06region\x18\x02 \x01(\x0e\x32\x1b.league_stats_rpc.v1.Region\x12\x10\n\x08match_id\x18\x03 \x01(\t\x12\x0e\n\x06reason\x18\x04 \x01(\t\x12*\n\x04kind\x18\x05 \x01(\x0e\x32\x1c.league_stats_rpc.v1.JobKind\x12\x0f\n\x07riot_id\x18\x06 \x01(\t\x12\x0f\n\x07tagline\x18\x07 \x01(\t\x12\x13\n\x0bplayer_slug\x18\x08 \x01(\t\x12/\n\x07players\x18\t \x03(\x0b\x32\x1e.league_stats_rpc.v1.JobPlayer\x12\x17\n\x0f\x66ilter_champion\x18\n \x01(\t\x12\x13\n\x0b\x66ilter_role\x18\x0b \x01(\t\x12\x11\n\tmin_games\x18\x0c \x01(\x05\"$\n\x12\x45nqueueJobResponse\x12\x0e\n\x06job_id\x18\x01 \x01(\t\"*\n\x18StreamJobProgressRequest\x12\x0e\n\x06job_id\x18\x01 \x01(\t\"\xc7\x01\n\x0bStageResult\x12\x0e\n\x06job_id\x18\x01 \x01(\t\x12)\n\x05stage\x18\x02 \x01(\x0e\x32\x1a.league_stats_rpc.v1.Stage\x12\x14\n\x0cpayload_json\x18\x03 \x01(\t\x12\x19\n\x11\x63ompleted_at_unix\x18\x04 \x01(\x03\x12\r\n\x05\x65rror\x18\x05 \x01(\t\x12\r\n\x05\x66inal\x18\x06 \x01(\x08\x12\x0e\n\x06\x64\x65tail\x18\x07 \x01(\t\x12\x0f\n\x07\x63urrent\x18\x08 \x01(\x05\x12\r\n\x05total\x18\t \x01(\x05\"\x82\x01\n\x18PeerBaselineReadyRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x10\n\x08\x63hampion\x18\x02 \x01(\t\x12\x0c\n\x04lane\x18\x03 \x01(\t\x12\x0c\n\x04rank\x18\x04 \x01(\t\x12\x15\n\rbaseline_json\x18\x05 \x01(\t\x12\r\n\x05\x65rror\x18\x06 \x01(\t*h\n\x07JobKind\x12\x18\n\x14JOB_KIND_UNSPECIFIED\x10\x00\x12\x14\n\x10JOB_KIND_ANALYZE\x10\x01\x12\x14\n\x10JOB_KIND_REFRESH\x10\x02\x12\x17\n\x13JOB_KIND_REGENERATE\x10\x03\x32\xba\x02\n\rRunnerService\x12]\n\nEnqueueJob\x12&.league_stats_rpc.v1.EnqueueJobRequest\x1a\'.league_stats_rpc.v1.EnqueueJobResponse\x12\x66\n\x11StreamJobProgress\x12-.league_stats_rpc.v1.StreamJobProgressRequest\x1a .league_stats_rpc.v1.StageResult0\x01\x12\x62\n\x17NotifyPeerBaselineReady\x12-.league_stats_rpc.v1.PeerBaselineReadyRequest\x1a\x18.league_stats_rpc.v1.Ackb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n league_stats_rpc/v1/runner.proto\x12\x13league_stats_rpc.v1\x1a league_stats_rpc/v1/common.proto\"-\n\tJobPlayer\x12\x0f\n\x07riot_id\x18\x01 \x01(\t\x12\x0f\n\x07tagline\x18\x02 \x01(\t\"\xc6\x02\n\x11\x45nqueueJobRequest\x12\r\n\x05puuid\x18\x01 \x01(\t\x12+\n\x06region\x18\x02 \x01(\x0e\x32\x1b.league_stats_rpc.v1.Region\x12\x10\n\x08match_id\x18\x03 \x01(\t\x12\x0e\n\x06reason\x18\x04 \x01(\t\x12*\n\x04kind\x18\x05 \x01(\x0e\x32\x1c.league_stats_rpc.v1.JobKind\x12\x0f\n\x07riot_id\x18\x06 \x01(\t\x12\x0f\n\x07tagline\x18\x07 \x01(\t\x12\x13\n\x0bplayer_slug\x18\x08 \x01(\t\x12/\n\x07players\x18\t \x03(\x0b\x32\x1e.league_stats_rpc.v1.JobPlayer\x12\x17\n\x0f\x66ilter_champion\x18\n \x01(\t\x12\x13\n\x0b\x66ilter_role\x18\x0b \x01(\t\x12\x11\n\tmin_games\x18\x0c \x01(\x05\"$\n\x12\x45nqueueJobResponse\x12\x0e\n\x06job_id\x18\x01 \x01(\t\"*\n\x18StreamJobProgressRequest\x12\x0e\n\x06job_id\x18\x01 \x01(\t\"\xc7\x01\n\x0bStageResult\x12\x0e\n\x06job_id\x18\x01 \x01(\t\x12)\n\x05stage\x18\x02 \x01(\x0e\x32\x1a.league_stats_rpc.v1.Stage\x12\x14\n\x0cpayload_json\x18\x03 \x01(\t\x12\x19\n\x11\x63ompleted_at_unix\x18\x04 \x01(\x03\x12\r\n\x05\x65rror\x18\x05 \x01(\t\x12\r\n\x05\x66inal\x18\x06 \x01(\x08\x12\x0e\n\x06\x64\x65tail\x18\x07 \x01(\t\x12\x0f\n\x07\x63urrent\x18\x08 \x01(\x05\x12\r\n\x05total\x18\t \x01(\x05\"\x9a\x01\n\x18PeerBaselineReadyRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x10\n\x08\x63hampion\x18\x02 \x01(\t\x12\x0c\n\x04lane\x18\x03 \x01(\t\x12\x0c\n\x04rank\x18\x04 \x01(\t\x12\x15\n\rbaseline_json\x18\x05 \x01(\t\x12\r\n\x05\x65rror\x18\x06 \x01(\t\x12\x16\n\x0estill_refining\x18\x07 \x01(\x08*h\n\x07JobKind\x12\x18\n\x14JOB_KIND_UNSPECIFIED\x10\x00\x12\x14\n\x10JOB_KIND_ANALYZE\x10\x01\x12\x14\n\x10JOB_KIND_REFRESH\x10\x02\x12\x17\n\x13JOB_KIND_REGENERATE\x10\x03\x32\xba\x02\n\rRunnerService\x12]\n\nEnqueueJob\x12&.league_stats_rpc.v1.EnqueueJobRequest\x1a\'.league_stats_rpc.v1.EnqueueJobResponse\x12\x66\n\x11StreamJobProgress\x12-.league_stats_rpc.v1.StreamJobProgressRequest\x1a .league_stats_rpc.v1.StageResult0\x01\x12\x62\n\x17NotifyPeerBaselineReady\x12-.league_stats_rpc.v1.PeerBaselineReadyRequest\x1a\x18.league_stats_rpc.v1.Ackb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'league_stats_rpc.v1.runner_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_JOBKIND']._serialized_start=884
-  _globals['_JOBKIND']._serialized_end=988
+  _globals['_JOBKIND']._serialized_start=908
+  _globals['_JOBKIND']._serialized_end=1012
   _globals['_JOBPLAYER']._serialized_start=91
   _globals['_JOBPLAYER']._serialized_end=136
   _globals['_ENQUEUEJOBREQUEST']._serialized_start=139
@@ -45,7 +45,7 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_STAGERESULT']._serialized_start=550
   _globals['_STAGERESULT']._serialized_end=749
   _globals['_PEERBASELINEREADYREQUEST']._serialized_start=752
-  _globals['_PEERBASELINEREADYREQUEST']._serialized_end=882
-  _globals['_RUNNERSERVICE']._serialized_start=991
-  _globals['_RUNNERSERVICE']._serialized_end=1305
+  _globals['_PEERBASELINEREADYREQUEST']._serialized_end=906
+  _globals['_RUNNERSERVICE']._serialized_start=1015
+  _globals['_RUNNERSERVICE']._serialized_end=1329
 # @@protoc_insertion_point(module_scope)

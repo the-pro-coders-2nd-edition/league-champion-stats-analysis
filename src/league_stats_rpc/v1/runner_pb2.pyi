@@ -90,17 +90,19 @@ class StageResult(_message.Message):
     def __init__(self, job_id: _Optional[str] = ..., stage: _Optional[_Union[_common_pb2.Stage, str]] = ..., payload_json: _Optional[str] = ..., completed_at_unix: _Optional[int] = ..., error: _Optional[str] = ..., final: _Optional[bool] = ..., detail: _Optional[str] = ..., current: _Optional[int] = ..., total: _Optional[int] = ...) -> None: ...
 
 class PeerBaselineReadyRequest(_message.Message):
-    __slots__ = ("request_id", "champion", "lane", "rank", "baseline_json", "error")
+    __slots__ = ("request_id", "champion", "lane", "rank", "baseline_json", "error", "still_refining")
     REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
     CHAMPION_FIELD_NUMBER: _ClassVar[int]
     LANE_FIELD_NUMBER: _ClassVar[int]
     RANK_FIELD_NUMBER: _ClassVar[int]
     BASELINE_JSON_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
+    STILL_REFINING_FIELD_NUMBER: _ClassVar[int]
     request_id: str
     champion: str
     lane: str
     rank: str
     baseline_json: str
     error: str
-    def __init__(self, request_id: _Optional[str] = ..., champion: _Optional[str] = ..., lane: _Optional[str] = ..., rank: _Optional[str] = ..., baseline_json: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...
+    still_refining: bool
+    def __init__(self, request_id: _Optional[str] = ..., champion: _Optional[str] = ..., lane: _Optional[str] = ..., rank: _Optional[str] = ..., baseline_json: _Optional[str] = ..., error: _Optional[str] = ..., still_refining: _Optional[bool] = ...) -> None: ...

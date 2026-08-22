@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field, replace
-from typing import Any, Final
+from typing import Any, Callable, Final
 
 from prometheus_client import Counter
 
@@ -36,15 +37,90 @@ HIGH_CONFIDENCE_GAMES: Final[int] = 100
 LIVE_SAMPLING_WAIT_TIMEOUT_S: Final[float] = 30.0
 
 
+def task_key_for(platform: str, tier: str, champion: str, role: str, patch: str) -> TaskKey:
+    """Public alias of `_task_key` -- used by `peers/service.py` to key its own
+    progressive-notification registry against the exact same `SamplingTask`
+    key the scheduler uses (see `register_progressive_listener`).
+    """
+    return _task_key(platform, tier, champion, role, patch)
+
+
+# Design "Progressive peer-comparison updates during live sampling" §3.1: a
+# request that fell through to live sampling and outlived PEERS' own
+# fast-path timeout gets ONE `NotifyPeerBaselineReady` callback today, fired
+# once by `PeersServicer._on_resolved` when its own `resolve_peer_baseline`
+# call returns (after waiting at most `LIVE_SAMPLING_WAIT_TIMEOUT_S` for the
+# first interim/finalize signal) -- even though the underlying `SamplingTask`
+# keeps improving in the background across many more scheduler batches.
+# `register_progressive_listener` lets `service.py` attach a callback that
+# instead keeps firing for every later interim/finalize snapshot of the same
+# `SamplingTask`, for as long as it stays `still_refining`. Deliberately a
+# plain callback registry here (not gRPC-aware) so this module stays free of
+# any gRPC/proto dependency -- `service.py` supplies the closure that turns a
+# `BenchmarkSnapshot` into a real `NotifyPeerBaselineReady` call.
+_progressive_listeners: dict[TaskKey, list["Callable[[BenchmarkSnapshot], None]"]] = {}
+_progressive_listeners_lock = threading.Lock()
+# Last (games, confidence) a listener set was actually notified with, per key
+# -- lets `_dispatch_progressive_listeners` skip a re-enqueued batch that made
+# no progress (RFC §3.1: "fires ... where the cached snapshot actually
+# improved (games increased, or confidence changed)", not on every batch
+# unconditionally). Cleared together with the listener list on finalize.
+_last_notified_state: dict[TaskKey, tuple[int, str]] = {}
+
+
+def register_progressive_listener(
+    key: TaskKey, callback: "Callable[[BenchmarkSnapshot], None]"
+) -> None:
+    """Run `callback` on every future interim/finalize snapshot for `key`.
+
+    Automatically forgotten once a terminal (`still_refining=False`) snapshot
+    for `key` is dispatched -- a finalized `SamplingTask` never produces
+    another snapshot, so there is nothing left to listen for.
+    """
+    with _progressive_listeners_lock:
+        _progressive_listeners.setdefault(key, []).append(callback)
+
+
+def _dispatch_progressive_listeners(key: TaskKey, snapshot: BenchmarkSnapshot) -> None:
+    """Notify any listeners registered for `key`, honoring the "only on real
+    improvement" rule for interim snapshots (terminal snapshots always fire,
+    even if the sample didn't grow, so a caller still learns refinement has
+    stopped)."""
+    terminal = not snapshot.still_refining
+    with _progressive_listeners_lock:
+        if terminal:
+            callbacks = list(_progressive_listeners.pop(key, ()))
+            _last_notified_state.pop(key, None)
+        else:
+            state = (snapshot.games_sampled, snapshot.confidence)
+            if _last_notified_state.get(key) == state:
+                return
+            _last_notified_state[key] = state
+            callbacks = list(_progressive_listeners.get(key, ()))
+    log = get_logger("peer_baseline")
+    for callback in callbacks:
+        try:
+            callback(snapshot)
+        except Exception:  # noqa: BLE001 -- one broken listener must never
+            # break the scheduler's on_interim/on_finalize hook for the other
+            # listeners, or for the cache write that already happened above.
+            log.exception("Progressive peer-baseline listener failed for key=%s", key)
+
+
 def _on_task_interim(task: SamplingTask) -> None:
     """Scheduler hook: write the task's current aggregate as an interim cache entry.
 
     RFC §5.1.2: called once per batch once `interim_threshold` is crossed, so
     the entry keeps improving for whoever reads it next, without a second
-    notification to the original caller.
+    notification to the original caller. Design "Progressive peer-comparison
+    updates during live sampling" §3.1 adds `_dispatch_progressive_listeners`
+    on top: any request that already got one async callback while this task
+    was still refining gets another push here too, whenever the sample
+    actually grew.
     """
     snapshot = task.build_snapshot(confidence="low", still_refining=True)
     write_live_cache(task.client.platform, task.ranked.tier, task.champion, task.role, snapshot, patch=task.patch)
+    _dispatch_progressive_listeners(task.key, snapshot)
 
 
 def _on_task_finalize(task: SamplingTask, status: str) -> None:
@@ -52,11 +128,14 @@ def _on_task_finalize(task: SamplingTask, status: str) -> None:
 
     Always writes, even below `target` -- the whole point of "no-waste
     caching" is that a task exhausting its ceiling short of 50 games still
-    persists whatever it found instead of discarding it.
+    persists whatever it found instead of discarding it. Also dispatches the
+    terminal (`still_refining=False`) progressive-listener push -- see
+    `_dispatch_progressive_listeners`.
     """
     confidence = "full" if status == "full" else "low"
     snapshot = task.build_snapshot(confidence=confidence, still_refining=False)
     write_live_cache(task.client.platform, task.ranked.tier, task.champion, task.role, snapshot, patch=task.patch)
+    _dispatch_progressive_listeners(task.key, snapshot)
 
 
 # Process-wide singleton (RFC §5.1: "single in-process queue -- safe given the
@@ -103,6 +182,12 @@ class PeerBaseline:
     fallback_level: int
     metrics_p50: dict[str, float] = field(default_factory=dict)
     metrics_p75: dict[str, float] = field(default_factory=dict)
+    # Mirrors `BenchmarkSnapshot.still_refining` (design "Progressive
+    # peer-comparison updates during live sampling" §3.1): True only for an
+    # interim level-2 result whose `SamplingTask` is still running in the
+    # background. Defaults False for every other level (store/static levels
+    # resolve once, synchronously, with no further updates ever coming).
+    still_refining: bool = False
 
 
 def _baseline_from_sample(sample: PeerSample, *, level: int, confidence: str) -> PeerBaseline:
@@ -199,6 +284,7 @@ def _baseline_from_snapshot(
         fallback_level=level,
         metrics_p50=dict(snapshot.metrics_p50),
         metrics_p75=dict(snapshot.metrics_p75),
+        still_refining=snapshot.still_refining,
     )
 
 

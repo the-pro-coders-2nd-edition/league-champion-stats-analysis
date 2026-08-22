@@ -1042,3 +1042,122 @@ def test_resolve_peer_baseline_via_live_sampling_survives_the_noop_store_methods
     # The extracted peer rows were still persisted for real via ingest_match's
     # upsert_peer_game, even though the raw match documents were never cached.
     assert peer_store.count_peer_games(champion="Zac", role="JUNGLE", platform="euw1") >= 3
+
+
+# ------------------------- progressive NotifyPeerBaselineReady pushes (design doc §3.1)
+
+
+def test_notify_peer_baseline_ready_fires_progressively_until_terminal(
+    monkeypatch: pytest.MonkeyPatch, fake_runner
+):
+    """Design "Progressive peer-comparison updates during live sampling" §3.1:
+    a request that fell through to PEERS' background (async) path must keep
+    calling `NotifyPeerBaselineReady` for further `SamplingTask` batches, not
+    just the one delivery the underlying `resolve_peer_baseline` future
+    produces -- `still_refining=True` on every interim push, `False` exactly
+    once on the terminal one.
+
+    Fails pre-fix: `PeersServicer._on_resolved` only ever fired once (the
+    Future's own single completion), with no `still_refining` field on the
+    wire and no mechanism to keep pushing further updates for the same
+    `request_id` -- so RUNNER never learned about a `SamplingTask`'s
+    continued progress after its first callback.
+    """
+    import league_stats_peers.analysis.peer.baseline as peer_baseline
+
+    fake_runner_servicer, runner_target = fake_runner
+
+    def _slow_interim_resolve(client, store, ranked, champion, role, **kwargs):
+        time.sleep(0.3)
+        return PeerBaseline(
+            metrics={"kda": 4.0},
+            games=6,
+            players=6,
+            source="live sample (still refining)",
+            confidence="low",
+            fallback_level=2,
+            still_refining=True,
+        )
+
+    monkeypatch.setattr(peers_service, "resolve_peer_baseline", _slow_interim_resolve)
+
+    mongo_client = mongomock.MongoClient()
+    peer_store = PeerSampleStore(mongo_client, db_name="league_stats_test")
+    servicer = PeersServicer(
+        peer_store=peer_store,
+        riot_client_factory=_fixed_riot_client_factory(_fake_riot_client()),
+        runner_target=runner_target,
+        fast_path_timeout_s=0.05,
+    )
+    server, port = _start_peers_server(servicer)
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        stub = peers_pb2_grpc.PeersServiceStub(channel)
+        response = stub.RequestBaseline(
+            peers_pb2.RequestBaselineRequest(champion="Zed", lane="MIDDLE", rank="GOLD II")
+        )
+        assert response.cached is False
+
+        # First push: the delivered (still-refining) resolution itself.
+        assert fake_runner_servicer.wait(timeout=5.0), "RUNNER was never notified"
+        deadline = time.monotonic() + 5.0
+        while len(fake_runner_servicer.received) < 1 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert len(fake_runner_servicer.received) == 1
+        assert fake_runner_servicer.received[0].still_refining is True
+
+        # Simulate the scheduler running two more batches for the same task
+        # key: one more interim improvement, then a terminal finalize.
+        task_key = peer_baseline.task_key_for("euw1", "GOLD", "Zed", "MIDDLE", "")
+        # `_on_resolved` registers its progressive listener right after its own
+        # `_notify_runner` call returns, on the same background thread -- wait
+        # for that registration rather than racing it (the `received`-length
+        # wait above only proves the *notify*, not the listener registration
+        # that follows it).
+        listener_deadline = time.monotonic() + 5.0
+        while (
+            not peer_baseline._progressive_listeners.get(task_key)
+            and time.monotonic() < listener_deadline
+        ):
+            time.sleep(0.01)
+        assert peer_baseline._progressive_listeners.get(task_key), "listener never registered"
+        interim_snapshot = peer_baseline.BenchmarkSnapshot(
+            metrics={"kda": 4.2},
+            games_sampled=12,
+            players_sampled=12,
+            from_cache=False,
+            platform="euw1",
+            confidence="low",
+            still_refining=True,
+        )
+        peer_baseline._dispatch_progressive_listeners(task_key, interim_snapshot)
+
+        terminal_snapshot = peer_baseline.BenchmarkSnapshot(
+            metrics={"kda": 4.5},
+            games_sampled=50,
+            players_sampled=40,
+            from_cache=False,
+            platform="euw1",
+            confidence="full",
+            still_refining=False,
+        )
+        peer_baseline._dispatch_progressive_listeners(task_key, terminal_snapshot)
+
+        deadline = time.monotonic() + 5.0
+        while len(fake_runner_servicer.received) < 3 and time.monotonic() < deadline:
+            time.sleep(0.05)
+    finally:
+        channel.close()
+        server.stop(grace=None)
+
+    received = fake_runner_servicer.received
+    assert len(received) == 3
+    assert [n.request_id for n in received] == [response.request_id] * 3
+    assert [n.still_refining for n in received] == [True, True, False]
+    games_seen = [json.loads(n.baseline_json)["games"] for n in received]
+    assert games_seen == [6, 12, 50]
+    # Exactly one terminal push -- a second `_dispatch_progressive_listeners`
+    # call for the same (already-finalized) key must not replay.
+    peer_baseline._dispatch_progressive_listeners(task_key, terminal_snapshot)
+    time.sleep(0.2)
+    assert len(fake_runner_servicer.received) == 3
