@@ -64,15 +64,16 @@ class LiveBenchmarkCacheStore:
         """
         db = client[db_name]
         self._cache = db["live_benchmark_cache"]
+        self._cache.create_index("cache_key", unique=True)
         if ttl_seconds is not None:
             self._cache.create_index("fetched_at_dt", expireAfterSeconds=int(ttl_seconds))
 
     def read(self, key: str) -> dict[str, Any] | None:
         """Return the raw cached document for `key`, or None if absent."""
-        doc = self._cache.find_one({"_id": key})
+        doc = self._cache.find_one({"cache_key": key})
         if doc is None:
             return None
-        return {k: v for k, v in doc.items() if k not in ("_id", "fetched_at_dt")}
+        return {k: v for k, v in doc.items() if k not in ("_id", "cache_key", "fetched_at_dt")}
 
     def write(self, key: str, data: dict[str, Any]) -> None:
         """Upsert the cached document for `key`.
@@ -83,5 +84,5 @@ class LiveBenchmarkCacheStore:
         ``analysis.peer.benchmark_cache`` off the caller-supplied
         ``fetched_at`` float, unchanged.
         """
-        doc = {"_id": key, **data, "fetched_at_dt": datetime.datetime.now(datetime.timezone.utc)}
-        self._cache.replace_one({"_id": key}, doc, upsert=True)
+        doc = {"cache_key": key, **data, "fetched_at_dt": datetime.datetime.now(datetime.timezone.utc)}
+        self._cache.replace_one({"cache_key": key}, doc, upsert=True)
