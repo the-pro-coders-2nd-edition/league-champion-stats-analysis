@@ -256,10 +256,16 @@ def report_needs_peer_comparison(config: AppConfig, pool: BuildPool) -> bool:
 
 
 def patch_report_peer_comparison(
-    config: AppConfig, pool: BuildPool, peer_comparison: PeerComparisonResult
+    player_slug: str, build_slug: str, peer_comparison: PeerComparisonResult
 ) -> bool:
     """Cheaply rewrite an already-rendered report's peer-comparison fields in
     place, without re-running the analysis pipeline.
+
+    Takes `player_slug`/`build_slug` directly (not `AppConfig`/`BuildPool`)
+    so this is callable from any process with a `ReportStore` -- not just
+    RUNNER, which is the only thing that ever had an `AppConfig`/`BuildPool`
+    in scope. api-ui's lazy peer-comparison refresh (report read path) calls
+    this directly with no RUNNER-specific context at all.
 
     Design "Progressive peer-comparison updates during live sampling" §3.2:
     RUNNER's stage-B wait loop calls this for every *interim*
@@ -295,8 +301,6 @@ def patch_report_peer_comparison(
         "peer_comparison"
     ]
     generated_at = utc_now_iso()
-    player_slug = config.reports_group_slug
-    build_slug = champion_slug(pool.champion, pool.role)
 
     with open_report_store() as store:
         patched_body = store.patch_report_fields(
@@ -320,17 +324,6 @@ def patch_report_peer_comparison(
             {"has_peer_comparison": True, "generated_at": generated_at},
         )
         return True
-
-    meta_path = run_dir / "meta.json"
-    if meta_path.is_file():
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            meta = {}
-        meta["has_peer_comparison"] = True
-        meta["generated_at"] = generated_at
-        write_report_meta(run_dir, meta)
-    return True
 
 
 def write_full_exports(

@@ -23,7 +23,7 @@ from prometheus_client import Histogram
 from league_stats_api_ui.chat import OUTBOUND_RPC_DURATION
 from league_stats_peers.analysis.peer import current_patch, finish_peer_comparison
 from league_stats_peers.analysis.peer.baseline import PeerBaseline
-from league_stats_common.core.champions import players_group_slug
+from league_stats_common.core.champions import champion_slug, players_group_slug
 from league_stats_common.core.config import PLATFORM_TO_REGION, PlayerIdentity, WebConfig, load_config
 from league_stats_common.core.models import PeerComparisonResult, RankedEntry
 from league_stats_common.infra.cache import HttpCache
@@ -887,7 +887,9 @@ def _run_stage_b(
             if not still_refining:
                 _run_terminal_analysis(peer_comparison)
                 return
-            patched = patch_report_peer_comparison(services.config, pool, peer_comparison)
+            patched = patch_report_peer_comparison(
+                services.config.reports_group_slug, champion_slug(pool.champion, pool.role), peer_comparison
+            )
             if not patched:
                 # No report.json exists yet for this pool (e.g. Stage A never
                 # got far enough) -- fall back to a full render so the
