@@ -513,8 +513,9 @@ def build_career_bundle(
 def refresh_score_verdicts_in_bundle(bundle: dict[str, Any]) -> None:
     """Recompute verdict labels and colors from numeric scores.
 
-    Saved ``report.json`` files bake these fields at generation time; refresh
-    them at serve time so band-threshold changes apply without a full re-run.
+    Saved report bodies (in Mongo's ``ReportStore``) bake these fields at
+    generation time; refresh them at serve time so band-threshold changes
+    apply without a full re-run.
     """
     score = bundle.get("score")
     if score is not None:
