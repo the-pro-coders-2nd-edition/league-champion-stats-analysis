@@ -478,11 +478,31 @@ def test_cancel_allows_new_enqueue(store: JobStore) -> None:
 # --------------------------------------------------------------------------
 
 
+def test_job_and_player_ids_are_real_objectids(store: JobStore) -> None:
+    from bson import ObjectId
+
+    job = _enqueue(store)
+    job_doc = store._jobs.find_one({"job_id": int(job["id"])})
+    assert isinstance(job_doc["_id"], ObjectId)
+
+    store.upsert_player(slug="test_euw", riot_id="Test", tagline="EUW", region="euw1")
+    player_doc = store._players.find_one({"slug": "test_euw"})
+    assert isinstance(player_doc["_id"], ObjectId)
+
+
+def test_counter_id_is_a_real_objectid(store: JobStore) -> None:
+    from bson import ObjectId
+
+    _enqueue(store)
+    counter_doc = store._counters.find_one({"name": "jobs"})
+    assert isinstance(counter_doc["_id"], ObjectId)
+
+
 def test_get_defaults_missing_job_fields(store: JobStore) -> None:
     now = time.time()
     store._jobs.insert_one(
         {
-            "_id": 1,
+            "job_id": 1,
             "kind": jobs.JOB_KIND_ANALYZE,
             "player_slug": "legacy_euw",
             "riot_id": "Legacy",
@@ -515,7 +535,7 @@ def test_get_defaults_missing_job_fields(store: JobStore) -> None:
 def test_get_player_defaults_missing_player_fields(store: JobStore) -> None:
     store._players.insert_one(
         {
-            "_id": "legacy_euw",
+            "slug": "legacy_euw",
             "riot_id": "Legacy",
             "tagline": "EUW",
             "region": "euw1",
@@ -542,7 +562,7 @@ def test_get_player_defaults_missing_player_fields(store: JobStore) -> None:
 def test_list_watched_players_defaults_missing_watch_seen(store: JobStore) -> None:
     store._players.insert_one(
         {
-            "_id": "legacy_euw",
+            "slug": "legacy_euw",
             "riot_id": "Legacy",
             "tagline": "EUW",
             "region": "euw1",

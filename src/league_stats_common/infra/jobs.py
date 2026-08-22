@@ -11,20 +11,20 @@ following the same pattern as ``CareerStore``/``DerivedStore``. Reproduces
 the 2 SQL tables' semantics as 2 collections plus one id-allocation
 collection:
 
-- ``jobs``: one document per job. ``_id`` is an ``int``, allocated from the
-  ``counters`` collection (see below) rather than a Mongo ``ObjectId`` --
-  ``job_id`` is a public HTTP/SPA contract (``GET /api/jobs/{job_id}``,
-  ``POST /api/jobs/{job_id}/cancel`` type it as ``int``), and keeping it a
-  real, total-ordered integer keeps ``queue_position``'s ``id < ?`` and
+- ``jobs``: one document per job. ``_id`` is a Mongo-assigned ``ObjectId``;
+  a separate ``job_id`` int field, allocated from the ``counters`` collection
+  (see below), carries the public HTTP/SPA contract (``GET
+  /api/jobs/{job_id}``, ``POST /api/jobs/{job_id}/cancel`` type it as
+  ``int``) and keeps ``queue_position``'s ``id < ?`` and
   ``average_duration_s``'s ``ORDER BY id DESC`` meaningful the same way the
-  old auto-incrementing primary key did. Every other SQL column becomes a
-  document field 1:1. Every read path restores an ``"id"`` key from ``_id``
-  so the returned dict shape matches the old row-mapping's dict shape
-  exactly.
-- ``players``: one document per group/player, ``_id = slug``. Every read
-  path restores a ``"slug"`` key from ``_id``.
-- ``counters``: a single ``{_id: "jobs", value: <last-issued-id>}`` document,
-  incremented via ``find_one_and_update(..., {"$inc": {"value": 1}},
+  old auto-incrementing primary key did, now via a unique index on
+  ``job_id``. Every other SQL column becomes a document field 1:1. Every
+  read path restores an ``"id"`` key from ``job_id`` so the returned dict
+  shape matches the old row-mapping's dict shape exactly.
+- ``players``: one document per group/player, keyed by a unique ``slug``
+  field (``_id`` is a Mongo-assigned ``ObjectId``).
+- ``counters``: a single ``{name: "jobs", value: <last-issued-id>}``
+  document, incremented via ``find_one_and_update(..., {"$inc": {"value": 1}},
   upsert=True, return_document=ReturnDocument.AFTER)`` -- the direct
   Mongo-native equivalent of the old auto-incrementing primary key.
 
@@ -192,6 +192,7 @@ class JobStore:
         self._counters = db["counters"]
         # Mirrors the SQL indexes (`idx_jobs_state`, `idx_jobs_player`).
         self._jobs.create_index("state")
+        self._jobs.create_index("job_id", unique=True)
         # The at-most-one-active-job-per-player invariant, enforced by Mongo
         # itself -- see the module docstring's "enqueue's atomicity" section.
         self._jobs.create_index(
@@ -199,6 +200,8 @@ class JobStore:
             unique=True,
             partialFilterExpression={"state": {"$in": list(ACTIVE_STATES)}},
         )
+        self._players.create_index("slug", unique=True)
+        self._counters.create_index("name", unique=True)
         self._log = get_logger("jobs")
         # Real MongoDB's `find_one_and_update`/unique-index inserts are
         # atomic server-side regardless of how many OS processes call them
@@ -234,7 +237,8 @@ class JobStore:
     @staticmethod
     def _doc_to_job(doc: dict[str, Any]) -> dict[str, Any]:
         data = dict(doc)
-        data["id"] = data.pop("_id")
+        data.pop("_id", None)
+        data["id"] = data.pop("job_id")
         data.setdefault("filter_champion", None)
         data.setdefault("filter_role", None)
         data.setdefault("min_games", None)
@@ -255,7 +259,7 @@ class JobStore:
     @staticmethod
     def _doc_to_player(doc: dict[str, Any]) -> dict[str, Any]:
         data = dict(doc)
-        data["slug"] = data.pop("_id")
+        data.pop("_id", None)
         data.setdefault("players_json", "[]")
         data.setdefault("last_job_id", None)
         data.setdefault("base_completed_at", None)
@@ -275,7 +279,7 @@ class JobStore:
 
     def _next_job_id(self) -> int:
         doc = self._counters.find_one_and_update(
-            {"_id": "jobs"},
+            {"name": "jobs"},
             {"$inc": {"value": 1}},
             upsert=True,
             return_document=ReturnDocument.AFTER,
@@ -323,7 +327,7 @@ class JobStore:
                 new_id = self._next_job_id()
                 now = time.time()
                 doc = {
-                    "_id": new_id,
+                    "job_id": new_id,
                     "kind": kind,
                     "player_slug": player_slug,
                     "riot_id": riot_id,
@@ -354,20 +358,20 @@ class JobStore:
                     # this read -- the slug is free again, retry with a fresh id.
                     continue
                 self._players.update_one(
-                    {"_id": player_slug}, {"$set": {"last_job_id": new_id}}
+                    {"slug": player_slug}, {"$set": {"last_job_id": new_id}}
                 )
                 return self._doc_to_job(doc), True
 
     def get(self, job_id: int) -> dict[str, Any] | None:
         """Load one job by id."""
         with self._lock:
-            doc = self._jobs.find_one({"_id": job_id})
+            doc = self._jobs.find_one({"job_id": job_id})
             if doc is None:
                 return None
             return self._doc_to_job(doc)
 
     def _get(self, job_id: int) -> dict[str, Any]:
-        doc = self._jobs.find_one({"_id": job_id})
+        doc = self._jobs.find_one({"job_id": job_id})
         if doc is None:
             raise LookupError(f"job {job_id} not found")
         return self._doc_to_job(doc)
@@ -376,7 +380,7 @@ class JobStore:
         """Caller must hold ``self._lock`` -- see ``enqueue``/``active_job_for_player``."""
         cursor = (
             self._jobs.find({"player_slug": player_slug, "state": {"$in": list(ACTIVE_STATES)}})
-            .sort("_id", -1)
+            .sort("job_id", -1)
             .limit(1)
         )
         doc = next(iter(cursor), None)
@@ -392,7 +396,7 @@ class JobStore:
     def list_active_jobs(self) -> list[dict[str, Any]]:
         """Return every queued or running job (newest active job per player)."""
         with self._lock:
-            cursor = self._jobs.find({"state": {"$in": list(ACTIVE_STATES)}}).sort("_id", -1)
+            cursor = self._jobs.find({"state": {"$in": list(ACTIVE_STATES)}}).sort("job_id", -1)
             seen: set[str] = set()
             jobs: list[dict[str, Any]] = []
             for doc in cursor:
@@ -410,7 +414,7 @@ class JobStore:
             doc = self._jobs.find_one_and_update(
                 {"state": QUEUED},
                 {"$set": {"state": FETCHING, "started_at": now, "updated_at": now}},
-                sort=[("_id", 1)],
+                sort=[("job_id", 1)],
                 return_document=ReturnDocument.AFTER,
             )
             if doc is None:
@@ -432,7 +436,7 @@ class JobStore:
             ``cancelled`` (so the worker cannot overwrite a user cancel).
         """
         with self._lock:
-            doc = self._jobs.find_one({"_id": job_id}, {"state": 1})
+            doc = self._jobs.find_one({"job_id": job_id}, {"state": 1})
             if doc is None:
                 return False
             if doc["state"] == CANCELLED and state != CANCELLED:
@@ -447,7 +451,7 @@ class JobStore:
                 sets["error"] = error
             if state in TERMINAL_STATES:
                 sets["finished_at"] = now
-            self._jobs.update_one({"_id": job_id}, {"$set": sets})
+            self._jobs.update_one({"job_id": job_id}, {"$set": sets})
             return True
 
     def update_progress(
@@ -461,7 +465,7 @@ class JobStore:
         """Update progress fields without changing the job state."""
         with self._lock:
             self._jobs.update_one(
-                {"_id": job_id, "state": {"$ne": CANCELLED}},
+                {"job_id": job_id, "state": {"$ne": CANCELLED}},
                 {
                     "$set": {
                         "stage_detail": detail,
@@ -475,7 +479,7 @@ class JobStore:
     def is_cancelled(self, job_id: int) -> bool:
         """Return whether the job has been cancelled."""
         with self._lock:
-            doc = self._jobs.find_one({"_id": job_id}, {"state": 1})
+            doc = self._jobs.find_one({"job_id": job_id}, {"state": 1})
             return doc is not None and doc["state"] == CANCELLED
 
     def cancel(self, job_id: int) -> dict[str, Any] | None:
@@ -488,7 +492,7 @@ class JobStore:
         with self._lock:
             now = time.time()
             doc = self._jobs.find_one_and_update(
-                {"_id": job_id, "state": {"$in": list(ACTIVE_STATES)}},
+                {"job_id": job_id, "state": {"$in": list(ACTIVE_STATES)}},
                 {
                     "$set": {
                         "state": CANCELLED,
@@ -507,10 +511,10 @@ class JobStore:
     def queue_position(self, job_id: int) -> int | None:
         """0-based number of queued jobs ahead; ``None`` unless still queued."""
         with self._lock:
-            doc = self._jobs.find_one({"_id": job_id}, {"state": 1})
+            doc = self._jobs.find_one({"job_id": job_id}, {"state": 1})
             if doc is None or doc["state"] != QUEUED:
                 return None
-            ahead = self._jobs.count_documents({"state": QUEUED, "_id": {"$lt": job_id}})
+            ahead = self._jobs.count_documents({"state": QUEUED, "job_id": {"$lt": job_id}})
             running = self._jobs.count_documents({"state": {"$in": list(RUNNING_STATES)}})
             return int(ahead) + int(running)
 
@@ -521,7 +525,7 @@ class JobStore:
                 self._jobs.find(
                     {"state": DONE, "started_at": {"$ne": None}, "finished_at": {"$ne": None}}
                 )
-                .sort("_id", -1)
+                .sort("job_id", -1)
                 .limit(5)
             )
             durations = [
@@ -571,7 +575,7 @@ class JobStore:
         tracked = players or [{"riot_id": riot_id, "tagline": tagline}]
         with self._lock:
             self._players.update_one(
-                {"_id": slug},
+                {"slug": slug},
                 {
                     "$set": {
                         "riot_id": riot_id,
@@ -586,7 +590,7 @@ class JobStore:
     def get_player(self, slug: str) -> dict[str, Any] | None:
         """Load one player/group row with a decoded ``players`` list."""
         with self._lock:
-            doc = self._players.find_one({"_id": slug})
+            doc = self._players.find_one({"slug": slug})
             if doc is None:
                 return None
             return self._doc_to_player(doc)
@@ -596,7 +600,7 @@ class JobStore:
     ) -> bool:
         """Turn watching on or off for a group. Returns ``False`` if unknown."""
         with self._lock:
-            doc = self._players.find_one({"_id": slug}, {"_id": 1})
+            doc = self._players.find_one({"slug": slug}, {"slug": 1})
             if doc is None:
                 return False
             sets: dict[str, Any] = {
@@ -605,13 +609,13 @@ class JobStore:
             }
             if interval_s is not None:
                 sets["watch_interval_s"] = max(60, int(interval_s))
-            self._players.update_one({"_id": slug}, {"$set": sets})
+            self._players.update_one({"slug": slug}, {"$set": sets})
             return True
 
     def list_watched_players(self) -> list[dict[str, Any]]:
         """Every group with watching enabled, identities decoded."""
         with self._lock:
-            cursor = list(self._players.find({"watch_enabled": 1}).sort("_id", 1))
+            cursor = list(self._players.find({"watch_enabled": 1}).sort("slug", 1))
         watched: list[dict[str, Any]] = []
         for doc in cursor:
             data = self._doc_to_player(doc)
@@ -641,26 +645,26 @@ class JobStore:
         if seen is not None:
             sets["watch_seen_json"] = json.dumps(seen)
         with self._lock:
-            self._players.update_one({"_id": slug}, {"$set": sets})
+            self._players.update_one({"slug": slug}, {"$set": sets})
 
     def mark_player_base_complete(self, slug: str) -> None:
         """Record that the base (pre-peer) report finished for a player."""
         with self._lock:
             self._players.update_one(
-                {"_id": slug}, {"$set": {"base_completed_at": time.time(), "peer_failed": 0}}
+                {"slug": slug}, {"$set": {"base_completed_at": time.time(), "peer_failed": 0}}
             )
 
     def mark_player_peer_complete(self, slug: str) -> None:
         """Record that peer analysis finished for a player."""
         with self._lock:
             self._players.update_one(
-                {"_id": slug}, {"$set": {"peer_completed_at": time.time(), "peer_failed": 0}}
+                {"slug": slug}, {"$set": {"peer_completed_at": time.time(), "peer_failed": 0}}
             )
 
     def mark_player_peer_failed(self, slug: str) -> None:
         """Record that peer analysis failed (base report remains available)."""
         with self._lock:
-            self._players.update_one({"_id": slug}, {"$set": {"peer_failed": 1}})
+            self._players.update_one({"slug": slug}, {"$set": {"peer_failed": 1}})
 
 # Process-wide Mongo clients keyed by URI, mirroring `career_store.py`'s own
 # `_SHARED_MONGO_CLIENTS`: neither `api_ui/app.py` nor `cron_watch/__main__.py`
