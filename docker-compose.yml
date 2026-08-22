@@ -71,15 +71,22 @@ services:
     # via `env_file`, never inlined.
     env_file:
       - .env
-    # No `ports:` here on purpose, unlike Grafana's current (temporary)
-    # `3000:3000` direct publish above: mongo-express must be reachable ONLY
-    # through Caddy's `mongo.${DOMAIN}` site block (deploy/run.sh), because
-    # Caddy's access log for that site is the only place a failed Basic Auth
-    # login ever shows up as a line on disk -- mongo-express has no failed-
-    # login log of its own (it just returns a plain 401), so without Caddy
-    # in front of it, fail2ban's mongo-express jail would have nothing to
-    # watch. This is the same internal-only pattern already used for
-    # `prometheus`/`loki` below.
+    # Published to LOOPBACK ONLY, never all interfaces: deploy/run.sh's Caddy
+    # is a host systemd process, not a member of this compose network, so
+    # (like Grafana's GRAFANA_HOST/GRAFANA_PORT below) it can only reach a
+    # container through a published host port -- there is no such thing as
+    # "no host port at all" while still letting host-based Caddy reverse-
+    # proxy to it. The point of NOT doing what Grafana's current (temporary)
+    # `3000:3000` does -- publish on all interfaces -- is that mongo-express
+    # must never be reachable directly from the internet, only through
+    # Caddy's `mongo.${DOMAIN}` site block, because Caddy's access log for
+    # that site is the only place a failed Basic Auth login ever shows up as
+    # a line on disk (mongo-express has no failed-login log of its own, it
+    # just returns a plain 401) -- without Caddy in front of it, fail2ban's
+    # mongo-express jail would have nothing to watch. Loopback-only achieves
+    # that without requiring Caddy to join the compose network.
+    ports:
+      - "127.0.0.1:8081:8081"
     depends_on:
       - mongo
 
