@@ -275,3 +275,38 @@ def test_resolve_peer_baseline_wider_scope_requires_fifty_games(
         exclude_puuid="puuid-me",
     )
     assert baseline is None
+
+
+def test_on_task_interim_reports_full_confidence_once_target_reached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_on_task_interim must switch confidence from 'low' to 'full' the
+    moment task.reached_target flips True -- still_refining stays True
+    (there's more sampling to come toward CEILING)."""
+    from types import SimpleNamespace
+
+    from league_stats_peers.analysis.peer import baseline as peer_baseline_module
+
+    class _FakeTaskForInterim:
+        def __init__(self, reached_target: bool) -> None:
+            self.reached_target = reached_target
+            self.client = MagicMock(platform="euw1")
+            self.ranked = RankedEntry(tier="GOLD", rank="II", league_points=0, wins=0, losses=0)
+            self.champion = "Zac"
+            self.role = "JUNGLE"
+            self.patch = "16.16"
+            self.key = ("euw1", "GOLD", "zac", "JUNGLE", "16.16")
+
+        def build_snapshot(self, *, confidence: str, still_refining: bool):
+            return SimpleNamespace(confidence=confidence, still_refining=still_refining)
+
+    task = _FakeTaskForInterim(reached_target=True)
+    dispatched = []
+    monkeypatch.setattr(
+        peer_baseline_module, "_dispatch_progressive_listeners",
+        lambda key, snapshot: dispatched.append(snapshot),
+    )
+    monkeypatch.setattr(peer_baseline_module, "write_live_cache", lambda *a, **k: None)
+    peer_baseline_module._on_task_interim(task)
+    assert dispatched[0].confidence == "full"
+    assert dispatched[0].still_refining is True

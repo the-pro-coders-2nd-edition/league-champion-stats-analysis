@@ -17,7 +17,12 @@ from league_stats_peers.analysis.peer.cache import (
     collect_peer_games_from_store,
     peer_metric_quantiles,
 )
-from league_stats_peers.analysis.peer.rank_scope import RankScope, build_exact_scope, build_wider_scope, build_widened_scope
+from league_stats_peers.analysis.peer.rank_scope import (
+    RankScope,
+    build_division_scope,
+    build_wider_scope,
+    build_widened_scope,
+)
 from league_stats_peers.analysis.peer.sampling_task import SamplingTask, TaskKey
 from league_stats_peers.analysis.peer.scheduler import SamplingScheduler
 from league_stats_common.core.champions import build_label
@@ -118,7 +123,8 @@ def _on_task_interim(task: SamplingTask) -> None:
     was still refining gets another push here too, whenever the sample
     actually grew.
     """
-    snapshot = task.build_snapshot(confidence="low", still_refining=True)
+    confidence = "full" if task.reached_target else "low"
+    snapshot = task.build_snapshot(confidence=confidence, still_refining=True)
     write_live_cache(task.client.platform, task.ranked.tier, task.champion, task.role, snapshot, patch=task.patch)
     _dispatch_progressive_listeners(task.key, snapshot)
 
@@ -155,6 +161,21 @@ def _get_default_scheduler() -> SamplingScheduler:
             num_workers=num_workers, on_interim=_on_task_interim, on_finalize=_on_task_finalize
         )
     return _default_scheduler
+
+
+def configure_scheduler_idle_hook(on_idle: "Callable[[], None] | None") -> None:
+    """Wire (or clear) `on_idle` on the process-wide default `SamplingScheduler`.
+
+    RFC "PEERS priority scheduling...", §3.3/§4: `PeersServicer.__init__`
+    uses this to attach its idle-time coordinator (pre-warm + patch-
+    changeover checks) to whichever scheduler `resolve_peer_baseline`
+    actually uses by default. Goes through `_get_default_scheduler` (built
+    lazily, on first use) rather than `PeersServicer` owning its own
+    scheduler instance -- it doesn't; the scheduler is this module's
+    process-wide singleton -- so wiring order (servicer constructed before
+    vs. after the first live-sampling call) doesn't matter either way.
+    """
+    _get_default_scheduler().set_on_idle(on_idle)
 
 # Resolution mix visibility: which rung of the fallback ladder (0/1/3/4/5 all
 # local reads, cost-equivalent; 2 is live Riot sampling -- see `source` on
@@ -480,7 +501,7 @@ def resolve_peer_baseline(
         ranked,
         champion,
         role,
-        scope=build_exact_scope(ranked),
+        scope=build_division_scope(ranked),
         exclude_puuid=exclude,
         min_games=MIN_EXACT_GAMES,
         level=0,

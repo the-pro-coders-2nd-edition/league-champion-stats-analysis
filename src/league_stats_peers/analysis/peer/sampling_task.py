@@ -49,6 +49,39 @@ MATCH_IDS_PER_PLAYER: Final[int] = 30
 TaskKey = tuple[str, str, str, str, str]  # (platform, tier, champion, role, patch)
 
 
+def _download_and_share(
+    client: RiotApiClient,
+    store: Any,
+    match_id: str,
+    puuid: str,
+    *,
+    patch: str,
+    exclude_puuid: str | None,
+    match_sample_store: Any | None,
+) -> dict[str, Any] | None:
+    """Download (or read cached) one match, populate the shared cross-champion
+    cache, and return the raw match doc -- or None on a fetch failure.
+
+    Shared by `SamplingTask.run_batch` and `WarmupTask.run_batch` (RFC "PEERS
+    priority scheduling...", §3): both need exactly this -- download, ingest
+    into `peer_games` via `_load_or_fetch_match`'s own `ingest_match` call,
+    populate `peer_match_samples` -- regardless of whether the caller is
+    targeting one champion+role or none at all.
+    """
+    match = _load_or_fetch_match(client, store, match_id, puuid)
+    if match is None:
+        return None
+    if match_sample_store is not None:
+        all_rows = extract_all_champion_role_rows(match, exclude_puuid=exclude_puuid or "")
+        if all_rows:
+            try:
+                match_sample_store.upsert_rows(match_id, patch, client.platform, all_rows)
+            except Exception as exc:  # noqa: BLE001 -- see run_batch's own matching comment:
+                # a failed shared-cache write must never break the caller's own sample.
+                get_logger("sampling_task").warning("Shared match cache write failed: %s", exc)
+    return match
+
+
 @dataclass
 class SamplingTask:
     """Accumulated state for one live-sampling scan, advanced one batch at a time.
@@ -67,6 +100,13 @@ class SamplingTask:
     role: str
     exclude_puuid: str | None = None
     patch: str = ""
+    # RFC "PEERS priority scheduling...": which of SamplingScheduler's three
+    # queues this task belongs in. "explicit" (someone is synchronously
+    # blocked in wait_for_signal for this exact task), "refining" (already
+    # answered the confidence-full bar, still improving toward CEILING, but
+    # nobody is blocked waiting), "background" (WarmupTask only -- see that
+    # module). Never set directly except by SamplingScheduler.
+    priority: str = "explicit"
     # Phase 2 (RFC §5.2): shared cross-champion/cross-tier match cache. None
     # disables the pre-check entirely (falls back to a pure live scan) --
     # used by tests that don't care about Phase 2 wiring.
@@ -109,7 +149,19 @@ class SamplingTask:
 
     @property
     def exhausted(self) -> bool:
-        """No more useful work remains, short of the target.
+        """No more useful work remains at all -- ceiling spent, or the
+        snowball queue has genuinely run dry after seeding.
+
+        RFC "PEERS priority scheduling...", §2: deliberately independent of
+        `reached_target` now. Reaching target used to make this method
+        return False unconditionally (finalization happened at target,
+        `exhausted` was never even consulted for such a task) -- now that a
+        task keeps sampling toward `CEILING` after reaching target (RFC §1.2
+        Case B/§2), `exhausted` has to be able to say "yes, genuinely done"
+        purely from ceiling/queue state, independent of whether target was
+        ever reached. Without this, a task that already reached target could
+        never finalize: it would sit in `_refining_queue` forever, re-run
+        every batch for no further progress once its queue drains.
 
         True once the download ceiling is hit, or once the snowball queue
         has genuinely run dry after seeding (e.g. no league entries at all,
@@ -117,8 +169,6 @@ class SamplingTask:
         second condition a task with no candidates left would sit in the
         scheduler's queue forever, re-enqueued every batch for no progress.
         """
-        if self.reached_target:
-            return False
         if self.downloads >= self.ceiling:
             return True
         return self._seeded and not self.queue
@@ -212,22 +262,27 @@ class SamplingTask:
         """Advance the scan by at most `batch_size` new match downloads.
 
         Mirrors `benchmark_fetcher._collect_sample_rows`'s snowball loop, but
-        stops after one batch instead of running until target/ceiling -- the
+        stops after one batch instead of running until ceiling -- the
         scheduler decides what happens next (finalize, finalize-partial, or
         re-enqueue), not this method.
+
+        RFC "PEERS priority scheduling...", §2: no longer stops early once
+        `reached_target` -- a task keeps collecting toward `ceiling` after
+        target (the scheduler demotes it to "refining" priority instead of
+        finalizing it, see `SamplingScheduler._run_one_batch`). Only
+        `self.exhausted` (ceiling spent, or the snowball queue genuinely dry)
+        stops this method from doing further work.
         """
         log = get_logger("sampling_task")
         self._ensure_seeded()
         self.batches_run += 1
-        if self.reached_target:
+        if self.exhausted:
             return
 
         scope = build_widened_scope(self.ranked)
         batch_downloads = 0
 
         while self.queue and batch_downloads < self.batch_size and self.downloads < self.ceiling:
-            if self.reached_target:
-                break
             puuid = self.queue.popleft()
             if puuid in self.seen_for_snowball:
                 continue
@@ -242,39 +297,25 @@ class SamplingTask:
                 continue
 
             for match_id in match_ids:
-                if (
-                    self.reached_target
-                    or batch_downloads >= self.batch_size
-                    or self.downloads >= self.ceiling
-                ):
+                if batch_downloads >= self.batch_size or self.downloads >= self.ceiling:
                     break
                 if match_id in self.seen_matches:
                     continue
                 self.seen_matches.add(match_id)
 
-                match = _load_or_fetch_match(self.client, self.store, match_id, puuid)
+                match = _download_and_share(
+                    self.client,
+                    self.store,
+                    match_id,
+                    puuid,
+                    patch=self.patch,
+                    exclude_puuid=self.exclude_puuid,
+                    match_sample_store=self.match_sample_store,
+                )
                 if match is None:
                     continue
                 self.downloads += 1
                 batch_downloads += 1
-
-                # Phase 2 (RFC §5.2): every downloaded match pays for itself
-                # once -- extract rows for ALL champion+role pairs present,
-                # not just this task's own target, and share them.
-                if self.match_sample_store is not None:
-                    all_rows = extract_all_champion_role_rows(
-                        match, exclude_puuid=self.exclude_puuid or ""
-                    )
-                    if all_rows:
-                        try:
-                            self.match_sample_store.upsert_rows(
-                                match_id, self.patch, self.client.platform, all_rows
-                            )
-                        except Exception as exc:  # noqa: BLE001 -- best-effort,
-                            # mirrors `write_live_cache`'s fail-soft convention:
-                            # a failed shared-cache write must never break this
-                            # task's own live sample.
-                            log.warning("Shared match cache write failed: %s", exc)
 
                 if not _match_has_build(match, self.champion, self.role):
                     continue
@@ -302,5 +343,3 @@ class SamplingTask:
                     row["match_id"] = match_id
                     self.rows.append(row)
                     self.players_used.add(p_puuid)
-                    if self.reached_target:
-                        break

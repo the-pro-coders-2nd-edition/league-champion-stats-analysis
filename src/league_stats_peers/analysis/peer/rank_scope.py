@@ -5,11 +5,40 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Final
 
-from league_stats_peers.analysis.peer.benchmarks import adjacent_tiers
+from league_stats_peers.analysis.peer.benchmarks import TIER_ORDER, adjacent_tiers
 from league_stats_common.core.models import RankedEntry
 
 MASTER_PLUS: Final[frozenset[str]] = frozenset({"MASTER", "GRANDMASTER", "CHALLENGER"})
 DIVISIONS: Final[tuple[str, ...]] = ("I", "II", "III", "IV")
+
+# RFC "PEERS priority scheduling...", §5: confirmed constant, not an open
+# question -- "3 divisions above, 3 below" a target's exact (tier, division).
+PEER_DIVISION_SCOPE_RADIUS: Final[int] = 3
+
+_NON_MASTER_TIER_ORDER: Final[tuple[str, ...]] = tuple(
+    tier for tier in TIER_ORDER if tier not in MASTER_PLUS
+)
+_DIVISION_INDEX: Final[dict[str, int]] = {"IV": 0, "III": 1, "II": 2, "I": 3}
+_MASTER_PLUS_ORDER: Final[tuple[str, ...]] = ("MASTER", "GRANDMASTER", "CHALLENGER")
+
+
+def division_ordinal(tier: str, division: str) -> int:
+    """Ordinal position of (tier, division) on the promotion ladder.
+
+    Division IV = 0 (lowest) through I = 3 (highest) within a tier, tiers
+    ordered by `TIER_ORDER` (excluding Master+, which has no divisions).
+    Master+ each get one synthetic slot, stacked directly above Diamond I --
+    Master, then Grandmaster, then Challenger -- so the ladder stays uniform
+    and a Diamond I (or Master) player's window can meaningfully spill
+    across that boundary in either direction.
+    """
+    upper_tier = tier.upper()
+    if upper_tier in MASTER_PLUS:
+        diamond_i = (len(_NON_MASTER_TIER_ORDER) - 1) * 4 + _DIVISION_INDEX["I"]
+        return diamond_i + 1 + _MASTER_PLUS_ORDER.index(upper_tier)
+    tier_index = _NON_MASTER_TIER_ORDER.index(upper_tier)
+    div_index = _DIVISION_INDEX[division.upper()]
+    return tier_index * 4 + div_index
 
 
 @dataclass(frozen=True)
@@ -19,6 +48,12 @@ class RankScope:
     target: RankedEntry
     widened: bool
     extra_tiers: frozenset[str] = field(default_factory=frozenset)
+    # Additive, opt-in division-level ordinal-distance check (RFC §5). `None`
+    # (every existing call site) preserves tier-only matching exactly --
+    # never a replacement of `build_exact_scope`/`build_widened_scope`/
+    # `build_wider_scope`, which stay as coarser, progressively-wider
+    # fallback rungs.
+    division_radius: int | None = None
 
     @property
     def allowed_tiers(self) -> set[str]:
@@ -33,6 +68,28 @@ class RankScope:
 def build_exact_scope(ranked: RankedEntry) -> RankScope:
     """Same tier (all divisions) as the tracked player."""
     return RankScope(target=ranked, widened=False)
+
+
+def build_division_scope(ranked: RankedEntry, radius: int = PEER_DIVISION_SCOPE_RADIUS) -> RankScope:
+    """Same tier plus neighbors within `radius` divisions -- tighter and more
+    precise than `build_widened_scope`'s whole-tier +/-1. Used at fallback
+    level 0, the tightest/most-relevant rung, where match quality matters
+    most.
+
+    `widened=True` here is a simplification: `allowed_tiers` doesn't
+    otherwise matter once `division_radius` is set, since `rank_matches`
+    skips straight to the ordinal check for that case -- but keeping
+    `allowed_tiers`' existing tier-scope check as the first, cheap filter
+    regardless means a target several tiers away is rejected before ever
+    computing an ordinal. For the confirmed `radius=3` default, +/-1 whole
+    tier is always wide enough to cover every in-radius division-level
+    neighbor (3 divisions can cross at most one tier boundary in each
+    direction) -- a larger radius could reject valid ordinal-distance peers
+    via this cheap filter before reaching the ordinal check, so this
+    constraint would need revisiting before ever configuring a materially
+    larger radius.
+    """
+    return RankScope(target=ranked, widened=True, division_radius=radius)
 
 
 def build_widened_scope(ranked: RankedEntry) -> RankScope:
@@ -58,6 +115,11 @@ def rank_matches(peer_tier: str, peer_rank: str, scope: RankScope) -> bool:
     tier = peer_tier.upper()
     if tier not in scope.allowed_tiers:
         return False
+
+    if scope.division_radius is not None:
+        peer_ordinal = division_ordinal(tier, peer_rank)
+        target_ordinal = division_ordinal(scope.target.tier, scope.target.rank)
+        return abs(peer_ordinal - target_ordinal) <= scope.division_radius
 
     target_tier = scope.target.tier.upper()
     if tier in MASTER_PLUS and target_tier in MASTER_PLUS:

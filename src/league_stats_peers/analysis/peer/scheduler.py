@@ -60,9 +60,16 @@ PEERS_SCHEDULER_ACTIVE_TASKS = Gauge(
 )
 PEERS_SCHEDULER_BATCHES_TOTAL = Counter(
     "peers_scheduler_batches_total",
-    "SamplingTask batches processed, by outcome.",
-    ["outcome"],  # re_enqueued | finalized_full | finalized_partial
+    "SamplingTask/WarmupTask batches processed, by outcome and priority tier.",
+    ["outcome", "priority"],  # outcome: re_enqueued | finalized_full | finalized_partial
+                              # priority: explicit | refining | background
 )
+
+# RFC "PEERS priority scheduling...": relative rank of each of the three
+# priority tiers, lower is higher-priority. Used by `get_or_create` to decide
+# whether a caller's requested priority should promote an already-active
+# task -- never used to demote one.
+_PRIORITY_RANK: dict[str, int] = {"explicit": 0, "refining": 1, "background": 2}
 PEERS_SCHEDULER_BATCH_DURATION = Histogram(
     "peers_scheduler_batch_duration_seconds",
     "Wall-clock time of one SamplingTask.run_batch() call.",
@@ -84,14 +91,22 @@ class SamplingScheduler:
         num_workers: int = 4,
         on_interim: "Callable[[SamplingTask], None] | None" = None,
         on_finalize: "Callable[[SamplingTask, str], None] | None" = None,
+        on_idle: "Callable[[], None] | None" = None,
     ) -> None:
         self._lock = threading.RLock()
-        self._queue: "deque[SamplingTask]" = deque()
+        self._explicit_queue: "deque[SamplingTask]" = deque()
+        self._refining_queue: "deque[SamplingTask]" = deque()
+        self._background_queue: "deque[SamplingTask]" = deque()
         self._tasks: dict[TaskKey, SamplingTask] = {}
         self._conditions: dict[TaskKey, threading.Condition] = {}
         self._num_workers = num_workers
         self._on_interim = on_interim
         self._on_finalize = on_finalize
+        # RFC "PEERS priority scheduling...", §3.3/§4: called once per empty
+        # `step()` (i.e. every idle poll of `_worker_loop`) -- deliberately
+        # not rate-limited here (see `set_on_idle`'s docstring for why that's
+        # the caller's job, not this class's).
+        self._on_idle = on_idle
         self._threads: list[threading.Thread] = []
         self._stopped = False
         self._log = get_logger("peer_sampling_scheduler")
@@ -113,7 +128,16 @@ class SamplingScheduler:
                 counts[role] += 1
         for role, count in counts.items():
             PEERS_SCHEDULER_ACTIVE_TASKS.labels(role=role).set(count)
-        PEERS_SCHEDULER_QUEUED_TASKS.set(len(self._queue))
+        PEERS_SCHEDULER_QUEUED_TASKS.set(
+            len(self._explicit_queue) + len(self._refining_queue) + len(self._background_queue)
+        )
+
+    def _queue_for(self, priority: str) -> "deque[SamplingTask]":
+        if priority == "explicit":
+            return self._explicit_queue
+        if priority == "refining":
+            return self._refining_queue
+        return self._background_queue
 
     @staticmethod
     def _log_fields(task: SamplingTask) -> str:
@@ -132,22 +156,43 @@ class SamplingScheduler:
     # -- task lifecycle -----------------------------------------------------
 
     def get_or_create(
-        self, key: TaskKey, factory: "Callable[[], SamplingTask]"
+        self,
+        key: TaskKey,
+        factory: "Callable[[], SamplingTask]",
+        *,
+        priority: str = "explicit",
     ) -> SamplingTask:
         """Return the active task for `key`, enqueuing a new one if none exists.
 
         Mirrors `PeersServicer._get_or_submit`'s existing dedup shape: a
         caller for a key already active attaches to that task instead of
         starting a redundant scan.
+
+        `priority` only ever promotes an existing task (never demotes it) --
+        RFC "PEERS priority scheduling...", §1.2 Case A/B: a caller asking
+        for a higher-priority tier than the task currently holds moves it to
+        the front of the relevant queue; a caller asking for a lower tier
+        than the task already holds is a no-op on priority.
         """
         with self._lock:
             existing = self._tasks.get(key)
             if existing is not None:
+                if _PRIORITY_RANK[priority] < _PRIORITY_RANK[existing.priority]:
+                    old_queue = self._queue_for(existing.priority)
+                    try:
+                        old_queue.remove(existing)
+                    except ValueError:
+                        pass  # mid-batch, not sitting in a queue right now
+                    else:
+                        self._queue_for(priority).append(existing)
+                    existing.priority = priority
+                    self._update_task_gauges()
                 return existing
             task = factory()
+            task.priority = priority
             self._tasks[key] = task
             self._conditions[key] = threading.Condition()
-            self._queue.append(task)
+            self._queue_for(priority).append(task)
             self._update_task_gauges()
             self._log.info(
                 "sampling_task_enqueued key=%s %s", key, self._log_fields(task)
@@ -157,6 +202,22 @@ class SamplingScheduler:
     def is_active(self, key: TaskKey) -> bool:
         with self._lock:
             return key in self._tasks
+
+    def set_on_idle(self, on_idle: "Callable[[], None] | None") -> None:
+        """(Re-)wire the idle-time hook after construction.
+
+        `_get_default_scheduler` (`analysis.peer.baseline`) builds the
+        process-wide scheduler lazily, on first use, before `PeersServicer`
+        has a chance to hand it a pre-warm/patch-changeover coordinator --
+        this lets `PeersServicer.__init__` wire the hook in regardless of
+        which one happens first. Deliberately not rate-limited by
+        `SamplingScheduler` itself: `on_idle` fires on every empty `step()`
+        (as often as every `_IDLE_POLL_INTERVAL_S`), so a callback that wants
+        to do real work (a Mongo query, a Riot API call) must rate-limit
+        itself -- see `service.py`'s `_IdleCoordinator`.
+        """
+        with self._lock:
+            self._on_idle = on_idle
 
     # -- batch execution ------------------------------------------------------
 
@@ -168,9 +229,14 @@ class SamplingScheduler:
         from a background worker thread (`start()`).
         """
         with self._lock:
-            if not self._queue:
+            if self._explicit_queue:
+                task = self._explicit_queue.popleft()
+            elif self._refining_queue:
+                task = self._refining_queue.popleft()
+            elif self._background_queue:
+                task = self._background_queue.popleft()
+            else:
                 return False
-            task = self._queue.popleft()
             self._update_task_gauges()
         self._run_one_batch(task)
         return True
@@ -184,7 +250,7 @@ class SamplingScheduler:
         except Exception:  # noqa: BLE001 -- a single bad batch must never wedge
             # this key forever. Without this, an exception here would leave
             # the task permanently in `self._tasks`/`self._conditions` (already
-            # popped off `self._queue` by `step()`, never re-enqueued or
+            # popped off its priority queue by `step()`, never re-enqueued or
             # finalized) -- any caller blocked in `wait_for_signal` would hang
             # forever, since the production caller (`_try_live_baseline`)
             # passes no timeout. Finalizing as partial with whatever was
@@ -196,20 +262,20 @@ class SamplingScheduler:
             self._finalize(task, "partial")
             return
 
-        if task.reached_target:
-            self._finalize(task, "full")
-        elif task.exhausted:
-            self._finalize(task, "partial")
+        if task.exhausted:
+            self._finalize(task, "full" if task.reached_target else "partial")
         else:
-            if task.reached_interim and self._on_interim is not None:
+            if task.reached_target and task.priority != "background":
+                task.priority = "refining"  # RFC §1.2 Case B: unconditional demotion
+            if (task.reached_interim or task.reached_target) and self._on_interim is not None:
                 try:
                     self._on_interim(task)
                 except Exception:  # noqa: BLE001 -- see `_finalize`'s matching guard.
                     self._log.exception("on_interim hook failed for key=%s", key)
             with self._lock:
-                self._queue.append(task)
+                self._queue_for(task.priority).append(task)
                 self._update_task_gauges()
-            PEERS_SCHEDULER_BATCHES_TOTAL.labels(outcome="re_enqueued").inc()
+            PEERS_SCHEDULER_BATCHES_TOTAL.labels(outcome="re_enqueued", priority=task.priority).inc()
             self._log.info(
                 "sampling_task_re_enqueued key=%s %s", key, self._log_fields(task)
             )
@@ -232,7 +298,7 @@ class SamplingScheduler:
             self._update_task_gauges()
         # `status` is always "full" or "partial" (see this method's two call
         # sites) -- a fixed 2-value enum, safe to fold into the outcome label.
-        PEERS_SCHEDULER_BATCHES_TOTAL.labels(outcome=f"finalized_{status}").inc()
+        PEERS_SCHEDULER_BATCHES_TOTAL.labels(outcome=f"finalized_{status}", priority=task.priority).inc()
         if self._on_finalize is not None:
             try:
                 self._on_finalize(task, status)
@@ -307,6 +373,13 @@ class SamplingScheduler:
     def _worker_loop(self) -> None:
         while not self._stopped:
             if not self.step():
+                if self._on_idle is not None:
+                    try:
+                        self._on_idle()
+                    except Exception:  # noqa: BLE001 -- a broken idle hook must
+                        # never take down a batch-worker thread -- see
+                        # `_run_one_batch`'s matching on_interim/on_finalize guards.
+                        self._log.exception("on_idle hook failed")
                 time.sleep(_IDLE_POLL_INTERVAL_S)
 
     def stop(self) -> None:

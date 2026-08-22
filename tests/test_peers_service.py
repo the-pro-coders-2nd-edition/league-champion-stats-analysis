@@ -1254,3 +1254,74 @@ def test_peek_baseline_reports_not_found_without_enqueuing_a_task(
 
     assert response.found is False
     assert response.baseline_json == ""
+
+
+# --------------------------------------- automatic patch-changeover cleanup
+
+
+def test_patch_changeover_drops_stale_peer_collections(
+    monkeypatch: pytest.MonkeyPatch, peer_store
+) -> None:
+    """A patch mismatch between Data Dragon's current version and the last
+    stored peer_games row must drop peer_games/peer_match_samples/
+    live_benchmark_cache and nothing else."""
+    import time
+
+    peer_store.upsert_peer_game(
+        {
+            "match_id": "EUW1_1",
+            "puuid": "puuid-1",
+            "champion": "Zac",
+            "role": "JUNGLE",
+            "tier": "GOLD",
+            "rank": "II",
+            "platform": "euw1",
+            "queue_id": 420,
+            "metrics": {"win": 1.0},
+            "ingested_at": time.time(),
+            "rank_verified": 1,
+            "patch": "16.16",
+        }
+    )
+    db = peer_store._peer_games.database
+    db["peer_match_samples"].insert_one({"match_id": "EUW1_1", "puuid": "puuid-1"})
+    db["live_benchmark_cache"].insert_one({"key": "euw1|GOLD|Zac|JUNGLE|16.16"})
+
+    monkeypatch.setattr(peers_service, "_current_ddragon_patch", lambda: "16.17")
+
+    dropped = peers_service.check_and_apply_patch_changeover(peer_store)
+
+    assert dropped is True
+    assert db["peer_games"].count_documents({}) == 0
+    assert db["peer_match_samples"].count_documents({}) == 0
+    assert db["live_benchmark_cache"].count_documents({}) == 0
+
+
+def test_patch_changeover_is_a_noop_when_patch_unchanged(
+    monkeypatch: pytest.MonkeyPatch, peer_store
+) -> None:
+    """No drop when the current patch matches the last-stored row's patch."""
+    import time
+
+    peer_store.upsert_peer_game(
+        {
+            "match_id": "EUW1_1",
+            "puuid": "puuid-1",
+            "champion": "Zac",
+            "role": "JUNGLE",
+            "tier": "GOLD",
+            "rank": "II",
+            "platform": "euw1",
+            "queue_id": 420,
+            "metrics": {"win": 1.0},
+            "ingested_at": time.time(),
+            "rank_verified": 1,
+            "patch": "16.16",
+        }
+    )
+    monkeypatch.setattr(peers_service, "_current_ddragon_patch", lambda: "16.16")
+
+    dropped = peers_service.check_and_apply_patch_changeover(peer_store)
+
+    assert dropped is False
+    assert peer_store._peer_games.count_documents({}) == 1

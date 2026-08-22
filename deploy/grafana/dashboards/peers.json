@@ -826,6 +826,38 @@
         }
       ],
       "description": "Per-(champion, role) verified peer-game counts, refreshed every 5m (service.log_champion_coverage, same cadence as peers_match_sample_coverage_games). Deliberately a Loki logs panel, not a Prometheus metric: champion is a Data Dragon-sourced, ~170-value-and-growing set with no fixed enum in code, so a champion label would risk unbounded Prometheus cardinality growth every time a new champion ships -- same rule that keeps the tier coverage panel above tier-only, and the same pattern the sampling queue activity panel below uses for its own high-cardinality keys."
+    },
+    {
+      "type": "timeseries",
+      "title": "Riot API batches by priority tier",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 108
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(peers_scheduler_batches_total[5m])) by (priority)",
+          "legendFormat": "{{priority}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Real-request (explicit) vs continued-refinement (refining) vs idle-capacity pre-warm (background) share of scheduler batches -- the split between real-request and pre-warm Riot API usage. explicit should always win contention over refining/background per the priority scheduler's strict ordering (see scheduler.py)."
     }
   ]
 }

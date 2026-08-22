@@ -44,12 +44,21 @@ class _FakeTask:
         self.batches_run = 0
         self._batches_to_finish = batches_to_finish
         self.reached_interim = False
-        self.exhausted = False
         self.failing = False
 
     @property
     def reached_target(self) -> bool:
         return self.batches_run >= self._batches_to_finish
+
+    @property
+    def exhausted(self) -> bool:
+        # RFC "PEERS priority scheduling...", §2: reaching target no longer
+        # finalizes a task by itself -- only `exhausted` does. This fake has
+        # no separate ceiling/ "full vs partial" concept to exercise (that's
+        # covered directly by test_peer_sampling_scheduler.py's own
+        # SamplingTask-based tests), so "finished" and "exhausted" are the
+        # same thing here.
+        return self.reached_target
 
     def run_batch(self) -> None:
         if self.failing:
@@ -83,13 +92,17 @@ def test_finalized_full_batch_increments_counter_and_clears_gauges() -> None:
     scheduler.get_or_create(task.key, lambda: task)
 
     before = _sample_value(
-        _generate_latest_default_registry(), "peers_scheduler_batches_total", {"outcome": "finalized_full"}
+        _generate_latest_default_registry(),
+        "peers_scheduler_batches_total",
+        {"outcome": "finalized_full", "priority": "explicit"},
     ) or 0.0
 
     assert scheduler.step()
 
     text = _generate_latest_default_registry()
-    after = _sample_value(text, "peers_scheduler_batches_total", {"outcome": "finalized_full"})
+    after = _sample_value(
+        text, "peers_scheduler_batches_total", {"outcome": "finalized_full", "priority": "explicit"}
+    )
     assert after == before + 1.0
     assert _sample_value(text, "peers_scheduler_queued_tasks") == 0.0
     assert _sample_value(text, "peers_scheduler_active_tasks", {"role": "MIDDLE"}) == 0.0
@@ -101,13 +114,17 @@ def test_re_enqueued_batch_increments_counter_and_keeps_task_queued() -> None:
     scheduler.get_or_create(task.key, lambda: task)
 
     before = _sample_value(
-        _generate_latest_default_registry(), "peers_scheduler_batches_total", {"outcome": "re_enqueued"}
+        _generate_latest_default_registry(),
+        "peers_scheduler_batches_total",
+        {"outcome": "re_enqueued", "priority": "explicit"},
     ) or 0.0
 
     assert scheduler.step()
 
     text = _generate_latest_default_registry()
-    after = _sample_value(text, "peers_scheduler_batches_total", {"outcome": "re_enqueued"})
+    after = _sample_value(
+        text, "peers_scheduler_batches_total", {"outcome": "re_enqueued", "priority": "explicit"}
+    )
     assert after == before + 1.0
     assert _sample_value(text, "peers_scheduler_queued_tasks") == 1.0
 
@@ -119,13 +136,17 @@ def test_failed_batch_finalizes_partial_and_increments_counter() -> None:
     scheduler.get_or_create(task.key, lambda: task)
 
     before = _sample_value(
-        _generate_latest_default_registry(), "peers_scheduler_batches_total", {"outcome": "finalized_partial"}
+        _generate_latest_default_registry(),
+        "peers_scheduler_batches_total",
+        {"outcome": "finalized_partial", "priority": "explicit"},
     ) or 0.0
 
     assert scheduler.step()
 
     text = _generate_latest_default_registry()
-    after = _sample_value(text, "peers_scheduler_batches_total", {"outcome": "finalized_partial"})
+    after = _sample_value(
+        text, "peers_scheduler_batches_total", {"outcome": "finalized_partial", "priority": "explicit"}
+    )
     assert after == before + 1.0
     assert not scheduler.is_active(task.key)
 
