@@ -286,6 +286,47 @@
     },
     {
       "type": "timeseries",
+      "title": "Riot API -- rate-limit wait (p50/p95)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.50, sum(rate(riot_api_rate_limit_wait_seconds_bucket{job=\"runner\"}[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(riot_api_rate_limit_wait_seconds_bucket{job=\"runner\"}[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "description": "Time RateLimiter.acquire() blocked before releasing a request slot (proactive throttling, not 429s) -- cross-cutting RiotApiClient metric, filtered to job=\"runner\". A rising p95 here is the earliest signal of the shared Riot rate-limit budget getting tight, before it turns into actual 429s (see the requests-by-outcome panel)."
+    },
+    {
+      "type": "timeseries",
       "title": "Process CPU / memory",
       "datasource": {
         "type": "prometheus",
@@ -295,7 +336,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 40
       },
       "fieldConfig": {
         "defaults": {
@@ -335,7 +376,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 48
       },
       "options": {
         "showTime": true,

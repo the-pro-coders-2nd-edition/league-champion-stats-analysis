@@ -457,6 +457,277 @@
     },
     {
       "type": "timeseries",
+      "title": "Riot API -- requests by outcome",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(riot_api_requests_total{job=\"peers\"}[5m])) by (outcome)",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Cross-cutting Riot API client metrics, filtered to job=\"peers\"."
+    },
+    {
+      "type": "timeseries",
+      "title": "Riot API -- rate-limit wait (p50/p95)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.50, sum(rate(riot_api_rate_limit_wait_seconds_bucket{job=\"peers\"}[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(riot_api_rate_limit_wait_seconds_bucket{job=\"peers\"}[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "description": "Time RateLimiter.acquire() blocked before releasing a request slot (proactive throttling, not 429s) -- cross-cutting RiotApiClient metric, filtered to job=\"peers\". A rising p95 here is the earliest signal of the shared Riot rate-limit budget getting tight, before it turns into actual 429s (see the requests-by-outcome panel)."
+    },
+    {
+      "type": "stat",
+      "title": "Sampling queue depth (waiting)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 48
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "peers_scheduler_queued_tasks",
+          "refId": "A"
+        }
+      ],
+      "description": "SamplingTasks currently waiting in the round-robin FIFO queue (not mid-batch)."
+    },
+    {
+      "type": "timeseries",
+      "title": "Active sampling tasks by role",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 18,
+        "x": 6,
+        "y": 48
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "peers_scheduler_active_tasks",
+          "legendFormat": "{{role}}",
+          "refId": "A"
+        }
+      ],
+      "description": "SamplingTasks tracked by the scheduler (queued + running a batch), by role. Every role is always plotted, including zero -- see PEERS_SCHEDULER_ACTIVE_TASKS."
+    },
+    {
+      "type": "timeseries",
+      "title": "Sampling batches by outcome",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 54
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(peers_scheduler_batches_total[5m])) by (outcome)",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "description": "re_enqueued (batch ran, target not yet reached) vs finalized_full (target reached) vs finalized_partial (ceiling/stall reached, or the batch itself errored)."
+    },
+    {
+      "type": "timeseries",
+      "title": "Sampling batch duration (p50/p95)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 54
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.50, sum(rate(peers_scheduler_batch_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(peers_scheduler_batch_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "description": "Wall-clock time of one SamplingTask.run_batch() call."
+    },
+    {
+      "type": "timeseries",
+      "title": "Peer sample coverage by tier (verified games)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 62
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "peers_match_sample_coverage_games",
+          "legendFormat": "{{tier}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Verified peer_games rows in PeerSampleStore, by tier -- refreshed every 5m (service.refresh_match_sample_coverage), not per-request. Tier-only, not per-champion: champion is a Data Dragon-sourced, ~170-value-and-growing set with no fixed enum in code, so a (champion, tier) label pair risks real cardinality growth every time a new champion ships -- see PEERS_MATCH_SAMPLE_COVERAGE_GAMES's docstring in service.py."
+    },
+    {
+      "type": "logs",
+      "title": "PEERS sampling queue activity (which key, and its progress)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 70
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessages": true,
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{service=\"peers\"} |= \"sampling_task\"",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
       "title": "Process CPU / memory",
       "datasource": {
         "type": "prometheus",
@@ -466,7 +737,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 80
       },
       "fieldConfig": {
         "defaults": {
@@ -506,7 +777,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 88
       },
       "options": {
         "showTime": true,

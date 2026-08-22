@@ -15,7 +15,7 @@ from prometheus_client import start_http_server
 
 from league_stats_rpc.v1 import peers_pb2_grpc
 from league_stats_common.infra.trace_context import TraceServerInterceptor
-from league_stats_peers.service import PeersServicer
+from league_stats_peers.service import PeersServicer, start_match_sample_coverage_refresher
 from league_stats_common.utils import get_logger, setup_logging
 
 log = get_logger("peers")
@@ -29,13 +29,17 @@ def serve() -> None:
         futures.ThreadPoolExecutor(max_workers=10),
         interceptors=[TraceServerInterceptor()],
     )
-    peers_pb2_grpc.add_PeersServiceServicer_to_server(PeersServicer(), server)
+    servicer = PeersServicer()
+    peers_pb2_grpc.add_PeersServiceServicer_to_server(servicer, server)
     server.add_insecure_port(f"0.0.0.0:{port}")
     server.start()
     # Minimal Prometheus /metrics HTTP surface -- same pattern as RUNNER
     # (peers_baseline_resolution_duration_seconds, peers_baseline_resolutions_total,
     # see peers/service.py).
     start_http_server(metrics_port)
+    # Periodic peers_match_sample_coverage_games refresh -- see
+    # service.start_match_sample_coverage_refresher's docstring.
+    start_match_sample_coverage_refresher(servicer.peer_store)
     log.info(
         "PEERS gRPC service listening on :%s (metrics on :%s/metrics)", port, metrics_port
     )

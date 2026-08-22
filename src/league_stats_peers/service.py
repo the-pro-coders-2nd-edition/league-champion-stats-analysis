@@ -216,6 +216,7 @@ import requests
 from prometheus_client import Counter, Gauge, Histogram
 
 from league_stats_peers.analysis.peer.baseline import PeerBaseline, resolve_peer_baseline
+from league_stats_peers.analysis.peer.benchmarks import VALID_TIERS
 from league_stats_common.core.config import AppConfig, PLATFORM_TO_REGION, REGION_DEFAULT_PLATFORM, VALID_PLATFORMS
 from league_stats_common.core.models import RankedEntry
 from league_stats_common.infra.cache import HttpCache
@@ -299,6 +300,59 @@ PEERS_FAST_PATH_ATTEMPTS_TOTAL = Counter(
     "RequestBaseline calls that waited on the fast-path timeout (denominator "
     "for PEERS_FAST_PATH_TIMEOUTS_TOTAL).",
 )
+# Data-coverage visibility (dashboard-observability follow-up): how much
+# verified peer-sample data exists per tier. Labeled by `tier` only, not
+# champion -- `VALID_TIERS` is a fixed 10-value enum (safe), but champion is
+# a Data Dragon-sourced, ~170-value-and-growing set with no fixed enum in
+# code, so a (champion, tier) label pair would risk real cardinality growth
+# every time a new champion ships. This is a coarser signal than per-champion
+# coverage, by design -- see `refresh_match_sample_coverage`'s docstring.
+PEERS_MATCH_SAMPLE_COVERAGE_GAMES = Gauge(
+    "peers_match_sample_coverage_games",
+    "Verified peer_games rows in PeerSampleStore, by tier -- refreshed "
+    "periodically (see refresh_match_sample_coverage), not per-request.",
+    ["tier"],
+)
+_COVERAGE_REFRESH_INTERVAL_S: float = 300.0
+
+
+def refresh_match_sample_coverage(peer_store: PeerSampleStore) -> dict[str, int]:
+    """Query current verified peer-game coverage by tier and publish it.
+
+    Every member of `VALID_TIERS` is always set (0 when a tier has no
+    coverage yet), so a tier never silently disappears from the dashboard --
+    it shows an explicit zero instead of a missing series.
+    """
+    counts = peer_store.count_by_tier()
+    for tier in VALID_TIERS:
+        PEERS_MATCH_SAMPLE_COVERAGE_GAMES.labels(tier=tier).set(counts.get(tier, 0))
+    return counts
+
+
+def start_match_sample_coverage_refresher(
+    peer_store: PeerSampleStore, interval_s: float = _COVERAGE_REFRESH_INTERVAL_S
+) -> threading.Thread:
+    """Start a daemon thread refreshing `PEERS_MATCH_SAMPLE_COVERAGE_GAMES` on an interval.
+
+    Coverage is a slowly-changing signal (verified peer-game rows accumulate
+    over hours/days), so a 5-minute default is more than fresh enough --
+    deliberately not computed per-request, since `count_by_tier`'s
+    aggregation is a full-collection scan-and-group.
+    """
+
+    def _loop() -> None:
+        while True:
+            try:
+                refresh_match_sample_coverage(peer_store)
+            except Exception:  # noqa: BLE001 -- a failed refresh must never
+                # crash the process; the gauge simply keeps its last-known
+                # values until the next successful cycle.
+                log.exception("Failed to refresh peers_match_sample_coverage_games")
+            time.sleep(interval_s)
+
+    thread = threading.Thread(target=_loop, name="peers-coverage-refresher", daemon=True)
+    thread.start()
+    return thread
 
 
 class _PeerStoreAdapter:
@@ -592,6 +646,16 @@ class PeersServicer(peers_pb2_grpc.PeersServiceServicer):
         # (reliably reproduced under pytest-xdist's parallel workers, rare but
         # possible in production under load too).
         self._inflight_lock = threading.RLock()
+
+    @property
+    def peer_store(self) -> PeerSampleStore:
+        """The `PeerSampleStore` this servicer resolves baselines against.
+
+        Exposed so `__main__.serve()` can start
+        `start_match_sample_coverage_refresher` against the same store
+        without opening a second Mongo connection.
+        """
+        return self._peer_store
 
     @staticmethod
     def _build_default_riot_client_factory(
