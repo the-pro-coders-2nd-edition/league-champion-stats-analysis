@@ -11,12 +11,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from league_stats_common.core.config import WebConfig
+from league_stats_common.infra.report_store import open_report_store
 import league_stats_api_ui.app as web_app
 import league_stats_common.infra.jobs as jobs
 
 
 def _write_report(output_dir: Path, slug: str, build_slug: str, **meta: Any) -> Path:
-    """Create a minimal on-disk report (meta.json + report.json + summary.json)."""
+    """Seed a minimal report (listing metadata + body) in the Mongo-backed
+    ReportStore, mirroring the old on-disk meta.json/report.json/summary.json
+    fixture. Still creates ``output_dir/reports/{slug}/{build_slug}`` so
+    tests that layer disk-only artifacts (e.g. ``rank_comparison.csv``, the
+    ``account_views`` cache) on top of it have somewhere to write.
+    """
     report_dir = output_dir / "reports" / slug / build_slug
     report_dir.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -32,13 +38,23 @@ def _write_report(output_dir: Path, slug: str, build_slug: str, **meta: Any) -> 
         "generated_at": "2026-08-01T10:00:00Z",
         **meta,
     }
-    (report_dir / "meta.json").write_text(json.dumps(payload), encoding="utf-8")
-    (report_dir / "report.json").write_text(json.dumps(payload), encoding="utf-8")
-    (report_dir / "summary.json").write_text(
-        json.dumps({"player": "Test#EUW", "build_label": "Viktor mid", "games": 42}),
-        encoding="utf-8",
-    )
+    with open_report_store() as store:
+        store.save_build(slug, build_slug, payload)
+        store.save_body(
+            slug,
+            build_slug,
+            report=payload,
+            summary={"player": "Test#EUW", "build_label": "Viktor mid", "games": 42},
+        )
     return report_dir
+
+
+def _override_report_body(slug: str, build_slug: str, report: dict[str, Any]) -> None:
+    """Replace just the saved report body (old ``report.json`` overwrite),
+    keeping any previously saved summary intact."""
+    with open_report_store() as store:
+        summary = store.get_summary(slug, build_slug) or {}
+        store.save_body(slug, build_slug, report=report, summary=summary)
 
 
 @pytest.fixture()
@@ -401,15 +417,15 @@ def test_cancel_keeps_existing_base_report(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["job"]["state"] == jobs.CANCELLED
 
-    report = client.web_config.output_dir / "reports/test_euw/viktor_middle/report.json"
-    assert report.is_file()
+    with open_report_store() as store:
+        assert store.get_report("test_euw", "viktor_middle") is not None
     status = client.get("/api/players/test_euw").json()
     assert status["has_report"] is True
     assert status["active_job"] is None
 
 
 def test_player_status_serves_existing_reports(client: TestClient) -> None:
-    report_dir = _write_report(
+    _write_report(
         client.web_config.output_dir,
         "test_euw",
         "viktor_middle",
@@ -417,10 +433,6 @@ def test_player_status_serves_existing_reports(client: TestClient) -> None:
         score_color="var(--tone-good-fg)",
         score_verdict_label="Strength",
         last_game_at="2026-08-01T09:00:00Z",
-    )
-    (report_dir / "report.json").write_text(
-        json.dumps({"score": 72, "score_color": "var(--tone-good-fg)", "score_verdict_label": "Strength"}),
-        encoding="utf-8",
     )
     response = client.get("/api/players/test_euw")
     assert response.status_code == 200
@@ -489,16 +501,15 @@ def test_player_status_is_never_cached(client: TestClient) -> None:
 
 def test_player_status_reads_score_from_report_json(client: TestClient) -> None:
     """Older meta.json files omit score; hub cards read it from report.json."""
-    report_dir = _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
-    (report_dir / "report.json").write_text(
-        json.dumps(
-            {
-                "score": 63.8,
-                "score_color": "var(--tone-good-fg)",
-                "score_verdict_label": "Solid",
-            }
-        ),
-        encoding="utf-8",
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    _override_report_body(
+        "test_euw",
+        "viktor_middle",
+        {
+            "score": 63.8,
+            "score_color": "var(--tone-good-fg)",
+            "score_verdict_label": "Solid",
+        },
     )
     build = client.get("/api/players/test_euw").json()["builds"][0]
     assert build["score"] == 63.8
@@ -692,15 +703,14 @@ def test_hydrate_tracked_ranks_fetches_missing_flex(client: TestClient, monkeypa
 
 
 def test_get_build_payload_returns_report_json(client: TestClient) -> None:
-    report_dir = _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
-    (report_dir / "report.json").write_text(
-        json.dumps(
-            {
-                "champion": "Viktor",
-                "champion_icon": "../../../assets/champions/Viktor.png",
-            }
-        ),
-        encoding="utf-8",
+    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    _override_report_body(
+        "test_euw",
+        "viktor_middle",
+        {
+            "champion": "Viktor",
+            "champion_icon": "../../../assets/champions/Viktor.png",
+        },
     )
 
     response = client.get("/api/players/test_euw/builds/viktor_middle")
@@ -722,7 +732,7 @@ def test_get_build_payload_rejects_path_traversal(client: TestClient) -> None:
 
 
 def test_player_builds_expose_per_build_peers_ready(client: TestClient) -> None:
-    ready = _write_report(
+    _write_report(
         client.web_config.output_dir,
         "test_euw",
         "viktor_middle",
@@ -748,9 +758,6 @@ def test_player_builds_expose_per_build_peers_ready(client: TestClient) -> None:
         role_display="mid",
         build_label="Ahri mid",
     )
-    meta = json.loads((legacy / "meta.json").read_text(encoding="utf-8"))
-    meta.pop("has_peer_comparison", None)
-    (legacy / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
     (legacy / "rank_comparison.csv").write_text("metric,you,peer\n", encoding="utf-8")
 
     builds = {
@@ -760,11 +767,19 @@ def test_player_builds_expose_per_build_peers_ready(client: TestClient) -> None:
     assert builds["viktor_middle"]["peers_ready"] is True
     assert builds["fiora_top"]["peers_ready"] is False
     assert builds["ahri_middle"]["peers_ready"] is True
-    assert (ready / "meta.json").is_file()
+    with open_report_store() as store:
+        assert store.has_build("test_euw", "viktor_middle")
 
 
 def test_report_served_statically(client: TestClient) -> None:
-    _write_report(client.web_config.output_dir, "test_euw", "viktor_middle")
+    """The `/out` static mount still serves any file placed under output_dir,
+    though nothing report-shaped is written there anymore -- this exercises
+    the mount itself, independent of the Mongo-backed report body."""
+    report_dir = client.web_config.output_dir / "reports" / "test_euw" / "viktor_middle"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    (report_dir / "report.json").write_text(
+        json.dumps({"champion": "Viktor"}), encoding="utf-8"
+    )
     response = client.get("/out/reports/test_euw/viktor_middle/report.json")
     assert response.status_code == 200
     assert response.json()["champion"] == "Viktor"

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
+from league_stats_common.core.champions import champion_slug
 from league_stats_common.core.config import DEFAULT_QUEUE_FILTER, RANKED_FLEX_QUEUE_ID
+from league_stats_common.infra.report_store import open_report_store
 from league_stats_runner.pipeline.bundles import (
     default_queue_filter_key as _default_queue_filter_key,
     filter_records_by_queue as _filter_records_by_queue,
@@ -17,6 +18,12 @@ from league_stats_runner.ingest.parser import ItemCatalog, MatchParser
 from tests.fixtures import FAKE_ITEMS, MY_PUUID, make_match, make_timeline
 from tests.test_game_windows import _make_records
 from tests.test_reports import _config, _peer
+
+
+def _report_payload(config) -> dict:
+    build_slug = champion_slug(config.champion, config.role)
+    with open_report_store() as store:
+        return store.get_report(config.reports_group_slug, build_slug)
 
 
 def _make_flex_records(n: int) -> list[MatchRecord]:
@@ -72,7 +79,7 @@ def test_report_contains_queue_filter_toggle(tmp_path: Path) -> None:
 
     run_analysis(config, records, peer_comparison=peer, ranked=ranked)
 
-    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    payload = _report_payload(config)
     assert payload["queue_filter_default"] == "solo"
 
     views = payload["report_views"]
@@ -90,7 +97,7 @@ def test_flex_records_appear_in_flex_view(tmp_path: Path) -> None:
 
     run_analysis(config, records, peer_comparison=peer, ranked=None)
 
-    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    payload = _report_payload(config)
     assert payload["queue_filter_default"] == "flex"
     views = payload["report_views"]
     assert views["flex"]["windows"]["all"]["total_games"] == 12
@@ -106,7 +113,7 @@ def test_mixed_queues_have_different_window_options(tmp_path: Path) -> None:
 
     run_analysis(config, records, peer_comparison=peer, ranked=None)
 
-    payload = json.loads((config.report_dir / "report.json").read_text(encoding="utf-8"))
+    payload = _report_payload(config)
     views = payload["report_views"]
     solo_options = {opt["key"]: opt["enabled"] for opt in views["solo"]["window_options"]}
     flex_options = {opt["key"]: opt["enabled"] for opt in views["flex"]["window_options"]}
