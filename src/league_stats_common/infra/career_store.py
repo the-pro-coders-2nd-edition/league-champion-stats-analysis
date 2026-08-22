@@ -10,18 +10,17 @@ Backed by ``pymongo.MongoClient`` (or ``mongomock.MongoClient`` in tests).
 Reproduces the 3 SQL tables' semantics as 3 collections:
 
 - ``career_goals``: one document per ``(build_key, slot, goal_index)``,
-  ``_id = f"{build_key}\\x1f{slot}\\x1f{goal_index}"`` (same separator
-  convention as ``PeerSampleStore``/``DerivedStore``). Indexed on
-  ``build_key``, since every read/delete/move filters on it.
+  enforced by a compound unique index on those three fields (``_id`` is a
+  Mongo-assigned ``ObjectId``). Indexed on ``build_key``, since every
+  read/delete/move filters on it.
 - ``career_used_tracks``: the SQL primary key is the *full 3-tuple*
   ``(build_key, track_key, cleared_at)``, not just ``(build_key,
   track_key)`` -- a track cleared, un-cleared and re-cleared gets a second
-  row because ``cleared_at`` differs. ``_id =
-  f"{build_key}\\x1f{track_key}\\x1f{cleared_at}"`` preserves this exactly;
-  collapsing to a 2-field key would silently change behavior on that
-  clear/un-clear/re-clear sequence.
-- ``career_flags``: one document per ``build_key`` (``_id = build_key``),
-  a straightforward single-row-per-key table.
+  row because ``cleared_at`` differs. A compound unique index on that triple
+  preserves this exactly; collapsing to a 2-field key would silently change
+  behavior on that clear/un-clear/re-clear sequence.
+- ``career_flags``: one document per ``build_key`` (a unique index on that
+  field), a straightforward single-row-per-key table.
 
 ``peek_pending_drop``'s SQL `-1` sentinel ("nothing queued", since the SQL
 column is `NOT NULL`) is replaced with a Mongo-native "field absent" check:
@@ -60,7 +59,7 @@ import os
 import threading
 from datetime import datetime, timezone
 from types import TracebackType
-from typing import Sequence
+from typing import Any, Sequence
 
 import pymongo
 
@@ -107,7 +106,14 @@ class CareerStore:
         # create_index is idempotent and mongomock supports it, so this is
         # safe on every construction, including in tests.
         self._goals.create_index("build_key")
+        self._goals.create_index(
+            [("build_key", 1), ("slot", 1), ("goal_index", 1)], unique=True
+        )
         self._used_tracks.create_index("build_key")
+        self._used_tracks.create_index(
+            [("build_key", 1), ("track_key", 1), ("cleared_at", 1)], unique=True
+        )
+        self._flags.create_index("build_key", unique=True)
         self._log = get_logger("career_store")
 
     def __enter__(self) -> "CareerStore":
@@ -131,14 +137,6 @@ class CareerStore:
         closing a shared client here would break every other user of it.
         """
         return None
-
-    @staticmethod
-    def _goal_id(key: str, slot: int, goal_index: int) -> str:
-        return f"{key}\x1f{slot}\x1f{goal_index}"
-
-    @staticmethod
-    def _used_track_id(key: str, track_key: str, cleared_at: str) -> str:
-        return f"{key}\x1f{track_key}\x1f{cleared_at}"
 
     def load_goals(self, key: str) -> list[StoredGoal]:
         """Every persisted goal for a ladder, ordered by slot then goal index."""
@@ -185,7 +183,6 @@ class CareerStore:
         self._goals.insert_many(
             [
                 {
-                    "_id": self._goal_id(key, slot, index),
                     "build_key": key,
                     "slot": slot,
                     "goal_index": index,
@@ -210,7 +207,7 @@ class CareerStore:
             return
         for (slot, index), state in states.items():
             self._goals.update_one(
-                {"_id": self._goal_id(key, slot, index)}, {"$set": {"state": state}}
+                {"build_key": key, "slot": slot, "goal_index": index}, {"$set": {"state": state}}
             )
 
     def delete_slot(self, key: str, slot: int) -> None:
@@ -225,37 +222,21 @@ class CareerStore:
         cleared the block ahead of it.
         """
         self.delete_slot(key, dst)
-        docs = list(self._goals.find({"build_key": key, "slot": src}))
-        if not docs:
-            return
-        # `_id` embeds `slot`, so a moved goal must be re-keyed, not updated
-        # in place -- `_id` cannot be changed via `update_one` on a real
-        # MongoDB (mongomock matches that restriction). Delete the old-`_id`
-        # document and re-insert it under the new one, carrying every other
-        # field forward untouched.
-        self._goals.delete_many({"build_key": key, "slot": src})
-        new_docs = []
-        for doc in docs:
-            new_doc = dict(doc)
-            new_doc["_id"] = self._goal_id(key, dst, int(doc["goal_index"]))
-            new_doc["slot"] = dst
-            if since_ms is not None:
-                new_doc["since_ms"] = int(since_ms)
-            new_docs.append(new_doc)
-        self._goals.insert_many(new_docs)
+        sets: dict[str, Any] = {"slot": dst}
+        if since_ms is not None:
+            sets["since_ms"] = int(since_ms)
+        for doc in self._goals.find({"build_key": key, "slot": src}):
+            self._goals.update_one(
+                {"build_key": key, "slot": src, "goal_index": doc["goal_index"]},
+                {"$set": sets},
+            )
 
     def record_used_track(self, key: str, track_key: str) -> None:
         """Mark a track as retired so fresh tracks are preferred over recycling."""
         cleared_at = _now()
         self._used_tracks.update_one(
-            {"_id": self._used_track_id(key, track_key, cleared_at)},
-            {
-                "$setOnInsert": {
-                    "build_key": key,
-                    "track_key": track_key,
-                    "cleared_at": cleared_at,
-                }
-            },
+            {"build_key": key, "track_key": track_key, "cleared_at": cleared_at},
+            {"$setOnInsert": {"build_key": key}},
             upsert=True,
         )
 
@@ -266,7 +247,7 @@ class CareerStore:
     def set_pending_congrats(self, key: str, track_key: str) -> None:
         """Queue the block-complete banner for the next render."""
         self._flags.update_one(
-            {"_id": key}, {"$set": {"pending_congrats_track": track_key}}, upsert=True
+            {"build_key": key}, {"$set": {"pending_congrats_track": track_key}}, upsert=True
         )
 
     def peek_pending_congrats(self, key: str) -> str:
@@ -277,7 +258,7 @@ class CareerStore:
         swallow the banner, so the flag now survives until a reader acknowledges
         it via :meth:`clear_pending_congrats`.
         """
-        doc = self._flags.find_one({"_id": key})
+        doc = self._flags.find_one({"build_key": key})
         if doc is None:
             return ""
         return str(doc.get("pending_congrats_track") or "")
@@ -285,7 +266,7 @@ class CareerStore:
     def clear_pending_congrats(self, key: str) -> None:
         """Mark the block-complete banner as seen."""
         self._flags.update_one(
-            {"_id": key}, {"$set": {"pending_congrats_track": ""}}, upsert=True
+            {"build_key": key}, {"$set": {"pending_congrats_track": ""}}, upsert=True
         )
 
     def peek_recap_ack(self, key: str) -> tuple[str, int, dict[str, int], str]:
@@ -293,7 +274,7 @@ class CareerStore:
 
         Empty/zero/empty-dict/empty when this ladder has never acknowledged a recap.
         """
-        doc = self._flags.find_one({"_id": key})
+        doc = self._flags.find_one({"build_key": key})
         if doc is None:
             return "", 0, {}, ""
         match_id = str(doc.get("recap_acked_match_id") or "")
@@ -319,7 +300,7 @@ class CareerStore:
     ) -> None:
         """Record the newest game, goal-hit counts and track a reader has seen recapped."""
         self._flags.update_one(
-            {"_id": key},
+            {"build_key": key},
             {
                 "$set": {
                     "recap_acked_match_id": match_id,
@@ -340,19 +321,19 @@ class CareerStore:
         with the real ``TrackContext`` on the run the request kicks off.
         """
         self._flags.update_one(
-            {"_id": key}, {"$set": {"pending_drop_slot": int(slot)}}, upsert=True
+            {"build_key": key}, {"$set": {"pending_drop_slot": int(slot)}}, upsert=True
         )
 
     def peek_pending_drop(self, key: str) -> int | None:
         """The slot a reader asked to drop, or ``None`` when nothing is queued."""
-        doc = self._flags.find_one({"_id": key})
+        doc = self._flags.find_one({"build_key": key})
         if doc is None or "pending_drop_slot" not in doc:
             return None
         return int(doc["pending_drop_slot"])
 
     def clear_pending_drop(self, key: str) -> None:
         """Mark a queued drop as performed."""
-        self._flags.update_one({"_id": key}, {"$unset": {"pending_drop_slot": ""}})
+        self._flags.update_one({"build_key": key}, {"$unset": {"pending_drop_slot": ""}})
 
     def clear_all(self) -> dict[str, int]:
         """Delete every ladder, retired track and pending flag.
