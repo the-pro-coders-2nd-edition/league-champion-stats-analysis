@@ -6,8 +6,15 @@
   export let sectionId;
   export let verdict = undefined;
 
-  // v.tone is "strong" | "solid" | "focus" (bundles.py:_score_verdict_sentence), not a Meter tone.
-  const METER_TONE = { strong: 'good', focus: 'bad' };
+  // v.tone is "strong" | "solid" | "steady" | "watch" | "focus"
+  // (bundles.py:_score_verdict_sentence), not a Meter tone.
+  const METER_TONE = {
+    strong: 'good',
+    focus: 'bad',
+    solid: 'solid',
+    watch: 'warn',
+    steady: 'flat',
+  };
 
   $: v = verdict || {};
   $: toneClass = v.tone ? ` section-pulse--${v.tone}` : '';
@@ -43,6 +50,12 @@
   .section-pulse--strong .section-pulse-label {
     background: var(--tone-good-soft); color: var(--tone-good-fg);
   }
+  .section-pulse--solid .section-pulse-label {
+    background: var(--tone-solid-soft); color: var(--tone-solid-fg);
+  }
+  .section-pulse--watch .section-pulse-label {
+    background: var(--tone-warn-soft); color: var(--tone-warn-fg);
+  }
   .section-pulse--focus .section-pulse-label {
     background: var(--tone-bad-soft); color: var(--tone-bad-fg);
   }
@@ -58,5 +71,7 @@
     letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--color-text);
   }
   .section-pulse--strong .section-pulse-score { color: var(--tone-good-fg); }
+  .section-pulse--solid .section-pulse-score { color: var(--tone-solid-fg); }
+  .section-pulse--watch .section-pulse-score { color: var(--tone-warn-fg); }
   .section-pulse--focus .section-pulse-score { color: var(--tone-bad-fg); }
 </style>

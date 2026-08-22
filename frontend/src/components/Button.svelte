@@ -43,11 +43,11 @@
   }
 
   .ctl--filled {
-    background: var(--color-accent);
+    background: var(--color-accent-500);
     color: #fff;
-    border: 1px solid var(--color-accent);
+    border: 1px solid var(--color-accent-500);
     font-weight: 700;
-    box-shadow: 0 4px 16px rgba(124, 108, 240, .28);
+    box-shadow: 0 4px 16px rgba(65, 183, 140, .28);
   }
   .ctl--filled.ctl--md { padding: 12px 22px; font-size: 15px; }
   .ctl--filled.ctl--sm { padding: 9px 14px; font-size: 13px; }

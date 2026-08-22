@@ -37,19 +37,24 @@ export function categoryForSection(sectionId) {
 /** Shared click handler for anchor links that scroll to a report section via
  *  the reportNav context, falling back to a plain scrollIntoView when there
  *  is no Report.svelte ancestor (e.g. a standalone render). */
-export function handleNavClick(reportNav, anchor) {
+export function handleNavClick(reportNav, anchor, options) {
   return function onClick(event) {
     event.preventDefault();
     if (reportNav) {
-      reportNav.scrollToSection(anchor);
+      reportNav.scrollToSection(anchor, options);
       return;
     }
     document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 }
 
-export function createReportNav(selectCategory) {
+function scrollBlockForSection(sectionId) {
+  return sectionId.startsWith('coaching-tip-') ? 'center' : 'start';
+}
+
+export function createReportNav(selectCategory, { resolveGameReviewMatch } = {}) {
   const highlightId = writable(null);
+  const pendingGameReviewMatchId = writable(null);
   let highlightTimer = null;
 
   async function setHighlight(sectionId) {
@@ -72,14 +77,23 @@ export function createReportNav(selectCategory) {
 
   return {
     highlightId,
-    async scrollToSection(sectionId) {
+    pendingGameReviewMatchId,
+    async scrollToSection(sectionId, options = {}) {
+      const { matchId } = options;
+      if (matchId && sectionId === 'game-review') {
+        resolveGameReviewMatch?.(matchId);
+      }
       const category = categoryForSection(sectionId);
       if (category) selectCategory(category);
       await setHighlight(sectionId);
       await tick();
+      if (matchId && sectionId === 'game-review') {
+        pendingGameReviewMatchId.set(matchId);
+        await tick();
+      }
       const el = document.getElementById(sectionId);
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.scrollIntoView({ behavior: 'smooth', block: scrollBlockForSection(sectionId) });
       }
     },
   };

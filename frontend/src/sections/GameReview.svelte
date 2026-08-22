@@ -1,5 +1,5 @@
 <script>
-  import { tick } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import SectionHeader from '../components/SectionHeader.svelte';
   import SkillGrid from '../components/SkillGrid.svelte';
   import Panel from '../components/Panel.svelte';
@@ -41,11 +41,12 @@
   let moreOpen = false;
   let moreOpenInitialized = false;
   let scoreDetailsOpen = false;
-  let objectivesOpen = false;
   let timelineMode = 'lane';
   let timelineMetric = 'gold';
   let chartEl;
   let plotlyReady = typeof window !== 'undefined' && !!window.Plotly;
+  let listHtml = '';
+  let extraGamesHtml = '';
 
   // `iconCell(name, iconHref, true)` from report.html — always icon-only in this section.
   const iconCellHtml = soloIconCellHtml;
@@ -101,7 +102,7 @@
     return null;
   }
 
-  function gameReviewRowHtml(game) {
+  function gameReviewRowHtml(game, activeMatchId) {
     const isWin = game.result === 'win';
     const resultClass = isWin ? 'game-review-result--win' : 'game-review-result--loss';
     const signal = primaryBehaviorSignal(game);
@@ -116,7 +117,7 @@
         : '';
       accountHtml = `<span class="game-review-account">${accountIcon}<span>${escapeHtml(game.account)}</span></span>`;
     }
-    return `<button type="button" class="game-review-row game-review-row--${isWin ? 'win' : 'loss'}${game.match_id === selectedMatchId ? ' is-selected' : ''}" data-match-id="${escapeHtml(game.match_id)}">` +
+    return `<button type="button" class="game-review-row game-review-row--${isWin ? 'win' : 'loss'}${game.match_id === activeMatchId ? ' is-selected' : ''}" data-match-id="${escapeHtml(game.match_id)}">` +
       `<span class="game-review-result ${resultClass}">${isWin ? 'W' : 'L'}</span>` +
       accountHtml +
       `<span class="game-review-icons">${iconCellHtml(game.champion || 'You', game.champion_icon)}<span class="game-review-vs">vs</span>${iconCellHtml(game.opponent || 'Opponent', game.opponent_icon)}</span>` +
@@ -135,6 +136,30 @@
     const row = event.target.closest('.game-review-row');
     if (row) selectedMatchId = row.getAttribute('data-match-id');
   }
+
+  async function selectGameByMatchId(matchId) {
+    await tick();
+    const allListed = [...visibleGames, ...extraGames];
+    if (!allListed.some((game) => game.match_id === matchId)) return;
+    selectedMatchId = matchId;
+    if (extraGames.some((game) => game.match_id === matchId)) {
+      moreOpen = true;
+    }
+    await tick();
+    const row = document.querySelector(
+      `.game-review-row[data-match-id="${CSS.escape(matchId)}"]`
+    );
+    row?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  onMount(() => {
+    if (!reportNav?.pendingGameReviewMatchId) return;
+    return reportNav.pendingGameReviewMatchId.subscribe(async (matchId) => {
+      if (!matchId) return;
+      await selectGameByMatchId(matchId);
+      reportNav.pendingGameReviewMatchId.set(null);
+    });
+  });
 
   // --- Key Moments feed tab (deaths / fights / objectives) ---
 
@@ -358,6 +383,10 @@
   $: available = !!data.game_review?.[data.queue_filter_default]?.available && games.length > 0;
   $: gamesCount = data.game_review?.[data.queue_filter_default]?.games_count || games.length;
   $: subtitleText = `Last ${gamesCount} game${gamesCount === 1 ? '' : 's'} — follows queue filter.`;
+  // Keep the rail highlight aligned when the queue filter swaps the game list.
+  $: if (games.length && !games.some((g) => g.match_id === selectedMatchId)) {
+    selectedMatchId = games[0].match_id;
+  }
 
   $: isGroupReport = (data.report_players || []).length > 1;
   $: careerWindow = career?.window || 20;
@@ -379,9 +408,9 @@
   // generic label would read as if nothing had changed since.
   $: liveBlockName = (career?.blocks || []).find((b) => b.is_active)?.name || 'Career';
   $: listHtml = visibleGames
-    .map((game, index) => (index === careerDividerIndex ? careerDividerHtml() + gameReviewRowHtml(game) : gameReviewRowHtml(game)))
+    .map((game, index) => (index === careerDividerIndex ? careerDividerHtml() + gameReviewRowHtml(game, selectedMatchId) : gameReviewRowHtml(game, selectedMatchId)))
     .join('');
-  $: extraGamesHtml = extraGames.map(gameReviewRowHtml).join('');
+  $: extraGamesHtml = extraGames.map((game) => gameReviewRowHtml(game, selectedMatchId)).join('');
 
   function careerDividerHtml() {
     return '<a href="#career" class="game-review-career-divider" data-career-divider="1">' +
@@ -528,7 +557,7 @@
                   Whether this game met the live block's per-game bar. Only games after the block started counting toward the 20-game window.
                 </span>
                 <span class="game-goals-list">
-                  {#each trackedGoals as goal (goal.column)}
+                  {#each trackedGoals as goal (goal.key)}
                     <span class="game-goal game-goal--{goal.outcome}">
                       <span class="game-goal-mark" aria-hidden="true">
                         {goal.outcome === 'met' ? '✓' : goal.outcome === 'missed' ? '✕' : '–'}
@@ -691,7 +720,6 @@
                         variant="objective"
                         chevron="trailing"
                         class="game-review-objective game-review-objective--{outcome.tone}{objectiveGrubClass(row)}"
-                        bind:open={objectivesOpen}
                       >
                         <svelte:fragment slot="summary">
                           <span class="game-review-objective-time">{formatGameTime(row.minute)}</span>

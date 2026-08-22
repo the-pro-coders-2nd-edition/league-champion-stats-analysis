@@ -27,15 +27,16 @@ from league_stats.pipeline.bundles import _overall_score_verdict, _score_verdict
 @pytest.mark.parametrize(
     ("score", "expected"),
     [
-        (74, ("Strength", "good")),  # demoScores: Laning
-        (58, ("Solid", "flat")),  # demoScores: Economy
-        (51, ("Solid", "flat")),  # demoScores: Fights
-        (62, ("Solid", "flat")),  # demoScores: Survival
-        (35, ("Focus", "bad")),  # demoScores: Vision
-        (34, ("Focus", "bad")),  # demoScores: Objectives
+        (74, ("Strength", "good")),
+        (58, ("Solid", "solid")),
+        (51, ("Steady", "flat")),
+        (62, ("Solid", "solid")),
+        (35, ("Watch", "warn")),
+        (34, ("Focus", "bad")),
         (40, ("Watch", "warn")),  # boundary: exactly 40
-        (45, ("Solid", "flat")),  # boundary: exactly 45
-        (70, ("Strength", "good")),  # boundary: exactly 70
+        (45, ("Steady", "flat")),  # boundary: exactly 45
+        (55, ("Solid", "solid")),  # boundary: exactly 55
+        (65, ("Strength", "good")),  # boundary: exactly 65
     ],
 )
 def test_verdict_matches_design_system_demo_scores(score: float, expected: tuple[str, str]) -> None:
@@ -44,18 +45,20 @@ def test_verdict_matches_design_system_demo_scores(score: float, expected: tuple
 
 def test_verdict_is_band_verdict() -> None:
     """tones.verdict is an alias of band_verdict -- RFC-001 Open Question #5."""
-    for score in (0, 34, 40, 44.9, 45, 67, 70, 100):
+    for score in (0, 34, 35, 44.9, 45, 54.9, 55, 64.9, 65, 100):
         assert verdict(score) == band_verdict(score)
 
 
-@pytest.mark.parametrize("score", [0, 12, 34, 39.9, 40, 44.9, 45, 58, 65, 67, 69.9, 70, 100])
+@pytest.mark.parametrize(
+    "score",
+    [0, 12, 34, 35, 39.9, 40, 44.9, 45, 51, 54.9, 55, 58, 64.9, 65, 74, 100],
+)
 def test_one_score_one_verdict_across_tones_and_bundles(score: float) -> None:
     """A single score must produce one verdict everywhere it's rendered.
 
-    Regression test for RFC-001 Open Question #5: tones.verdict (70/45/40) and
-    bundles.py's _overall_score_verdict / _score_verdict_sentence used to run
-    their own 65/45 cutoffs, so e.g. a 67 read "Strength" in one place and
-    "Solid" in another. All three must now delegate to tones.band_verdict.
+    Regression test for RFC-001 Open Question #5: tones.verdict and
+    bundles.py's _overall_score_verdict / _score_verdict_sentence must delegate
+    to tones.band_verdict so every surface agrees on label and tone.
     """
     label, tone = band_verdict(score)
 
@@ -140,3 +143,57 @@ def test_career_node_states() -> None:
     assert career_node("At risk", 12, 15) == {"tone": "warn", "pct": 80}
     assert career_node("Revoked", 8, 15) == {"tone": "bad", "pct": 53}
     assert career_node("Locked", 0, 15) == {"tone": "flat", "pct": 0}
+
+
+def test_overall_score_color_for_solid() -> None:
+    color, label = _overall_score_verdict(58)
+    assert label == "Solid"
+    assert color == "var(--tone-solid-fg)"
+
+
+def test_score_verdict_sentence_steady_and_watch() -> None:
+    text, pulse, label = _score_verdict_sentence("Vision", 50, is_biggest_gap=False)
+    assert label == "Steady"
+    assert pulse == "steady"
+    assert "steady" in text
+
+    text, pulse, label = _score_verdict_sentence("Vision", 38, is_biggest_gap=False)
+    assert label == "Watch"
+    assert pulse == "watch"
+    assert "watching" in text
+
+
+def test_refresh_score_verdicts_in_report_updates_baked_labels() -> None:
+    from league_stats.pipeline.bundles import refresh_score_verdicts_in_report
+
+    payload = {
+        "score": 53.0,
+        "score_verdict_label": "Solid",
+        "score_color": "var(--color-text)",
+        "score_components": [
+            {"name": "Fight", "score": 53.0, "verdict": "Solid", "tone": "flat"},
+        ],
+        "negative_recommendations": [],
+        "report_views": {
+            "solo": {
+                "windows": {
+                    "all": {
+                        "score": 58.0,
+                        "score_verdict_label": "Solid",
+                        "score_color": "var(--color-text)",
+                        "score_components": [
+                            {"name": "Economy", "score": 58.0, "verdict": "Solid", "tone": "flat"},
+                        ],
+                        "negative_recommendations": [],
+                    }
+                }
+            }
+        },
+    }
+    refresh_score_verdicts_in_report(payload)
+    assert payload["score_verdict_label"] == "Steady"
+    assert payload["score_components"][0]["verdict"] == "Steady"
+    window = payload["report_views"]["solo"]["windows"]["all"]
+    assert window["score_verdict_label"] == "Solid"
+    assert window["score_color"] == "var(--tone-solid-fg)"
+    assert window["score_components"][0]["verdict"] == "Solid"

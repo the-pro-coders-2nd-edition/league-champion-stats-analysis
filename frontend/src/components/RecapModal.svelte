@@ -2,7 +2,7 @@
   import { getContext } from 'svelte';
   import Modal from './Modal.svelte';
   import IconCellSolo from './IconCellSolo.svelte';
-  import { careerGoalsForGame } from '../lib/careerGameGoals.js';
+  import { careerGoalsForGame, goalKey } from '../lib/careerGameGoals.js';
   import { REPORT_NAV_KEY, handleNavClick } from '../lib/reportNav.js';
 
   // The ladder carrying `pending_recap` (new_match_ids, progress deltas).
@@ -29,10 +29,10 @@
   // Every goal in the live block gets its own ring -- a block holds three at
   // once, not one -- with the before/after delta from this recap when the
   // block hasn't changed since the reader's last visit.
-  $: goalRings = liveGoals.map((goal) => {
-    const progress = (recap?.progress || []).find((item) => item.column === goal.column);
+  $: goalRings = liveGoals.map((goal, index) => {
+    const progress = (recap?.progress || [])[index];
     const delta = progress ? progress.after - progress.before : 0;
-    return { ...goal, delta };
+    return { ...goal, key: goalKey(goal), delta };
   });
 
   function goalMarks(game) {
@@ -41,6 +41,11 @@
 
   function goToCareer(event) {
     handleNavClick(reportNav, 'career')(event);
+    onClose();
+  }
+
+  function goToGame(event, matchId) {
+    handleNavClick(reportNav, 'game-review', { matchId })(event);
     onClose();
   }
 </script>
@@ -60,7 +65,7 @@
             <span>{newGames.length} new game{newGames.length === 1 ? '' : 's'}</span>
           </div>
           <div class="recap-rings">
-            {#each goalRings as goal (goal.column)}
+            {#each goalRings as goal (goal.key)}
               <div class="recap-ring-item">
                 <div
                   class="career-ring career-ring--{goal.state_class}"
@@ -81,11 +86,11 @@
       <div class="recap-games">
         {#each newGames as game, index (game.match_id)}
           <a
-            href="#career"
+            href="#game-review"
             class="recap-game recap-game--{game.result}"
             style="animation-delay: {0.45 + index * 0.08}s"
-            on:click={goToCareer}
-            title="Open Career mode"
+            on:click={(event) => goToGame(event, game.match_id)}
+            title="Open this game in Game Review"
           >
             <div class="recap-game-matchup">
               <IconCellSolo name={game.champion || 'You'} icon={game.champion_icon} />
@@ -97,7 +102,7 @@
             <div class="recap-game-kda">{game.kda}</div>
             {#if goalMarks(game).length}
               <div class="recap-game-goals">
-                {#each goalMarks(game) as mark (mark.column)}
+                {#each goalMarks(game) as mark (mark.key)}
                   <i
                     class="recap-goal-mark recap-goal-mark--{mark.outcome}"
                     title={mark.text}

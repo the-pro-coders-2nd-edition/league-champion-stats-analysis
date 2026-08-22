@@ -27,6 +27,12 @@ from typing import Callable, Final, Sequence
 
 from league_stats.analysis.career.explanations import why_for
 from league_stats.analysis.career.models import CLEAR_BAR, SETUP_CLEAR_BAR, Rung
+from league_stats.analysis.improvement import (
+    healing_benchmark,
+    is_meaningful_healing,
+    is_meaningful_shielding,
+    shielding_benchmark,
+)
 from league_stats.analysis.career.window import (
     player_mean,
     player_median,
@@ -69,6 +75,13 @@ ANCHOR_QUANTILE: Final[float] = 0.45
 # and a frozen target that moved with the noise would be unfair either way.
 BASELINE_GAMES: Final[int] = 100
 
+# Shutdown goals anchor on games where a bounty was actually handed over. Zeros in
+# the full-game average made targets like 30g while real shutdowns are 200g+.
+MIN_SHUTDOWN_GAMES: Final[int] = 3
+
+# Pre-objective ward averages use a gentler stretch than the default 17.5%.
+PIT_VISION_STRETCH: Final[float] = 0.10
+
 # Severity a step must clear before its declared specificity counts. Below this
 # the evidence did not really fire, and a step that claimed to diagnose a habit
 # the player does not have would tell a clean player to stop doing something they
@@ -104,6 +117,29 @@ def _baseline(ctx, column: str, quantile: float) -> float | None:
     return player_quantile(recent_window(ctx.matches_df, BASELINE_GAMES), column, quantile)
 
 
+def _nonzero_series(ctx, column: str):
+    import pandas as pd
+
+    frame = recent_window(ctx.matches_df, BASELINE_GAMES)
+    if column not in frame.columns:
+        return None
+    series = pd.to_numeric(frame[column], errors="coerce").dropna()
+    return series[series > 0]
+
+
+def _nonzero_baseline(ctx, column: str, quantile: float) -> float | None:
+    """A quantile of a column over baseline games where it is non-zero."""
+    series = _nonzero_series(ctx, column)
+    if series is None or series.empty:
+        return None
+    return float(series.quantile(quantile))
+
+
+def _nonzero_game_count(ctx, column: str) -> int:
+    series = _nonzero_series(ctx, column)
+    return 0 if series is None else int(series.count())
+
+
 def _stepped(
     ctx,
     *,
@@ -114,14 +150,15 @@ def _stepped(
     display_scale: float = 1.0,
     display_precision: int | None = None,
     need: int = CLEAR_BAR,
+    stretch: float = MAX_STEP_STRETCH,
 ) -> Rung | None:
     """One rung a stretch above the level the player already reaches in most games.
 
     Anchored at :data:`ANCHOR_QUANTILE` of the last :data:`BASELINE_GAMES` games,
-    stretched by :data:`MAX_STEP_STRETCH`. Peer p75 only pulls the target *down*,
-    so a player is never asked to go past their rank's 75th percentile merely
-    because the stretch said so; a peer number at or below the anchor is ignored,
-    since it would ask for nothing.
+    stretched by ``stretch`` (defaults to :data:`MAX_STEP_STRETCH`). Peer p75 only
+    pulls the target *down*, so a player is never asked to go past their rank's
+    75th percentile merely because the stretch said so; a peer number at or below
+    the anchor is ignored, since it would ask for nothing.
 
     Peer percentiles cover 16 metrics (``BENCHMARK_METRIC_KEYS``), so most steps
     in the bank have no peer number at all and the stretch is the whole story.
@@ -129,7 +166,7 @@ def _stepped(
     anchor = _baseline(ctx, column, ANCHOR_QUANTILE)
     if anchor is None or anchor <= 0:
         return None
-    ceiling = anchor * (1 + MAX_STEP_STRETCH)
+    ceiling = anchor * (1 + stretch)
     peer = ctx.peer_p75.get(column)
     if peer is not None and anchor < peer < ceiling:
         ceiling = peer
@@ -148,6 +185,17 @@ def _stepped(
         target=target,
         need=need,
         why=why_for(column, ctx, target=target, comparator="at_least", need=need),
+    )
+
+
+def _pit_vision_rung(ctx, *, need: int = CLEAR_BAR) -> Rung | None:
+    return _stepped(
+        ctx,
+        column="avg_wards_before_objective",
+        template="{target} wards down before an objective, in 15 of 20 games",
+        precision=1,
+        need=need,
+        stretch=PIT_VISION_STRETCH,
     )
 
 
@@ -194,6 +242,158 @@ def _line(ctx, *, column: str, target: float, text: str, need: int = CLEAR_BAR) 
     )
 
 
+_CONTROL_WARD_COLUMN: Final[str] = "control_wards"
+_CONTROL_WARD_FLOOR: Final[float] = 1.0
+_CONTROL_WARD_FLOOR_TEXT: Final[str] = "One control ward per game in 15 of 20 games"
+
+
+def _control_ward_text(target: int) -> str:
+    if target == 1:
+        return _CONTROL_WARD_FLOOR_TEXT
+    return f"{target} control wards per game in 15 of 20 games"
+
+
+def control_ward_rung(ctx, *, need: int = CLEAR_BAR) -> Rung | None:
+    """Control-ward goal anchored on how many the player already buys.
+
+    Below one ward per game in most games, ask for the universal floor. At or
+    above that, stretch with the same anchor-plus-headroom logic as other stepped
+    goals, rounding up to whole wards so a small percentage bump still asks for
+    at least one more ward than the player usually buys.
+    """
+    if _CONTROL_WARD_COLUMN not in ctx.matches_df.columns:
+        return None
+    anchor = _baseline(ctx, _CONTROL_WARD_COLUMN, ANCHOR_QUANTILE)
+    if anchor is None:
+        return None
+    if anchor < _CONTROL_WARD_FLOOR:
+        return _line(
+            ctx,
+            column=_CONTROL_WARD_COLUMN,
+            target=_CONTROL_WARD_FLOOR,
+            text=_CONTROL_WARD_FLOOR_TEXT,
+            need=need,
+        )
+    ceiling = anchor * (1 + MAX_STEP_STRETCH)
+    peer = ctx.peer_p75.get(_CONTROL_WARD_COLUMN)
+    if peer is not None and anchor < peer < ceiling:
+        ceiling = peer
+    target = max(math.ceil(anchor) + 1, math.ceil(ceiling))
+    return Rung(
+        text=_control_ward_text(target),
+        column=_CONTROL_WARD_COLUMN,
+        comparator="at_least",
+        target=float(target),
+        need=need,
+        why=why_for(
+            _CONTROL_WARD_COLUMN,
+            ctx,
+            target=float(target),
+            comparator="at_least",
+            need=need,
+        ),
+    )
+
+
+def _control_wards(ctx, *, need: int = CLEAR_BAR) -> Rung | None:
+    return control_ward_rung(ctx, need=need)
+
+
+_LANE_DIFF_SPECS: Final[dict[str, tuple[str, int]]] = {
+    "gd10": ("gold", 10),
+    "gd15": ("gold", 15),
+    "gd20": ("gold", 20),
+    "xpd10": ("XP", 10),
+}
+
+
+def lane_diff_goal_text(column: str, target: int) -> str:
+    kind, minute = _LANE_DIFF_SPECS[column]
+    if target == 0:
+        return f"Even or ahead in {kind} at {minute} min in 15 of 20 games"
+    signed = f"+{target}" if target > 0 else str(target)
+    return f"{signed} {kind} diff @{minute} in 15 of 20 games"
+
+
+def stepped_lane_diff_rung(ctx, *, column: str, need: int = CLEAR_BAR) -> Rung | None:
+    """Lane diff goal anchored on where the player already sits in most games.
+
+    Behind on average, stretch toward even. Ahead on average, stretch further.
+    At even, keep the universal zero line.
+    """
+    if column not in _LANE_DIFF_SPECS or column not in ctx.matches_df.columns:
+        return None
+    anchor = _baseline(ctx, column, ANCHOR_QUANTILE)
+    if anchor is None:
+        return None
+
+    peer = ctx.peer_p75.get(column)
+    if anchor < 0:
+        ceiling = anchor + abs(anchor) * MAX_STEP_STRETCH
+        if peer is not None and peer > ceiling:
+            ceiling = peer
+        target = int(math.ceil(ceiling))
+        if target <= int(math.floor(anchor)):
+            target = int(math.floor(anchor)) + 1
+    elif anchor > 0:
+        ceiling = anchor * (1 + MAX_STEP_STRETCH)
+        if peer is not None and anchor < peer < ceiling:
+            ceiling = peer
+        target = int(max(math.ceil(anchor) + 1, math.ceil(ceiling)))
+    else:
+        target = 0
+
+    return Rung(
+        text=lane_diff_goal_text(column, target),
+        column=column,
+        comparator="at_least",
+        target=float(target),
+        need=need,
+        why=why_for(column, ctx, target=float(target), comparator="at_least", need=need),
+    )
+
+
+def _lane_diff(ctx, column: str, *, need: int = CLEAR_BAR) -> Rung | None:
+    return stepped_lane_diff_rung(ctx, column=column, need=need)
+
+
+def _sustain_identity(ctx) -> str | None:
+    """``hpm`` or ``spm`` when ally sustain is part of this build's identity.
+
+    Catch/engage supports often post incidental heal or shield that is not their
+    job -- the same noise gate used elsewhere in the app.
+    """
+    frame = recent_window(ctx.matches_df, BASELINE_GAMES)
+    hpm = player_mean(frame, "hpm")
+    if is_meaningful_healing(hpm):
+        return "hpm"
+    spm = player_mean(frame, "spm")
+    if is_meaningful_shielding(spm):
+        return "spm"
+    return None
+
+
+def _utility_sustain(ctx, *, need: int = CLEAR_BAR) -> Rung | None:
+    column = _sustain_identity(ctx)
+    if column is None:
+        return None
+    template = (
+        "{target} healing per minute in 15 of 20 games"
+        if column == "hpm"
+        else "{target} shielding per minute in 15 of 20 games"
+    )
+    return _stepped(ctx, column=column, template=template, precision=0, need=need)
+
+
+def _sustain_severity(ctx) -> float:
+    column = _sustain_identity(ctx)
+    if column == "hpm":
+        return _shortfall(ctx, "hpm", healing_benchmark(per_minute=True))
+    if column == "spm":
+        return _shortfall(ctx, "spm", shielding_benchmark(per_minute=True))
+    return 0.0
+
+
 def _none_of(ctx, *, column: str, text: str, need: int = CLEAR_BAR) -> Rung | None:
     """One rung asking for none of something."""
     if column not in ctx.matches_df.columns:
@@ -234,6 +434,47 @@ def _integer_under(ctx, *, column: str, template: str, need: int = CLEAR_BAR) ->
     )
 
 
+def _shutdown_hygiene(ctx, *, need: int = CLEAR_BAR) -> Rung | None:
+    """Cap shutdown gold from the level the player hands over when it happens.
+
+    Zeros in the per-game average made ``_stepped_under`` invent caps like 30g
+    while a real shutdown bounty is usually hundreds of gold.
+    """
+    column = "shutdown_given"
+    if column not in ctx.matches_df.columns:
+        return None
+    if _nonzero_game_count(ctx, column) < MIN_SHUTDOWN_GAMES:
+        return None
+    anchor = _nonzero_baseline(ctx, column, 1 - ANCHOR_QUANTILE)
+    if anchor is None or anchor <= 0:
+        return None
+    target = round(anchor * (1 - MAX_STEP_STRETCH), 0)
+    if target <= 0 or target >= round(anchor, 0):
+        return None
+    return Rung(
+        text=f"Hand over under {int(target)}g of shutdowns in 15 of 20 games",
+        column=column,
+        comparator="under",
+        target=float(target),
+        need=need,
+        why=why_for(column, ctx, target=float(target), comparator="under", need=need),
+    )
+
+
+def _shutdown_severity(ctx) -> float:
+    import pandas as pd
+
+    if "shutdown_given" not in ctx.matches_df.columns:
+        return 0.0
+    series = pd.to_numeric(ctx.matches_df["shutdown_given"], errors="coerce").fillna(0)
+    if float((series > 0).mean()) < DIAGNOSIS_FLOOR:
+        return 0.0
+    nonzero = series[series > 0]
+    if nonzero.empty:
+        return 0.0
+    return min(1.0, float(nonzero.mean()) / 1000.0)
+
+
 # --- severity helpers ------------------------------------------------------
 
 
@@ -248,6 +489,13 @@ def _shortfall(ctx, column: str, norm: float) -> float:
     if p50 is None or norm <= 0:
         return 0.0
     return max(0.0, (norm - p50) / norm)
+
+
+def _offers_cc_goals(ctx) -> bool:
+    """Whether this build's games suggest CC is worth coaching on."""
+    from league_stats.analysis.combat import build_uses_cc
+
+    return build_uses_cc(avg_ccpm=player_mean(ctx.matches_df, "ccpm"))
 
 
 def _below_zero_share(ctx, column: str) -> float:
@@ -275,30 +523,22 @@ STEP_BANK: Final[tuple[StepSpec, ...]] = (
     ),
     StepSpec(
         key="even_at_10", category=CATEGORY_LANING, specificity=3,
-        build=lambda c: _line(
-            c, column="gd10", target=0.0, text="Even or ahead in gold at 10 min in 15 of 20 games"
-        ),
+        build=lambda c: _lane_diff(c, "gd10"),
         severity=lambda c: _below_zero_share(c, "gd10"),
     ),
     StepSpec(
         key="hold_lead_to_15", category=CATEGORY_LANING, specificity=3,
-        build=lambda c: _line(
-            c, column="gd15", target=0.0, text="Even or ahead in gold at 15 min in 15 of 20 games"
-        ),
+        build=lambda c: _lane_diff(c, "gd15"),
         severity=lambda c: _below_zero_share(c, "gd15"),
     ),
     StepSpec(
         key="hold_lead_to_20", category=CATEGORY_LANING, specificity=3,
-        build=lambda c: _line(
-            c, column="gd20", target=0.0, text="Even or ahead in gold at 20 min in 15 of 20 games"
-        ),
+        build=lambda c: _lane_diff(c, "gd20"),
         severity=lambda c: _below_zero_share(c, "gd20"),
     ),
     StepSpec(
         key="even_xp_at_10", category=CATEGORY_LANING, specificity=2,
-        build=lambda c: _line(
-            c, column="xpd10", target=0.0, text="Even or ahead in XP at 10 min in 15 of 20 games"
-        ),
+        build=lambda c: _lane_diff(c, "xpd10"),
         severity=lambda c: _below_zero_share(c, "xpd10"),
     ),
     StepSpec(
@@ -318,6 +558,7 @@ STEP_BANK: Final[tuple[StepSpec, ...]] = (
     ),
     StepSpec(
         key="cs_at_10", category=CATEGORY_LANING, specificity=2,
+        roles=("TOP", "MIDDLE", "BOTTOM"),
         build=lambda c: _stepped(
             c, column="cs10", template="{target} CS by 10 min in 15 of 20 games", precision=0
         ),
@@ -381,11 +622,8 @@ STEP_BANK: Final[tuple[StepSpec, ...]] = (
     ),
     StepSpec(
         key="shutdown_hygiene", category=CATEGORY_SURVIVAL, specificity=3,
-        build=lambda c: _stepped_under(
-            c, column="shutdown_given",
-            template="Hand over under {target}g of shutdowns in 15 of 20 games", precision=0,
-        ),
-        severity=lambda c: min(1.0, _mean_of(c, "shutdown_given") / 1000.0),
+        build=lambda c: _shutdown_hygiene(c),
+        severity=_shutdown_severity,
     ),
     StepSpec(
         key="time_alive", category=CATEGORY_SURVIVAL, specificity=2,
@@ -415,9 +653,7 @@ STEP_BANK: Final[tuple[StepSpec, ...]] = (
     ),
     StepSpec(
         key="control_ward_each_game", category=CATEGORY_OBJECTIVES, specificity=1,
-        build=lambda c: _line(
-            c, column="control_wards", target=1.0, text="One control ward per game in 15 of 20 games"
-        ),
+        build=lambda c: _control_wards(c),
         severity=lambda c: _shortfall(c, "control_wards", 2.0),
     ),
     StepSpec(
@@ -481,10 +717,7 @@ STEP_BANK: Final[tuple[StepSpec, ...]] = (
     ),
     StepSpec(
         key="pit_vision", category=CATEGORY_VISION, specificity=3,
-        build=lambda c: _stepped(
-            c, column="avg_wards_before_objective",
-            template="{target} wards down before an objective, in 15 of 20 games", precision=1,
-        ),
+        build=lambda c: _pit_vision_rung(c),
         severity=lambda c: _shortfall(c, "avg_wards_before_objective", 2.0),
     ),
     StepSpec(
@@ -533,8 +766,13 @@ STEP_BANK: Final[tuple[StepSpec, ...]] = (
     ),
     StepSpec(
         key="cc_per_minute", category=CATEGORY_FIGHT, specificity=2,
-        build=lambda c: _stepped(
-            c, column="ccpm", template="{target} CC score per minute in 15 of 20 games", precision=1
+        build=lambda c: (
+            _stepped(
+                c, column="ccpm", template="{target} CC score per minute in 15 of 20 games",
+                precision=1,
+            )
+            if _offers_cc_goals(c)
+            else None
         ),
         severity=lambda c: _shortfall(c, "ccpm", c.peer_p75.get("ccpm", 10.0)),
     ),
@@ -574,8 +812,13 @@ STEP_BANK: Final[tuple[StepSpec, ...]] = (
     # --- Utility (support) --------------------------------------------------
     StepSpec(
         key="utility_cc", category=CATEGORY_UTILITY, specificity=2, roles=("UTILITY",),
-        build=lambda c: _stepped(
-            c, column="ccpm", template="{target} CC score per minute in 15 of 20 games", precision=1
+        build=lambda c: (
+            _stepped(
+                c, column="ccpm", template="{target} CC score per minute in 15 of 20 games",
+                precision=1,
+            )
+            if _offers_cc_goals(c)
+            else None
         ),
         severity=lambda c: _shortfall(c, "ccpm", c.peer_p75.get("ccpm", 10.0)),
     ),
@@ -589,17 +832,12 @@ STEP_BANK: Final[tuple[StepSpec, ...]] = (
     ),
     StepSpec(
         key="utility_sustain", category=CATEGORY_UTILITY, specificity=2, roles=("UTILITY",),
-        build=lambda c: _stepped(
-            c, column="hpm", template="{target} healing per minute in 15 of 20 games", precision=0
-        ),
-        severity=lambda c: _shortfall(c, "hpm", 300.0),
+        build=lambda c: _utility_sustain(c),
+        severity=_sustain_severity,
     ),
     StepSpec(
         key="utility_pit_vision", category=CATEGORY_UTILITY, specificity=3, roles=("UTILITY",),
-        build=lambda c: _stepped(
-            c, column="avg_wards_before_objective",
-            template="{target} wards down before an objective, in 15 of 20 games", precision=1,
-        ),
+        build=lambda c: _pit_vision_rung(c),
         severity=lambda c: _shortfall(c, "avg_wards_before_objective", 2.0),
     ),
 )

@@ -163,6 +163,8 @@ def test_web_stage_a_report_shows_peer_pending_placeholder(tmp_path: Path) -> No
     assert payload["status_endpoint"] == "/api/players/test_euw"
     meta = json.loads((report_path.parent / "meta.json").read_text(encoding="utf-8"))
     assert meta["has_peer_comparison"] is False
+    assert meta["last_game_at"]
+    assert meta["score"] is not None
     assert not (report_path.parent / "rank_comparison.csv").exists()
 
 

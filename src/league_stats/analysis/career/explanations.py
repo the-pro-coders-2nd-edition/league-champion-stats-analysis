@@ -112,8 +112,15 @@ WHY_BY_COLUMN: Final[dict[str, str]] = {
         "effectively down a player."
     ),
     "objective_trade_success_rate": (
-        "Share of objective trades (giving up one objective or structure to take "
-        "another) that actually came out ahead. Trading is fine -- trading down isn't."
+        "Share of cross-map trade attempts where your team came out ahead on map "
+        "value. A trade attempt is an epic objective where you were split-pushing, "
+        "defending against a split, or a tower or epic swung within about 90 seconds "
+        "before to 45 seconds after the pit timer. Gains and losses are scored in "
+        "points — plate 0.5, outer turret 2, inner 3, inhib 6; Herald 3, Grubs 2, "
+        "Dragon 4, Baron 8, Elder 10 — and the attempt counts as a win when your net "
+        "is even or positive (you held while they got nothing, took their tower while "
+        "they got the epic, and so on). Securing an epic with no nearby structure "
+        "swing is not counted as a trade."
     ),
     "unproductive_absence_rate": (
         "Share of objective takes you skipped without getting anything for it "
@@ -188,8 +195,12 @@ WHY_BY_COLUMN: Final[dict[str, str]] = {
     ),
     # --- Utility (support) --------------------------------------------------
     "hpm": (
-        "Healing or shielding delivered to allies per minute. This is the support "
-        "stat line that keeps your team's damage dealers alive through a fight."
+        "Healing delivered to allies per minute. This is the enchanter stat line "
+        "that keeps your team's damage dealers alive through a fight."
+    ),
+    "spm": (
+        "Shielding delivered to allies per minute. This is the peel stat line that "
+        "absorbs burst before your carries take it."
     ),
     "roams_pre15": (
         "Roams to another lane detected before 15 minutes. Early roams snowball lanes "
@@ -237,6 +248,7 @@ _UNITS: Final[dict[str, tuple[float, int, str]]] = {
     "vspm10": (1.0, 2, ""),
     "ccpm": (1.0, 1, ""),
     "hpm": (1.0, 0, ""),
+    "spm": (1.0, 0, ""),
     "first_item_min": (1.0, 1, ""),
     "first_recall_min": (1.0, 1, ""),
 }

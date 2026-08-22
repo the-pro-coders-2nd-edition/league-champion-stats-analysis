@@ -79,6 +79,11 @@
   --tone-flat-soft: var(--color-neutral-800);
   --tone-flat-line: var(--color-neutral-500);
 
+  --tone-solid-fg: #6a9eb0;
+  --tone-solid-mid: #3f6270;
+  --tone-solid-soft: #152228;
+  --tone-solid-line: #6a9eb0;
+
   --tone-info-fg: #6fb3e0;
   --tone-info-mid: #2f6f96;
   --tone-info-soft: #14232e;

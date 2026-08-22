@@ -162,4 +162,4 @@ def test_improvement_score_has_a_resolved_tone_colour(tmp_path: Path) -> None:
 
     assert payload["score_color"]
     assert "var(--" in payload["score_color"]
-    assert payload["score_verdict_label"] in {"Strength", "Solid", "Focus"}
+    assert payload["score_verdict_label"] in {"Strength", "Solid", "Steady", "Watch", "Focus"}
